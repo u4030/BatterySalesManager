@@ -89,6 +89,68 @@ fun WarehouseScreen(
             }
         }
     }
+
+    if (showAddProductDialog) {
+        AddProductDialog(
+            onDismiss = { showAddProductDialog = false },
+            onAddProduct = { product ->
+                viewModel.addProduct(product)
+                showAddProductDialog = false
+            }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AddProductDialog(onDismiss: () -> Unit, onAddProduct: (Product) -> Unit) {
+    var name by remember { mutableStateOf("") }
+    var quantity by remember { mutableStateOf("") }
+    var costPrice by remember { mutableStateOf("") }
+    var sellingPrice by remember { mutableStateOf("") }
+    var barcode by remember { mutableStateOf("") }
+    var capacity by remember { mutableStateOf("") }
+    var productType by remember { mutableStateOf("") }
+    var minimumQuantity by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("إضافة منتج جديد") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("اسم المنتج") })
+                OutlinedTextField(value = productType, onValueChange = { productType = it }, label = { Text("نوع المنتج (الشركة)") })
+                OutlinedTextField(value = capacity, onValueChange = { capacity = it }, label = { Text("سعة البطارية (أمبير)") })
+                OutlinedTextField(value = quantity, onValueChange = { quantity = it }, label = { Text("الكمية") })
+                OutlinedTextField(value = minimumQuantity, onValueChange = { minimumQuantity = it }, label = { Text("الحد الأدنى للمخزون") })
+                OutlinedTextField(value = costPrice, onValueChange = { costPrice = it }, label = { Text("سعر التكلفة") })
+                OutlinedTextField(value = sellingPrice, onValueChange = { sellingPrice = it }, label = { Text("سعر البيع") })
+                OutlinedTextField(value = barcode, onValueChange = { barcode = it }, label = { Text("الباركود") })
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                val product = Product(
+                    name = name,
+                    quantity = quantity.toIntOrNull() ?: 0,
+                    costPrice = costPrice.toDoubleOrNull() ?: 0.0,
+                    sellingPrice = sellingPrice.toDoubleOrNull() ?: 0.0,
+                    barcode = barcode,
+                    capacity = capacity.toIntOrNull() ?: 0,
+                    productType = productType,
+                    minimumQuantity = minimumQuantity.toIntOrNull() ?: 5
+                )
+                onAddProduct(product)
+            }) {
+                Text("إضافة")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("إلغاء")
+            }
+        }
+    )
 }
 
 @Composable

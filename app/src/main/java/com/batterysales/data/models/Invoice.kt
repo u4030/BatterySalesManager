@@ -38,6 +38,8 @@ data class Invoice(
     val discount: Double = 0.0,
     val discountRate: Double = 0.0,
     val totalAmount: Double = 0.0,
+    val oldBatteriesValue: Double = 0.0,
+    val finalAmount: Double = 0.0,
     val paidAmount: Double = 0.0,
     val remainingAmount: Double = 0.0,
     val status: String = "draft",
