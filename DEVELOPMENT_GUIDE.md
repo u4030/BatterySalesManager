@@ -458,7 +458,7 @@ firestore.collection(Collections.INVOICES)
 **لحل هذه المشكلة، يجب عليك إنشاء الفهرس يدويًا:**
 
 1.  **اضغط على الرابط التالي:**
-    [https://console.firebase.google.com/v1/r/project/batterysales-b7972/firestore/indexes?create_composite=ClNwcm9qZWN0cy9iYXR0ZXJ5c2FsZXMtYjc5NzIvZGF0YWJhc2VzLyhkZWZhdWx0KS9jb2xsZWN0aW9uR3JvdXBzL3Byb2R1Y3RzL2luZGV4ZXMvXxABGg4KCmlzQXJjaGl2ZWQQARoICgRuYW1lEAEaDAoIX19uYW1lX18QAQ](https://console.firebase.google.com/v1/r/project/batterysales-b7972/firestore/indexes?create_composite=ClNwcm9qZWN0cy9iYXR0ZXJ5c2FsZXMtYjc5NzIvZGF0YWJhc2VzLyhkZWZhdWx0KS9jb2xsZWN0aW9uR3JvdXBzL3Byb2R1Y3RzL2luZGV4ZXMvXxABGg4KCmlzQXJjaGl2ZWQQARoICgRuYW1lEAEaDAoIX19uYW1lX18QAQ)
+    [https://console.firebase.google.com/v1/r/project/batterysales-b7972/firestore/indexes?create_composite=ClNwcm9qZWN0cy9iYXR0ZXJ5c2FsZXMtYjc5NzIvZGF0YWJhc2VzLyhkZWZhdWx0KS9jb2xsZWN0aW9uR3JvdXBzL3Byb2R1Y3RzL2luZGV4ZXMvXxABGg0KCWlzQWN0aXZlEAESGggKBG5hbWUQARoMCghfX25hbWVfXxAB](https://console.firebase.google.com/v1/r/project/batterysales-b7972/firestore/indexes?create_composite=ClNwcm9qZWN0cy9iYXR0ZXJ5c2FsZXMtYjc5NzIvZGF0YWJhc2VzLyhkZWZhdWx0KS9jb2xsZWN0aW9uR3JvdXBzL3Byb2R1Y3RzL2luZGV4ZXMvXxABGg0KCWlzQWN0aXZlEAESGggKBG5hbWUQARoMCghfX25hbWVfXxAB)
 
 2.  سيتم توجيهك إلى صفحة إنشاء الفهرس في Firebase Console مع تعبئة الحقول تلقائيًا.
 3.  اضغط على **"Create Index"**.

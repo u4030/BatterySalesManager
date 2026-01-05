@@ -15,7 +15,7 @@ class ProductRepository @Inject constructor(
 
     suspend fun getAllProducts(): Result<List<Product>> = safeCall {
         val snapshot = firestore.collection(Constants.Collections.PRODUCTS)
-            .whereEqualTo("isArchived", false)
+            .whereEqualTo("isActive", true)
             .orderBy("name", Query.Direction.ASCENDING)
             .get()
             .await()
@@ -54,7 +54,7 @@ class ProductRepository @Inject constructor(
     suspend fun deleteProduct(productId: String): Result<Unit> = safeCall {
         firestore.collection(Constants.Collections.PRODUCTS)
             .document(productId)
-            .update("isArchived", true)
+            .update("isActive", false)
             .await()
     }
 }

@@ -128,7 +128,7 @@ data class Product(
      * true = المنتج متاح للبيع
      * false = المنتج غير متاح (حذف منطقي)
      */
-    val isArchived: Boolean = false,
+    val isActive: Boolean = true,
 
     /**
      * ملاحظات إضافية عن المنتج
