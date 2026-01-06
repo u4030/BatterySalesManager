@@ -32,9 +32,23 @@ class ProductRepository @Inject constructor(
 
     suspend fun addProduct(product: Product): Result<String> = safeCall {
         val docRef = firestore.collection(Constants.Collections.PRODUCTS).document()
-        val finalProduct = product.copy(id = docRef.id)
-        docRef.set(finalProduct).await()
-        finalProduct.id
+        val productData = hashMapOf(
+            "id" to docRef.id,
+            "name" to product.name,
+            "capacity" to product.capacity,
+            "productType" to product.productType,
+            "quantity" to product.quantity,
+            "minimumQuantity" to product.minimumQuantity,
+            "costPrice" to product.costPrice,
+            "sellingPrice" to product.sellingPrice,
+            "barcode" to product.barcode,
+            "createdAt" to product.createdAt,
+            "updatedAt" to product.updatedAt,
+            "isActive" to product.isActive,
+            "notes" to product.notes
+        )
+        docRef.set(productData).await()
+        docRef.id
     }
 
     suspend fun updateProduct(product: Product): Result<Unit> = safeCall {
