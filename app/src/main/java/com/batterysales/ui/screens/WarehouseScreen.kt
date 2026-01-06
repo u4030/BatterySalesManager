@@ -112,6 +112,7 @@ fun AddProductDialog(onDismiss: () -> Unit, onAddProduct: (Product) -> Unit) {
     var capacity by remember { mutableStateOf("") }
     var productType by remember { mutableStateOf("") }
     var minimumQuantity by remember { mutableStateOf("") }
+    var notes by remember { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -126,6 +127,7 @@ fun AddProductDialog(onDismiss: () -> Unit, onAddProduct: (Product) -> Unit) {
                 OutlinedTextField(value = costPrice, onValueChange = { costPrice = it }, label = { Text("سعر التكلفة") })
                 OutlinedTextField(value = sellingPrice, onValueChange = { sellingPrice = it }, label = { Text("سعر البيع") })
                 OutlinedTextField(value = barcode, onValueChange = { barcode = it }, label = { Text("الباركود") })
+                OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("ملاحظات") })
             }
         },
         confirmButton = {
@@ -139,7 +141,8 @@ fun AddProductDialog(onDismiss: () -> Unit, onAddProduct: (Product) -> Unit) {
                     capacity = capacity.toIntOrNull() ?: 0,
                     productType = productType,
                     minimumQuantity = minimumQuantity.toIntOrNull() ?: 5,
-                    isActive = true // Explicitly set isActive to true
+                    isActive = true, // Explicitly set isActive to true
+                    notes = notes
                 )
                 onAddProduct(product)
             }) {
