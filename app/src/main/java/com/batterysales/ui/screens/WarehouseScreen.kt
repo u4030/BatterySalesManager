@@ -139,6 +139,7 @@ fun AddProductDialog(onDismiss: () -> Unit, onAddProduct: (Product) -> Unit) {
                     capacity = capacity.toIntOrNull() ?: 0,
                     productType = productType,
                     minimumQuantity = minimumQuantity.toIntOrNull() ?: 5
+                    // Note: isActive is not set here. It will use the default value from Product.kt (true)
                 )
                 onAddProduct(product)
             }) {
