@@ -10,8 +10,7 @@ import javax.inject.Singleton
 
 @Singleton
 class InvoiceRepository @Inject constructor(
-    private val firestore: FirebaseFirestore,
-    private val productRepository: ProductRepository
+    private val firestore: FirebaseFirestore
 ) : BaseRepository() {
 
     private val collectionName = "invoices"
@@ -20,15 +19,6 @@ class InvoiceRepository @Inject constructor(
         val docRef = firestore.collection(collectionName).document()
         val finalInvoice = invoice.copy(id = docRef.id, createdAt = Date(), updatedAt = Date())
         docRef.set(finalInvoice).await()
-
-        // Update product quantities
-        invoice.items.forEach { item ->
-            val productResult = productRepository.getProductById(item.productId)
-            productResult.getOrNull()?.let { product ->
-                val newQuantity = product.quantity - item.quantity
-                productRepository.updateProductQuantity(item.productId, newQuantity)
-            }
-        }
         finalInvoice.id
     }
 

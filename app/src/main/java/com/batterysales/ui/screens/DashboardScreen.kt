@@ -34,6 +34,8 @@ fun DashboardScreen(navController: NavHostController) {
         DashboardItem("المبيعات", Icons.Default.ShoppingCart, Color(0xFF4CAF50), "sales"),
         DashboardItem("الفواتير", Icons.Default.Receipt, Color(0xFF2196F3), "invoices"),
         DashboardItem("المستودع", Icons.Default.Inventory, Color(0xFFFF9800), "warehouse"),
+        DashboardItem("إدخال مخزون", Icons.Default.AddBusiness, Color(0xFF009688), "stock_entry"),
+        DashboardItem("ترحيل مخزون", Icons.Default.MoveDown, Color(0xFF795548), "stock_transfer"),
         DashboardItem("العملاء", Icons.Default.People, Color(0xFFE91E63), "clients"),
         DashboardItem("الخزينة", Icons.Default.AccountBalance, Color(0xFF9C27B0), "accounting"),
         DashboardItem("الكمبيالات", Icons.Default.Description, Color(0xFFF44336), "bills"),

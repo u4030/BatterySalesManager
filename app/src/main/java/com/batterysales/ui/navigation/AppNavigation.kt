@@ -1,4 +1,4 @@
-package com.batterysales.navigation
+package com.batterysales.ui.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.navigation.NavHostController
@@ -7,6 +7,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.batterysales.ui.screens.*
+import com.batterysales.ui.stockentry.StockEntryScreen
+import com.batterysales.ui.stocktransfer.StockTransferScreen
 
 @Composable
 fun AppNavigation(navController: NavHostController) {
@@ -26,6 +28,8 @@ fun AppNavigation(navController: NavHostController) {
             InvoiceDetailScreen(navController, invoiceId)
         }
         composable("warehouse") { WarehouseScreen(navController = navController) }
+        composable("stock_entry") { StockEntryScreen() }
+        composable("stock_transfer") { StockTransferScreen() }
         composable("clients") { ClientScreen(navController) }
         composable("accounting") { AccountingScreen(navController) }
         composable("bills") { BillsScreen(navController) }
