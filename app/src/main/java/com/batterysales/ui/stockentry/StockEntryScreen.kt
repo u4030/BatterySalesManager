@@ -1,6 +1,10 @@
 package com.batterysales.ui.stockentry
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -17,42 +21,11 @@ fun StockEntryScreen(
     var selectedProduct by remember { mutableStateOf<Product?>(null) }
     var selectedWarehouse by remember { mutableStateOf<Warehouse?>(null) }
     var quantity by remember { mutableStateOf("") }
-    var costPrice by remember { mutableStateOf("") }
     var expandedProduct by remember { mutableStateOf(false) }
     var expandedWarehouse by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.padding(16.dp)) {
-        ExposedDropdownMenuBox(
-            expanded = expandedProduct,
-            onExpandedChange = { expandedProduct = !expandedProduct }
-        ) {
-            TextField(
-                modifier = Modifier.menuAnchor(),
-                readOnly = true,
-                value = selectedProduct?.name ?: "",
-                onValueChange = {},
-                label = { Text("Product") },
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedProduct) },
-                colors = ExposedDropdownMenuDefaults.textFieldColors(),
-            )
-            ExposedDropdownMenu(
-                expanded = expandedProduct,
-                onDismissRequest = { expandedProduct = false },
-            ) {
-                viewModel.products.value.forEach { product ->
-                    DropdownMenuItem(
-                        text = { Text(product.name) },
-                        onClick = {
-                            selectedProduct = product
-                            expandedProduct = false
-                        }
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
+        // Warehouse Dropdown
         ExposedDropdownMenuBox(
             expanded = expandedWarehouse,
             onExpandedChange = { expandedWarehouse = !expandedWarehouse }
@@ -62,7 +35,7 @@ fun StockEntryScreen(
                 readOnly = true,
                 value = selectedWarehouse?.name ?: "",
                 onValueChange = {},
-                label = { Text("Warehouse") },
+                label = { Text("المستودع") },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedWarehouse) },
                 colors = ExposedDropdownMenuDefaults.textFieldColors(),
             )
@@ -84,40 +57,110 @@ fun StockEntryScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        OutlinedTextField(
-            value = quantity,
-            onValueChange = { quantity = it },
-            label = { Text("Quantity") },
-            modifier = Modifier.fillMaxWidth()
-        )
+        // Total Cost and Amperes
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = viewModel.totalCost.value,
+                onValueChange = { viewModel.totalCost.value = it },
+                label = { Text("التكلفة الإجمالية") },
+                modifier = Modifier.weight(1f)
+            )
+            OutlinedTextField(
+                value = viewModel.totalAmperes.value,
+                onValueChange = { /* Read-only */ },
+                label = { Text("إجمالي الأمبيرات") },
+                readOnly = true,
+                modifier = Modifier.weight(1f)
+            )
+        }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        OutlinedTextField(
-            value = costPrice,
-            onValueChange = { costPrice = it },
-            label = { Text("Cost Price") },
-            modifier = Modifier.fillMaxWidth()
-        )
+        // Add Product Section
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // Product Dropdown
+            ExposedDropdownMenuBox(
+                expanded = expandedProduct,
+                onExpandedChange = { expandedProduct = !expandedProduct },
+                modifier = Modifier.weight(2f)
+            ) {
+                TextField(
+                    modifier = Modifier.menuAnchor(),
+                    readOnly = true,
+                    value = selectedProduct?.name ?: "",
+                    onValueChange = {},
+                    label = { Text("المنتج") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedProduct) },
+                    colors = ExposedDropdownMenuDefaults.textFieldColors(),
+                )
+                ExposedDropdownMenu(
+                    expanded = expandedProduct,
+                    onDismissRequest = { expandedProduct = false },
+                ) {
+                    viewModel.products.value.forEach { product ->
+                        DropdownMenuItem(
+                            text = { Text(product.name) },
+                            onClick = {
+                                selectedProduct = product
+                                expandedProduct = false
+                            }
+                        )
+                    }
+                }
+            }
+
+            OutlinedTextField(
+                value = quantity,
+                onValueChange = { quantity = it },
+                label = { Text("الكمية") },
+                modifier = Modifier.weight(1f)
+            )
+
+            Button(
+                onClick = {
+                    val product = selectedProduct
+                    if (product != null) {
+                        viewModel.addProductToEntry(product, quantity.toIntOrNull() ?: 0)
+                        quantity = ""
+                    }
+                },
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("إضافة")
+            }
+        }
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        // Stock Items List
+        LazyColumn {
+            items(viewModel.stockItems) { item ->
+                ListItem(
+                    headlineContent = { Text(item.product.name) },
+                    supportingContent = { Text("الكمية: ${item.quantity}") },
+                    trailingContent = {
+                        IconButton(onClick = { viewModel.removeProductFromEntry(item) }) {
+                            Icon(Icons.Default.Delete, contentDescription = "إزالة")
+                        }
+                    }
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Save Button
         Button(
             onClick = {
-                val product = selectedProduct
                 val warehouse = selectedWarehouse
-                if (product != null && warehouse != null) {
-                    viewModel.addStockEntry(
-                        productId = product.id,
-                        warehouseId = warehouse.id,
-                        quantity = quantity.toIntOrNull() ?: 0,
-                        costPrice = costPrice.toDoubleOrNull() ?: 0.0
-                    )
+                if (warehouse != null) {
+                    viewModel.saveStockEntry(warehouse.id)
                 }
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            enabled = viewModel.stockItems.isNotEmpty() && selectedWarehouse != null
         ) {
-            Text("Save Stock Entry")
+            Text("حفظ إدخال المخزون")
         }
     }
 }

@@ -3,7 +3,7 @@ package com.batterysales.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.batterysales.data.models.User
-import com.batterysales.data.repository.UserRepository
+import com.batterysales.data.repositories.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,10 +34,14 @@ class AuthViewModel @Inject constructor(
 
     fun checkUserStatus() {
         viewModelScope.launch {
-            if (userRepository.isUserLoggedIn()) {
-                fetchCurrentUser()
-            } else {
-                _isLoggedIn.value = false
+            try {
+                if (userRepository.isUserLoggedIn()) {
+                    fetchCurrentUser()
+                } else {
+                    _isLoggedIn.value = false
+                }
+            } catch (e: Exception) {
+                // Handle error
             }
         }
     }
@@ -46,16 +50,16 @@ class AuthViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
-            userRepository.loginUser(email, password)
-                .onSuccess {
-                    fetchCurrentUser()
-                    _isLoggedIn.value = true
-                }
-                .onFailure {
-                    _errorMessage.value = it.message ?: "فشل تسجيل الدخول"
-                    _isLoggedIn.value = false
-                }
-            _isLoading.value = false
+            try {
+                userRepository.loginUser(email, password)
+                fetchCurrentUser()
+                _isLoggedIn.value = true
+            } catch (e: Exception) {
+                _errorMessage.value = e.message ?: "فشل تسجيل الدخول"
+                _isLoggedIn.value = false
+            } finally {
+                _isLoading.value = false
+            }
         }
     }
 
@@ -63,25 +67,26 @@ class AuthViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
-            userRepository.registerUser(email, password, displayName)
-                .onSuccess {
-                    fetchCurrentUser()
-                    _isLoggedIn.value = true
-                }
-                .onFailure {
-                    _errorMessage.value = it.message ?: "فشل إنشاء الحساب"
-                }
-            _isLoading.value = false
+            try {
+                userRepository.registerUser(email, password, displayName)
+                fetchCurrentUser()
+                _isLoggedIn.value = true
+            } catch (e: Exception) {
+                _errorMessage.value = e.message ?: "فشل إنشاء الحساب"
+            } finally {
+                _isLoading.value = false
+            }
         }
     }
 
     private fun fetchCurrentUser() {
         viewModelScope.launch {
-            userRepository.getCurrentUser()
-                .onSuccess {
-                    _currentUser.value = it
-                    _isLoggedIn.value = it != null
-                }
+            try {
+                _currentUser.value = userRepository.getCurrentUser()
+                _isLoggedIn.value = _currentUser.value != null
+            } catch (e: Exception) {
+                // Handle error
+            }
         }
     }
 

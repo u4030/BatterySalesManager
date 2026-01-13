@@ -3,14 +3,12 @@ package com.batterysales.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.batterysales.data.models.Invoice
-import com.batterysales.data.models.InvoiceItem
-import com.batterysales.data.repository.InvoiceRepository
+import com.batterysales.data.repositories.InvoiceRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.util.Date
 import javax.inject.Inject
 
 @HiltViewModel
@@ -40,51 +38,57 @@ class InvoiceViewModel @Inject constructor(
     fun loadInvoices() {
         viewModelScope.launch {
             _isLoading.value = true
-            invoiceRepository.getAllInvoices()
-                .onSuccess {
-                    _invoices.value = it
-                }
-                .onFailure {
-                    _errorMessage.value = "خطأ في تحميل الفواتير: ${it.message}"
-                }
-            _isLoading.value = false
+            try {
+                _invoices.value = invoiceRepository.getAllInvoices()
+            } catch (e: Exception) {
+                _errorMessage.value = "خطأ في تحميل الفواتير: ${e.message}"
+            } finally {
+                _isLoading.value = false
+            }
         }
     }
 
     fun getInvoiceById(id: String) {
         viewModelScope.launch {
             _isLoading.value = true
-            invoiceRepository.getInvoice(id)
-                .onSuccess { _selectedInvoice.value = it }
-                .onFailure { _errorMessage.value = "الفاتورة غير موجودة" }
-            _isLoading.value = false
+            try {
+                _selectedInvoice.value = invoiceRepository.getInvoice(id)
+            } catch (e: Exception) {
+                _errorMessage.value = "الفاتورة غير موجودة"
+            } finally {
+                _isLoading.value = false
+            }
         }
     }
 
     fun createInvoice(invoice: Invoice) {
         viewModelScope.launch {
             _isLoading.value = true
-            invoiceRepository.createInvoice(invoice)
-                .onSuccess {
-                    _successMessage.value = "تم إنشاء الفاتورة بنجاح"
-                    loadInvoices()
-                }
-                .onFailure { _errorMessage.value = "فشل في إنشاء الفاتورة" }
-            _isLoading.value = false
+            try {
+                invoiceRepository.createInvoice(invoice)
+                _successMessage.value = "تم إنشاء الفاتورة بنجاح"
+                loadInvoices()
+            } catch (e: Exception) {
+                _errorMessage.value = "فشل في إنشاء الفاتورة"
+            } finally {
+                _isLoading.value = false
+            }
         }
     }
 
     fun recordPayment(invoiceId: String, amount: Double) {
         viewModelScope.launch {
             _isLoading.value = true
-            invoiceRepository.recordPayment(invoiceId, amount)
-                .onSuccess {
-                    _successMessage.value = "تم تسجيل الدفعة بنجاح"
-                    getInvoiceById(invoiceId)
-                    loadInvoices()
-                }
-                .onFailure { _errorMessage.value = "فشل في تسجيل الدفعة" }
-            _isLoading.value = false
+            try {
+                invoiceRepository.recordPayment(invoiceId, amount)
+                _successMessage.value = "تم تسجيل الدفعة بنجاح"
+                getInvoiceById(invoiceId)
+                loadInvoices()
+            } catch (e: Exception) {
+                _errorMessage.value = "فشل في تسجيل الدفعة"
+            } finally {
+                _isLoading.value = false
+            }
         }
     }
 

@@ -15,6 +15,22 @@ class StockEntryRepository @Inject constructor(
             .await()
     }
 
+    suspend fun addStockEntries(stockEntries: List<StockEntry>) {
+        val batch = firestore.batch()
+        stockEntries.forEach { entry ->
+            val docRef = firestore.collection(StockEntry.COLLECTION_NAME).document()
+            batch.set(docRef, entry)
+        }
+        batch.commit().await()
+    }
+
+    suspend fun getStockEntries(): List<StockEntry> {
+        return firestore.collection(StockEntry.COLLECTION_NAME)
+            .get()
+            .await()
+            .toObjects(StockEntry::class.java)
+    }
+
     suspend fun transferStock(
         productId: String,
         sourceWarehouseId: String,

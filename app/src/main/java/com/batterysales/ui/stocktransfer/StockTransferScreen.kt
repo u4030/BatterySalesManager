@@ -20,7 +20,7 @@ fun StockTransferScreen(
     var quantity by remember { mutableStateOf("") }
     var expandedProduct by remember { mutableStateOf(false) }
     var expandedSourceWarehouse by remember { mutableStateOf(false) }
-    var expandedDestinationWarehouse by remember { mutableStateof(false) }
+    var expandedDestinationWarehouse by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.padding(16.dp)) {
         // Product Dropdown
@@ -33,7 +33,7 @@ fun StockTransferScreen(
                 readOnly = true,
                 value = selectedProduct?.name ?: "",
                 onValueChange = {},
-                label = { Text("Product") },
+                label = { Text("المنتج") },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedProduct) },
                 colors = ExposedDropdownMenuDefaults.textFieldColors(),
             )
@@ -65,7 +65,7 @@ fun StockTransferScreen(
                 readOnly = true,
                 value = sourceWarehouse?.name ?: "",
                 onValueChange = {},
-                label = { Text("Source Warehouse") },
+                label = { Text("من المستودع") },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedSourceWarehouse) },
                 colors = ExposedDropdownMenuDefaults.textFieldColors(),
             )
@@ -97,7 +97,7 @@ fun StockTransferScreen(
                 readOnly = true,
                 value = destinationWarehouse?.name ?: "",
                 onValueChange = {},
-                label = { Text("Destination Warehouse") },
+                label = { Text("إلى المستودع") },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedDestinationWarehouse) },
                 colors = ExposedDropdownMenuDefaults.textFieldColors(),
             )
@@ -122,7 +122,7 @@ fun StockTransferScreen(
         OutlinedTextField(
             value = quantity,
             onValueChange = { quantity = it },
-            label = { Text("Quantity") },
+            label = { Text("الكمية") },
             modifier = Modifier.fillMaxWidth()
         )
 
@@ -144,7 +144,7 @@ fun StockTransferScreen(
             },
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Transfer Stock")
+            Text("ترحيل المخزون")
         }
     }
 }

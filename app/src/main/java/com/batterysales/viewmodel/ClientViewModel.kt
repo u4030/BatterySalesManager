@@ -3,7 +3,7 @@ package com.batterysales.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.batterysales.data.models.Client
-import com.batterysales.data.repository.ClientRepository
+import com.batterysales.data.repositories.ClientRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -34,37 +34,44 @@ class ClientViewModel @Inject constructor(
     fun loadClients() {
         viewModelScope.launch {
             _isLoading.value = true
-            clientRepository.getAllClients()
-                .onSuccess { _clients.value = it }
-                .onFailure { _errorMessage.value = "فشل في تحميل العملاء" }
-            _isLoading.value = false
+            try {
+                _clients.value = clientRepository.getAllClients()
+            } catch (e: Exception) {
+                _errorMessage.value = "فشل في تحميل العملاء"
+            } finally {
+                _isLoading.value = false
+            }
         }
     }
 
     fun addClient(name: String, phone: String, email: String, address: String) {
         viewModelScope.launch {
             _isLoading.value = true
-            val client = Client(name = name, phone = phone, email = email, address = address)
-            clientRepository.addClient(client)
-                .onSuccess {
-                    _successMessage.value = "تم إضافة العميل بنجاح"
-                    loadClients()
-                }
-                .onFailure { _errorMessage.value = "فشل في إضافة العميل" }
-            _isLoading.value = false
+            try {
+                val client = Client(name = name, phone = phone, email = email, address = address)
+                clientRepository.addClient(client)
+                _successMessage.value = "تم إضافة العميل بنجاح"
+                loadClients()
+            } catch (e: Exception) {
+                _errorMessage.value = "فشل في إضافة العميل"
+            } finally {
+                _isLoading.value = false
+            }
         }
     }
 
     fun deleteClient(clientId: String) {
         viewModelScope.launch {
             _isLoading.value = true
-            clientRepository.deleteClient(clientId)
-                .onSuccess {
-                    _successMessage.value = "تم حذف العميل بنجاح"
-                    loadClients()
-                }
-                .onFailure { _errorMessage.value = "فشل في حذف العميل" }
-            _isLoading.value = false
+            try {
+                clientRepository.deleteClient(clientId)
+                _successMessage.value = "تم حذف العميل بنجاح"
+                loadClients()
+            } catch (e: Exception) {
+                _errorMessage.value = "فشل في حذف العميل"
+            } finally {
+                _isLoading.value = false
+            }
         }
     }
 

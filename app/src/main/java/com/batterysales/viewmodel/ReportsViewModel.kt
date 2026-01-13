@@ -2,8 +2,8 @@ package com.batterysales.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.batterysales.data.repository.AccountingRepository
-import com.batterysales.data.repository.InvoiceRepository
+import com.batterysales.data.repositories.AccountingRepository
+import com.batterysales.data.repositories.InvoiceRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -36,13 +36,12 @@ class ReportsViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                invoiceRepository.getAllInvoices().onSuccess { invoices ->
-                    _totalInvoices.value = invoices.size
-                    _totalSales.value = invoices.sumOf { it.totalAmount }
-                }
-                accountingRepository.getAllExpenses().onSuccess { expenses ->
-                    _totalExpenses.value = expenses.sumOf { it.amount }
-                }
+                val invoices = invoiceRepository.getAllInvoices()
+                _totalInvoices.value = invoices.size
+                _totalSales.value = invoices.sumOf { it.totalAmount }
+
+                val expenses = accountingRepository.getAllExpenses()
+                _totalExpenses.value = expenses.sumOf { it.amount }
             } finally {
                 _isLoading.value = false
             }

@@ -9,6 +9,8 @@ import com.batterysales.data.repositories.ProductRepository
 import com.batterysales.data.repositories.StockEntryRepository
 import com.batterysales.data.repositories.WarehouseRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -22,6 +24,9 @@ class StockTransferViewModel @Inject constructor(
     val products = mutableStateOf<List<Product>>(emptyList())
     val warehouses = mutableStateOf<List<Warehouse>>(emptyList())
 
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    val errorMessage = _errorMessage.asStateFlow()
+
     init {
         fetchProducts()
         fetchWarehouses()
@@ -29,13 +34,21 @@ class StockTransferViewModel @Inject constructor(
 
     private fun fetchProducts() {
         viewModelScope.launch {
-            products.value = productRepository.getProducts()
+            try {
+                products.value = productRepository.getProducts()
+            } catch (e: Exception) {
+                _errorMessage.value = "Failed to fetch products: ${e.message}"
+            }
         }
     }
 
     private fun fetchWarehouses() {
         viewModelScope.launch {
-            warehouses.value = warehouseRepository.getWarehouses()
+            try {
+                warehouses.value = warehouseRepository.getWarehouses()
+            } catch (e: Exception) {
+                _errorMessage.value = "Failed to fetch warehouses: ${e.message}"
+            }
         }
     }
 
@@ -46,12 +59,20 @@ class StockTransferViewModel @Inject constructor(
         quantity: Int
     ) {
         viewModelScope.launch {
-            stockEntryRepository.transferStock(
-                productId = productId,
-                sourceWarehouseId = sourceWarehouseId,
-                destinationWarehouseId = destinationWarehouseId,
-                quantity = quantity
-            )
+            try {
+                stockEntryRepository.transferStock(
+                    productId = productId,
+                    sourceWarehouseId = sourceWarehouseId,
+                    destinationWarehouseId = destinationWarehouseId,
+                    quantity = quantity
+                )
+            } catch (e: Exception) {
+                _errorMessage.value = "Failed to transfer stock: ${e.message}"
+            }
         }
+    }
+
+    fun clearError() {
+        _errorMessage.value = null
     }
 }

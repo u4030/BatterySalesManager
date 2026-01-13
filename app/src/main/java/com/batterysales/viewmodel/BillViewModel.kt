@@ -4,7 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.batterysales.data.models.Bill
 import com.batterysales.data.models.BillStatus
-import com.batterysales.data.repository.BillRepository
+import com.batterysales.data.repositories.BillRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -30,36 +30,45 @@ class BillViewModel @Inject constructor(
     fun loadBills() {
         viewModelScope.launch {
             _isLoading.value = true
-            repository.getAllBills().onSuccess {
-                _bills.value = it
+            try {
+                _bills.value = repository.getAllBills()
+            } finally {
+                _isLoading.value = false
             }
-            _isLoading.value = false
         }
     }
 
     fun addBill(description: String, amount: Double, dueDate: Date) {
         viewModelScope.launch {
             _isLoading.value = true
-            val bill = Bill(description = description, amount = amount, dueDate = dueDate)
-            repository.addBill(bill).onSuccess {
+            try {
+                val bill = Bill(description = description, amount = amount, dueDate = dueDate)
+                repository.addBill(bill)
                 loadBills()
+            } finally {
+                _isLoading.value = false
             }
-            _isLoading.value = false
         }
     }
 
     fun markAsPaid(billId: String) {
         viewModelScope.launch {
-            repository.updateBillStatus(billId, BillStatus.PAID).onSuccess {
+            try {
+                repository.updateBillStatus(billId, BillStatus.PAID)
                 loadBills()
+            } catch (e: Exception) {
+                // Handle error
             }
         }
     }
 
     fun deleteBill(billId: String) {
         viewModelScope.launch {
-            repository.deleteBill(billId).onSuccess {
+            try {
+                repository.deleteBill(billId)
                 loadBills()
+            } catch (e: Exception) {
+                // Handle error
             }
         }
     }
