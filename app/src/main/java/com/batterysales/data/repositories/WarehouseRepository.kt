@@ -15,4 +15,8 @@ class WarehouseRepository @Inject constructor(
             .await()
             .toObjects(Warehouse::class.java)
     }
+
+    suspend fun addWarehouse(warehouse: Warehouse) {
+        firestore.collection(Warehouse.COLLECTION_NAME).add(warehouse).await()
+    }
 }

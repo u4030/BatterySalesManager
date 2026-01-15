@@ -23,35 +23,76 @@ fun StockEntryScreen(
     var quantity by remember { mutableStateOf("") }
     var expandedProduct by remember { mutableStateOf(false) }
     var expandedWarehouse by remember { mutableStateOf(false) }
+    var showAddWarehouseDialog by remember { mutableStateOf(false) }
+    var newWarehouseName by remember { mutableStateOf("") }
+
+    if (showAddWarehouseDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddWarehouseDialog = false },
+            title = { Text("إضافة مستودع جديد") },
+            text = {
+                OutlinedTextField(
+                    value = newWarehouseName,
+                    onValueChange = { newWarehouseName = it },
+                    label = { Text("اسم المستودع") }
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (newWarehouseName.isNotBlank()) {
+                            viewModel.addWarehouse(newWarehouseName)
+                            newWarehouseName = ""
+                            showAddWarehouseDialog = false
+                        }
+                    }
+                ) {
+                    Text("حفظ")
+                }
+            },
+            dismissButton = {
+                Button(onClick = { showAddWarehouseDialog = false }) {
+                    Text("إلغاء")
+                }
+            }
+        )
+    }
 
     Column(modifier = Modifier.padding(16.dp)) {
-        // Warehouse Dropdown
-        ExposedDropdownMenuBox(
-            expanded = expandedWarehouse,
-            onExpandedChange = { expandedWarehouse = !expandedWarehouse }
-        ) {
-            TextField(
-                modifier = Modifier.menuAnchor(),
-                readOnly = true,
-                value = selectedWarehouse?.name ?: "",
-                onValueChange = {},
-                label = { Text("المستودع") },
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedWarehouse) },
-                colors = ExposedDropdownMenuDefaults.textFieldColors(),
-            )
-            ExposedDropdownMenu(
+        Row {
+            // Warehouse Dropdown
+            ExposedDropdownMenuBox(
                 expanded = expandedWarehouse,
-                onDismissRequest = { expandedWarehouse = false },
+                onExpandedChange = { expandedWarehouse = !expandedWarehouse },
+                modifier = Modifier.weight(1f)
             ) {
-                viewModel.warehouses.value.forEach { warehouse ->
-                    DropdownMenuItem(
-                        text = { Text(warehouse.name) },
-                        onClick = {
-                            selectedWarehouse = warehouse
-                            expandedWarehouse = false
-                        }
-                    )
+                TextField(
+                    modifier = Modifier.menuAnchor(),
+                    readOnly = true,
+                    value = selectedWarehouse?.name ?: "",
+                    onValueChange = {},
+                    label = { Text("المستودع") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedWarehouse) },
+                    colors = ExposedDropdownMenuDefaults.textFieldColors(),
+                )
+                ExposedDropdownMenu(
+                    expanded = expandedWarehouse,
+                    onDismissRequest = { expandedWarehouse = false },
+                ) {
+                    viewModel.warehouses.value.forEach { warehouse ->
+                        DropdownMenuItem(
+                            text = { Text(warehouse.name) },
+                            onClick = {
+                                selectedWarehouse = warehouse
+                                expandedWarehouse = false
+                            }
+                        )
+                    }
                 }
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(onClick = { showAddWarehouseDialog = true }) {
+                Text("إضافة مستودع")
             }
         }
 
