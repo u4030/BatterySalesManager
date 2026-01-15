@@ -4,7 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.batterysales.data.models.Expense
 import com.batterysales.data.models.Transaction
-import com.batterysales.data.repository.AccountingRepository
+import com.batterysales.data.repositories.AccountingRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -36,9 +36,9 @@ class AccountingViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                repository.getAllTransactions().onSuccess { _transactions.value = it }
-                repository.getAllExpenses().onSuccess { _expenses.value = it }
-                repository.getCurrentBalance().onSuccess { _balance.value = it }
+                _transactions.value = repository.getAllTransactions()
+                _expenses.value = repository.getAllExpenses()
+                _balance.value = repository.getCurrentBalance()
             } finally {
                 _isLoading.value = false
             }
@@ -48,11 +48,13 @@ class AccountingViewModel @Inject constructor(
     fun addExpense(description: String, amount: Double) {
         viewModelScope.launch {
             _isLoading.value = true
-            val expense = Expense(description = description, amount = amount)
-            repository.addExpense(expense).onSuccess {
+            try {
+                val expense = Expense(description = description, amount = amount)
+                repository.addExpense(expense)
                 loadData()
+            } finally {
+                _isLoading.value = false
             }
-            _isLoading.value = false
         }
     }
 }

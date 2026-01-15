@@ -1,7 +1,6 @@
 package com.batterysales.data.models
 
 import com.google.firebase.firestore.DocumentId
-import com.google.firebase.firestore.PropertyName
 import java.util.Date
 
 /**
@@ -71,13 +70,6 @@ data class Product(
     val productType: String = "",
 
     /**
-     * الكمية الحالية للمنتج
-     *
-     * عدد الوحدات المتوفرة في المستودع
-     */
-    val quantity: Int = 0,
-
-    /**
      * الحد الأدنى للكمية
      *
      * عندما تنخفض الكمية عن هذا الحد
@@ -86,18 +78,9 @@ data class Product(
     val minimumQuantity: Int = 5,
 
     /**
-     * سعر التكلفة (بالريال السعودي)
-     *
-     * السعر الذي اشترينا به المنتج
-     * يُستخدم لحساب الربح
-     */
-    val costPrice: Double = 0.0,
-
-    /**
      * سعر البيع (بالريال السعودي)
      *
      * السعر الذي نبيع به المنتج للعميل
-     * يجب أن يكون أكبر من سعر التكلفة
      */
     val sellingPrice: Double = 0.0,
 
@@ -107,8 +90,6 @@ data class Product(
      * رمز فريد للمنتج
      * يُستخدم للبحث السريع والمسح الضوئي
      */
-
-    val purchasePrice: Double = 0.0,
     val barcode: String = "",
 
     /**
@@ -131,9 +112,7 @@ data class Product(
      * true = المنتج متاح للبيع
      * false = المنتج غير متاح (حذف منطقي)
      */
-    @get:PropertyName("isActive")
     val isActive: Boolean = true,
-
 
     /**
      * ملاحظات إضافية عن المنتج
@@ -147,103 +126,6 @@ data class Product(
     // ============================================
 
     /**
-     * حساب الربح لكل وحدة
-     *
-     * @return الربح = سعر البيع - سعر التكلفة
-     */
-    fun getProfitPerUnit(): Double {
-        return sellingPrice - costPrice
-    }
-
-    /**
-     * حساب الربح الإجمالي
-     *
-     * @return الربح الإجمالي = الربح لكل وحدة × الكمية
-     */
-    fun getTotalProfit(): Double {
-        return getProfitPerUnit() * quantity
-    }
-
-    /**
-     * حساب قيمة المخزون (بسعر التكلفة)
-     *
-     * @return قيمة المخزون = سعر التكلفة × الكمية
-     */
-    fun getInventoryValue(): Double {
-        return costPrice * quantity
-    }
-
-    /**
-     * حساب قيمة المخزون (بسعر البيع)
-     *
-     * @return قيمة المخزون = سعر البيع × الكمية
-     */
-    fun getSalesValue(): Double {
-        return sellingPrice * quantity
-    }
-
-    /**
-     * حساب نسبة الربح
-     *
-     * @return نسبة الربح = (الربح / سعر التكلفة) × 100
-     */
-    fun getProfitMargin(): Double {
-        if (costPrice == 0.0) return 0.0
-        return ((sellingPrice - costPrice) / costPrice) * 100
-    }
-
-    /**
-     * التحقق من أن المخزون منخفض
-     *
-     * @return true إذا كانت الكمية أقل من أو تساوي الحد الأدنى
-     */
-    fun isLowStock(): Boolean {
-        return quantity <= minimumQuantity
-    }
-
-    /**
-     * التحقق من أن المخزون فارغ
-     *
-     * @return true إذا كانت الكمية = 0
-     */
-    fun isOutOfStock(): Boolean {
-        return quantity == 0
-    }
-
-    /**
-     * الحصول على حالة المخزون كنص
-     *
-     * @return "متوفر", "مخزون منخفض", أو "غير متوفر"
-     */
-    fun getStockStatus(): String {
-        return when {
-            quantity == 0 -> "غير متوفر"
-            quantity <= minimumQuantity -> "مخزون منخفض"
-            else -> "متوفر"
-        }
-    }
-
-    /**
-     * الحصول على وصف المنتج الكامل
-     *
-     * @return وصف يحتوي على جميع معلومات المنتج
-     */
-    fun getFullDescription(): String {
-        return """
-            اسم المنتج: $name
-            السعة: $capacity أمبير
-            النوع: $productType
-            الكمية: $quantity وحدة
-            الحد الأدنى: $minimumQuantity وحدة
-            سعر التكلفة: $costPrice ر.س
-            سعر البيع: $sellingPrice ر.س
-            الربح لكل وحدة: ${getProfitPerUnit()} ر.س
-            الباركود: $barcode
-            الحالة: ${getStockStatus()}
-        """.trimIndent()
-    }
-
-    /**
      * التحقق من صحة بيانات المنتج
      *
      * @return true إذا كانت جميع البيانات صحيحة
@@ -252,10 +134,7 @@ data class Product(
         return name.isNotEmpty() &&
                 capacity > 0 &&
                 productType.isNotEmpty() &&
-                quantity >= 0 &&
                 minimumQuantity >= 0 &&
-                costPrice > 0 &&
-                sellingPrice > costPrice &&
                 barcode.isNotEmpty()
     }
 
@@ -269,10 +148,7 @@ data class Product(
             name.isEmpty() -> "اسم المنتج مطلوب"
             capacity <= 0 -> "السعة يجب أن تكون أكبر من 0"
             productType.isEmpty() -> "نوع المنتج مطلوب"
-            quantity < 0 -> "الكمية لا يمكن أن تكون سالبة"
             minimumQuantity < 0 -> "الحد الأدنى لا يمكن أن يكون سالب"
-            costPrice <= 0 -> "سعر التكلفة يجب أن يكون أكبر من 0"
-            sellingPrice <= costPrice -> "سعر البيع يجب أن يكون أكبر من سعر التكلفة"
             barcode.isEmpty() -> "الباركود مطلوب"
             else -> null
         }

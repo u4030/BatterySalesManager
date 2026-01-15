@@ -2,9 +2,10 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("com.google.gms.google-services")
-    id("kotlin-kapt")
     id("com.google.dagger.hilt.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("com.google.devtools.ksp")
+
 }
 
 android {
@@ -91,7 +92,8 @@ dependencies {
     // ML Kit & CameraX
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
     implementation("com.google.mlkit:vision-common:17.3.0")
-    
+    implementation("com.google.android.gms:play-services-analytics-impl:18.2.0")
+
     val cameraVersion = "1.4.0"
     implementation("androidx.camera:camera-core:$cameraVersion")
     implementation("androidx.camera:camera-camera2:$cameraVersion")
@@ -99,8 +101,9 @@ dependencies {
     implementation("androidx.camera:camera-view:$cameraVersion")
 
     // Dependency Injection (Hilt)
-    implementation("com.google.dagger:hilt-android:2.51.1")
-    kapt("com.google.dagger:hilt-compiler:2.51.1")
+    implementation("com.google.dagger:hilt-android:2.57.2")
+    ksp("com.google.dagger:hilt-compiler:2.57.2")
+//    kapt("com.google.dagger:hilt-compiler:2.51.1")
     implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
 
     // Other Libs
