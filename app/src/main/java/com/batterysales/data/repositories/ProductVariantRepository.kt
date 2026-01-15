@@ -29,11 +29,4 @@ class ProductVariantRepository @Inject constructor(
             .set(variant)
             .await()
     }
-
-    suspend fun deleteVariant(variantId: String) {
-        firestore.collection(ProductVariant.COLLECTION_NAME)
-            .document(variantId)
-            .delete()
-            .await()
-    }
 }

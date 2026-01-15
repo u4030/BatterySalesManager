@@ -19,7 +19,6 @@ import kotlinx.coroutines.launch
 import java.util.Date
 import javax.inject.Inject
 
-// Updated StockEntryItem to use ProductVariant
 data class StockEntryItem(val productVariant: ProductVariant, val quantity: Int, val productName: String)
 
 @HiltViewModel
@@ -30,20 +29,17 @@ class StockEntryViewModel @Inject constructor(
     private val stockEntryRepository: StockEntryRepository
 ) : ViewModel() {
 
-    // State for UI
     val products = mutableStateOf<List<Product>>(emptyList())
     val variants = mutableStateOf<List<ProductVariant>>(emptyList())
     val warehouses = mutableStateOf<List<Warehouse>>(emptyList())
     val stockItems = mutableStateListOf<StockEntryItem>()
 
-    // State for cost calculation
     val totalCost = mutableStateOf("")
     val totalAmperes = mutableStateOf("")
 
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage = _errorMessage.asStateFlow()
 
-    // Calculated property for cost per ampere
     private val costPerAmpere: Double
         get() {
             val cost = totalCost.value.toDoubleOrNull() ?: 0.0
@@ -72,7 +68,7 @@ class StockEntryViewModel @Inject constructor(
                 variants.value = productVariantRepository.getVariantsForProduct(productId).filter { !it.isArchived }
             } catch (e: Exception) {
                 _errorMessage.value = "Failed to fetch variants: ${e.message}"
-                variants.value = emptyList() // Clear variants on error
+                variants.value = emptyList()
             }
         }
     }
@@ -91,7 +87,7 @@ class StockEntryViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 warehouseRepository.addWarehouse(Warehouse(name = name, location = ""))
-                fetchWarehouses() // Refresh the list
+                fetchWarehouses()
             } catch (e: Exception) {
                 _errorMessage.value = "Failed to add warehouse: ${e.message}"
             }
@@ -134,12 +130,11 @@ class StockEntryViewModel @Inject constructor(
                         productVariantId = item.productVariant.id,
                         warehouseId = warehouseId,
                         quantity = item.quantity,
-                        costPrice = item.productVariant.capacity * costPerAmpere, // Calculate cost price per item
+                        costPrice = item.productVariant.capacity * costPerAmpere,
                         timestamp = Date()
                     )
                 }
                 stockEntryRepository.addStockEntries(entries)
-                // Clear state after successful save
                 stockItems.clear()
                 totalCost.value = ""
                 totalAmperes.value = ""
