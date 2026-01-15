@@ -6,7 +6,7 @@ import java.util.Date
 data class StockEntry(
     @DocumentId
     val id: String = "",
-    val productId: String = "",
+    val productVariantId: String = "",
     val warehouseId: String = "",
     val quantity: Int = 0,
     val costPrice: Double = 0.0,

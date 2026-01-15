@@ -5,9 +5,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.batterysales.data.models.Product
+import com.batterysales.data.models.ProductVariant
 import com.batterysales.data.models.StockEntry
 import com.batterysales.data.models.Warehouse
 import com.batterysales.data.repositories.ProductRepository
+import com.batterysales.data.repositories.ProductVariantRepository
 import com.batterysales.data.repositories.StockEntryRepository
 import com.batterysales.data.repositories.WarehouseRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -17,26 +19,32 @@ import kotlinx.coroutines.launch
 import java.util.Date
 import javax.inject.Inject
 
-data class StockEntryItem(val product: Product, val quantity: Int)
+// Updated StockEntryItem to use ProductVariant
+data class StockEntryItem(val productVariant: ProductVariant, val quantity: Int, val productName: String)
 
 @HiltViewModel
 class StockEntryViewModel @Inject constructor(
     private val productRepository: ProductRepository,
+    private val productVariantRepository: ProductVariantRepository,
     private val warehouseRepository: WarehouseRepository,
     private val stockEntryRepository: StockEntryRepository
 ) : ViewModel() {
 
+    // State for UI
     val products = mutableStateOf<List<Product>>(emptyList())
+    val variants = mutableStateOf<List<ProductVariant>>(emptyList())
     val warehouses = mutableStateOf<List<Warehouse>>(emptyList())
     val stockItems = mutableStateListOf<StockEntryItem>()
 
+    // State for cost calculation
     val totalCost = mutableStateOf("")
     val totalAmperes = mutableStateOf("")
 
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage = _errorMessage.asStateFlow()
 
-    val costPerAmpere: Double
+    // Calculated property for cost per ampere
+    private val costPerAmpere: Double
         get() {
             val cost = totalCost.value.toDoubleOrNull() ?: 0.0
             val amperes = totalAmperes.value.toDoubleOrNull() ?: 0.0
@@ -51,9 +59,20 @@ class StockEntryViewModel @Inject constructor(
     private fun fetchProducts() {
         viewModelScope.launch {
             try {
-                products.value = productRepository.getProducts()
+                products.value = productRepository.getProducts().filter { !it.isArchived }
             } catch (e: Exception) {
                 _errorMessage.value = "Failed to fetch products: ${e.message}"
+            }
+        }
+    }
+
+    fun fetchVariantsForProduct(productId: String) {
+        viewModelScope.launch {
+            try {
+                variants.value = productVariantRepository.getVariantsForProduct(productId).filter { !it.isArchived }
+            } catch (e: Exception) {
+                _errorMessage.value = "Failed to fetch variants: ${e.message}"
+                variants.value = emptyList() // Clear variants on error
             }
         }
     }
@@ -68,35 +87,59 @@ class StockEntryViewModel @Inject constructor(
         }
     }
 
-    fun addProductToEntry(product: Product, quantity: Int) {
+    fun addWarehouse(name: String) {
+        viewModelScope.launch {
+            try {
+                warehouseRepository.addWarehouse(Warehouse(name = name, location = ""))
+                fetchWarehouses() // Refresh the list
+            } catch (e: Exception) {
+                _errorMessage.value = "Failed to add warehouse: ${e.message}"
+            }
+        }
+    }
+
+    fun addVariantToEntry(variant: ProductVariant, quantity: Int, productName: String) {
         if (quantity > 0) {
-            stockItems.add(StockEntryItem(product, quantity))
+            stockItems.add(StockEntryItem(productVariant = variant, quantity = quantity, productName = productName))
             recalculateTotalAmperes()
         }
     }
 
-    fun removeProductFromEntry(item: StockEntryItem) {
+    fun removeVariantFromEntry(item: StockEntryItem) {
         stockItems.remove(item)
         recalculateTotalAmperes()
     }
 
+    fun updateItemQuantity(item: StockEntryItem, newQuantity: Int) {
+        val index = stockItems.indexOf(item)
+        if (index != -1 && newQuantity > 0) {
+            stockItems[index] = item.copy(quantity = newQuantity)
+            recalculateTotalAmperes()
+        }
+    }
+
     private fun recalculateTotalAmperes() {
-        totalAmperes.value = stockItems.sumOf { it.product.capacity * it.quantity }.toString()
+        totalAmperes.value = stockItems.sumOf { it.productVariant.capacity * it.quantity }.toString()
     }
 
     fun saveStockEntry(warehouseId: String) {
         viewModelScope.launch {
+            if (stockItems.isEmpty() || totalCost.value.isBlank()) {
+                _errorMessage.value = "الرجاء إضافة أصناف وتحديد التكلفة الإجمالية."
+                return@launch
+            }
             try {
                 val entries = stockItems.map { item ->
                     StockEntry(
-                        productId = item.product.id,
+                        productVariantId = item.productVariant.id,
                         warehouseId = warehouseId,
                         quantity = item.quantity,
-                        costPrice = item.product.capacity * costPerAmpere,
+                        costPrice = item.productVariant.capacity * costPerAmpere, // Calculate cost price per item
                         timestamp = Date()
                     )
                 }
                 stockEntryRepository.addStockEntries(entries)
+                // Clear state after successful save
                 stockItems.clear()
                 totalCost.value = ""
                 totalAmperes.value = ""
@@ -108,16 +151,5 @@ class StockEntryViewModel @Inject constructor(
 
     fun clearError() {
         _errorMessage.value = null
-    }
-
-    fun addWarehouse(name: String) {
-        viewModelScope.launch {
-            try {
-                warehouseRepository.addWarehouse(Warehouse(name = name, location = ""))
-                fetchWarehouses()
-            } catch (e: Exception) {
-                _errorMessage.value = "Failed to add warehouse: ${e.message}"
-            }
-        }
     }
 }

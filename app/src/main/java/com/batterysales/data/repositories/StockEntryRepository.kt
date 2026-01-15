@@ -28,6 +28,13 @@ class StockEntryRepository @Inject constructor(
         return firestore.collection(StockEntry.COLLECTION_NAME)
             .get()
             .await()
+            .toObjects(StockEntry.class.java)
+    }
+
+    suspend fun getAllStockEntries(): List<StockEntry> {
+        return firestore.collection(StockEntry.COLLECTION_NAME)
+            .get()
+            .await()
             .toObjects(StockEntry::class.java)
     }
 
@@ -41,7 +48,7 @@ class StockEntryRepository @Inject constructor(
 
         // Create a negative stock entry for the source warehouse
         val sourceStockEntry = StockEntry(
-            productId = productId,
+            productVariantId = productId,
             warehouseId = sourceWarehouseId,
             quantity = -quantity,
             costPrice = 0.0 // Cost is already accounted for
@@ -51,7 +58,7 @@ class StockEntryRepository @Inject constructor(
 
         // Create a positive stock entry for the destination warehouse
         val destinationStockEntry = StockEntry(
-            productId = productId,
+            productVariantId = productId,
             warehouseId = destinationWarehouseId,
             quantity = quantity,
             costPrice = 0.0 // Cost is already accounted for
