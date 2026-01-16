@@ -17,6 +17,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
+import com.batterysales.viewmodel.WarehouseStockItem
+import com.batterysales.viewmodel.WarehouseViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -51,17 +53,23 @@ fun WarehouseScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                groupedStock.forEach { (warehouse, stockItems) ->
+                if (groupedStock.isEmpty()) {
                     item {
-                        Text(
-                            text = warehouse.name,
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
+                        Text("لا يوجد مخزون لعرضه.")
                     }
-                    items(stockItems) { item ->
-                        WarehouseItemCard(item)
+                } else {
+                    groupedStock.forEach { (warehouse, stockItems) ->
+                        item {
+                            Text(
+                                text = warehouse.name,
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                        }
+                        items(stockItems) { item ->
+                            WarehouseItemCard(item)
+                        }
                     }
                 }
             }
@@ -74,16 +82,20 @@ fun WarehouseItemCard(item: WarehouseStockItem) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White)
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(item.product.name, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                Text("الكمية: ${item.quantity}", color = Color.Gray)
+                Text("${item.product.name} - ${item.variant.capacity} أمبير", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text("الباركود: ${item.variant.barcode}", color = Color.Gray, fontSize = 14.sp)
             }
+            Text("الكمية: ${item.quantity}", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
         }
     }
 }

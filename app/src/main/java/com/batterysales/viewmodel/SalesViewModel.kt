@@ -15,16 +15,19 @@ import javax.inject.Inject
 @HiltViewModel
 class SalesViewModel @Inject constructor(
     private val productRepository: ProductRepository,
+    private val productVariantRepository: ProductVariantRepository,
     private val warehouseRepository: WarehouseRepository,
     private val stockEntryRepository: StockEntryRepository,
     private val invoiceRepository: InvoiceRepository
 ) : ViewModel() {
 
     val products = mutableStateOf<List<Product>>(emptyList())
+    val variants = mutableStateOf<List<ProductVariant>>(emptyList())
     val warehouses = mutableStateOf<List<Warehouse>>(emptyList())
     val stockLevels = mutableStateOf<Map<Pair<String, String>, Int>>(emptyMap())
 
     val selectedProduct = mutableStateOf<Product?>(null)
+    val selectedVariant = mutableStateOf<ProductVariant?>(null)
     val selectedWarehouse = mutableStateOf<Warehouse?>(null)
     val quantity = mutableStateOf("1")
     val sellingPrice = mutableStateOf("")
@@ -33,61 +36,75 @@ class SalesViewModel @Inject constructor(
     val errorMessage = _errorMessage.asStateFlow()
 
     init {
-        fetchData()
+        fetchInitialData()
     }
 
     fun onProductSelected(product: Product) {
         selectedProduct.value = product
-        sellingPrice.value = product.sellingPrice.toString()
-    }
-
-    private fun fetchData() {
+        selectedVariant.value = null // Reset variant
         viewModelScope.launch {
             try {
-                products.value = productRepository.getProducts()
-                warehouses.value = warehouseRepository.getWarehouses()
-                val stockEntries = stockEntryRepository.getStockEntries()
+                variants.value = productVariantRepository.getVariantsForProduct(product.id).filter { !it.isArchived }
+            } catch (e: Exception) {
+                _errorMessage.value = "Failed to fetch variants: ${e.message}"
+            }
+        }
+    }
 
-                val stockMap = mutableMapOf<Pair<String, String>, Int>()
-                for (entry in stockEntries) {
-                    val key = Pair(entry.productId, entry.warehouseId)
-                    stockMap[key] = (stockMap[key] ?: 0) + entry.quantity
-                }
-                stockLevels.value = stockMap
+    fun onVariantSelected(variant: ProductVariant) {
+        selectedVariant.value = variant
+        sellingPrice.value = variant.sellingPrice.toString()
+    }
+
+    private fun fetchInitialData() {
+        viewModelScope.launch {
+            try {
+                products.value = productRepository.getProducts().filter { !it.isArchived }
+                warehouses.value = warehouseRepository.getWarehouses()
+                updateStockLevels()
             } catch (e: Exception) {
                 _errorMessage.value = "Failed to fetch data: ${e.message}"
             }
         }
     }
 
-    fun getAvailableQuantity(productId: String, warehouseId: String): Int {
-        return stockLevels.value[Pair(productId, warehouseId)] ?: 0
+    private suspend fun updateStockLevels() {
+        val stockEntries = stockEntryRepository.getAllStockEntries()
+        val stockMap = mutableMapOf<Pair<String, String>, Int>()
+        for (entry in stockEntries) {
+            val key = Pair(entry.productVariantId, entry.warehouseId)
+            stockMap[key] = (stockMap[key] ?: 0) + entry.quantity
+        }
+        stockLevels.value = stockMap
+    }
+
+    fun getAvailableQuantity(variantId: String, warehouseId: String): Int {
+        return stockLevels.value[Pair(variantId, warehouseId)] ?: 0
     }
 
     fun createSale(customerName: String, customerPhone: String, paidAmount: Double) {
         viewModelScope.launch {
             try {
                 val product = selectedProduct.value ?: throw IllegalStateException("Product not selected")
+                val variant = selectedVariant.value ?: throw IllegalStateException("Variant not selected")
                 val warehouse = selectedWarehouse.value ?: throw IllegalStateException("Warehouse not selected")
                 val qty = quantity.value.toIntOrNull() ?: 0
                 val price = sellingPrice.value.toDoubleOrNull() ?: 0.0
                 val total = qty * price
 
-                val available = getAvailableQuantity(product.id, warehouse.id)
+                val available = getAvailableQuantity(variant.id, warehouse.id)
                 if (qty <= 0 || qty > available) {
                     throw IllegalStateException("Insufficient stock. Available: $available, Requested: $qty")
                 }
 
-                // Calculate weighted average cost
-                val entries = stockEntryRepository.getStockEntries()
-                    .filter { it.productId == product.id && it.warehouseId == warehouse.id && it.quantity > 0 }
+                val entries = stockEntryRepository.getAllStockEntries()
+                    .filter { it.productVariantId == variant.id && it.warehouseId == warehouse.id && it.quantity > 0 }
                 val totalCost = entries.sumOf { it.costPrice * it.quantity }
                 val totalQuantity = entries.sumOf { it.quantity }
                 val weightedAverageCost = if (totalQuantity > 0) totalCost / totalQuantity else 0.0
 
-                // 1. Create negative stock entry
                 val stockEntry = StockEntry(
-                    productId = product.id,
+                    productVariantId = variant.id,
                     warehouseId = warehouse.id,
                     quantity = -qty,
                     costPrice = weightedAverageCost,
@@ -95,12 +112,11 @@ class SalesViewModel @Inject constructor(
                 )
                 stockEntryRepository.addStockEntry(stockEntry)
 
-                // 2. Create invoice
                 val invoice = Invoice(
                     customerName = customerName,
                     customerPhone = customerPhone,
                     items = listOf(InvoiceItem(
-                        productName = product.name,
+                        productName = "${product.name} - ${variant.capacity} Amp",
                         quantity = qty,
                         unitPrice = price,
                         totalPrice = total
@@ -112,12 +128,12 @@ class SalesViewModel @Inject constructor(
                 )
                 invoiceRepository.createInvoice(invoice)
 
-                // 3. Clear fields
                 selectedProduct.value = null
+                selectedVariant.value = null
                 selectedWarehouse.value = null
                 quantity.value = "1"
                 sellingPrice.value = ""
-                fetchData() // Refresh stock levels
+                updateStockLevels()
             } catch (e: Exception) {
                 _errorMessage.value = "Failed to create sale: ${e.message}"
             }
