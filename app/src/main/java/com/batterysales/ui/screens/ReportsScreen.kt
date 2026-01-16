@@ -42,7 +42,16 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
 
                 // Data Rows
                 items(reportItems) { item ->
-                    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                navController.navigate(
+                                    "product_ledger/${item.variant.id}/${item.product.name}/${item.variant.capacity}"
+                                )
+                            }
+                            .padding(vertical = 8.dp)
+                    ) {
                         Text("${item.product.name} - ${item.variant.capacity} أمبير", modifier = Modifier.weight(2f))
                         warehouses.forEach { warehouse ->
                             Text((item.warehouseQuantities[warehouse.id] ?: 0).toString(), modifier = Modifier.weight(1f))

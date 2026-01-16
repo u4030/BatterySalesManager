@@ -10,7 +10,8 @@ data class StockEntry(
     val warehouseId: String = "",
     val quantity: Int = 0,
     val costPrice: Double = 0.0,
-    val timestamp: Date = Date()
+    val timestamp: Date = Date(),
+    val supplier: String = ""
 ) {
     companion object {
         const val COLLECTION_NAME = "stock_entries"

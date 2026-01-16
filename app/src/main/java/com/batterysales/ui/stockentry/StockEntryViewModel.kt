@@ -118,7 +118,7 @@ class StockEntryViewModel @Inject constructor(
         totalAmperes.value = stockItems.sumOf { it.productVariant.capacity * it.quantity }.toString()
     }
 
-    fun saveStockEntry(warehouseId: String) {
+    fun saveStockEntry(warehouseId: String, supplier: String) {
         viewModelScope.launch {
             if (stockItems.isEmpty() || totalCost.value.isBlank()) {
                 _errorMessage.value = "الرجاء إضافة أصناف وتحديد التكلفة الإجمالية."
@@ -131,7 +131,8 @@ class StockEntryViewModel @Inject constructor(
                         warehouseId = warehouseId,
                         quantity = item.quantity,
                         costPrice = item.productVariant.capacity * costPerAmpere,
-                        timestamp = Date()
+                        timestamp = Date(),
+                        supplier = supplier
                     )
                 }
                 stockEntryRepository.addStockEntries(entries)

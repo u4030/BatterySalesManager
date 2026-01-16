@@ -61,4 +61,13 @@ class StockEntryRepository @Inject constructor(
 
         batch.commit().await()
     }
+
+    suspend fun getEntriesForVariant(productVariantId: String): List<StockEntry> {
+        return firestore.collection(StockEntry.COLLECTION_NAME)
+            .whereEqualTo("productVariantId", productVariantId)
+            .orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING)
+            .get()
+            .await()
+            .toObjects(StockEntry::class.java)
+    }
 }

@@ -31,6 +31,7 @@ fun StockEntryScreen(
 
     var showAddWarehouseDialog by remember { mutableStateOf(false) }
     var itemToEdit by remember { mutableStateOf<StockEntryItem?>(null) }
+    var supplierName by remember { mutableStateOf("") }
 
 
     if (showAddWarehouseDialog) {
@@ -223,12 +224,22 @@ fun StockEntryScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        // Supplier Input
+        OutlinedTextField(
+            value = supplierName,
+            onValueChange = { supplierName = it },
+            label = { Text("اسم المورد (اختياري)") },
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
         // Save Button
         Button(
             onClick = {
                 val warehouse = selectedWarehouse
                 if (warehouse != null) {
-                    viewModel.saveStockEntry(warehouse.id)
+                    viewModel.saveStockEntry(warehouse.id, supplierName)
                 }
             },
             modifier = Modifier.fillMaxWidth(),
