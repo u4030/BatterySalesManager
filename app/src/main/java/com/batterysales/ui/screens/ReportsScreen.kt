@@ -46,8 +46,9 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
+                                val capacityStr = item.variant.capacity.toString()
                                 navController.navigate(
-                                    "product_ledger/${item.variant.id}/${item.product.name}/${item.variant.capacity}"
+                                    "product_ledger/${item.variant.id}/${item.product.name}/$capacityStr"
                                 )
                             }
                             .padding(vertical = 8.dp)
