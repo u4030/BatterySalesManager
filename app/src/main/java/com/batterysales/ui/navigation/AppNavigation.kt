@@ -36,5 +36,15 @@ fun AppNavigation(navController: NavHostController) {
         composable("accounting") { AccountingScreen(navController) }
         composable("bills") { BillsScreen(navController) }
         composable("reports") { ReportsScreen(navController) }
+        composable(
+            route = "product_ledger/{variantId}/{productName}/{variantCapacity}",
+            arguments = listOf(
+                navArgument("variantId") { type = NavType.StringType },
+                navArgument("productName") { type = NavType.StringType },
+                navArgument("variantCapacity") { type = NavType.StringType }
+            )
+        ) {
+            ProductLedgerScreen(navController)
+        }
     }
 }
