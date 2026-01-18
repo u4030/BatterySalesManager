@@ -64,9 +64,10 @@ fun ProductLedgerScreen(
                 // Ledger Items
                 items(ledgerItems) { item ->
                     val entry = item.entry
+                    val quantityColor = if (entry.quantity > 0) Color(0xFF008000) else Color.Red
                     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                         Text(entry.timestamp.toFormattedString(), modifier = Modifier.weight(1.5f), fontSize = 14.sp)
-                        Text(entry.quantity.toString(), modifier = Modifier.weight(1f), fontSize = 14.sp)
+                        Text(entry.quantity.toString(), modifier = Modifier.weight(1f), fontSize = 14.sp, color = quantityColor)
                         Text(String.format("%.2f", entry.costPrice), modifier = Modifier.weight(1f), fontSize = 14.sp)
                         Text(entry.supplier.ifEmpty { "-" }, modifier = Modifier.weight(1.5f), fontSize = 14.sp)
                         Text(item.warehouseName, modifier = Modifier.weight(1.5f), fontSize = 14.sp)

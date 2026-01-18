@@ -49,13 +49,8 @@ class ProductLedgerViewModel @Inject constructor(
                 val warehouses = warehouseRepository.getWarehouses().associateBy { it.id }
 
                 val items = entries.mapNotNull { entry ->
-                    // We are only interested in positive stock entries (additions)
-                    if (entry.quantity > 0) {
-                        warehouses[entry.warehouseId]?.let { warehouse ->
-                            ProductLedgerItem(entry = entry, warehouseName = warehouse.name)
-                        }
-                    } else {
-                        null
+                    warehouses[entry.warehouseId]?.let { warehouse ->
+                        ProductLedgerItem(entry = entry, warehouseName = warehouse.name)
                     }
                 }
                 _ledgerItems.value = items
