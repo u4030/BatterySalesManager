@@ -143,46 +143,100 @@ fun StockEntryScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Cost Calculation Fields
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = costPerAmpere,
-                onValueChange = { costPerAmpere = it; manualCostPrice = "" },
-                label = { Text("سعر الأمبير (تلقائي)") },
-                modifier = Modifier.weight(1f)
-            )
-            OutlinedTextField(
-                value = manualCostPrice,
-                onValueChange = { manualCostPrice = it; costPerAmpere = "" },
-                label = { Text("التكلفة (يدوي)") },
-                modifier = Modifier.weight(1f)
-            )
+        // --- Derived states for automatic calculation ---
+        val currentQuantity = quantity.toIntOrNull() ?: 0
+        val singleItemCost = manualCostPrice.toDoubleOrNull() ?: 0.0
+
+        val totalAmperes = (currentQuantity * (selectedVariant?.capacity ?: 0)).toString()
+        val totalCost = String.format("%.2f", currentQuantity * singleItemCost)
+
+
+        // --- Cost & Quantity Calculation Fields ---
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            // Row for Per-Item Cost
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = costPerAmpere,
+                    onValueChange = {
+                        costPerAmpere = it
+                        val costPerAmpereDouble = it.toDoubleOrNull()
+                        val variantCapacity = selectedVariant?.capacity
+                        if (costPerAmpereDouble != null && variantCapacity != null) {
+                            manualCostPrice = String.format("%.2f", costPerAmpereDouble * variantCapacity)
+                        }
+                    },
+                    label = { Text("سعر الأمبير") },
+                    modifier = Modifier.weight(1f),
+                    enabled = selectedVariant != null
+                )
+                OutlinedTextField(
+                    value = manualCostPrice,
+                    onValueChange = {
+                        manualCostPrice = it
+                        val manualCostDouble = it.toDoubleOrNull()
+                        val variantCapacity = selectedVariant?.capacity
+                        if (manualCostDouble != null && variantCapacity != null && variantCapacity > 0) {
+                            costPerAmpere = String.format("%.2f", manualCostDouble / variantCapacity)
+                        }
+                    },
+                    label = { Text("تكلفة القطعة") },
+                    modifier = Modifier.weight(1f),
+                    enabled = selectedVariant != null
+                )
+            }
+            // Row for Quantity and Totals
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = quantity,
+                    onValueChange = { quantity = it },
+                    label = { Text("الكمية") },
+                    modifier = Modifier.weight(1f),
+                    enabled = selectedVariant != null
+                )
+                OutlinedTextField(
+                    value = totalAmperes,
+                    onValueChange = {},
+                    label = { Text("إجمالي الأمبيرات") },
+                    modifier = Modifier.weight(1f),
+                    readOnly = true
+                )
+            }
+             // Row for Total Cost
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = totalCost,
+                    onValueChange = {},
+                    label = { Text("إجمالي التكلفة") },
+                    modifier = Modifier.fillMaxWidth(),
+                    readOnly = true
+                )
+            }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
-        // Add To Entry Row
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)){
-            OutlinedTextField(value = quantity, onValueChange = { quantity = it }, label = { Text("الكمية") }, modifier = Modifier.weight(1f))
-            Button(
-                onClick = {
-                    val variant = selectedVariant
-                    val product = selectedProduct
-                    if (variant != null && product != null) {
-                        viewModel.addVariantToEntry(
-                            variant = variant,
-                            quantity = quantity.toIntOrNull() ?: 0,
-                            productName = product.name,
-                            costPerAmpere = costPerAmpere.toDoubleOrNull(),
-                            manualCost = manualCostPrice.toDoubleOrNull()
-                        )
-                        quantity = ""
-                        manualCostPrice = ""
-                    }
-                },
-                modifier = Modifier.weight(1f),
-                enabled = selectedVariant != null
-            ) {
+        // Add To Entry Button
+        Button(
+            onClick = {
+                val variant = selectedVariant
+                val product = selectedProduct
+                if (variant != null && product != null) {
+                    viewModel.addVariantToEntry(
+                        variant = variant,
+                        quantity = quantity.toIntOrNull() ?: 0,
+                        productName = product.name,
+                        costPerAmpere = costPerAmpere.toDoubleOrNull(), // ViewModel can still use this for logging if needed
+                        manualCost = manualCostPrice.toDoubleOrNull()
+                    )
+                    // Reset fields
+                    quantity = ""
+                    manualCostPrice = ""
+                    costPerAmpere = ""
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = selectedVariant != null
+        ) {
                 Text("إضافة")
             }
         }
