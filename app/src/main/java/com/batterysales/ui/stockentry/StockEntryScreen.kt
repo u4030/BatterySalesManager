@@ -14,6 +14,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.batterysales.data.models.Product
 import com.batterysales.data.models.ProductVariant
 import com.batterysales.data.models.Warehouse
+import java.util.Locale
+import kotlin.math.abs
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -157,18 +159,23 @@ fun StockEntryScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = costPerAmpere,
-                    onValueChange = { newCostPerAmpere ->
-                        costPerAmpere = newCostPerAmpere
-                        if (newCostPerAmpere.isEmpty()) {
+                    onValueChange = { newCostPerAmpereStr ->
+                        costPerAmpere = newCostPerAmpereStr
+                        val newCostPerAmpere = newCostPerAmpereStr.toDoubleOrNull()
+                        val variantCapacity = selectedVariant?.capacity
+
+                        if (newCostPerAmpere == null) {
                             manualCostPrice = ""
-                        } else {
-                            val costPerAmpereDouble = newCostPerAmpere.toDoubleOrNull()
-                            val variantCapacity = selectedVariant?.capacity
-                            if (costPerAmpereDouble != null && variantCapacity != null) {
-                                val newManualCost = String.format("%.2f", costPerAmpereDouble * variantCapacity)
-                                if (newManualCost != manualCostPrice) {
-                                    manualCostPrice = newManualCost
-                                }
+                            return@OutlinedTextField
+                        }
+
+                        if (variantCapacity != null) {
+                            val newManualCost = newCostPerAmpere * variantCapacity
+                            val currentManualCost = manualCostPrice.toDoubleOrNull() ?: -1.0
+
+                            // Compare doubles with a small tolerance to avoid floating point issues
+                            if (abs(newManualCost - currentManualCost) > 0.001) {
+                                manualCostPrice = String.format(Locale.US, "%.2f", newManualCost)
                             }
                         }
                     },
@@ -178,18 +185,23 @@ fun StockEntryScreen(
                 )
                 OutlinedTextField(
                     value = manualCostPrice,
-                    onValueChange = { newManualCost ->
-                        manualCostPrice = newManualCost
-                        if (newManualCost.isEmpty()) {
+                    onValueChange = { newManualCostStr ->
+                        manualCostPrice = newManualCostStr
+                        val newManualCost = newManualCostStr.toDoubleOrNull()
+                        val variantCapacity = selectedVariant?.capacity
+
+                        if (newManualCost == null) {
                             costPerAmpere = ""
-                        } else {
-                            val manualCostDouble = newManualCost.toDoubleOrNull()
-                            val variantCapacity = selectedVariant?.capacity
-                            if (manualCostDouble != null && variantCapacity != null && variantCapacity > 0) {
-                                val newCostPerAmpere = String.format("%.2f", manualCostDouble / variantCapacity)
-                                if (newCostPerAmpere != costPerAmpere) {
-                                    costPerAmpere = newCostPerAmpere
-                                }
+                            return@OutlinedTextField
+                        }
+
+                        if (variantCapacity != null && variantCapacity > 0) {
+                            val newCostPerAmpere = newManualCost / variantCapacity
+                            val currentCostPerAmpere = costPerAmpere.toDoubleOrNull() ?: -1.0
+
+                            // Compare doubles with a small tolerance
+                             if (abs(newCostPerAmpere - currentCostPerAmpere) > 0.001) {
+                                costPerAmpere = String.format(Locale.US, "%.2f", newCostPerAmpere)
                             }
                         }
                     },
