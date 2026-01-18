@@ -19,7 +19,12 @@ import kotlinx.coroutines.launch
 import java.util.Date
 import javax.inject.Inject
 
-data class StockEntryItem(val productVariant: ProductVariant, val quantity: Int, val productName: String)
+data class StockEntryItem(
+    val productVariant: ProductVariant,
+    val quantity: Int,
+    val productName: String,
+    val costPrice: Double
+)
 
 @HiltViewModel
 class StockEntryViewModel @Inject constructor(
@@ -34,18 +39,8 @@ class StockEntryViewModel @Inject constructor(
     val warehouses = mutableStateOf<List<Warehouse>>(emptyList())
     val stockItems = mutableStateListOf<StockEntryItem>()
 
-    val totalCost = mutableStateOf("")
-    val totalAmperes = mutableStateOf("")
-
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage = _errorMessage.asStateFlow()
-
-    private val costPerAmpere: Double
-        get() {
-            val cost = totalCost.value.toDoubleOrNull() ?: 0.0
-            val amperes = totalAmperes.value.toDoubleOrNull() ?: 0.0
-            return if (amperes > 0) cost / amperes else 0.0
-        }
 
     init {
         fetchProducts()
@@ -94,34 +89,50 @@ class StockEntryViewModel @Inject constructor(
         }
     }
 
-    fun addVariantToEntry(variant: ProductVariant, quantity: Int, productName: String) {
-        if (quantity > 0) {
-            stockItems.add(StockEntryItem(productVariant = variant, quantity = quantity, productName = productName))
-            recalculateTotalAmperes()
+    fun addVariantToEntry(
+        variant: ProductVariant,
+        quantity: Int,
+        productName: String,
+        costPerAmpere: Double?,
+        manualCost: Double?
+    ) {
+        if (quantity <= 0) {
+            _errorMessage.value = "الكمية يجب أن تكون أكبر من صفر."
+            return
         }
+
+        val cost = when {
+            manualCost != null && manualCost > 0 -> manualCost
+            costPerAmpere != null && costPerAmpere > 0 -> costPerAmpere * variant.capacity
+            else -> {
+                _errorMessage.value = "الرجاء إدخال سعر الأمبير أو التكلفة اليدوية."
+                return
+            }
+        }
+
+        stockItems.add(StockEntryItem(
+            productVariant = variant,
+            quantity = quantity,
+            productName = productName,
+            costPrice = cost
+        ))
     }
 
     fun removeVariantFromEntry(item: StockEntryItem) {
         stockItems.remove(item)
-        recalculateTotalAmperes()
     }
 
     fun updateItemQuantity(item: StockEntryItem, newQuantity: Int) {
         val index = stockItems.indexOf(item)
         if (index != -1 && newQuantity > 0) {
             stockItems[index] = item.copy(quantity = newQuantity)
-            recalculateTotalAmperes()
         }
-    }
-
-    private fun recalculateTotalAmperes() {
-        totalAmperes.value = stockItems.sumOf { it.productVariant.capacity * it.quantity }.toString()
     }
 
     fun saveStockEntry(warehouseId: String, supplier: String) {
         viewModelScope.launch {
-            if (stockItems.isEmpty() || totalCost.value.isBlank()) {
-                _errorMessage.value = "الرجاء إضافة أصناف وتحديد التكلفة الإجمالية."
+            if (stockItems.isEmpty()) {
+                _errorMessage.value = "الرجاء إضافة أصناف أولاً."
                 return@launch
             }
             try {
@@ -130,15 +141,13 @@ class StockEntryViewModel @Inject constructor(
                         productVariantId = item.productVariant.id,
                         warehouseId = warehouseId,
                         quantity = item.quantity,
-                        costPrice = item.productVariant.capacity * costPerAmpere,
+                        costPrice = item.costPrice,
                         timestamp = Date(),
                         supplier = supplier
                     )
                 }
                 stockEntryRepository.addStockEntries(entries)
                 stockItems.clear()
-                totalCost.value = ""
-                totalAmperes.value = ""
             } catch (e: Exception) {
                 _errorMessage.value = "Failed to save stock entry: ${e.message}"
             }

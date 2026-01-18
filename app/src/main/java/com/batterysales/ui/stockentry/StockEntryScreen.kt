@@ -24,6 +24,8 @@ fun StockEntryScreen(
     var selectedVariant by remember { mutableStateOf<ProductVariant?>(null) }
     var selectedWarehouse by remember { mutableStateOf<Warehouse?>(null) }
     var quantity by remember { mutableStateOf("") }
+    var costPerAmpere by remember { mutableStateOf("") }
+    var manualCostPrice by remember { mutableStateOf("") }
 
     var expandedProduct by remember { mutableStateOf(false) }
     var expandedVariant by remember { mutableStateOf(false) }
@@ -32,7 +34,6 @@ fun StockEntryScreen(
     var showAddWarehouseDialog by remember { mutableStateOf(false) }
     var itemToEdit by remember { mutableStateOf<StockEntryItem?>(null) }
     var supplierName by remember { mutableStateOf("") }
-
 
     if (showAddWarehouseDialog) {
         AddWarehouseDialog(
@@ -67,7 +68,6 @@ fun StockEntryScreen(
                     onValueChange = {},
                     label = { Text("المستودع") },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedWarehouse) },
-                    colors = ExposedDropdownMenuDefaults.textFieldColors(),
                 )
                 ExposedDropdownMenu(
                     expanded = expandedWarehouse,
@@ -92,33 +92,9 @@ fun StockEntryScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Total Cost and Amperes
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = viewModel.totalCost.value,
-                onValueChange = { viewModel.totalCost.value = it },
-                label = { Text("التكلفة الإجمالية") },
-                modifier = Modifier.weight(1f)
-            )
-            OutlinedTextField(
-                value = viewModel.totalAmperes.value,
-                onValueChange = { /* Read-only */ },
-                label = { Text("إجمالي الأمبيرات") },
-                readOnly = true,
-                modifier = Modifier.weight(1f)
-            )
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
         // Product and Variant Selection
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            // Product Dropdown
-            ExposedDropdownMenuBox(
-                expanded = expandedProduct,
-                onExpandedChange = { expandedProduct = !expandedProduct },
-                modifier = Modifier.weight(1f)
-            ) {
+            ExposedDropdownMenuBox(expanded = expandedProduct, onExpandedChange = { expandedProduct = !expandedProduct }, modifier = Modifier.weight(1f)) {
                 TextField(
                     modifier = Modifier.menuAnchor(),
                     readOnly = true,
@@ -127,16 +103,13 @@ fun StockEntryScreen(
                     label = { Text("المنتج") },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedProduct) },
                 )
-                ExposedDropdownMenu(
-                    expanded = expandedProduct,
-                    onDismissRequest = { expandedProduct = false },
-                ) {
+                ExposedDropdownMenu(expanded = expandedProduct, onDismissRequest = { expandedProduct = false }) {
                     viewModel.products.value.forEach { product ->
                         DropdownMenuItem(
                             text = { Text(product.name) },
                             onClick = {
                                 selectedProduct = product
-                                selectedVariant = null // Reset variant selection
+                                selectedVariant = null
                                 viewModel.fetchVariantsForProduct(product.id)
                                 expandedProduct = false
                             }
@@ -144,13 +117,7 @@ fun StockEntryScreen(
                     }
                 }
             }
-
-            // Variant Dropdown
-            ExposedDropdownMenuBox(
-                expanded = expandedVariant,
-                onExpandedChange = { expandedVariant = !expandedVariant },
-                modifier = Modifier.weight(1f)
-            ) {
+            ExposedDropdownMenuBox(expanded = expandedVariant, onExpandedChange = { expandedVariant = !expandedVariant }, modifier = Modifier.weight(1f)) {
                 TextField(
                     modifier = Modifier.menuAnchor(),
                     readOnly = true,
@@ -160,10 +127,7 @@ fun StockEntryScreen(
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedVariant) },
                     enabled = selectedProduct != null
                 )
-                ExposedDropdownMenu(
-                    expanded = expandedVariant,
-                    onDismissRequest = { expandedVariant = false },
-                ) {
+                ExposedDropdownMenu(expanded = expandedVariant, onDismissRequest = { expandedVariant = false }) {
                     viewModel.variants.value.forEach { variant ->
                         DropdownMenuItem(
                             text = { Text("${variant.capacity} أمبير") },
@@ -177,24 +141,43 @@ fun StockEntryScreen(
             }
         }
 
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Cost Calculation Fields
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = costPerAmpere,
+                onValueChange = { costPerAmpere = it; manualCostPrice = "" },
+                label = { Text("سعر الأمبير (تلقائي)") },
+                modifier = Modifier.weight(1f)
+            )
+            OutlinedTextField(
+                value = manualCostPrice,
+                onValueChange = { manualCostPrice = it; costPerAmpere = "" },
+                label = { Text("التكلفة (يدوي)") },
+                modifier = Modifier.weight(1f)
+            )
+        }
+
         Spacer(modifier = Modifier.height(8.dp))
 
         // Add To Entry Row
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)){
-            OutlinedTextField(
-                value = quantity,
-                onValueChange = { quantity = it },
-                label = { Text("الكمية") },
-                modifier = Modifier.weight(1f)
-            )
-
+            OutlinedTextField(value = quantity, onValueChange = { quantity = it }, label = { Text("الكمية") }, modifier = Modifier.weight(1f))
             Button(
                 onClick = {
                     val variant = selectedVariant
                     val product = selectedProduct
                     if (variant != null && product != null) {
-                        viewModel.addVariantToEntry(variant, quantity.toIntOrNull() ?: 0, product.name)
+                        viewModel.addVariantToEntry(
+                            variant = variant,
+                            quantity = quantity.toIntOrNull() ?: 0,
+                            productName = product.name,
+                            costPerAmpere = costPerAmpere.toDoubleOrNull(),
+                            manualCost = manualCostPrice.toDoubleOrNull()
+                        )
                         quantity = ""
+                        manualCostPrice = ""
                     }
                 },
                 modifier = Modifier.weight(1f),
@@ -212,7 +195,7 @@ fun StockEntryScreen(
                 ListItem(
                     modifier = Modifier.clickable { itemToEdit = item },
                     headlineContent = { Text("${item.productName} - ${item.productVariant.capacity} أمبير") },
-                    supportingContent = { Text("الكمية: ${item.quantity}") },
+                    supportingContent = { Text("الكمية: ${item.quantity}, التكلفة: ${String.format("%.2f", item.costPrice)}") },
                     trailingContent = {
                         IconButton(onClick = { viewModel.removeVariantFromEntry(item) }) {
                             Icon(Icons.Default.Delete, contentDescription = "إزالة")
@@ -224,7 +207,6 @@ fun StockEntryScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Supplier Input
         OutlinedTextField(
             value = supplierName,
             onValueChange = { supplierName = it },
@@ -243,7 +225,7 @@ fun StockEntryScreen(
                 }
             },
             modifier = Modifier.fillMaxWidth(),
-            enabled = viewModel.stockItems.isNotEmpty() && selectedWarehouse != null && viewModel.totalCost.value.isNotBlank()
+            enabled = viewModel.stockItems.isNotEmpty() && selectedWarehouse != null
         ) {
             Text("حفظ إدخال المخزون")
         }
@@ -253,25 +235,11 @@ fun StockEntryScreen(
 @Composable
 fun AddWarehouseDialog(onDismiss: () -> Unit, onAddWarehouse: (String) -> Unit) {
     var name by remember { mutableStateOf("") }
-
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("إضافة مستودع جديد") },
-        text = {
-            OutlinedTextField(
-                value = name,
-                onValueChange = { name = it },
-                label = { Text("اسم المستودع") }
-            )
-        },
-        confirmButton = {
-            Button(onClick = {
-                if (name.isNotBlank()) {
-                    onAddWarehouse(name)
-                    onDismiss()
-                }
-            }) { Text("إضافة") }
-        },
+        text = { OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("اسم المستودع") }) },
+        confirmButton = { Button(onClick = { if (name.isNotBlank()) { onAddWarehouse(name); onDismiss() } }) { Text("إضافة") } },
         dismissButton = { Button(onClick = onDismiss) { Text("إلغاء") } }
     )
 }
@@ -279,25 +247,11 @@ fun AddWarehouseDialog(onDismiss: () -> Unit, onAddWarehouse: (String) -> Unit) 
 @Composable
 fun EditQuantityDialog(item: StockEntryItem, onDismiss: () -> Unit, onConfirm: (Int) -> Unit) {
     var quantity by remember { mutableStateOf(item.quantity.toString()) }
-
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("تعديل الكمية") },
-        text = {
-            OutlinedTextField(
-                value = quantity,
-                onValueChange = { quantity = it },
-                label = { Text("الكمية الجديدة") }
-            )
-        },
-        confirmButton = {
-            Button(onClick = {
-                val newQuantity = quantity.toIntOrNull()
-                if (newQuantity != null && newQuantity > 0) {
-                    onConfirm(newQuantity)
-                }
-            }) { Text("حفظ") }
-        },
+        text = { OutlinedTextField(value = quantity, onValueChange = { quantity = it }, label = { Text("الكمية الجديدة") }) },
+        confirmButton = { Button(onClick = { val newQuantity = quantity.toIntOrNull(); if (newQuantity != null && newQuantity > 0) { onConfirm(newQuantity) } }) { Text("حفظ") } },
         dismissButton = { Button(onClick = onDismiss) { Text("إلغاء") } }
     )
 }
