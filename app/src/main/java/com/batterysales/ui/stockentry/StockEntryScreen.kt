@@ -10,12 +10,17 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.batterysales.data.models.Product
 import com.batterysales.data.models.ProductVariant
 import com.batterysales.data.models.Warehouse
-import java.util.Locale
-import kotlin.math.abs
+
+enum class CostInputMode {
+    BY_AMPERE,
+    BY_ITEM
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -145,74 +150,68 @@ fun StockEntryScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // --- Derived states for automatic calculation ---
+        // --- Derived values for calculation and display ---
         val currentQuantity = quantity.toIntOrNull() ?: 0
-        val singleItemCost = manualCostPrice.toDoubleOrNull() ?: 0.0
+        val cost = costValue.toDoubleOrNull() ?: 0.0
+        val variantCapacity = selectedVariant?.capacity ?: 0
 
-        val totalAmperes = (currentQuantity * (selectedVariant?.capacity ?: 0)).toString()
-        val totalCost = String.format("%.2f", currentQuantity * singleItemCost)
+        val (costPerAmpere, costPerItem) = when (costInputMode) {
+            CostInputMode.BY_AMPERE -> {
+                val calculatedCostPerItem = if (variantCapacity > 0) cost * variantCapacity else 0.0
+                Pair(costValue, String.format("%.2f", calculatedCostPerItem))
+            }
+            CostInputMode.BY_ITEM -> {
+                val calculatedCostPerAmpere = if (variantCapacity > 0) cost / variantCapacity else 0.0
+                Pair(String.format("%.2f", calculatedCostPerAmpere), costValue)
+            }
+        }
+        val finalCostPerItem = costPerItem.toDoubleOrNull() ?: 0.0
+        val totalAmperes = (currentQuantity * variantCapacity).toString()
+        val totalCost = String.format("%.2f", currentQuantity * finalCostPerItem)
 
-
-        // --- Cost & Quantity Calculation Fields ---
+        // --- Cost Calculation Section ---
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            // Row for Per-Item Cost
+            // Mode Selector
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("طريقة حساب التكلفة:", modifier = Modifier.padding(end = 8.dp))
+                Row {
+                    RadioButton(
+                        selected = costInputMode == CostInputMode.BY_AMPERE,
+                        onClick = { costInputMode = CostInputMode.BY_AMPERE; costValue = "" }
+                    )
+                    Text("بسعر الأمبير")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    RadioButton(
+                        selected = costInputMode == CostInputMode.BY_ITEM,
+                        onClick = { costInputMode = CostInputMode.BY_ITEM; costValue = "" }
+                    )
+                    Text("بسعر القطعة")
+                }
+            }
+
+            // Input Fields
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
-                    value = costPerAmpere,
-                    onValueChange = { newCostPerAmpereStr ->
-                        costPerAmpere = newCostPerAmpereStr
-                        val newCostPerAmpere = newCostPerAmpereStr.toDoubleOrNull()
-                        val variantCapacity = selectedVariant?.capacity
-
-                        if (newCostPerAmpere == null) {
-                            manualCostPrice = ""
-                            return@OutlinedTextField
-                        }
-
-                        if (variantCapacity != null) {
-                            val newManualCost = newCostPerAmpere * variantCapacity
-                            val currentManualCost = manualCostPrice.toDoubleOrNull() ?: -1.0
-
-                            // Compare doubles with a small tolerance to avoid floating point issues
-                            if (abs(newManualCost - currentManualCost) > 0.001) {
-                                manualCostPrice = String.format(Locale.US, "%.2f", newManualCost)
-                            }
-                        }
-                    },
+                    value = if (costInputMode == CostInputMode.BY_AMPERE) costValue else costPerAmpere,
+                    onValueChange = { if (costInputMode == CostInputMode.BY_AMPERE) costValue = it },
                     label = { Text("سعر الأمبير") },
                     modifier = Modifier.weight(1f),
+                    readOnly = costInputMode != CostInputMode.BY_AMPERE,
                     enabled = selectedVariant != null
                 )
                 OutlinedTextField(
-                    value = manualCostPrice,
-                    onValueChange = { newManualCostStr ->
-                        manualCostPrice = newManualCostStr
-                        val newManualCost = newManualCostStr.toDoubleOrNull()
-                        val variantCapacity = selectedVariant?.capacity
-
-                        if (newManualCost == null) {
-                            costPerAmpere = ""
-                            return@OutlinedTextField
-                        }
-
-                        if (variantCapacity != null && variantCapacity > 0) {
-                            val newCostPerAmpere = newManualCost / variantCapacity
-                            val currentCostPerAmpere = costPerAmpere.toDoubleOrNull() ?: -1.0
-
-                            // Compare doubles with a small tolerance
-                             if (abs(newCostPerAmpere - currentCostPerAmpere) > 0.001) {
-                                costPerAmpere = String.format(Locale.US, "%.2f", newCostPerAmpere)
-                            }
-                        }
-                    },
+                    value = if (costInputMode == CostInputMode.BY_ITEM) costValue else costPerItem,
+                    onValueChange = { if (costInputMode == CostInputMode.BY_ITEM) costValue = it },
                     label = { Text("تكلفة القطعة") },
                     modifier = Modifier.weight(1f),
+                    readOnly = costInputMode != CostInputMode.BY_ITEM,
                     enabled = selectedVariant != null
                 )
             }
-            // Row for Quantity and Totals
+
+            // Quantity and Totals
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
+                 OutlinedTextField(
                     value = quantity,
                     onValueChange = { quantity = it },
                     label = { Text("الكمية") },
@@ -227,16 +226,14 @@ fun StockEntryScreen(
                     readOnly = true
                 )
             }
-             // Row for Total Cost
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = totalCost,
-                    onValueChange = {},
-                    label = { Text("إجمالي التكلفة") },
-                    modifier = Modifier.fillMaxWidth(),
-                    readOnly = true
-                )
-            }
+
+            OutlinedTextField(
+                value = totalCost,
+                onValueChange = {},
+                label = { Text("إجمالي التكلفة") },
+                modifier = Modifier.fillMaxWidth(),
+                readOnly = true
+            )
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -251,20 +248,17 @@ fun StockEntryScreen(
                         variant = variant,
                         quantity = quantity.toIntOrNull() ?: 0,
                         productName = product.name,
-                        costPerAmpere = costPerAmpere.toDoubleOrNull(), // ViewModel can still use this for logging if needed
-                        manualCost = manualCostPrice.toDoubleOrNull()
+                        costPerAmpere = null, // Let ViewModel calculate based on manualCost
+                        manualCost = finalCostPerItem
                     )
-                    // Reset fields
                     quantity = ""
-                    manualCostPrice = ""
-                    costPerAmpere = ""
+                    costValue = ""
                 }
             },
             modifier = Modifier.fillMaxWidth(),
             enabled = selectedVariant != null
         ) {
-                Text("إضافة")
-            }
+            Text("إضافة")
         }
 
         Spacer(modifier = Modifier.height(16.dp))
