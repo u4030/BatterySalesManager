@@ -157,12 +157,19 @@ fun StockEntryScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = costPerAmpere,
-                    onValueChange = {
-                        costPerAmpere = it
-                        val costPerAmpereDouble = it.toDoubleOrNull()
-                        val variantCapacity = selectedVariant?.capacity
-                        if (costPerAmpereDouble != null && variantCapacity != null) {
-                            manualCostPrice = String.format("%.2f", costPerAmpereDouble * variantCapacity)
+                    onValueChange = { newCostPerAmpere ->
+                        costPerAmpere = newCostPerAmpere
+                        if (newCostPerAmpere.isEmpty()) {
+                            manualCostPrice = ""
+                        } else {
+                            val costPerAmpereDouble = newCostPerAmpere.toDoubleOrNull()
+                            val variantCapacity = selectedVariant?.capacity
+                            if (costPerAmpereDouble != null && variantCapacity != null) {
+                                val newManualCost = String.format("%.2f", costPerAmpereDouble * variantCapacity)
+                                if (newManualCost != manualCostPrice) {
+                                    manualCostPrice = newManualCost
+                                }
+                            }
                         }
                     },
                     label = { Text("سعر الأمبير") },
@@ -171,12 +178,19 @@ fun StockEntryScreen(
                 )
                 OutlinedTextField(
                     value = manualCostPrice,
-                    onValueChange = {
-                        manualCostPrice = it
-                        val manualCostDouble = it.toDoubleOrNull()
-                        val variantCapacity = selectedVariant?.capacity
-                        if (manualCostDouble != null && variantCapacity != null && variantCapacity > 0) {
-                            costPerAmpere = String.format("%.2f", manualCostDouble / variantCapacity)
+                    onValueChange = { newManualCost ->
+                        manualCostPrice = newManualCost
+                        if (newManualCost.isEmpty()) {
+                            costPerAmpere = ""
+                        } else {
+                            val manualCostDouble = newManualCost.toDoubleOrNull()
+                            val variantCapacity = selectedVariant?.capacity
+                            if (manualCostDouble != null && variantCapacity != null && variantCapacity > 0) {
+                                val newCostPerAmpere = String.format("%.2f", manualCostDouble / variantCapacity)
+                                if (newCostPerAmpere != costPerAmpere) {
+                                    costPerAmpere = newCostPerAmpere
+                                }
+                            }
                         }
                     },
                     label = { Text("تكلفة القطعة") },
