@@ -9,7 +9,10 @@ data class StockEntry(
     val productVariantId: String = "",
     val warehouseId: String = "",
     val quantity: Int = 0,
-    val costPrice: Double = 0.0,
+    val costPrice: Double = 0.0, // Cost per item
+    val costPerAmpere: Double = 0.0,
+    val totalAmperes: Int = 0,
+    val totalCost: Double = 0.0,
     val timestamp: Date = Date(),
     val supplier: String = ""
 ) {

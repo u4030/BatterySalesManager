@@ -23,7 +23,10 @@ data class StockEntryItem(
     val productVariant: ProductVariant,
     val quantity: Int,
     val productName: String,
-    val costPrice: Double
+    val costPrice: Double,
+    val costPerAmpere: Double,
+    val totalAmperes: Int,
+    val totalCost: Double
 )
 
 @HiltViewModel
@@ -93,28 +96,28 @@ class StockEntryViewModel @Inject constructor(
         variant: ProductVariant,
         quantity: Int,
         productName: String,
-        costPerAmpere: Double?,
-        manualCost: Double?
+        costPrice: Double,
+        costPerAmpere: Double,
+        totalAmperes: Int,
+        totalCost: Double
     ) {
         if (quantity <= 0) {
             _errorMessage.value = "الكمية يجب أن تكون أكبر من صفر."
             return
         }
-
-        // The UI now always provides the final cost per item in the manualCost parameter.
-        // The old logic for costPerAmpere is no longer needed here.
-        val cost = manualCost ?: 0.0
-
-        if (cost <= 0) {
-             _errorMessage.value = "الرجاء إدخال تكلفة صحيحة."
-             return
+        if (costPrice <= 0) {
+            _errorMessage.value = "الرجاء إدخال تكلفة صحيحة."
+            return
         }
 
         stockItems.add(StockEntryItem(
             productVariant = variant,
             quantity = quantity,
             productName = productName,
-            costPrice = cost
+            costPrice = costPrice,
+            costPerAmpere = costPerAmpere,
+            totalAmperes = totalAmperes,
+            totalCost = totalCost
         ))
     }
 
@@ -125,7 +128,14 @@ class StockEntryViewModel @Inject constructor(
     fun updateItemQuantity(item: StockEntryItem, newQuantity: Int) {
         val index = stockItems.indexOf(item)
         if (index != -1 && newQuantity > 0) {
-            stockItems[index] = item.copy(quantity = newQuantity)
+            // Recalculate totals when quantity changes
+            val newTotalAmperes = newQuantity * item.productVariant.capacity
+            val newTotalCost = newQuantity * item.costPrice
+            stockItems[index] = item.copy(
+                quantity = newQuantity,
+                totalAmperes = newTotalAmperes,
+                totalCost = newTotalCost
+            )
         }
     }
 
@@ -142,6 +152,9 @@ class StockEntryViewModel @Inject constructor(
                         warehouseId = warehouseId,
                         quantity = item.quantity,
                         costPrice = item.costPrice,
+                        costPerAmpere = item.costPerAmpere,
+                        totalAmperes = item.totalAmperes,
+                        totalCost = item.totalCost,
                         timestamp = Date(),
                         supplier = supplier
                     )

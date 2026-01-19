@@ -247,11 +247,14 @@ fun StockEntryScreen(
                 if (variant != null && product != null) {
                     viewModel.addVariantToEntry(
                         variant = variant,
-                        quantity = quantity.toIntOrNull() ?: 0,
+                        quantity = currentQuantity,
                         productName = product.name,
-                        costPerAmpere = null, // Let ViewModel calculate based on manualCost
-                        manualCost = finalCostPerItem
+                        costPrice = finalCostPerItem,
+                        costPerAmpere = costPerAmpere.toDoubleOrNull() ?: 0.0,
+                        totalAmperes = totalAmperes.toIntOrNull() ?: 0,
+                        totalCost = totalCost.toDoubleOrNull() ?: 0.0
                     )
+                    // Reset fields
                     quantity = ""
                     costValue = ""
                 }
