@@ -170,6 +170,11 @@ fun StockEntryScreen(
         val totalAmperes = (currentQuantity * variantCapacity).toString()
         val totalCost = String.format("%.2f", currentQuantity * finalCostPerItem)
 
+        // --- Grand Totals ---
+        val grandTotalAmperes = viewModel.stockItems.sumOf { it.totalAmperes }
+        val grandTotalCost = viewModel.stockItems.sumOf { it.totalCost }
+
+
         // --- Cost Calculation Section ---
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             // Mode Selector
@@ -254,9 +259,8 @@ fun StockEntryScreen(
                         totalAmperes = totalAmperes.toIntOrNull() ?: 0,
                         totalCost = totalCost.toDoubleOrNull() ?: 0.0
                     )
-                    // Reset fields
+                    // Reset only the quantity field
                     quantity = ""
-                    costValue = ""
                 }
             },
             modifier = Modifier.fillMaxWidth(),
@@ -268,12 +272,15 @@ fun StockEntryScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         // Stock Items List
-        LazyColumn {
+        LazyColumn(modifier = Modifier.heightIn(max = 200.dp)) { // Limit height to avoid pushing totals off-screen
             items(viewModel.stockItems) { item ->
                 ListItem(
                     modifier = Modifier.clickable { itemToEdit = item },
                     headlineContent = { Text("${item.productName} - ${item.productVariant.capacity} أمبير") },
-                    supportingContent = { Text("الكمية: ${item.quantity}, التكلفة: ${String.format("%.2f", item.costPrice)}") },
+                    supportingContent = {
+                        Text("الكمية: ${item.quantity}, " +
+                             "إجمالي التكلفة: ${String.format("%.2f", item.totalCost)}")
+                    },
                     trailingContent = {
                         IconButton(onClick = { viewModel.removeVariantFromEntry(item) }) {
                             Icon(Icons.Default.Delete, contentDescription = "إزالة")
@@ -284,6 +291,27 @@ fun StockEntryScreen(
         }
 
         Spacer(modifier = Modifier.height(16.dp))
+
+        // Grand Totals Display
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = grandTotalAmperes.toString(),
+                onValueChange = {},
+                label = { Text("المجموع الكلي للأمبيرات") },
+                modifier = Modifier.weight(1f),
+                readOnly = true
+            )
+            OutlinedTextField(
+                value = String.format("%.2f", grandTotalCost),
+                onValueChange = {},
+                label = { Text("المجموع الكلي للتكلفة") },
+                modifier = Modifier.weight(1f),
+                readOnly = true
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
 
         OutlinedTextField(
             value = supplierName,
@@ -300,6 +328,13 @@ fun StockEntryScreen(
                 val warehouse = selectedWarehouse
                 if (warehouse != null) {
                     viewModel.saveStockEntry(warehouse.id, supplierName)
+                    // Reset all fields after saving
+                    selectedProduct = null
+                    selectedVariant = null
+                    selectedWarehouse = null
+                    quantity = ""
+                    costValue = ""
+                    supplierName = ""
                 }
             },
             modifier = Modifier.fillMaxWidth(),

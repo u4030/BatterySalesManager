@@ -145,6 +145,11 @@ class StockEntryViewModel @Inject constructor(
                 _errorMessage.value = "الرجاء إضافة أصناف أولاً."
                 return@launch
             }
+
+            // Calculate grand totals before mapping
+            val grandTotalAmperes = stockItems.sumOf { it.totalAmperes }
+            val grandTotalCost = stockItems.sumOf { it.totalCost }
+
             try {
                 val entries = stockItems.map { item ->
                     StockEntry(
@@ -155,6 +160,8 @@ class StockEntryViewModel @Inject constructor(
                         costPerAmpere = item.costPerAmpere,
                         totalAmperes = item.totalAmperes,
                         totalCost = item.totalCost,
+                        grandTotalAmperes = grandTotalAmperes,
+                        grandTotalCost = grandTotalCost,
                         timestamp = Date(),
                         supplier = supplier
                     )

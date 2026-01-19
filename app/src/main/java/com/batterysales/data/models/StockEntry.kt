@@ -13,6 +13,8 @@ data class StockEntry(
     val costPerAmpere: Double = 0.0,
     val totalAmperes: Int = 0,
     val totalCost: Double = 0.0,
+    val grandTotalAmperes: Int = 0,
+    val grandTotalCost: Double = 0.0,
     val timestamp: Date = Date(),
     val supplier: String = ""
 ) {
