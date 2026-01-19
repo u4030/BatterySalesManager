@@ -31,8 +31,9 @@ fun StockEntryScreen(
     var selectedVariant by remember { mutableStateOf<ProductVariant?>(null) }
     var selectedWarehouse by remember { mutableStateOf<Warehouse?>(null) }
     var quantity by remember { mutableStateOf("") }
-    var costPerAmpere by remember { mutableStateOf("") }
-    var manualCostPrice by remember { mutableStateOf("") }
+
+    var costInputMode by remember { mutableStateOf(CostInputMode.BY_AMPERE) }
+    var costValue by remember { mutableStateOf("") }
 
     var expandedProduct by remember { mutableStateOf(false) }
     var expandedVariant by remember { mutableStateOf(false) }
