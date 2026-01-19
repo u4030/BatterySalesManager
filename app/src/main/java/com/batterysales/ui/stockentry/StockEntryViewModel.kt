@@ -101,13 +101,13 @@ class StockEntryViewModel @Inject constructor(
             return
         }
 
-        val cost = when {
-            manualCost != null && manualCost > 0 -> manualCost
-            costPerAmpere != null && costPerAmpere > 0 -> costPerAmpere * variant.capacity
-            else -> {
-                _errorMessage.value = "الرجاء إدخال سعر الأمبير أو التكلفة اليدوية."
-                return
-            }
+        // The UI now always provides the final cost per item in the manualCost parameter.
+        // The old logic for costPerAmpere is no longer needed here.
+        val cost = manualCost ?: 0.0
+
+        if (cost <= 0) {
+             _errorMessage.value = "الرجاء إدخال تكلفة صحيحة."
+             return
         }
 
         stockItems.add(StockEntryItem(
