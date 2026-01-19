@@ -52,11 +52,12 @@ fun ProductLedgerScreen(
                 // Header
                 item {
                     Row(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
-                        Text("التاريخ", modifier = Modifier.weight(1.5f), fontWeight = FontWeight.Bold)
-                        Text("الكمية", modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
-                        Text("التكلفة", modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
-                        Text("المورد", modifier = Modifier.weight(1.5f), fontWeight = FontWeight.Bold)
-                        Text("المستودع", modifier = Modifier.weight(1.5f), fontWeight = FontWeight.Bold)
+                        Text("التاريخ", modifier = Modifier.weight(1.2f), fontWeight = FontWeight.Bold)
+                        Text("الكمية", modifier = Modifier.weight(0.6f), fontWeight = FontWeight.Bold)
+                        Text("سعر القطعة", modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
+                        Text("الإجمالي", modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
+                        Text("المورد/السبب", modifier = Modifier.weight(1.2f), fontWeight = FontWeight.Bold)
+                        Text("المستودع", modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
                     }
                     Divider()
                 }
@@ -65,12 +66,17 @@ fun ProductLedgerScreen(
                 items(ledgerItems) { item ->
                     val entry = item.entry
                     val quantityColor = if (entry.quantity > 0) Color(0xFF008000) else Color.Red
-                    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                        Text(entry.timestamp.toFormattedString(), modifier = Modifier.weight(1.5f), fontSize = 14.sp)
-                        Text(entry.quantity.toString(), modifier = Modifier.weight(1f), fontSize = 14.sp, color = quantityColor)
-                        Text(String.format("%.2f", entry.costPrice), modifier = Modifier.weight(1f), fontSize = 14.sp)
-                        Text(entry.supplier.ifEmpty { "-" }, modifier = Modifier.weight(1.5f), fontSize = 14.sp)
-                        Text(item.warehouseName, modifier = Modifier.weight(1.5f), fontSize = 14.sp)
+                    val costDisplay = if(entry.costPrice > 0) String.format("%.2f", entry.costPrice) else "-"
+                    val totalCostDisplay = if(entry.totalCost > 0) String.format("%.2f", entry.totalCost) else if (entry.quantity < 0) String.format("%.2f", entry.costPrice) else "-"
+
+
+                    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(entry.timestamp.toFormattedString(), modifier = Modifier.weight(1.2f), fontSize = 14.sp)
+                        Text(entry.quantity.toString(), modifier = Modifier.weight(0.6f), fontSize = 14.sp, color = quantityColor)
+                        Text(costDisplay, modifier = Modifier.weight(1f), fontSize = 14.sp)
+                        Text(totalCostDisplay, modifier = Modifier.weight(1f), fontSize = 14.sp)
+                        Text(entry.supplier.ifEmpty { "-" }, modifier = Modifier.weight(1.2f), fontSize = 14.sp)
+                        Text(item.warehouseName, modifier = Modifier.weight(1f), fontSize = 14.sp)
                     }
                     Divider()
                 }

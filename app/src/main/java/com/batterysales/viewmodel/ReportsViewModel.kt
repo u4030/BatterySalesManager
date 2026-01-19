@@ -14,7 +14,9 @@ data class InventoryReportItem(
     val product: Product,
     val variant: ProductVariant,
     val warehouseQuantities: Map<String, Int>, // WarehouseID to Quantity
-    val totalQuantity: Int
+    val totalQuantity: Int,
+    val averageCost: Double,
+    val totalCostValue: Double
 )
 
 @HiltViewModel
@@ -54,25 +56,37 @@ class ReportsViewModel @Inject constructor(
                 for (variant in allVariants) {
                     val product = products.find { it.id == variant.productId }
                     if (product != null) {
+                        val variantEntries = allStockEntries.filter { it.productVariantId == variant.id }
                         val warehouseQuantities = mutableMapOf<String, Int>()
                         var totalQuantity = 0
 
                         for (warehouse in _warehouses.value) {
-                            val quantityInWarehouse = allStockEntries
-                                .filter { it.productVariantId == variant.id && it.warehouseId == warehouse.id }
+                            val quantityInWarehouse = variantEntries
+                                .filter { it.warehouseId == warehouse.id }
                                 .sumOf { it.quantity }
                             warehouseQuantities[warehouse.id] = quantityInWarehouse
                             totalQuantity += quantityInWarehouse
                         }
 
-                        reportItems.add(
-                            InventoryReportItem(
-                                product = product,
-                                variant = variant,
-                                warehouseQuantities = warehouseQuantities,
-                                totalQuantity = totalQuantity
+                        // Calculate weighted average cost
+                        val positiveEntries = variantEntries.filter { it.quantity > 0 }
+                        val totalCostOfPurchases = positiveEntries.sumOf { it.totalCost }
+                        val totalItemsPurchased = positiveEntries.sumOf { it.quantity }
+                        val averageCost = if (totalItemsPurchased > 0) totalCostOfPurchases / totalItemsPurchased else 0.0
+                        val totalCostValue = totalQuantity * averageCost
+
+                        if (totalQuantity > 0) { // Only add items that are in stock
+                             reportItems.add(
+                                InventoryReportItem(
+                                    product = product,
+                                    variant = variant,
+                                    warehouseQuantities = warehouseQuantities,
+                                    totalQuantity = totalQuantity,
+                                    averageCost = averageCost,
+                                    totalCostValue = totalCostValue
+                                )
                             )
-                        )
+                        }
                     }
                 }
                 _inventoryReport.value = reportItems
