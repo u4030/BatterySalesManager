@@ -4,8 +4,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.batterysales.data.models.Product
+import com.batterysales.data.models.ProductVariant
 import com.batterysales.data.models.Warehouse
 import com.batterysales.data.repositories.ProductRepository
+import com.batterysales.data.repositories.ProductVariantRepository
 import com.batterysales.data.repositories.StockEntryRepository
 import com.batterysales.data.repositories.WarehouseRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -17,15 +19,20 @@ import javax.inject.Inject
 @HiltViewModel
 class StockTransferViewModel @Inject constructor(
     private val productRepository: ProductRepository,
+    private val productVariantRepository: ProductVariantRepository,
     private val warehouseRepository: WarehouseRepository,
     private val stockEntryRepository: StockEntryRepository
 ) : ViewModel() {
 
     val products = mutableStateOf<List<Product>>(emptyList())
+    val variants = mutableStateOf<List<ProductVariant>>(emptyList())
     val warehouses = mutableStateOf<List<Warehouse>>(emptyList())
 
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage = _errorMessage.asStateFlow()
+
+    private val _successMessage = MutableStateFlow<String?>(null)
+    val successMessage = _successMessage.asStateFlow()
 
     init {
         fetchProducts()
@@ -35,9 +42,20 @@ class StockTransferViewModel @Inject constructor(
     private fun fetchProducts() {
         viewModelScope.launch {
             try {
-                products.value = productRepository.getProducts()
+                products.value = productRepository.getProducts().filter { !it.isArchived }
             } catch (e: Exception) {
                 _errorMessage.value = "Failed to fetch products: ${e.message}"
+            }
+        }
+    }
+
+    fun fetchVariantsForProduct(productId: String) {
+        viewModelScope.launch {
+            try {
+                variants.value = productVariantRepository.getVariantsForProduct(productId).filter { !it.isArchived }
+            } catch (e: Exception) {
+                _errorMessage.value = "Failed to fetch variants: ${e.message}"
+                variants.value = emptyList()
             }
         }
     }
@@ -53,26 +71,37 @@ class StockTransferViewModel @Inject constructor(
     }
 
     fun transferStock(
-        productId: String,
+        productVariantId: String,
         sourceWarehouseId: String,
         destinationWarehouseId: String,
         quantity: Int
     ) {
+        if (sourceWarehouseId == destinationWarehouseId) {
+            _errorMessage.value = "لا يمكن ترحيل المخزون إلى نفس المستودع."
+            return
+        }
+        if (quantity <= 0) {
+            _errorMessage.value = "الكمية يجب أن تكون أكبر من صفر."
+            return
+        }
+
         viewModelScope.launch {
             try {
                 stockEntryRepository.transferStock(
-                    productId = productId,
+                    productVariantId = productVariantId,
                     sourceWarehouseId = sourceWarehouseId,
                     destinationWarehouseId = destinationWarehouseId,
                     quantity = quantity
                 )
+                _successMessage.value = "تم ترحيل المخزون بنجاح!"
             } catch (e: Exception) {
-                _errorMessage.value = "Failed to transfer stock: ${e.message}"
+                _errorMessage.value = "فشل ترحيل المخزون: ${e.message}"
             }
         }
     }
 
-    fun clearError() {
+    fun clearMessages() {
         _errorMessage.value = null
+        _successMessage.value = null
     }
 }

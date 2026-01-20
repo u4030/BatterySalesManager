@@ -1,102 +1,57 @@
 package com.batterysales.ui.screens
 
-import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.navigation.NavHostController
+import androidx.navigation.NavController
+import com.batterysales.data.models.Warehouse
+import com.batterysales.viewmodel.InventoryReportItem
 import com.batterysales.viewmodel.ReportsViewModel
+import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ReportsScreen(
-    navController: NavHostController,
-    viewModel: ReportsViewModel = hiltViewModel()
-) {
-    val totalSales by viewModel.totalSales.collectAsState()
-    val totalExpenses by viewModel.totalExpenses.collectAsState()
-    val totalInvoices by viewModel.totalInvoices.collectAsState()
+fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hiltViewModel()) {
+    val reportItems by viewModel.inventoryReport.collectAsState()
+    val warehouses by viewModel.warehouses.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("التقارير والإحصائيات", fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "رجوع")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = Color.White,
-                    navigationIconContentColor = Color.White
-                )
-            )
+            TopAppBar(title = { Text("تقارير المخزون") })
         }
-    ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .background(Color(0xFFF5F5F5))
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            if (isLoading) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
-                }
-            } else {
-                ReportCardItem(
-                    title = "إجمالي المبيعات",
-                    value = "SR ${String.format("%.2f", totalSales)}",
-                    icon = Icons.Default.TrendingUp,
-                    color = Color(0xFF4CAF50)
-                )
-                
-                ReportCardItem(
-                    title = "إجمالي المصروفات",
-                    value = "SR ${String.format("%.2f", totalExpenses)}",
-                    icon = Icons.Default.TrendingDown,
-                    color = Color(0xFFF44336)
-                )
-                
-                ReportCardItem(
-                    title = "صافي الربح التقديري",
-                    value = "SR ${String.format("%.2f", totalSales - totalExpenses)}",
-                    icon = Icons.Default.AccountBalance,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                
-                ReportCardItem(
-                    title = "عدد الفواتير المصدرة",
-                    value = "$totalInvoices فاتورة",
-                    icon = Icons.Default.Description,
-                    color = Color(0xFF2196F3)
-                )
-
-                Spacer(modifier = Modifier.weight(1f))
-
-                Button(
-                    onClick = { /* وظيفة تصدير PDF */ },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Icon(Icons.Default.Download, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("تصدير تقرير PDF")
+    ) { padding ->
+        if (isLoading) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.padding(padding),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                items(reportItems) { item ->
+                    ReportItemCard(
+                        item = item,
+                        warehouses = warehouses,
+                        onClick = {
+                            val capacityStr = item.variant.capacity.toString()
+                            val productName = item.product.name
+                            navController.navigate(
+                                "product_ledger/${item.variant.id}/$productName/$capacityStr"
+                            )
+                        }
+                    )
                 }
             }
         }
@@ -104,31 +59,109 @@ fun ReportsScreen(
 }
 
 @Composable
-fun ReportCardItem(title: String, value: String, icon: ImageVector, color: Color) {
+fun ReportItemCard(
+    item: InventoryReportItem,
+    warehouses: List<Warehouse>,
+    onClick: () -> Unit
+) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
-        Row(
-            modifier = Modifier.padding(20.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Surface(
-                color = color.copy(alpha = 0.1f),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.size(56.dp)
+        Column(modifier = Modifier.padding(16.dp)) {
+            // Card Header: Product Name
+            Text(
+                text = "${item.product.name} - ${item.variant.capacity} أمبير",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Divider()
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Main Info: Totals
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceAround,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(28.dp))
+                InfoColumn(label = "إجمالي الكمية", value = item.totalQuantity.toString())
+                InfoColumn(label = "سعر التكلفة", value = String.format(Locale.US, "%.2f", item.averageCost))
+                InfoColumn(label = "اجمالي الأمبيرات الكلي", value = String.format(Locale.US, "%.2f", item.totalCostValue))
+            }
+
+            // Warehouse Breakdown
+            val quantitiesInWarehouses = warehouses.mapNotNull { warehouse ->
+                val quantity = item.warehouseQuantities[warehouse.id]
+                if (quantity != null && quantity != 0) {
+                    warehouse.name to quantity
+                } else null
+            }
+
+            if (quantitiesInWarehouses.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Divider()
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("الكمية بالمستودعات:", style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(8.dp))
+                Column(
+                    modifier = Modifier.padding(start = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    val totalWarehouseQuantity = quantitiesInWarehouses.sumOf { it.second }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Divider(modifier = Modifier.padding(end = 32.dp)) // خط فاصل قصير
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row {
+                        Text(
+                            text = "المجموع: ",
+                            fontWeight = FontWeight.Bold, // خط عريض للمجموع
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = totalWarehouseQuantity.toString(),
+                            fontWeight = FontWeight.Bold, // خط عريض للمجموع
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                    // عرض الكمية في كل مستودع
+                    quantitiesInWarehouses.forEach { (warehouseName, quantity) ->
+                        Row {
+                            Text(
+                                text = "$warehouseName: ",
+                                fontWeight = FontWeight.SemiBold,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                text = quantity.toString(),
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                    }
                 }
             }
-            Spacer(modifier = Modifier.width(16.dp))
-            Column {
-                Text(title, fontSize = 14.sp, color = Color.Gray)
-                Text(value, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.Black)
-            }
         }
+    }
+}
+
+@Composable
+fun InfoColumn(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = modifier
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Bold
+        )
     }
 }

@@ -24,7 +24,7 @@ class StockEntryRepository @Inject constructor(
         batch.commit().await()
     }
 
-    suspend fun getStockEntries(): List<StockEntry> {
+    suspend fun getAllStockEntries(): List<StockEntry> {
         return firestore.collection(StockEntry.COLLECTION_NAME)
             .get()
             .await()
@@ -32,7 +32,7 @@ class StockEntryRepository @Inject constructor(
     }
 
     suspend fun transferStock(
-        productId: String,
+        productVariantId: String,
         sourceWarehouseId: String,
         destinationWarehouseId: String,
         quantity: Int
@@ -41,7 +41,7 @@ class StockEntryRepository @Inject constructor(
 
         // Create a negative stock entry for the source warehouse
         val sourceStockEntry = StockEntry(
-            productId = productId,
+            productVariantId = productVariantId,
             warehouseId = sourceWarehouseId,
             quantity = -quantity,
             costPrice = 0.0 // Cost is already accounted for
@@ -51,7 +51,7 @@ class StockEntryRepository @Inject constructor(
 
         // Create a positive stock entry for the destination warehouse
         val destinationStockEntry = StockEntry(
-            productId = productId,
+            productVariantId = productVariantId,
             warehouseId = destinationWarehouseId,
             quantity = quantity,
             costPrice = 0.0 // Cost is already accounted for
@@ -60,5 +60,14 @@ class StockEntryRepository @Inject constructor(
         batch.set(destinationDocRef, destinationStockEntry)
 
         batch.commit().await()
+    }
+
+    suspend fun getEntriesForVariant(productVariantId: String): List<StockEntry> {
+        return firestore.collection(StockEntry.COLLECTION_NAME)
+            .whereEqualTo("productVariantId", productVariantId)
+            .orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING)
+            .get()
+            .await()
+            .toObjects(StockEntry::class.java)
     }
 }
