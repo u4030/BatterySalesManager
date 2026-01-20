@@ -5,19 +5,16 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
-import com.batterysales.model.StockEntry
 import com.batterysales.viewmodel.LedgerItem
 import com.batterysales.viewmodel.ProductLedgerViewModel
 import java.text.SimpleDateFormat
@@ -31,6 +28,25 @@ fun ProductLedgerScreen(
 ) {
     val ledgerItems by viewModel.ledgerItems.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    var showDeleteConfirmation by remember { mutableStateOf<String?>(null) }
+
+
+    if (showDeleteConfirmation != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmation = null },
+            title = { Text("تأكيد الحذف") },
+            text = { Text("هل أنت متأكد أنك تريد حذف هذا القيد؟ لا يمكن التراجع عن هذا الإجراء.") },
+            confirmButton = {
+                Button(onClick = {
+                    showDeleteConfirmation?.let { viewModel.deleteStockEntry(it) }
+                    showDeleteConfirmation = null
+                }) { Text("حذف") }
+            },
+            dismissButton = {
+                Button(onClick = { showDeleteConfirmation = null }) { Text("إلغاء") }
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -59,7 +75,20 @@ fun ProductLedgerScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 items(ledgerItems) { item ->
-                    LedgerItemCard(item = item)
+                    LedgerItemCard(
+                        item = item,
+                        onEdit = { entryId ->
+                            // A sales entry is not a real stock entry, cannot be edited.
+                            if (item.entry.supplier != "Sale") {
+                                navController.navigate("stock_entry?entryId=$entryId")
+                            }
+                        },
+                        onDelete = { entryId ->
+                             if (item.entry.supplier != "Sale") {
+                                showDeleteConfirmation = entryId
+                            }
+                        }
+                    )
                 }
             }
         }
@@ -67,14 +96,24 @@ fun ProductLedgerScreen(
 }
 
 @Composable
-fun LedgerItemCard(item: LedgerItem) {
+fun LedgerItemCard(
+    item: LedgerItem,
+    onEdit: (String) -> Unit,
+    onDelete: (String) -> Unit
+) {
     val entry = item.entry
-    val isPositive = entry.quantity > 0
-    val quantityColor = if (isPositive) Color(0xFF0A842D) else Color(0xFFD32F2F)
+    var menuExpanded by remember { mutableStateOf(false) }
+    val isSale = entry.supplier == "Sale"
+    val isTransfer = entry.costPrice == 0.0
+
+    val quantityColor = when {
+        entry.quantity > 0 -> Color(0xFF0A842D)
+        else -> Color(0xFFD32F2F)
+    }
     val typeText = when {
-        entry.supplier == "Sale" -> "بيع"
-        entry.costPrice == 0.0 && entry.quantity < 0 -> "نقل مخزون (إخراج)"
-        entry.costPrice == 0.0 && entry.quantity > 0 -> "نقل مخزون (إدخال)"
+        isSale -> "بيع"
+        isTransfer && entry.quantity < 0 -> "نقل مخزون (إخراج)"
+        isTransfer && entry.quantity > 0 -> "نقل مخزون (إدخال)"
         else -> "شراء"
     }
 
@@ -83,7 +122,6 @@ fun LedgerItemCard(item: LedgerItem) {
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            // Card Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -94,29 +132,53 @@ fun LedgerItemCard(item: LedgerItem) {
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )
-                Text(
-                    text = entry.timestamp.toFormattedString("yyyy-MM-dd"),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = entry.timestamp.toFormattedString("yyyy-MM-dd"),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    // Show menu only for editable/deletable entries
+                    if (!isSale && !isTransfer) {
+                        Box {
+                            IconButton(onClick = { menuExpanded = true }) {
+                                Icon(Icons.Default.MoreVert, contentDescription = "خيارات")
+                            }
+                            DropdownMenu(
+                                expanded = menuExpanded,
+                                onDismissRequest = { menuExpanded = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("تعديل") },
+                                    onClick = {
+                                        onEdit(entry.id)
+                                        menuExpanded = false
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("حذف") },
+                                    onClick = {
+                                        onDelete(entry.id)
+                                        menuExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
             }
-            Spacer(modifier = Modifier.height(8.dp))
             Divider()
             Spacer(modifier = Modifier.height(16.dp))
-
-            // Card Body
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 InfoColumnLedger(label = "الكمية", value = entry.quantity.toString(), valueColor = quantityColor)
                 InfoColumnLedger(label = "سعر القطعة", value = formatPrice(entry.costPrice))
-                InfoColumnLedger(label = "الإجمالي", value = formatPrice(entry.totalCost))
+                InfoColumnLedger(label = "الإجمالي", value = formatPrice(if (isSale) entry.quantity * entry.costPrice * -1 else entry.totalCost))
             }
-
             Spacer(modifier = Modifier.height(16.dp))
-
-            // Footer
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -127,7 +189,7 @@ fun LedgerItemCard(item: LedgerItem) {
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold
                 )
-                if (entry.supplier.isNotEmpty() && entry.supplier != "Sale") {
+                if (entry.supplier.isNotEmpty() && !isSale) {
                     Text(
                         text = "المورد: ${entry.supplier}",
                         style = MaterialTheme.typography.bodyMedium,
@@ -142,25 +204,15 @@ fun LedgerItemCard(item: LedgerItem) {
 @Composable
 fun InfoColumnLedger(label: String, value: String, valueColor: Color = Color.Unspecified) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Text(text = label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodyLarge,
-            fontWeight = FontWeight.Bold,
-            color = valueColor
-        )
+        Text(text = value, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, color = valueColor)
     }
 }
 
 private fun formatPrice(price: Double): String {
-    return if (price > 0) String.format(Locale.US, "%.2f", price) else "-"
+    return if (price != 0.0) String.format(Locale.US, "%.2f", price) else "-"
 }
-
 
 private fun Date.toFormattedString(format: String): String {
     val sdf = SimpleDateFormat(format, Locale.getDefault())

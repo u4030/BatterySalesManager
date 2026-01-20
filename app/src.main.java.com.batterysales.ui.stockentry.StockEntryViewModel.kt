@@ -18,10 +18,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.util.Date
-import java.util.UUID
 import javax.inject.Inject
 
 data class StockEntryItem(
+    // Unique ID for the list item, can be the same as StockEntry.id in edit mode
     val id: String = UUID.randomUUID().toString(),
     val productVariant: ProductVariant,
     val quantity: Int,
@@ -52,68 +52,56 @@ class StockEntryViewModel @Inject constructor(
     private val editingEntryId = savedStateHandle.get<String>("entryId")
     val isEditMode = editingEntryId != null
 
-    private var loadedEntry: StockEntry? = null
-
     init {
-        fetchInitialData()
+        fetchProducts()
+        fetchWarehouses()
+        if (isEditMode && editingEntryId != null) {
+            loadEntryForEdit(editingEntryId)
+        }
     }
 
-    private fun fetchInitialData() {
+    private fun loadEntryForEdit(entryId: String) {
         viewModelScope.launch {
             try {
-                // Fetch warehouses and products first
-                warehouses.value = warehouseRepository.getWarehouses()
-                products.value = productRepository.getProducts().filter { !it.isArchived }
+                val entry = stockEntryRepository.getStockEntryById(entryId)
+                if (entry != null) {
+                    val variant = productVariantRepository.getVariant(entry.productVariantId)
+                    val product = variant?.let { productRepository.getProduct(it.productId) }
 
-                // If in edit mode, load the entry and related data
-                if (isEditMode && editingEntryId != null) {
-                    loadEntryForEdit(editingEntryId)
+                    if (variant != null && product != null) {
+                        val item = StockEntryItem(
+                            id = entry.id,
+                            productVariant = variant,
+                            quantity = entry.quantity,
+                            productName = product.name,
+                            costPrice = entry.costPrice,
+                            costPerAmpere = entry.costPerAmpere,
+                            totalAmperes = entry.totalAmperes,
+                            totalCost = entry.totalCost
+                        )
+                        stockItems.add(item)
+                    } else {
+                        _errorMessage.value = "لم يتم العثور على المنتج المرتبط."
+                    }
+                } else {
+                    _errorMessage.value = "لم يتم العثور على قيد المخزون."
                 }
             } catch (e: Exception) {
-                _errorMessage.value = "Failed to load initial data: ${e.message}"
+                _errorMessage.value = "فشل تحميل القيد: ${e.message}"
             }
         }
     }
 
-    private suspend fun loadEntryForEdit(entryId: String) {
-        try {
-            val entry = stockEntryRepository.getStockEntryById(entryId)
-            loadedEntry = entry // Store the loaded entry
-            if (entry != null) {
-                val variant = productVariantRepository.getVariant(entry.productVariantId)
-                val product = variant?.let { productRepository.getProduct(it.productId) }
 
-                if (variant != null && product != null) {
-                    // Pre-fetch variants for the product to populate the dropdown if needed
-                    fetchVariantsForProduct(product.id)
-
-                    val item = StockEntryItem(
-                        id = entry.id,
-                        productVariant = variant,
-                        quantity = entry.quantity,
-                        productName = product.name,
-                        costPrice = entry.costPrice,
-                        costPerAmpere = entry.costPerAmpere,
-                        totalAmperes = entry.totalAmperes,
-                        totalCost = entry.totalCost
-                    )
-                    stockItems.clear() // Clear any existing items
-                    stockItems.add(item)
-                } else {
-                    _errorMessage.value = "لم يتم العثور على المنتج المرتبط."
-                }
-            } else {
-                _errorMessage.value = "لم يتم العثور على قيد المخزون."
+    private fun fetchProducts() {
+        viewModelScope.launch {
+            try {
+                products.value = productRepository.getProducts().filter { !it.isArchived }
+            } catch (e: Exception) {
+                _errorMessage.value = "Failed to fetch products: ${e.message}"
             }
-        } catch (e: Exception) {
-            _errorMessage.value = "فشل تحميل القيد: ${e.message}"
         }
     }
-
-    // Helper functions for the screen to get loaded data
-    fun getLoadedEntryWarehouseId(): String? = loadedEntry?.warehouseId
-    fun getLoadedEntrySupplier(): String = loadedEntry?.supplier ?: ""
-
 
     fun fetchVariantsForProduct(productId: String) {
         viewModelScope.launch {
@@ -126,11 +114,21 @@ class StockEntryViewModel @Inject constructor(
         }
     }
 
+    private fun fetchWarehouses() {
+        viewModelScope.launch {
+            try {
+                warehouses.value = warehouseRepository.getWarehouses()
+            } catch (e: Exception) {
+                _errorMessage.value = "Failed to fetch warehouses: ${e.message}"
+            }
+        }
+    }
+
     fun addWarehouse(name: String) {
         viewModelScope.launch {
             try {
                 warehouseRepository.addWarehouse(Warehouse(name = name, location = ""))
-                warehouses.value = warehouseRepository.getWarehouses() // Refresh warehouses
+                fetchWarehouses()
             } catch (e: Exception) {
                 _errorMessage.value = "Failed to add warehouse: ${e.message}"
             }
@@ -150,7 +148,16 @@ class StockEntryViewModel @Inject constructor(
             _errorMessage.value = "لا يمكن إضافة أصناف جديدة في وضع التعديل."
             return
         }
-        // Other validations...
+
+        if (quantity <= 0) {
+            _errorMessage.value = "الكمية يجب أن تكون أكبر من صفر."
+            return
+        }
+        if (costPrice <= 0) {
+            _errorMessage.value = "الرجاء إدخال تكلفة صحيحة."
+            return
+        }
+
         stockItems.add(StockEntryItem(
             productVariant = variant,
             quantity = quantity,
@@ -170,22 +177,19 @@ class StockEntryViewModel @Inject constructor(
         stockItems.remove(item)
     }
 
-    fun updateItemInList(itemId: String, newQuantity: Int, newCostPrice: Double, newCostPerAmpere: Double) {
-        val index = stockItems.indexOfFirst { it.id == itemId }
-        if (index != -1) {
-            val item = stockItems[index]
+    fun updateItemQuantity(item: StockEntryItem, newQuantity: Int) {
+        val index = stockItems.indexOfFirst { it.id == item.id }
+        if (index != -1 && newQuantity > 0) {
+            // Recalculate totals when quantity changes
             val newTotalAmperes = newQuantity * item.productVariant.capacity
-            val newTotalCost = newQuantity * newCostPrice
+            val newTotalCost = newQuantity * item.costPrice
             stockItems[index] = item.copy(
                 quantity = newQuantity,
-                costPrice = newCostPrice,
-                costPerAmpere = newCostPerAmpere,
                 totalAmperes = newTotalAmperes,
                 totalCost = newTotalCost
             )
         }
     }
-
 
     fun saveStockEntry(warehouseId: String, supplier: String) {
         viewModelScope.launch {
@@ -193,8 +197,10 @@ class StockEntryViewModel @Inject constructor(
                 _errorMessage.value = "لا توجد أصناف للحفظ."
                 return@launch
             }
+
             try {
                 if (isEditMode) {
+                    // --- Update Logic ---
                     val itemToUpdate = stockItems.first()
                     val originalEntry = stockEntryRepository.getStockEntryById(itemToUpdate.id)
 
@@ -205,6 +211,9 @@ class StockEntryViewModel @Inject constructor(
                             costPerAmpere = itemToUpdate.costPerAmpere,
                             totalAmperes = itemToUpdate.totalAmperes,
                             totalCost = itemToUpdate.totalCost,
+                            // Note: Grand totals might need recalculation if they depend on other entries.
+                            // For a single entry edit, we can keep them as they were, or update them based on the change.
+                            // Let's assume for now they don't need to change for a single item edit.
                             supplier = supplier
                         )
                         stockEntryRepository.updateStockEntry(updatedEntry)
@@ -212,10 +221,12 @@ class StockEntryViewModel @Inject constructor(
                          _errorMessage.value = "القيد الأصلي غير موجود، لا يمكن التحديث."
                         return@launch
                     }
+
                 } else {
-                    // Add new logic...
+                    // --- Add New Logic ---
                     val grandTotalAmperes = stockItems.sumOf { it.totalAmperes }
                     val grandTotalCost = stockItems.sumOf { it.totalCost }
+
                     val entries = stockItems.map { item ->
                         StockEntry(
                             productVariantId = item.productVariant.id,
@@ -243,7 +254,4 @@ class StockEntryViewModel @Inject constructor(
     fun clearError() {
         _errorMessage.value = null
     }
-
-    // Unused functions from previous attempts - can be removed
-    // fun updateItemQuantity(...)
 }

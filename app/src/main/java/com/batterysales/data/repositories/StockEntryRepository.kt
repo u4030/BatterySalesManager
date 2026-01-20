@@ -70,4 +70,26 @@ class StockEntryRepository @Inject constructor(
             .await()
             .toObjects(StockEntry::class.java)
     }
+
+    suspend fun getStockEntryById(entryId: String): StockEntry? {
+        return firestore.collection(StockEntry.COLLECTION_NAME)
+            .document(entryId)
+            .get()
+            .await()
+            .toObject(StockEntry::class.java)
+    }
+
+    suspend fun updateStockEntry(entry: StockEntry) {
+        firestore.collection(StockEntry.COLLECTION_NAME)
+            .document(entry.id)
+            .set(entry)
+            .await()
+    }
+
+    suspend fun deleteStockEntry(entryId: String) {
+        firestore.collection(StockEntry.COLLECTION_NAME)
+            .document(entryId)
+            .delete()
+            .await()
+    }
 }

@@ -30,7 +30,15 @@ fun AppNavigation(navController: NavHostController) {
         }
         composable("warehouse") { WarehouseScreen(navController = navController) }
         composable("product_management") { ProductManagementScreen() }
-        composable("stock_entry") { StockEntryScreen() }
+        composable(
+            route = "stock_entry?entryId={entryId}",
+            arguments = listOf(navArgument("entryId") {
+                type = NavType.StringType
+                nullable = true
+            })
+        ) {
+            StockEntryScreen()
+        }
         composable("stock_transfer") { StockTransferScreen() }
         composable("clients") { ClientScreen(navController) }
         composable("accounting") { AccountingScreen(navController) }

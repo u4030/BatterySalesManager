@@ -39,6 +39,17 @@ class ProductLedgerViewModel @Inject constructor(
         fetchLedger()
     }
 
+    fun deleteStockEntry(entryId: String) {
+        viewModelScope.launch {
+            try {
+                stockEntryRepository.deleteStockEntry(entryId)
+                fetchLedger() // Refresh the list
+            } catch (e: Exception) {
+                // Handle error (e.g., show a snackbar)
+            }
+        }
+    }
+
     private fun fetchLedger() {
         if (productVariantId.isEmpty()) return
 
