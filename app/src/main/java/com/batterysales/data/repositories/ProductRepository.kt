@@ -16,6 +16,14 @@ class ProductRepository @Inject constructor(
             .toObjects(Product::class.java)
     }
 
+    suspend fun getProduct(productId: String): Product? {
+        return firestore.collection(Product.COLLECTION_NAME)
+            .document(productId)
+            .get()
+            .await()
+            .toObject(Product::class.java)
+    }
+
     suspend fun addProduct(product: Product) {
         firestore.collection(Product.COLLECTION_NAME)
             .add(product)

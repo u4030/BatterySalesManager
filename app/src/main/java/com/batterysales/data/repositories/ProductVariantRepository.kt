@@ -17,6 +17,14 @@ class ProductVariantRepository @Inject constructor(
             .toObjects(ProductVariant::class.java)
     }
 
+    suspend fun getVariant(variantId: String): ProductVariant? {
+        return firestore.collection(ProductVariant.COLLECTION_NAME)
+            .document(variantId)
+            .get()
+            .await()
+            .toObject(ProductVariant::class.java)
+    }
+
     suspend fun addVariant(variant: ProductVariant) {
         firestore.collection(ProductVariant.COLLECTION_NAME)
             .add(variant)

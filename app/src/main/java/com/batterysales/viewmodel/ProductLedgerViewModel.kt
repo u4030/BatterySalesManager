@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-data class ProductLedgerItem(
+data class LedgerItem(
     val entry: StockEntry,
     val warehouseName: String
 )
@@ -29,7 +29,7 @@ class ProductLedgerViewModel @Inject constructor(
     val productName: String = savedStateHandle.get<String>("productName") ?: "سجل المنتج"
     val variantCapacity: String = savedStateHandle.get<String>("variantCapacity") ?: ""
 
-    private val _ledgerItems = MutableStateFlow<List<ProductLedgerItem>>(emptyList())
+    private val _ledgerItems = MutableStateFlow<List<LedgerItem>>(emptyList())
     val ledgerItems = _ledgerItems.asStateFlow()
 
     private val _isLoading = MutableStateFlow(false)
@@ -61,7 +61,7 @@ class ProductLedgerViewModel @Inject constructor(
 
                 val items = entries.mapNotNull { entry ->
                     warehouses[entry.warehouseId]?.let { warehouse ->
-                        ProductLedgerItem(entry = entry, warehouseName = warehouse.name)
+                        LedgerItem(entry = entry, warehouseName = warehouse.name)
                     }
                 }
                 _ledgerItems.value = items
