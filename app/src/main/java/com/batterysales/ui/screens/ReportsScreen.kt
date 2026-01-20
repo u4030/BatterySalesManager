@@ -1,5 +1,6 @@
 package com.batterysales.ui.screens
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -9,10 +10,14 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.batterysales.model.Warehouse
+import com.batterysales.viewmodel.InventoryReportItem
 import com.batterysales.viewmodel.ReportsViewModel
+import java.util.Locale
 
 @Composable
 fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hiltViewModel()) {
@@ -26,52 +31,120 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
         }
     ) { padding ->
         if (isLoading) {
-            CircularProgressIndicator(modifier = Modifier.fillMaxSize().wrapContentSize())
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
         } else {
-            LazyColumn(modifier = Modifier.padding(padding).padding(16.dp)) {
-                // Header Row
-                item {
-                    Column {
-                        Row(modifier = Modifier.fillMaxWidth()) {
-                            Text("المنتج", modifier = Modifier.weight(2f))
-                            warehouses.forEach { warehouse ->
-                                Text(warehouse.name, modifier = Modifier.weight(1f))
-                            }
-                            Text("الكمية", modifier = Modifier.weight(0.7f))
-                            Text("متوسط التكلفة", modifier = Modifier.weight(1f))
-                            Text("قيمة المخزون", modifier = Modifier.weight(1f))
-                        }
-                        Divider()
-                    }
-                }
-
-                // Data Rows
+            LazyColumn(
+                modifier = Modifier.padding(padding),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
                 items(reportItems) { item ->
-                    Column {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    val capacityStr = item.variant.capacity.toString()
-                                    navController.navigate(
-                                        "product_ledger/${item.variant.id}/${item.product.name}/$capacityStr"
-                                    )
-                                }
-                                .padding(vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("${item.product.name} - ${item.variant.capacity} أمبير", modifier = Modifier.weight(2f))
-                            warehouses.forEach { warehouse ->
-                                Text((item.warehouseQuantities[warehouse.id] ?: 0).toString(), modifier = Modifier.weight(1f))
-                            }
-                            Text(item.totalQuantity.toString(), modifier = Modifier.weight(0.7f))
-                            Text(String.format("%.2f", item.averageCost), modifier = Modifier.weight(1f))
-                            Text(String.format("%.2f", item.totalCostValue), modifier = Modifier.weight(1f))
+                    ReportItemCard(
+                        item = item,
+                        warehouses = warehouses,
+                        onClick = {
+                            val capacityStr = item.variant.capacity.toString()
+                            val productName = item.product.name
+                            navController.navigate(
+                                "product_ledger/${item.variant.id}/$productName/$capacityStr"
+                            )
                         }
-                        Divider()
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ReportItemCard(
+    item: InventoryReportItem,
+    warehouses: List<Warehouse>,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            // Card Header: Product Name
+            Text(
+                text = "${item.product.name} - ${item.variant.capacity} أمبير",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Divider()
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Main Info: Totals
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceAround,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                InfoColumn(label = "إجمالي الكمية", value = item.totalQuantity.toString())
+                InfoColumn(label = "متوسط التكلفة", value = String.format(Locale.US, "%.2f", item.averageCost))
+                InfoColumn(label = "قيمة المخزون", value = String.format(Locale.US, "%.2f", item.totalCostValue))
+            }
+
+            // Warehouse Breakdown
+            val quantitiesInWarehouses = warehouses.mapNotNull { warehouse ->
+                val quantity = item.warehouseQuantities[warehouse.id]
+                if (quantity != null && quantity != 0) {
+                    warehouse.name to quantity
+                } else null
+            }
+
+            if (quantitiesInWarehouses.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Divider()
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("الكمية بالمستودعات:", style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(8.dp))
+                Column(
+                    modifier = Modifier.padding(start = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    quantitiesInWarehouses.forEach { (warehouseName, quantity) ->
+                        Row {
+                            Text(
+                                text = "$warehouseName: ",
+                                fontWeight = FontWeight.SemiBold,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                text = quantity.toString(),
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+fun InfoColumn(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = modifier
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Bold
+        )
     }
 }
