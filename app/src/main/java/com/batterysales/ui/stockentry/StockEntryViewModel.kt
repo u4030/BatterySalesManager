@@ -1,7 +1,5 @@
 package com.batterysales.ui.stockentry
 
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -14,13 +12,31 @@ import com.batterysales.data.repositories.ProductVariantRepository
 import com.batterysales.data.repositories.StockEntryRepository
 import com.batterysales.data.repositories.WarehouseRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import java.util.Date
-import java.util.UUID
+import java.util.*
 import javax.inject.Inject
 
+// Represents the state of the UI
+data class StockEntryUiState(
+    val products: List<Product> = emptyList(),
+    val variants: List<ProductVariant> = emptyList(),
+    val warehouses: List<Warehouse> = emptyList(),
+    val selectedProduct: Product? = null,
+    val selectedVariant: ProductVariant? = null,
+    val selectedWarehouse: Warehouse? = null,
+    val quantity: String = "",
+    val costInputMode: CostInputMode = CostInputMode.BY_AMPERE,
+    val costValue: String = "",
+    val supplierName: String = "",
+    val stockItems: List<StockEntryItem> = emptyList(),
+    val isEditMode: Boolean = false,
+    val isLoading: Boolean = true,
+    val errorMessage: String? = null,
+    val isFinished: Boolean = false
+)
+
+// Represents a single item in the stock entry list
 data class StockEntryItem(
     val id: String = UUID.randomUUID().toString(),
     val productVariant: ProductVariant,
@@ -38,56 +54,69 @@ class StockEntryViewModel @Inject constructor(
     private val productVariantRepository: ProductVariantRepository,
     private val warehouseRepository: WarehouseRepository,
     private val stockEntryRepository: StockEntryRepository,
-    private val savedStateHandle: SavedStateHandle
+    savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
-    val products = mutableStateOf<List<Product>>(emptyList())
-    val variants = mutableStateOf<List<ProductVariant>>(emptyList())
-    val warehouses = mutableStateOf<List<Warehouse>>(emptyList())
-    val stockItems = mutableStateListOf<StockEntryItem>()
+    private val _uiState = MutableStateFlow(StockEntryUiState())
+    val uiState: StateFlow<StockEntryUiState> = _uiState.asStateFlow()
 
-    private val _errorMessage = MutableStateFlow<String?>(null)
-    val errorMessage = _errorMessage.asStateFlow()
-
-    private val editingEntryId = savedStateHandle.get<String>("entryId")
-    val isEditMode = editingEntryId != null
-
-    private var loadedEntry: StockEntry? = null
+    private val editingEntryId: String? = savedStateHandle.get<String>("entryId")
 
     init {
-        fetchInitialData()
+        loadInitialData()
     }
 
-    private fun fetchInitialData() {
+    private fun loadInitialData() {
         viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true) }
             try {
-                // Fetch warehouses and products first
-                warehouses.value = warehouseRepository.getWarehouses()
-                products.value = productRepository.getProducts().filter { !it.isArchived }
+                val warehouses = warehouseRepository.getWarehouses()
+                val products = productRepository.getProducts().filter { !it.isArchived }
+                _uiState.update { it.copy(warehouses = warehouses, products = products) }
 
-                // If in edit mode, load the entry and related data
-                if (isEditMode && editingEntryId != null) {
+                if (editingEntryId != null) {
                     loadEntryForEdit(editingEntryId)
+                } else {
+                    _uiState.update { it.copy(isLoading = false, isEditMode = false) }
                 }
             } catch (e: Exception) {
-                _errorMessage.value = "Failed to load initial data: ${e.message}"
+                _uiState.update { it.copy(isLoading = false, errorMessage = "فشل تحميل البيانات الأولية") }
             }
         }
     }
 
     private suspend fun loadEntryForEdit(entryId: String) {
-        try {
-            val entry = stockEntryRepository.getStockEntryById(entryId)
-            loadedEntry = entry // Store the loaded entry
-            if (entry != null) {
-                val variant = productVariantRepository.getVariant(entry.productVariantId)
-                val product = variant?.let { productRepository.getProduct(it.productId) }
+        val entry = stockEntryRepository.getStockEntryById(entryId)
+        if (entry == null) {
+            _uiState.update { it.copy(isLoading = false, errorMessage = "لم يتم العثور على القيد") }
+            return
+        }
 
-                if (variant != null && product != null) {
-                    // Pre-fetch variants for the product to populate the dropdown if needed
-                    fetchVariantsForProduct(product.id)
+        val variant = productVariantRepository.getVariant(entry.productVariantId)
+        val product = variant?.let { productRepository.getProduct(it.productId) }
+        val warehouse = uiState.value.warehouses.find { it.id == entry.warehouseId }
 
-                    val item = StockEntryItem(
+        if (variant == null || product == null || warehouse == null) {
+            _uiState.update { it.copy(isLoading = false, errorMessage = "فشل تحميل تفاصيل القيد") }
+            return
+        }
+
+        // Fetch variants for the selected product to have them ready
+        val variantsForProduct = productVariantRepository.getVariantsForProduct(product.id)
+
+        _uiState.update {
+            it.copy(
+                isEditMode = true,
+                selectedProduct = product,
+                variants = variantsForProduct,
+                selectedVariant = variant,
+                selectedWarehouse = warehouse,
+                quantity = entry.quantity.toString(),
+                costValue = entry.costPrice.toString(),
+                costInputMode = CostInputMode.BY_ITEM, // Default to item cost for simplicity in edit mode
+                supplierName = entry.supplier,
+                stockItems = listOf(
+                    StockEntryItem(
                         id = entry.id,
                         productVariant = variant,
                         quantity = entry.quantity,
@@ -97,129 +126,111 @@ class StockEntryViewModel @Inject constructor(
                         totalAmperes = entry.totalAmperes,
                         totalCost = entry.totalCost
                     )
-                    stockItems.clear() // Clear any existing items
-                    stockItems.add(item)
-                } else {
-                    _errorMessage.value = "لم يتم العثور على المنتج المرتبط."
-                }
-            } else {
-                _errorMessage.value = "لم يتم العثور على قيد المخزون."
-            }
-        } catch (e: Exception) {
-            _errorMessage.value = "فشل تحميل القيد: ${e.message}"
-        }
-    }
-
-    // Helper functions for the screen to get loaded data
-    fun getLoadedEntryWarehouseId(): String? = loadedEntry?.warehouseId
-    fun getLoadedEntrySupplier(): String = loadedEntry?.supplier ?: ""
-
-
-    fun fetchVariantsForProduct(productId: String) {
-        viewModelScope.launch {
-            try {
-                variants.value = productVariantRepository.getVariantsForProduct(productId).filter { !it.isArchived }
-            } catch (e: Exception) {
-                _errorMessage.value = "Failed to fetch variants: ${e.message}"
-                variants.value = emptyList()
-            }
-        }
-    }
-
-    fun addWarehouse(name: String) {
-        viewModelScope.launch {
-            try {
-                warehouseRepository.addWarehouse(Warehouse(name = name, location = ""))
-                warehouses.value = warehouseRepository.getWarehouses() // Refresh warehouses
-            } catch (e: Exception) {
-                _errorMessage.value = "Failed to add warehouse: ${e.message}"
-            }
-        }
-    }
-
-    fun addVariantToEntry(
-        variant: ProductVariant,
-        quantity: Int,
-        productName: String,
-        costPrice: Double,
-        costPerAmpere: Double,
-        totalAmperes: Int,
-        totalCost: Double
-    ) {
-        if (isEditMode) {
-            _errorMessage.value = "لا يمكن إضافة أصناف جديدة في وضع التعديل."
-            return
-        }
-        // Other validations...
-        stockItems.add(StockEntryItem(
-            productVariant = variant,
-            quantity = quantity,
-            productName = productName,
-            costPrice = costPrice,
-            costPerAmpere = costPerAmpere,
-            totalAmperes = totalAmperes,
-            totalCost = totalCost
-        ))
-    }
-
-    fun removeVariantFromEntry(item: StockEntryItem) {
-        if (isEditMode) {
-             _errorMessage.value = "لا يمكن إزالة الأصناف في وضع التعديل."
-            return
-        }
-        stockItems.remove(item)
-    }
-
-    fun updateItemInList(itemId: String, newQuantity: Int, newCostPrice: Double, newCostPerAmpere: Double) {
-        val index = stockItems.indexOfFirst { it.id == itemId }
-        if (index != -1) {
-            val item = stockItems[index]
-            val newTotalAmperes = newQuantity * item.productVariant.capacity
-            val newTotalCost = newQuantity * newCostPrice
-            stockItems[index] = item.copy(
-                quantity = newQuantity,
-                costPrice = newCostPrice,
-                costPerAmpere = newCostPerAmpere,
-                totalAmperes = newTotalAmperes,
-                totalCost = newTotalCost
+                ),
+                isLoading = false
             )
         }
     }
 
+    // --- Event Handlers for UI Actions ---
 
-    fun saveStockEntry(warehouseId: String, supplier: String) {
+    fun onProductSelected(product: Product) {
         viewModelScope.launch {
-            if (stockItems.isEmpty()) {
-                _errorMessage.value = "لا توجد أصناف للحفظ."
+            _uiState.update { it.copy(selectedProduct = product, selectedVariant = null, variants = emptyList()) }
+            try {
+                 val variants = productVariantRepository.getVariantsForProduct(product.id).filter { !it.isArchived }
+                _uiState.update { it.copy(variants = variants) }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "فشل تحميل السعات") }
+            }
+        }
+    }
+
+    fun onVariantSelected(variant: ProductVariant) {
+        _uiState.update { it.copy(selectedVariant = variant) }
+    }
+
+    fun onWarehouseSelected(warehouse: Warehouse) {
+        _uiState.update { it.copy(selectedWarehouse = warehouse) }
+    }
+
+    fun onQuantityChanged(quantity: String) {
+        _uiState.update { it.copy(quantity = quantity) }
+    }
+
+    fun onCostInputModeChanged(mode: CostInputMode) {
+        _uiState.update { it.copy(costInputMode = mode, costValue = "") }
+    }
+
+    fun onCostValueChanged(cost: String) {
+        _uiState.update { it.copy(costValue = cost) }
+    }
+
+    fun onSupplierNameChanged(name: String) {
+        _uiState.update { it.copy(supplierName = name) }
+    }
+
+    fun onAddItemClicked() {
+        val state = uiState.value
+        // Calculate derived values based on current state
+        val quantity = state.quantity.toIntOrNull() ?: 0
+        val cost = state.costValue.toDoubleOrNull() ?: 0.0
+        val variant = state.selectedVariant ?: return
+
+        val costPerItem = if (state.costInputMode == CostInputMode.BY_ITEM) cost else cost * variant.capacity
+        val costPerAmpere = if (state.costInputMode == CostInputMode.BY_AMPERE) cost else if (variant.capacity > 0) cost / variant.capacity else 0.0
+        val totalAmperes = quantity * variant.capacity
+        val totalCost = quantity * costPerItem
+
+        if (quantity <= 0 || costPerItem <= 0) {
+            _uiState.update { it.copy(errorMessage = "الرجاء إدخال كمية وتكلفة صحيحة") }
+            return
+        }
+
+        val newItem = StockEntryItem(
+            productVariant = variant,
+            quantity = quantity,
+            productName = state.selectedProduct?.name ?: "",
+            costPrice = costPerItem,
+            costPerAmpere = costPerAmpere,
+            totalAmperes = totalAmperes,
+            totalCost = totalCost
+        )
+        _uiState.update { it.copy(stockItems = it.stockItems + newItem, quantity = "", costValue = "") }
+    }
+
+    fun onRemoveItemClicked(item: StockEntryItem) {
+        _uiState.update { it.copy(stockItems = it.stockItems - item) }
+    }
+
+    fun onSaveClicked() {
+        viewModelScope.launch {
+            val state = uiState.value
+            if (state.stockItems.isEmpty() || state.selectedWarehouse == null) {
+                _uiState.update { it.copy(errorMessage = "الرجاء اختيار مستودع وإضافة أصناف") }
                 return@launch
             }
-            try {
-                if (isEditMode) {
-                    val itemToUpdate = stockItems.first()
-                    val originalEntry = stockEntryRepository.getStockEntryById(itemToUpdate.id)
 
-                    if (originalEntry != null) {
-                         val updatedEntry = originalEntry.copy(
-                            quantity = itemToUpdate.quantity,
-                            costPrice = itemToUpdate.costPrice,
-                            costPerAmpere = itemToUpdate.costPerAmpere,
-                            totalAmperes = itemToUpdate.totalAmperes,
-                            totalCost = itemToUpdate.totalCost,
-                            supplier = supplier
-                        )
-                        stockEntryRepository.updateStockEntry(updatedEntry)
-                    } else {
-                         _errorMessage.value = "القيد الأصلي غير موجود، لا يمكن التحديث."
-                        return@launch
-                    }
+            try {
+                if (state.isEditMode) {
+                    val originalEntry = stockEntryRepository.getStockEntryById(editingEntryId!!)!!
+                    val updatedItem = calculateUpdatedItem()
+                    val updatedEntry = originalEntry.copy(
+                        quantity = updatedItem.quantity,
+                        costPrice = updatedItem.costPrice,
+                        costPerAmpere = updatedItem.costPerAmpere,
+                        totalAmperes = updatedItem.totalAmperes,
+                        totalCost = updatedItem.totalCost,
+                        supplier = state.supplierName
+                    )
+                    stockEntryRepository.updateStockEntry(updatedEntry)
                 } else {
-                    // Add new logic...
-                    val grandTotalAmperes = stockItems.sumOf { it.totalAmperes }
-                    val grandTotalCost = stockItems.sumOf { it.totalCost }
-                    val entries = stockItems.map { item ->
+                    val grandTotalAmperes = state.stockItems.sumOf { it.totalAmperes }
+                    val grandTotalCost = state.stockItems.sumOf { it.totalCost }
+                    val entries = state.stockItems.map { item ->
                         StockEntry(
                             productVariantId = item.productVariant.id,
-                            warehouseId = warehouseId,
+                            warehouseId = state.selectedWarehouse.id,
                             quantity = item.quantity,
                             costPrice = item.costPrice,
                             costPerAmpere = item.costPerAmpere,
@@ -228,22 +239,52 @@ class StockEntryViewModel @Inject constructor(
                             grandTotalAmperes = grandTotalAmperes,
                             grandTotalCost = grandTotalCost,
                             timestamp = Date(),
-                            supplier = supplier
+                            supplier = state.supplierName
                         )
                     }
                     stockEntryRepository.addStockEntries(entries)
                 }
-                stockItems.clear()
+                _uiState.update { it.copy(isFinished = true) } // Navigate back
             } catch (e: Exception) {
-                _errorMessage.value = "فشل حفظ إدخال المخزون: ${e.message}"
+                _uiState.update { it.copy(errorMessage = "فشل حفظ البيانات: ${e.message}") }
             }
         }
     }
 
-    fun clearError() {
-        _errorMessage.value = null
+    // Helper to calculate the final state of the item being edited
+    private fun calculateUpdatedItem(): StockEntryItem {
+         val state = uiState.value
+        val quantity = state.quantity.toIntOrNull() ?: 0
+        val cost = state.costValue.toDoubleOrNull() ?: 0.0
+        val variant = state.selectedVariant!!
+
+        val costPerItem = if (state.costInputMode == CostInputMode.BY_ITEM) cost else cost * variant.capacity
+        val costPerAmpere = if (state.costInputMode == CostInputMode.BY_AMPERE) cost else if (variant.capacity > 0) cost / variant.capacity else 0.0
+        val totalAmperes = quantity * variant.capacity
+        val totalCost = quantity * costPerItem
+
+        return state.stockItems.first().copy(
+            quantity = quantity,
+            costPrice = costPerItem,
+            costPerAmpere = costPerAmpere,
+            totalAmperes = totalAmperes,
+            totalCost = totalCost
+        )
     }
 
-    // Unused functions from previous attempts - can be removed
-    // fun updateItemQuantity(...)
+    fun onAddWarehouse(name: String) {
+        viewModelScope.launch {
+            try {
+                warehouseRepository.addWarehouse(Warehouse(name = name, location = ""))
+                val warehouses = warehouseRepository.getWarehouses()
+                _uiState.update { it.copy(warehouses = warehouses) }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "فشل إضافة المستودع") }
+            }
+        }
+    }
+
+     fun onDismissError() {
+        _uiState.update { it.copy(errorMessage = null) }
+    }
 }
