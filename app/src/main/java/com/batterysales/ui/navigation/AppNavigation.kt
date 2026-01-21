@@ -37,7 +37,7 @@ fun AppNavigation(navController: NavHostController) {
                 nullable = true
             })
         ) {
-            StockEntryScreen()
+            StockEntryScreen(navController = navController)
         }
         composable("stock_transfer") { StockTransferScreen() }
         composable("clients") { ClientScreen(navController) }

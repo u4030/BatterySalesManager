@@ -2,6 +2,10 @@ package com.batterysales.data.repositories
 
 import com.batterysales.data.models.StockEntry
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Query
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 
@@ -22,6 +26,21 @@ class StockEntryRepository @Inject constructor(
             batch.set(docRef, entry)
         }
         batch.commit().await()
+    }
+
+    fun getAllStockEntriesFlow(): Flow<List<StockEntry>> = callbackFlow {
+        val listenerRegistration = firestore.collection(StockEntry.COLLECTION_NAME)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    val entries = snapshot.toObjects(StockEntry::class.java)
+                    trySend(entries).isSuccess
+                }
+            }
+        awaitClose { listenerRegistration.remove() }
     }
 
     suspend fun getAllStockEntries(): List<StockEntry> {
@@ -62,14 +81,23 @@ class StockEntryRepository @Inject constructor(
         batch.commit().await()
     }
 
-    suspend fun getEntriesForVariant(productVariantId: String): List<StockEntry> {
-        return firestore.collection(StockEntry.COLLECTION_NAME)
+    fun getEntriesForVariant(productVariantId: String): Flow<List<StockEntry>> = callbackFlow {
+        val listenerRegistration = firestore.collection(StockEntry.COLLECTION_NAME)
             .whereEqualTo("productVariantId", productVariantId)
-            .orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING)
-            .get()
-            .await()
-            .toObjects(StockEntry::class.java)
+            .orderBy("timestamp", Query.Direction.DESCENDING)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    val entries = snapshot.toObjects(StockEntry::class.java)
+                    trySend(entries).isSuccess
+                }
+            }
+        awaitClose { listenerRegistration.remove() }
     }
+
 
     suspend fun getStockEntryById(entryId: String): StockEntry? {
         return firestore.collection(StockEntry.COLLECTION_NAME)

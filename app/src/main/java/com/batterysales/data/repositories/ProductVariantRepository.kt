@@ -25,6 +25,22 @@ class ProductVariantRepository @Inject constructor(
             .toObject(ProductVariant::class.java)
     }
 
+    fun getVariantsForProductFlow(productId: String): Flow<List<ProductVariant>> = callbackFlow {
+        val listenerRegistration = firestore.collection(ProductVariant.COLLECTION_NAME)
+            .whereEqualTo("productId", productId)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    val variants = snapshot.toObjects(ProductVariant::class.java)
+                    trySend(variants).isSuccess
+                }
+            }
+        awaitClose { listenerRegistration.remove() }
+    }
+
     suspend fun addVariant(variant: ProductVariant) {
         firestore.collection(ProductVariant.COLLECTION_NAME)
             .add(variant)
