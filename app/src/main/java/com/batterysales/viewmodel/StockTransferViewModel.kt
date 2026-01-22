@@ -60,12 +60,15 @@ class StockTransferViewModel @Inject constructor(
     fun onProductSelected(product: Product) {
         viewModelScope.launch {
             _uiState.update { it.copy(selectedProduct = product, selectedVariant = null, variants = emptyList(), isLoading = true) }
-            try {
-                val variants = productVariantRepository.getVariantsForProduct(product.id).filter { v -> !v.isArchived }
-                _uiState.update { it.copy(variants = variants, isLoading = false) }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = "Failed to fetch variants", isLoading = false) }
-            }
+            productVariantRepository.getVariantsForProductFlow(product.id)
+                .map { variants -> variants.filter { !it.isArchived } }
+                .onEach { variants ->
+                    _uiState.update { it.copy(variants = variants, isLoading = false) }
+                }
+                .catch { e ->
+                    _uiState.update { it.copy(errorMessage = "Failed to fetch variants", isLoading = false) }
+                }
+                .collect()
         }
     }
 

@@ -6,7 +6,6 @@ import com.batterysales.data.models.*
 import com.batterysales.data.repositories.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class InventoryReportItem(
@@ -32,59 +31,55 @@ class ReportsViewModel @Inject constructor(
     val warehouses: StateFlow<List<Warehouse>> = warehouseRepository.getWarehouses()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // This combines all data sources and recalculates the report whenever any of them change.
     val inventoryReport: StateFlow<List<InventoryReportItem>> = combine(
         productRepository.getProducts(),
-        stockEntryRepository.getAllStockEntriesFlow(), // Assumes this new Flow-based method exists
+        productVariantRepository.getAllVariantsFlow(),
+        stockEntryRepository.getAllStockEntriesFlow(),
         warehouses
-    ) { products, allStockEntries, warehouseList ->
+    ) { products, allVariants, allStockEntries, warehouseList ->
 
         val reportItems = mutableListOf<InventoryReportItem>()
-        val activeProducts = products.filter { !it.isArchived }
+        val activeProducts = products.filter { !it.isArchived }.associateBy { it.id }
+        val activeVariants = allVariants.filter { !it.isArchived }
 
-        for (product in activeProducts) {
-             val variants = productVariantRepository.getVariantsForProduct(product.id).filter { !it.isArchived }
-             for (variant in variants) {
-                val variantEntries = allStockEntries.filter { it.productVariantId == variant.id }
-                if (variantEntries.isEmpty()) continue
+        for (variant in activeVariants) {
+            val product = activeProducts[variant.productId] ?: continue
 
-                val warehouseQuantities = mutableMapOf<String, Int>()
-                var totalQuantity = 0
+            val variantEntries = allStockEntries.filter { it.productVariantId == variant.id }
+            if (variantEntries.isEmpty()) continue
 
-                for (warehouse in warehouseList) {
-                    val quantityInWarehouse = variantEntries
-                        .filter { it.warehouseId == warehouse.id }
-                        .sumOf { it.quantity }
-                    warehouseQuantities[warehouse.id] = quantityInWarehouse
-                    totalQuantity += quantityInWarehouse
-                }
+            val warehouseQuantities = mutableMapOf<String, Int>()
+            var totalQuantity = 0
 
-                if (totalQuantity <= 0) continue
+            for (warehouse in warehouseList) {
+                val quantityInWarehouse = variantEntries
+                    .filter { it.warehouseId == warehouse.id }
+                    .sumOf { it.quantity }
+                warehouseQuantities[warehouse.id] = quantityInWarehouse
+                totalQuantity += quantityInWarehouse
+            }
 
-                val positiveEntries = variantEntries.filter { it.quantity > 0 }
-                val totalCostOfPurchases = positiveEntries.sumOf { it.totalCost }
-                val totalItemsPurchased = positiveEntries.sumOf { it.quantity }
-                val averageCost = if (totalItemsPurchased > 0) totalCostOfPurchases / totalItemsPurchased else 0.0
-                val totalCostValue = totalQuantity * averageCost
+            if (totalQuantity <= 0) continue
 
-                reportItems.add(
-                    InventoryReportItem(
-                        product = product,
-                        variant = variant,
-                        warehouseQuantities = warehouseQuantities,
-                        totalQuantity = totalQuantity,
-                        averageCost = averageCost,
-                        totalCostValue = totalCostValue
-                    )
+            val positiveEntries = variantEntries.filter { it.quantity > 0 }
+            val totalCostOfPurchases = positiveEntries.sumOf { it.totalCost }
+            val totalItemsPurchased = positiveEntries.sumOf { it.quantity }
+            val averageCost = if (totalItemsPurchased > 0) totalCostOfPurchases / totalItemsPurchased else 0.0
+            val totalCostValue = totalQuantity * averageCost
+
+            reportItems.add(
+                InventoryReportItem(
+                    product = product,
+                    variant = variant,
+                    warehouseQuantities = warehouseQuantities,
+                    totalQuantity = totalQuantity,
+                    averageCost = averageCost,
+                    totalCostValue = totalCostValue
                 )
-             }
+            )
         }
-        reportItems // Return the calculated list
+        reportItems
     }.onStart { _isLoading.value = true }
      .onEach { _isLoading.value = false }
      .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
 }
-
-// Note: A new method `getAllStockEntriesFlow()` needs to be added to StockEntryRepository.
-// I will add that now.

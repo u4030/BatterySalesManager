@@ -33,17 +33,14 @@ class WarehouseViewModel @Inject constructor(
 
     val stockLevels: StateFlow<List<WarehouseStockItem>> = combine(
         productRepository.getProducts(),
+        productVariantRepository.getAllVariantsFlow(),
         warehouseRepository.getWarehouses(),
         stockEntryRepository.getAllStockEntriesFlow()
-    ) { products, warehouses, allStockEntries ->
+    ) { products, allVariants, warehouses, allStockEntries ->
         _isLoading.value = true
         val activeProducts = products.filter { !it.isArchived }
         val productMap = activeProducts.associateBy { it.id }
-
-        // Pre-fetch all variants to reduce database calls
-        val allVariants = activeProducts.flatMap { product ->
-            productVariantRepository.getVariantsForProduct(product.id).filter { !it.isArchived }
-        }.associateBy { it.id }
+        val activeVariants = allVariants.filter { !it.isArchived }.associateBy { it.id }
 
         val stockMap = mutableMapOf<Pair<String, String>, Int>()
         for (entry in allStockEntries) {
@@ -54,7 +51,7 @@ class WarehouseViewModel @Inject constructor(
         val stockList = stockMap.mapNotNull { (key, quantity) ->
             val variantId = key.first
             val warehouseId = key.second
-            val variant = allVariants[variantId]
+            val variant = activeVariants[variantId]
             val warehouse = warehouses.find { it.id == warehouseId }
             if (variant != null && warehouse != null) {
                 val product = productMap[variant.productId]

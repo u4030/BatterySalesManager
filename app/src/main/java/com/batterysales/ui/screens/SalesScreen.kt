@@ -7,151 +7,80 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
-import com.batterysales.data.models.Product
-import com.batterysales.data.models.ProductVariant
-import com.batterysales.data.models.Warehouse
+import com.batterysales.ui.stockentry.Dropdown
+import com.batterysales.viewmodel.SalesViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltViewModel()) {
+    val uiState by viewModel.uiState.collectAsState()
     var customerName by remember { mutableStateOf("") }
     var customerPhone by remember { mutableStateOf("") }
     var paidAmount by remember { mutableStateOf("") }
 
-    var expandedProduct by remember { mutableStateOf(false) }
-    var expandedVariant by remember { mutableStateOf(false) }
-    var expandedWarehouse by remember { mutableStateOf(false) }
-
-    val errorMessage by viewModel.errorMessage.collectAsState()
+    LaunchedEffect(uiState.isFinished) {
+        if (uiState.isFinished) {
+            // Reset local fields or navigate away
+            customerName = ""
+            customerPhone = ""
+            paidAmount = ""
+            // Maybe navigate back or show a success message
+        }
+    }
 
     Column(modifier = Modifier.padding(16.dp).fillMaxWidth()) {
 
-        if (errorMessage != null) {
-            Text(text = errorMessage!!, color = MaterialTheme.colorScheme.error)
+        if (uiState.errorMessage != null) {
+            Text(text = uiState.errorMessage!!, color = MaterialTheme.colorScheme.error)
             Spacer(modifier = Modifier.height(8.dp))
         }
 
-        // Product Dropdown
-        ExposedDropdownMenuBox(expanded = expandedProduct, onExpandedChange = { expandedProduct = !expandedProduct }) {
-            TextField(
-                modifier = Modifier.menuAnchor().fillMaxWidth(),
-                readOnly = true,
-                value = viewModel.selectedProduct.value?.name ?: "",
-                onValueChange = {},
-                label = { Text("اختر المنتج") },
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedProduct) },
-            )
-            ExposedDropdownMenu(expanded = expandedProduct, onDismissRequest = { expandedProduct = false }) {
-                viewModel.products.value.forEach { product ->
-                    DropdownMenuItem(
-                        text = { Text(product.name) },
-                        onClick = {
-                            viewModel.onProductSelected(product)
-                            expandedProduct = false
-                        }
-                    )
-                }
-            }
+        if (uiState.isLoading) {
+            CircularProgressIndicator()
         }
 
+        Dropdown(
+            label = "اختر المنتج",
+            selectedValue = uiState.selectedProduct?.name ?: "",
+            options = uiState.products.map { it.name },
+            onOptionSelected = { index -> viewModel.onProductSelected(uiState.products[index]) },
+            enabled = true
+        )
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Variant Dropdown
-        ExposedDropdownMenuBox(expanded = expandedVariant, onExpandedChange = { expandedVariant = !expandedVariant }) {
-            TextField(
-                modifier = Modifier.menuAnchor().fillMaxWidth(),
-                readOnly = true,
-                value = viewModel.selectedVariant.value?.let { "${it.capacity} أمبير" } ?: "",
-                onValueChange = {},
-                label = { Text("اختر الصنف (السعة)") },
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedVariant) },
-                enabled = viewModel.selectedProduct.value != null
-            )
-            ExposedDropdownMenu(expanded = expandedVariant, onDismissRequest = { expandedVariant = false }) {
-                viewModel.variants.value.forEach { variant ->
-                    DropdownMenuItem(
-                        text = { Text("${variant.capacity} أمبير") },
-                        onClick = {
-                            viewModel.onVariantSelected(variant)
-                            expandedVariant = false
-                        }
-                    )
-                }
-            }
-        }
-
+        Dropdown(
+            label = "اختر الصنف (السعة)",
+            selectedValue = uiState.selectedVariant?.let { "${it.capacity} أمبير" } ?: "",
+            options = uiState.variants.map { "${it.capacity} أمبير" },
+            onOptionSelected = { index -> viewModel.onVariantSelected(uiState.variants[index]) },
+            enabled = uiState.selectedProduct != null
+        )
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Warehouse Dropdown
-        ExposedDropdownMenuBox(expanded = expandedWarehouse, onExpandedChange = { expandedWarehouse = !expandedWarehouse }) {
-            TextField(
-                modifier = Modifier.menuAnchor().fillMaxWidth(),
-                readOnly = true,
-                value = viewModel.selectedWarehouse.value?.name ?: "",
-                onValueChange = {},
-                label = { Text("اختر المستودع") },
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedWarehouse) },
-            )
-            ExposedDropdownMenu(expanded = expandedWarehouse, onDismissRequest = { expandedWarehouse = false }) {
-                viewModel.warehouses.value.forEach { warehouse ->
-                    DropdownMenuItem(
-                        text = { Text(warehouse.name) },
-                        onClick = {
-                            viewModel.selectedWarehouse.value = warehouse
-                            expandedWarehouse = false
-                        }
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        OutlinedTextField(
-            value = viewModel.quantity.value,
-            onValueChange = { viewModel.quantity.value = it },
-            label = { Text("الكمية") },
-            modifier = Modifier.fillMaxWidth()
+        Dropdown(
+            label = "اختر المستودع",
+            selectedValue = uiState.selectedWarehouse?.name ?: "",
+            options = uiState.warehouses.map { it.name },
+            onOptionSelected = { index -> viewModel.onWarehouseSelected(uiState.warehouses[index]) },
+            enabled = true
         )
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(8.dp))
+        val availableQty = uiState.selectedVariant?.let { uiState.stockLevels[Pair(it.id, uiState.selectedWarehouse?.id ?: "")] ?: 0 } ?: 0
+        Text("الكمية المتاحة: $availableQty")
 
-        OutlinedTextField(
-            value = viewModel.sellingPrice.value,
-            onValueChange = { viewModel.sellingPrice.value = it },
-            label = { Text("سعر البيع") },
-            modifier = Modifier.fillMaxWidth()
-        )
 
         Spacer(modifier = Modifier.height(16.dp))
-
-        OutlinedTextField(
-            value = customerName,
-            onValueChange = { customerName = it },
-            label = { Text("اسم العميل") },
-            modifier = Modifier.fillMaxWidth()
-        )
-
+        OutlinedTextField(value = uiState.quantity, onValueChange = viewModel::onQuantityChanged, label = { Text("الكمية") }, modifier = Modifier.fillMaxWidth())
         Spacer(modifier = Modifier.height(16.dp))
-
-        OutlinedTextField(
-            value = customerPhone,
-            onValueChange = { customerPhone = it },
-            label = { Text("رقم هاتف العميل") },
-            modifier = Modifier.fillMaxWidth()
-        )
-
+        OutlinedTextField(value = uiState.sellingPrice, onValueChange = viewModel::onSellingPriceChanged, label = { Text("سعر البيع") }, modifier = Modifier.fillMaxWidth())
         Spacer(modifier = Modifier.height(16.dp))
-
-        OutlinedTextField(
-            value = paidAmount,
-            onValueChange = { paidAmount = it },
-            label = { Text("المبلغ المدفوع") },
-            modifier = Modifier.fillMaxWidth()
-        )
-
+        OutlinedTextField(value = customerName, onValueChange = { customerName = it }, label = { Text("اسم العميل") }, modifier = Modifier.fillMaxWidth())
         Spacer(modifier = Modifier.height(16.dp))
-
+        OutlinedTextField(value = customerPhone, onValueChange = { customerPhone = it }, label = { Text("رقم هاتف العميل") }, modifier = Modifier.fillMaxWidth())
+        Spacer(modifier = Modifier.height(16.dp))
+        OutlinedTextField(value = paidAmount, onValueChange = { paidAmount = it }, label = { Text("المبلغ المدفوع") }, modifier = Modifier.fillMaxWidth())
+        Spacer(modifier = Modifier.height(16.dp))
         Button(
             onClick = {
                 viewModel.createSale(
@@ -161,7 +90,7 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
                 )
             },
             modifier = Modifier.fillMaxWidth(),
-            enabled = viewModel.selectedVariant.value != null && viewModel.selectedWarehouse.value != null
+            enabled = uiState.selectedVariant != null && uiState.selectedWarehouse != null
         ) {
             Text("إنشاء عملية بيع")
         }

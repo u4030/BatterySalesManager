@@ -19,6 +19,8 @@ import com.batterysales.viewmodel.ProductManagementViewModel
 
 @Composable
 fun ProductManagementScreen(viewModel: ProductManagementViewModel = hiltViewModel()) {
+    val uiState by viewModel.uiState.collectAsState()
+
     var showAddProductDialog by remember { mutableStateOf(false) }
     var showAddVariantDialog by remember { mutableStateOf(false) }
 
@@ -85,8 +87,11 @@ fun ProductManagementScreen(viewModel: ProductManagementViewModel = hiltViewMode
             Spacer(modifier = Modifier.height(8.dp))
             Button(onClick = { showAddProductDialog = true }) { Text("إضافة منتج") }
             Spacer(modifier = Modifier.height(8.dp))
+            if(uiState.isLoading) {
+                CircularProgressIndicator()
+            }
             LazyColumn {
-                items(viewModel.products.value) { product ->
+                items(uiState.products) { product ->
                     ProductItem(
                         product = product,
                         onClick = { viewModel.selectProduct(product) },
@@ -99,14 +104,14 @@ fun ProductManagementScreen(viewModel: ProductManagementViewModel = hiltViewMode
 
         // Variants Column
         Column(modifier = Modifier.weight(1f).padding(8.dp)) {
-            val selectedProduct = viewModel.selectedProduct.value
+            val selectedProduct = uiState.selectedProduct
             if (selectedProduct != null) {
                 Text("سعات: ${selectedProduct.name}", style = MaterialTheme.typography.headlineSmall)
                 Spacer(modifier = Modifier.height(8.dp))
                 Button(onClick = { showAddVariantDialog = true }) { Text("إضافة سعة") }
                 Spacer(modifier = Modifier.height(8.dp))
                 LazyColumn {
-                    items(viewModel.variants.value) { variant ->
+                    items(uiState.variants) { variant ->
                         VariantItem(
                             variant = variant,
                             onEdit = { variantToEdit = variant },

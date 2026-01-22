@@ -2,6 +2,9 @@ package com.batterysales.data.repositories
 
 import com.batterysales.data.models.ProductVariant
 import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 
@@ -28,6 +31,21 @@ class ProductVariantRepository @Inject constructor(
     fun getVariantsForProductFlow(productId: String): Flow<List<ProductVariant>> = callbackFlow {
         val listenerRegistration = firestore.collection(ProductVariant.COLLECTION_NAME)
             .whereEqualTo("productId", productId)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    val variants = snapshot.toObjects(ProductVariant::class.java)
+                    trySend(variants).isSuccess
+                }
+            }
+        awaitClose { listenerRegistration.remove() }
+    }
+
+    fun getAllVariantsFlow(): Flow<List<ProductVariant>> = callbackFlow {
+        val listenerRegistration = firestore.collection(ProductVariant.COLLECTION_NAME)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     close(error)
