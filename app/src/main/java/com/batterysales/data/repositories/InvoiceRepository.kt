@@ -1,7 +1,12 @@
 package com.batterysales.data.repositories
 
 import com.batterysales.data.models.Invoice
+import com.batterysales.data.models.Payment
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Query
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 import java.util.Date
 import javax.inject.Inject
@@ -24,26 +29,42 @@ class InvoiceRepository @Inject constructor(
             .toObject(Invoice::class.java)
     }
 
-    suspend fun getAllInvoices(): List<Invoice> {
-        return firestore.collection(Invoice.COLLECTION_NAME)
-            .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
-            .get()
-            .await()
-            .toObjects(Invoice::class.java)
+    fun getAllInvoices(): Flow<List<Invoice>> = callbackFlow {
+        val listenerRegistration = firestore.collection(Invoice.COLLECTION_NAME)
+            .orderBy("createdAt", Query.Direction.DESCENDING)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    val invoices = snapshot.toObjects(Invoice::class.java)
+                    trySend(invoices).isSuccess
+                }
+            }
+        awaitClose { listenerRegistration.remove() }
     }
 
-    suspend fun recordPayment(invoiceId: String, amount: Double) {
-        val invoice = getInvoice(invoiceId) ?: throw Exception("Invoice not found")
-        val newPaidAmount = invoice.paidAmount + amount
-        val newRemainingAmount = (invoice.totalAmount - newPaidAmount).coerceAtLeast(0.0)
-        val newStatus = if (newPaidAmount >= invoice.totalAmount) "paid" else "pending"
+    suspend fun updateInvoice(invoice: Invoice) {
+        val updatedInvoice = invoice.copy(updatedAt = Date())
+        firestore.collection(Invoice.COLLECTION_NAME).document(invoice.id).set(updatedInvoice).await()
+    }
 
-        val updates = mapOf(
-            "paidAmount" to newPaidAmount,
-            "remainingAmount" to newRemainingAmount,
-            "status" to newStatus,
-            "updatedAt" to Date()
-        )
-        firestore.collection(Invoice.COLLECTION_NAME).document(invoiceId).update(updates).await()
+    suspend fun deleteInvoice(invoiceId: String) {
+        // First, delete all payments associated with the invoice
+        val payments = firestore.collection(Payment.COLLECTION_NAME)
+            .whereEqualTo("invoiceId", invoiceId)
+            .get()
+            .await()
+
+        val batch = firestore.batch()
+        payments.documents.forEach { doc ->
+            batch.delete(doc.reference)
+        }
+
+        // Then, delete the invoice itself
+        batch.delete(firestore.collection(Invoice.COLLECTION_NAME).document(invoiceId))
+
+        batch.commit().await()
     }
 }

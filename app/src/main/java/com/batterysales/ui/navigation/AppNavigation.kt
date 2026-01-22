@@ -21,17 +21,28 @@ fun AppNavigation(navController: NavHostController) {
         composable("dashboard") { DashboardScreen(navController) }
         composable("sales") { SalesScreen(navController) }
         composable("invoices") { InvoiceScreen(navController) }
+        // In I:/battery-sales-manager/app/src/main/java/com/batterysales/ui/navigation/AppNavigation.kt
+
         composable(
             route = "invoice_detail/{invoiceId}",
             arguments = listOf(navArgument("invoiceId") { type = NavType.StringType })
-        ) { backStackEntry ->
-            val invoiceId = backStackEntry.arguments?.getString("invoiceId") ?: ""
-            InvoiceDetailScreen(navController, invoiceId)
+        ) {
+            // The invoiceId from the route is now handled inside the screen
+            InvoiceDetailScreen(navController = navController)
         }
+
         composable("warehouse") { WarehouseScreen(navController = navController) }
         composable("product_management") { ProductManagementScreen() }
-        composable("stock_entry") { StockEntryScreen() }
-        composable("stock_transfer") { StockTransferScreen() }
+        composable(
+            route = "stock_entry?entryId={entryId}",
+            arguments = listOf(navArgument("entryId") {
+                type = NavType.StringType
+                nullable = true
+            })
+        ) {
+            StockEntryScreen(navController = navController)
+        }
+        composable("stock_transfer") { StockTransferScreen(navController = navController) }
         composable("clients") { ClientScreen(navController) }
         composable("accounting") { AccountingScreen(navController) }
         composable("bills") { BillsScreen(navController) }

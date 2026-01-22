@@ -5,9 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -25,6 +23,10 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
     val warehouses by viewModel.warehouses.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
 
+    val grandTotalQuantity = remember(reportItems) {
+        reportItems.sumOf { it.totalQuantity }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(title = { Text("تقارير المخزون") })
@@ -35,28 +37,65 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                 CircularProgressIndicator()
             }
         } else {
-            LazyColumn(
-                modifier = Modifier.padding(padding),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                items(reportItems) { item ->
-                    ReportItemCard(
-                        item = item,
-                        warehouses = warehouses,
-                        onClick = {
-                            val capacityStr = item.variant.capacity.toString()
-                            val productName = item.product.name
-                            navController.navigate(
-                                "product_ledger/${item.variant.id}/$productName/$capacityStr"
-                            )
-                        }
-                    )
+            Column(modifier = Modifier.padding(padding)) {
+                // Grand Total Card
+                if (reportItems.isNotEmpty()) {
+                    GrandTotalCard(totalQuantity = grandTotalQuantity)
+                }
+
+                LazyColumn(
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    items(reportItems) { item ->
+                        ReportItemCard(
+                            item = item,
+                            warehouses = warehouses,
+                            onClick = {
+                                val capacityStr = item.variant.capacity.toString()
+                                val productName = item.product.name
+                                navController.navigate(
+                                    "product_ledger/${item.variant.id}/$productName/$capacityStr"
+                                )
+                            }
+                        )
+                    }
                 }
             }
         }
     }
 }
+
+@Composable
+fun GrandTotalCard(totalQuantity: Int) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "المجموع الكلي للكمية",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = totalQuantity.toString(),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
 
 @Composable
 fun ReportItemCard(
@@ -88,8 +127,8 @@ fun ReportItemCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 InfoColumn(label = "إجمالي الكمية", value = item.totalQuantity.toString())
-                InfoColumn(label = "سعر التكلفة", value = String.format(Locale.US, "%.2f", item.averageCost))
-                InfoColumn(label = "اجمالي الأمبيرات الكلي", value = String.format(Locale.US, "%.2f", item.totalCostValue))
+                InfoColumn(label = "متوسط التكلفة", value = String.format(Locale.US, "%.2f", item.averageCost))
+                InfoColumn(label = "قيمة المخزون", value = String.format(Locale.US, "%.2f", item.totalCostValue))
             }
 
             // Warehouse Breakdown
@@ -110,23 +149,6 @@ fun ReportItemCard(
                     modifier = Modifier.padding(start = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    val totalWarehouseQuantity = quantitiesInWarehouses.sumOf { it.second }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Divider(modifier = Modifier.padding(end = 32.dp)) // خط فاصل قصير
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row {
-                        Text(
-                            text = "المجموع: ",
-                            fontWeight = FontWeight.Bold, // خط عريض للمجموع
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        Text(
-                            text = totalWarehouseQuantity.toString(),
-                            fontWeight = FontWeight.Bold, // خط عريض للمجموع
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                    // عرض الكمية في كل مستودع
                     quantitiesInWarehouses.forEach { (warehouseName, quantity) ->
                         Row {
                             Text(

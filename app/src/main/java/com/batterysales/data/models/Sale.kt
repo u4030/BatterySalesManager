@@ -33,19 +33,19 @@ import java.util.Date
  * 
  * يمثل دفعة واحدة من الذمم
  */
-data class Payment(
-    val id: String = "",
-    val invoiceId: String = "", // معرف الفاتورة المرتبطة
-    val amount: Double = 0.0, // مبلغ الدفعة
-    val paymentDate: Date = Date(),
-    val paymentMethod: String = "", // نقد، شيك، تحويل، إلخ
-    val notes: String = "",
-    val createdAt: Date = Date()
-) {
-    companion object {
-        const val COLLECTION_NAME = "payments"
-    }
-}
+//data class Payment(
+//    val id: String = "",
+//    val invoiceId: String = "", // معرف الفاتورة المرتبطة
+//    val amount: Double = 0.0, // مبلغ الدفعة
+//    val paymentDate: Date = Date(),
+//    val paymentMethod: String = "", // نقد، شيك، تحويل، إلخ
+//    val notes: String = "",
+//    val createdAt: Date = Date()
+//) {
+//    companion object {
+//        const val COLLECTION_NAME = "payments"
+//    }
+//}
 
 /**
  * نموذج ملخص المبيعات اليومية

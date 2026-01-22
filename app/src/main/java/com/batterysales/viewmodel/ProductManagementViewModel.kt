@@ -1,6 +1,5 @@
 package com.batterysales.viewmodel
 
-import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.batterysales.data.models.Product
@@ -8,51 +7,50 @@ import com.batterysales.data.models.ProductVariant
 import com.batterysales.data.repositories.ProductRepository
 import com.batterysales.data.repositories.ProductVariantRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+data class ProductManagementUiState(
+    val products: List<Product> = emptyList(),
+    val variants: List<ProductVariant> = emptyList(),
+    val selectedProduct: Product? = null,
+    val isLoading: Boolean = false,
+    val errorMessage: String? = null
+)
+
+@OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class ProductManagementViewModel @Inject constructor(
     private val productRepository: ProductRepository,
     private val productVariantRepository: ProductVariantRepository
 ) : ViewModel() {
 
-    val products = mutableStateOf<List<Product>>(emptyList())
-    val variants = mutableStateOf<List<ProductVariant>>(emptyList())
-    val selectedProduct = mutableStateOf<Product?>(null)
-
+    private val _selectedProduct = MutableStateFlow<Product?>(null)
     private val _errorMessage = MutableStateFlow<String?>(null)
-    val errorMessage = _errorMessage.asStateFlow()
+    private val _isLoading = MutableStateFlow(false)
 
-    init {
-        fetchProducts()
-    }
+    val uiState: StateFlow<ProductManagementUiState> = combine(
+        productRepository.getProducts(),
+        _selectedProduct,
+        _selectedProduct.flatMapLatest { product ->
+            if (product == null) flowOf(emptyList()) else productVariantRepository.getVariantsForProductFlow(product.id)
+        },
+        _isLoading
+    ) { products, selectedProduct, variants, isLoading ->
+        ProductManagementUiState(
+            products = products.filter { !it.isArchived },
+            selectedProduct = selectedProduct,
+            variants = variants.filter { !it.isArchived },
+            isLoading = isLoading,
+            errorMessage = _errorMessage.value
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ProductManagementUiState(isLoading = true))
 
-    fun fetchProducts() {
-        viewModelScope.launch {
-            try {
-                products.value = productRepository.getProducts().filter { !it.isArchived }
-            } catch (e: Exception) {
-                _errorMessage.value = "Failed to fetch products: ${e.message}"
-            }
-        }
-    }
 
     fun selectProduct(product: Product) {
-        selectedProduct.value = product
-        fetchVariantsForProduct(product.id)
-    }
-
-    private fun fetchVariantsForProduct(productId: String) {
-        viewModelScope.launch {
-            try {
-                variants.value = productVariantRepository.getVariantsForProduct(productId).filter { !it.isArchived }
-            } catch (e: Exception) {
-                _errorMessage.value = "Failed to fetch variants: ${e.message}"
-            }
-        }
+        _selectedProduct.value = product
     }
 
     fun addProduct(name: String, notes: String) {
@@ -61,7 +59,6 @@ class ProductManagementViewModel @Inject constructor(
                 val product = Product(name = name, notes = notes)
                 if (product.isValid()) {
                     productRepository.addProduct(product)
-                    fetchProducts()
                 } else {
                     _errorMessage.value = product.getValidationError()
                 }
@@ -73,18 +70,11 @@ class ProductManagementViewModel @Inject constructor(
 
     fun addVariant(capacity: Int, sellingPrice: Double, barcode: String, notes: String) {
         viewModelScope.launch {
-            selectedProduct.value?.let { product ->
+            _selectedProduct.value?.let { product ->
                 try {
-                    val variant = ProductVariant(
-                        productId = product.id,
-                        capacity = capacity,
-                        sellingPrice = sellingPrice,
-                        barcode = barcode,
-                        notes = notes
-                    )
+                    val variant = ProductVariant(productId = product.id, capacity = capacity, sellingPrice = sellingPrice, barcode = barcode, notes = notes)
                     if (variant.isValid()) {
                         productVariantRepository.addVariant(variant)
-                        fetchVariantsForProduct(product.id)
                     } else {
                         _errorMessage.value = variant.getValidationError()
                     }
@@ -95,16 +85,11 @@ class ProductManagementViewModel @Inject constructor(
         }
     }
 
-    fun clearError() {
-        _errorMessage.value = null
-    }
-
     fun updateProduct(product: Product) {
         viewModelScope.launch {
             try {
                 if (product.isValid()) {
                     productRepository.updateProduct(product)
-                    fetchProducts()
                 } else {
                     _errorMessage.value = product.getValidationError()
                 }
@@ -119,8 +104,7 @@ class ProductManagementViewModel @Inject constructor(
             try {
                 val archivedProduct = product.copy(isArchived = true)
                 productRepository.updateProduct(archivedProduct)
-                fetchProducts()
-                selectedProduct.value = null // Deselect after archiving
+                _selectedProduct.value = null // Deselect after archiving
             } catch (e: Exception) {
                 _errorMessage.value = "Failed to archive product: ${e.message}"
             }
@@ -132,7 +116,6 @@ class ProductManagementViewModel @Inject constructor(
             try {
                 if (variant.isValid()) {
                     productVariantRepository.updateVariant(variant)
-                    fetchVariantsForProduct(variant.productId)
                 } else {
                     _errorMessage.value = variant.getValidationError()
                 }
@@ -147,10 +130,13 @@ class ProductManagementViewModel @Inject constructor(
             try {
                 val archivedVariant = variant.copy(isArchived = true)
                 productVariantRepository.updateVariant(archivedVariant)
-                fetchVariantsForProduct(variant.productId)
             } catch (e: Exception) {
                 _errorMessage.value = "Failed to archive variant: ${e.message}"
             }
         }
+    }
+
+    fun clearError() {
+        _errorMessage.value = null
     }
 }

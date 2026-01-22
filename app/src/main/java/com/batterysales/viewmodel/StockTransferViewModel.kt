@@ -1,6 +1,5 @@
-package com.batterysales.ui.stocktransfer
+package com.batterysales.viewmodel
 
-import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.batterysales.data.models.Product
@@ -11,10 +10,23 @@ import com.batterysales.data.repositories.ProductVariantRepository
 import com.batterysales.data.repositories.StockEntryRepository
 import com.batterysales.data.repositories.WarehouseRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+data class StockTransferUiState(
+    val products: List<Product> = emptyList(),
+    val variants: List<ProductVariant> = emptyList(),
+    val warehouses: List<Warehouse> = emptyList(),
+    val selectedProduct: Product? = null,
+    val selectedVariant: ProductVariant? = null,
+    val sourceWarehouse: Warehouse? = null,
+    val destinationWarehouse: Warehouse? = null,
+    val quantity: String = "",
+    val isLoading: Boolean = false,
+    val errorMessage: String? = null,
+    val isFinished: Boolean = false
+)
 
 @HiltViewModel
 class StockTransferViewModel @Inject constructor(
@@ -24,84 +36,92 @@ class StockTransferViewModel @Inject constructor(
     private val stockEntryRepository: StockEntryRepository
 ) : ViewModel() {
 
-    val products = mutableStateOf<List<Product>>(emptyList())
-    val variants = mutableStateOf<List<ProductVariant>>(emptyList())
-    val warehouses = mutableStateOf<List<Warehouse>>(emptyList())
-
-    private val _errorMessage = MutableStateFlow<String?>(null)
-    val errorMessage = _errorMessage.asStateFlow()
-
-    private val _successMessage = MutableStateFlow<String?>(null)
-    val successMessage = _successMessage.asStateFlow()
+    private val _uiState = MutableStateFlow(StockTransferUiState())
+    val uiState: StateFlow<StockTransferUiState> = _uiState.asStateFlow()
 
     init {
-        fetchProducts()
-        fetchWarehouses()
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true) }
+            combine(
+                productRepository.getProducts(),
+                warehouseRepository.getWarehouses()
+            ) { products, warehouses ->
+                _uiState.update {
+                    it.copy(
+                        products = products.filter { p -> !p.isArchived },
+                        warehouses = warehouses,
+                        isLoading = false
+                    )
+                }
+            }.collect()
+        }
     }
 
-    private fun fetchProducts() {
+    fun onProductSelected(product: Product) {
         viewModelScope.launch {
-            try {
-                products.value = productRepository.getProducts().filter { !it.isArchived }
-            } catch (e: Exception) {
-                _errorMessage.value = "Failed to fetch products: ${e.message}"
+            _uiState.update { it.copy(selectedProduct = product, selectedVariant = null, variants = emptyList(), isLoading = true) }
+            productVariantRepository.getVariantsForProductFlow(product.id)
+                .map { variants -> variants.filter { !it.isArchived } }
+                .onEach { variants ->
+                    _uiState.update { it.copy(variants = variants, isLoading = false) }
+                }
+                .catch { e ->
+                    _uiState.update { it.copy(errorMessage = "Failed to fetch variants", isLoading = false) }
+                }
+                .collect()
+        }
+    }
+
+    fun onVariantSelected(variant: ProductVariant) {
+        _uiState.update { it.copy(selectedVariant = variant) }
+    }
+
+    fun onSourceWarehouseSelected(warehouse: Warehouse) {
+        _uiState.update { it.copy(sourceWarehouse = warehouse) }
+    }
+
+    fun onDestinationWarehouseSelected(warehouse: Warehouse) {
+        _uiState.update { it.copy(destinationWarehouse = warehouse) }
+    }
+
+    fun onQuantityChanged(quantity: String) {
+        _uiState.update { it.copy(quantity = quantity) }
+    }
+
+    fun onTransferStock() {
+        viewModelScope.launch {
+            val state = _uiState.value
+            val variant = state.selectedVariant
+            val source = state.sourceWarehouse
+            val dest = state.destinationWarehouse
+            val qty = state.quantity.toIntOrNull()
+
+            if (variant == null || source == null || dest == null || qty == null || qty <= 0) {
+                _uiState.update { it.copy(errorMessage = "الرجاء ملء جميع الحقول بكمية صحيحة") }
+                return@launch
             }
-        }
-    }
 
-    fun fetchVariantsForProduct(productId: String) {
-        viewModelScope.launch {
-            try {
-                variants.value = productVariantRepository.getVariantsForProduct(productId).filter { !it.isArchived }
-            } catch (e: Exception) {
-                _errorMessage.value = "Failed to fetch variants: ${e.message}"
-                variants.value = emptyList()
+            if (source.id == dest.id) {
+                _uiState.update { it.copy(errorMessage = "لا يمكن نقل المخزون إلى نفس المستودع") }
+                return@launch
             }
-        }
-    }
 
-    private fun fetchWarehouses() {
-        viewModelScope.launch {
-            try {
-                warehouses.value = warehouseRepository.getWarehouses()
-            } catch (e: Exception) {
-                _errorMessage.value = "Failed to fetch warehouses: ${e.message}"
-            }
-        }
-    }
-
-    fun transferStock(
-        productVariantId: String,
-        sourceWarehouseId: String,
-        destinationWarehouseId: String,
-        quantity: Int
-    ) {
-        if (sourceWarehouseId == destinationWarehouseId) {
-            _errorMessage.value = "لا يمكن ترحيل المخزون إلى نفس المستودع."
-            return
-        }
-        if (quantity <= 0) {
-            _errorMessage.value = "الكمية يجب أن تكون أكبر من صفر."
-            return
-        }
-
-        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true) }
             try {
                 stockEntryRepository.transferStock(
-                    productVariantId = productVariantId,
-                    sourceWarehouseId = sourceWarehouseId,
-                    destinationWarehouseId = destinationWarehouseId,
-                    quantity = quantity
+                    productVariantId = variant.id,
+                    sourceWarehouseId = source.id,
+                    destinationWarehouseId = dest.id,
+                    quantity = qty
                 )
-                _successMessage.value = "تم ترحيل المخزون بنجاح!"
+                _uiState.update { it.copy(isFinished = true) }
             } catch (e: Exception) {
-                _errorMessage.value = "فشل ترحيل المخزون: ${e.message}"
+                _uiState.update { it.copy(errorMessage = "Failed to transfer stock: ${e.message}", isLoading = false) }
             }
         }
     }
 
-    fun clearMessages() {
-        _errorMessage.value = null
-        _successMessage.value = null
+    fun onDismissError() {
+        _uiState.update { it.copy(errorMessage = null) }
     }
 }
