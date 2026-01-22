@@ -37,6 +37,8 @@ class SalesViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(SalesUiState(isLoading = true))
     val uiState: StateFlow<SalesUiState> = _uiState.asStateFlow()
 
+    private var allStockEntries: List<StockEntry> = emptyList()
+
     init {
         viewModelScope.launch {
             combine(
@@ -45,6 +47,7 @@ class SalesViewModel @Inject constructor(
                 stockEntryRepository.getAllStockEntriesFlow()
             ) { products, warehouses, stockEntries ->
 
+                allStockEntries = stockEntries // Cache for COGS calculation
                 val stockMap = mutableMapOf<Pair<String, String>, Int>()
                 for (entry in stockEntries) {
                     val key = Pair(entry.productVariantId, entry.warehouseId)
@@ -66,12 +69,15 @@ class SalesViewModel @Inject constructor(
     fun onProductSelected(product: Product) {
         viewModelScope.launch {
             _uiState.update { it.copy(selectedProduct = product, selectedVariant = null, variants = emptyList(), isLoading = true) }
-            try {
-                val variants = productVariantRepository.getVariantsForProduct(product.id).filter { v -> !v.isArchived }
-                _uiState.update { it.copy(variants = variants, isLoading = false) }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = "Failed to fetch variants", isLoading = false) }
-            }
+            productVariantRepository.getVariantsForProductFlow(product.id)
+                .map { variants -> variants.filter { !it.isArchived } }
+                .onEach { variants ->
+                    _uiState.update { it.copy(variants = variants, isLoading = false) }
+                }
+                .catch { e ->
+                    _uiState.update { it.copy(errorMessage = "Failed to fetch variants", isLoading = false) }
+                }
+                .collect()
         }
     }
 
@@ -108,12 +114,19 @@ class SalesViewModel @Inject constructor(
 
             _uiState.update { it.copy(isLoading = true) }
             try {
-                // Simplified COGS - In a real app, this would be more complex
+                // --- Correct COGS Calculation ---
+                val positiveEntries = allStockEntries.filter {
+                    it.productVariantId == variant.id && it.warehouseId == warehouse.id && it.quantity > 0
+                }
+                val totalCostOfPurchases = positiveEntries.sumOf { it.totalCost }
+                val totalItemsPurchased = positiveEntries.sumOf { it.quantity }
+                val weightedAverageCost = if (totalItemsPurchased > 0) totalCostOfPurchases / totalItemsPurchased else 0.0
+
                 val stockEntry = StockEntry(
                     productVariantId = variant.id,
                     warehouseId = warehouse.id,
                     quantity = -qty,
-                    costPrice = price, // Using selling price for COGS here, could be improved
+                    costPrice = weightedAverageCost,
                     supplier = "Sale",
                     timestamp = Date()
                 )

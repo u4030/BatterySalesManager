@@ -5,93 +5,57 @@ import androidx.lifecycle.viewModelScope
 import com.batterysales.data.models.Invoice
 import com.batterysales.data.repositories.InvoiceRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+data class InvoiceUiState(
+    val invoices: List<Invoice> = emptyList(),
+    val isLoading: Boolean = true,
+    val errorMessage: String? = null
+)
 
 @HiltViewModel
 class InvoiceViewModel @Inject constructor(
     private val invoiceRepository: InvoiceRepository
 ) : ViewModel() {
 
-    private val _invoices = MutableStateFlow<List<Invoice>>(emptyList())
-    val invoices: StateFlow<List<Invoice>> = _invoices.asStateFlow()
-
-    private val _selectedInvoice = MutableStateFlow<Invoice?>(null)
-    val selectedInvoice: StateFlow<Invoice?> = _selectedInvoice.asStateFlow()
-
-    private val _isLoading = MutableStateFlow(false)
-    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
-
-    private val _errorMessage = MutableStateFlow<String?>(null)
-    val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
-
-    private val _successMessage = MutableStateFlow<String?>(null)
-    val successMessage: StateFlow<String?> = _successMessage.asStateFlow()
+    private val _uiState = MutableStateFlow(InvoiceUiState())
+    val uiState: StateFlow<InvoiceUiState> = _uiState.asStateFlow()
 
     init {
-        loadInvoices()
+        viewModelScope.launch {
+            invoiceRepository.getAllInvoices()
+                .onStart { _uiState.update { it.copy(isLoading = true) } }
+                .catch { e -> _uiState.update { it.copy(isLoading = false, errorMessage = "Failed to load invoices") } }
+                .collect { invoices ->
+                    _uiState.update { it.copy(invoices = invoices, isLoading = false) }
+                }
+        }
     }
 
-    fun loadInvoices() {
+    fun deleteInvoice(invoiceId: String) {
         viewModelScope.launch {
-            _isLoading.value = true
             try {
-                _invoices.value = invoiceRepository.getAllInvoices()
+                invoiceRepository.deleteInvoice(invoiceId)
             } catch (e: Exception) {
-                _errorMessage.value = "خطأ في تحميل الفواتير: ${e.message}"
-            } finally {
-                _isLoading.value = false
+                _uiState.update { it.copy(errorMessage = "Failed to delete invoice") }
             }
         }
     }
 
-    fun getInvoiceById(id: String) {
+    fun updateCustomerInfo(invoice: Invoice, newName: String, newPhone: String) {
         viewModelScope.launch {
-            _isLoading.value = true
-            try {
-                _selectedInvoice.value = invoiceRepository.getInvoice(id)
+             try {
+                val updatedInvoice = invoice.copy(customerName = newName, customerPhone = newPhone)
+                invoiceRepository.updateInvoice(updatedInvoice)
             } catch (e: Exception) {
-                _errorMessage.value = "الفاتورة غير موجودة"
-            } finally {
-                _isLoading.value = false
+                _uiState.update { it.copy(errorMessage = "Failed to update customer info") }
             }
         }
     }
 
-    fun createInvoice(invoice: Invoice) {
-        viewModelScope.launch {
-            _isLoading.value = true
-            try {
-                invoiceRepository.createInvoice(invoice)
-                _successMessage.value = "تم إنشاء الفاتورة بنجاح"
-                loadInvoices()
-            } catch (e: Exception) {
-                _errorMessage.value = "فشل في إنشاء الفاتورة"
-            } finally {
-                _isLoading.value = false
-            }
-        }
+    fun onDismissError() {
+        _uiState.update { it.copy(errorMessage = null) }
     }
-
-    fun recordPayment(invoiceId: String, amount: Double) {
-        viewModelScope.launch {
-            _isLoading.value = true
-            try {
-                invoiceRepository.recordPayment(invoiceId, amount)
-                _successMessage.value = "تم تسجيل الدفعة بنجاح"
-                getInvoiceById(invoiceId)
-                loadInvoices()
-            } catch (e: Exception) {
-                _errorMessage.value = "فشل في تسجيل الدفعة"
-            } finally {
-                _isLoading.value = false
-            }
-        }
-    }
-
-    fun clearError() { _errorMessage.value = null }
-    fun clearSuccess() { _successMessage.value = null }
 }

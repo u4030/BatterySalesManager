@@ -1,231 +1,157 @@
 package com.batterysales.ui.screens
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.navigation.NavHostController
-import com.batterysales.data.models.Invoice
-import com.batterysales.data.models.InvoiceItem
-import com.batterysales.viewmodel.InvoiceViewModel
+import androidx.navigation.NavController
+import com.batterysales.data.models.Payment
+import com.batterysales.viewmodel.InvoiceDetailViewModel
 import java.text.SimpleDateFormat
 import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun InvoiceDetailScreen(
-    navController: NavHostController,
-    invoiceId: String,
-    viewModel: InvoiceViewModel = hiltViewModel()
-) {
-    val selectedInvoice by viewModel.selectedInvoice.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
-    val successMessage by viewModel.successMessage.collectAsState()
-    val errorMessage by viewModel.errorMessage.collectAsState()
+fun InvoiceDetailScreen(navController: NavController, viewModel: InvoiceDetailViewModel = hiltViewModel()) {
+    val uiState by viewModel.uiState.collectAsState()
+    var showAddPaymentDialog by remember { mutableStateOf(false) }
+    var paymentToEdit by remember { mutableStateOf<Payment?>(null) }
+    var paymentToDelete by remember { mutableStateOf<Payment?>(null) }
 
-    var showPaymentDialog by remember { mutableStateOf(false) }
-    var paymentAmount by remember { mutableStateOf("") }
-
-    LaunchedEffect(invoiceId) {
-        viewModel.getInvoiceById(invoiceId)
+    if (showAddPaymentDialog) {
+        PaymentDialog(
+            onDismiss = { showAddPaymentDialog = false },
+            onConfirm = { amount -> viewModel.addPayment(amount) }
+        )
     }
 
-    val snackbarHostState = remember { SnackbarHostState() }
-    LaunchedEffect(successMessage, errorMessage) {
-        successMessage?.let {
-            snackbarHostState.showSnackbar(it)
-            viewModel.clearSuccess()
-        }
-        errorMessage?.let {
-            snackbarHostState.showSnackbar(it)
-            viewModel.clearError()
-        }
+    paymentToEdit?.let { payment ->
+        PaymentDialog(
+            payment = payment,
+            onDismiss = { paymentToEdit = null },
+            onConfirm = { amount -> viewModel.updatePayment(payment, amount) }
+        )
+    }
+
+    if (paymentToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { paymentToDelete = null },
+            title = { Text("تأكيد الحذف") },
+            text = { Text("هل أنت متأكد أنك تريد حذف هذه الدفعة؟") },
+            confirmButton = { Button(onClick = { viewModel.deletePayment(paymentToDelete!!.id); paymentToDelete = null }) { Text("حذف") } },
+            dismissButton = { Button(onClick = { paymentToDelete = null }) { Text("إلغاء") } }
+        )
     }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("تفاصيل الفاتورة", fontWeight = FontWeight.Bold) },
+                title = { Text("تفاصيل الفاتورة") },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "رجوع")
+                        Icon(Icons.Default.ArrowBack, "رجوع")
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = Color.White,
-                    navigationIconContentColor = Color.White
-                )
+                }
             )
         }
-    ) { paddingValues ->
-        if (isLoading && selectedInvoice == null) {
+    ) { padding ->
+        if (uiState.isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
-        } else if (selectedInvoice == null) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("لم يتم العثور على الفاتورة")
-            }
-        } else {
-            val invoice = selectedInvoice!!
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-                    .background(Color(0xFFF5F5F5))
-            ) {
-                LazyColumn(
-                    modifier = Modifier.weight(1f).padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    item { InvoiceHeaderCard(invoice) }
-                    item { Text("الأصناف", fontWeight = FontWeight.Bold, fontSize = 18.sp) }
-                    items(invoice.items) { item -> InvoiceItemRow(item) }
-                    item { InvoiceSummaryCard(invoice) }
+        } else if (uiState.invoice != null) {
+            val invoice = uiState.invoice!!
+            Column(modifier = Modifier.padding(padding).padding(16.dp)) {
+                InvoiceHeader(invoice = invoice)
+                Spacer(modifier = Modifier.height(16.dp))
+
+                if (invoice.status == "pending") {
+                    Button(onClick = { showAddPaymentDialog = true }) { Text("إضافة دفعة جديدة") }
                 }
 
-                Surface(modifier = Modifier.fillMaxWidth(), shadowElevation = 8.dp, color = Color.White) {
-                    Row(modifier = Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        if (invoice.remainingAmount > 0) {
-                            Button(
-                                onClick = { showPaymentDialog = true },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Icon(Icons.Default.Payment, contentDescription = null)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("تسجيل دفعة")
-                            }
-                        }
-                        OutlinedButton(
-                            onClick = { /* طباعة */ },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Icon(Icons.Default.Print, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("طباعة")
-                        }
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("سجل الدفعات", style = MaterialTheme.typography.titleLarge)
+                Divider()
+                LazyColumn {
+                    items(uiState.payments) { payment ->
+                        PaymentItem(
+                            payment = payment,
+                            isPending = invoice.status == "pending",
+                            onEdit = { paymentToEdit = payment },
+                            onDelete = { paymentToDelete = payment }
+                        )
                     }
                 }
             }
         }
     }
+}
 
-    if (showPaymentDialog) {
-        AlertDialog(
-            onDismissRequest = { showPaymentDialog = false },
-            title = { Text("تسجيل دفعة جديدة") },
-            text = {
-                Column {
-                    Text("المبلغ المتبقي: SR ${selectedInvoice?.remainingAmount}")
-                    Spacer(modifier = Modifier.height(16.dp))
-                    OutlinedTextField(
-                        value = paymentAmount,
-                        onValueChange = { paymentAmount = it },
-                        label = { Text("المبلغ") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                Button(onClick = {
-                    val amount = paymentAmount.toDoubleOrNull()
-                    if (amount != null && amount > 0) {
-                        viewModel.recordPayment(invoiceId, amount)
-                        showPaymentDialog = false
-                        paymentAmount = ""
+@Composable
+fun InvoiceHeader(invoice: com.batterysales.data.models.Invoice) {
+    val statusColor = if (invoice.status == "paid") Color(0xFF0A842D) else Color(0xFFD32F2F)
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(invoice.customerName, style = MaterialTheme.typography.headlineSmall)
+            Text("الهاتف: ${invoice.customerPhone}", style = MaterialTheme.typography.bodyMedium)
+            Text("التاريخ: ${invoice.createdAt.toFormattedString("yyyy-MM-dd")}", style = MaterialTheme.typography.bodyMedium)
+            Spacer(modifier = Modifier.height(16.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
+                InfoColumn(label = "الإجمالي", value = String.format("%.2f", invoice.totalAmount))
+                InfoColumn(label = "المدفوع", value = String.format("%.2f", invoice.paidAmount))
+                InfoColumn(label = "المتبقي", value = String.format("%.2f", invoice.remainingAmount))
+            }
+             Spacer(modifier = Modifier.height(8.dp))
+            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                 Text(text = invoice.status.replaceFirstChar { it.uppercase() }, color = statusColor, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+fun PaymentItem(payment: Payment, isPending: Boolean, onEdit: () -> Unit, onDelete: () -> Unit) {
+    var menuExpanded by remember { mutableStateOf(false) }
+    ListItem(
+        headlineContent = { Text("المبلغ: ${String.format("%.2f", payment.amount)}", fontWeight = FontWeight.Bold) },
+        supportingContent = { Text("التاريخ: ${payment.timestamp.toFormattedString("yyyy-MM-dd HH:mm")}") },
+        trailingContent = {
+            if (isPending) {
+                Box {
+                    IconButton(onClick = { menuExpanded = true }) { Icon(Icons.Default.MoreVert, "خيارات") }
+                    DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                        DropdownMenuItem(text = { Text("تعديل") }, onClick = onEdit)
+                        DropdownMenuItem(text = { Text("حذف") }, onClick = onDelete)
                     }
-                }) { Text("تأكيد") }
-            },
-            dismissButton = { TextButton(onClick = { showPaymentDialog = false }) { Text("إلغاء") } }
-        )
-    }
-}
-
-@Composable
-fun InvoiceHeaderCard(invoice: Invoice) {
-    val dateFormatter = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault())
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(text = "#${invoice.invoiceNumber}", fontWeight = FontWeight.Bold, fontSize = 20.sp, color = MaterialTheme.colorScheme.primary)
-                StatusBadge(status = invoice.status)
+                }
             }
-            Divider(modifier = Modifier.padding(vertical = 12.dp))
-            InfoRow(label = "العميل:", value = invoice.customerName)
-            InfoRow(label = "التاريخ:", value = dateFormatter.format(invoice.invoiceDate))
-            if (invoice.customerPhone.isNotEmpty()) InfoRow(label = "الجوال:", value = invoice.customerPhone)
         }
-    }
+    )
 }
 
 @Composable
-fun InvoiceItemRow(item: InvoiceItem) {
-    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
-        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(text = item.productName, fontWeight = FontWeight.Bold)
-                Text(text = "${item.quantity} x SR ${item.price}", fontSize = 12.sp, color = Color.Gray)
-            }
-            Text(text = "SR ${String.format("%.2f", item.total)}", fontWeight = FontWeight.Bold)
-        }
-    }
+fun PaymentDialog(payment: Payment? = null, onDismiss: () -> Unit, onConfirm: (Double) -> Unit) {
+    var amount by remember { mutableStateOf(payment?.amount?.toString() ?: "") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (payment == null) "إضافة دفعة جديدة" else "تعديل الدفعة") },
+        text = { OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("المبلغ") }) },
+        confirmButton = { Button(onClick = { onConfirm(amount.toDoubleOrNull() ?: 0.0); onDismiss() }) { Text("حفظ") } },
+        dismissButton = { Button(onClick = onDismiss) { Text("إلغاء") } }
+    )
 }
 
-@Composable
-fun InvoiceSummaryCard(invoice: Invoice) {
-    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = Color.White), elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            SummaryRow(label = "المجموع الفرعي", value = invoice.subtotal)
-            SummaryRow(label = "الضريبة", value = invoice.tax)
-            SummaryRow(label = "الخصم", value = -invoice.discount, color = Color.Red)
-            Divider(modifier = Modifier.padding(vertical = 8.dp))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(text = "الإجمالي النهائي", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                Text(text = "SR ${String.format("%.2f", invoice.totalAmount)}", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = MaterialTheme.colorScheme.primary)
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            SummaryRow(label = "المبلغ المدفوع", value = invoice.paidAmount, color = Color(0xFF4CAF50))
-            SummaryRow(label = "المبلغ المتبقي", value = invoice.remainingAmount, color = Color.Red)
-        }
-    }
-}
-
-@Composable
-fun InfoRow(label: String, value: String) {
-    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(text = label, color = Color.Gray, fontSize = 14.sp)
-        Text(text = value, fontWeight = FontWeight.Medium, fontSize = 14.sp)
-    }
-}
-
-@Composable
-fun SummaryRow(label: String, value: Double, color: Color = Color.Unspecified) {
-    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(text = label, fontSize = 14.sp)
-        Text(text = "SR ${String.format("%.2f", value)}", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = color)
-    }
+private fun Date.toFormattedString(format: String): String {
+    val sdf = SimpleDateFormat(format, Locale.getDefault())
+    return sdf.format(this)
 }
