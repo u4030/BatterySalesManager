@@ -21,12 +21,20 @@ class InvoiceRepository @Inject constructor(
         docRef.set(finalInvoice).await()
     }
 
-    suspend fun getInvoice(invoiceId: String): Invoice? {
-        return firestore.collection(Invoice.COLLECTION_NAME)
+    fun getInvoice(invoiceId: String): Flow<Invoice?> = callbackFlow {
+        val listenerRegistration = firestore.collection(Invoice.COLLECTION_NAME)
             .document(invoiceId)
-            .get()
-            .await()
-            .toObject(Invoice::class.java)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    val invoice = snapshot.toObject(Invoice::class.java)
+                    trySend(invoice).isSuccess
+                }
+            }
+        awaitClose { listenerRegistration.remove() }
     }
 
     fun getAllInvoices(): Flow<List<Invoice>> = callbackFlow {

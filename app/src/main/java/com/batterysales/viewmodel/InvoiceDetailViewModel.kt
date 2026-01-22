@@ -29,72 +29,71 @@ class InvoiceDetailViewModel @Inject constructor(
 
     private val invoiceId: String = savedStateHandle.get<String>("invoiceId")!!
 
-    private val _uiState = MutableStateFlow(InvoiceDetailUiState())
-    val uiState: StateFlow<InvoiceDetailUiState> = _uiState.asStateFlow()
+    private val _errorMessage = MutableStateFlow<String?>(null)
 
-    init {
-        viewModelScope.launch {
-            try {
-                // Fetch the static invoice details once
-                val invoice = invoiceRepository.getInvoice(invoiceId)
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val uiState: StateFlow<InvoiceDetailUiState> =
+        invoiceRepository.getInvoice(invoiceId)
+            .flatMapLatest { invoice ->
                 if (invoice == null) {
-                    _uiState.update { it.copy(isLoading = false, errorMessage = "Invoice not found") }
-                    return@launch
-                }
+                    flowOf(InvoiceDetailUiState(isLoading = false, errorMessage = "Invoice not found"))
+                } else {
+                    paymentRepository.getPaymentsForInvoice(invoiceId)
+                        .map { payments ->
+                            val paidAmount = payments.sumOf { it.amount }
+                            val remainingAmount = (invoice.totalAmount - paidAmount).coerceAtLeast(0.0)
+                            val status = if (remainingAmount <= 0) "paid" else "pending"
 
-                // Then, start listening for real-time payment updates
-                paymentRepository.getPaymentsForInvoice(invoiceId)
-                    .collect { payments ->
-                        // Recalculate totals every time payments change
-                        val paidAmount = payments.sumOf { it.amount }
-                        val remainingAmount = (invoice.totalAmount - paidAmount).coerceAtLeast(0.0)
-                        val status = if (remainingAmount <= 0) "paid" else "pending"
+                            val updatedInvoice = invoice.copy(
+                                paidAmount = paidAmount,
+                                remainingAmount = remainingAmount,
+                                status = status
+                            )
 
-                        val updatedInvoice = invoice.copy(
-                            paidAmount = paidAmount,
-                            remainingAmount = remainingAmount,
-                            status = status
-                        )
+                            // If status changes, trigger a DB update.
+                            if (updatedInvoice.status != invoice.status) {
+                                viewModelScope.launch {
+                                    invoiceRepository.updateInvoice(updatedInvoice)
+                                }
+                            }
 
-                        // If the invoice status has changed, update it in the DB
-                        if (updatedInvoice != invoice) {
-                            invoiceRepository.updateInvoice(updatedInvoice)
-                        }
-
-                        _uiState.update {
-                            it.copy(
+                            InvoiceDetailUiState(
                                 invoice = updatedInvoice,
                                 payments = payments,
                                 isLoading = false
                             )
                         }
-                    }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(isLoading = false, errorMessage = "Failed to load details") }
+                }
             }
-        }
-    }
+            .catch { e -> emit(InvoiceDetailUiState(isLoading = false, errorMessage = "Failed to load details: ${e.message}")) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), InvoiceDetailUiState(isLoading = true))
 
     fun addPayment(amount: Double) {
         viewModelScope.launch {
-            if (amount <= 0) return@launch
+            if (amount <= 0) {
+                _errorMessage.value = "المبلغ يجب أن يكون أكبر من صفر"
+                return@launch
+            }
             try {
                 val payment = Payment(invoiceId = invoiceId, amount = amount, timestamp = Date())
                 paymentRepository.addPayment(payment)
             } catch (e: Exception) {
-                 _uiState.update { it.copy(errorMessage = "Failed to add payment") }
+                 _errorMessage.value = "Failed to add payment"
             }
         }
     }
 
     fun updatePayment(payment: Payment, newAmount: Double) {
         viewModelScope.launch {
-            if (newAmount <= 0) return@launch
+            if (newAmount <= 0) {
+                _errorMessage.value = "المبلغ يجب أن يكون أكبر من صفر"
+                return@launch
+            }
             try {
                 val updatedPayment = payment.copy(amount = newAmount)
                 paymentRepository.updatePayment(updatedPayment)
             } catch (e: Exception) {
-                 _uiState.update { it.copy(errorMessage = "Failed to update payment") }
+                 _errorMessage.value = "Failed to update payment"
             }
         }
     }
@@ -104,12 +103,12 @@ class InvoiceDetailViewModel @Inject constructor(
             try {
                 paymentRepository.deletePayment(paymentId)
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = "Failed to delete payment") }
+                _errorMessage.value = "Failed to delete payment"
             }
         }
     }
 
     fun onDismissError() {
-        _uiState.update { it.copy(errorMessage = null) }
+        _errorMessage.value = null
     }
 }
