@@ -65,27 +65,38 @@ fun InvoiceDetailScreen(navController: NavController, viewModel: InvoiceDetailVi
             )
         }
     ) { padding ->
-        if (uiState.isLoading) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
-        } else if (uiState.invoice != null) {
-            val invoice = uiState.invoice!!
-            Column(modifier = Modifier.padding(padding).padding(16.dp)) {
-                InvoiceHeader(invoice = invoice)
-                Spacer(modifier = Modifier.height(16.dp))
-                Button(onClick = { showAddPaymentDialog = true }) { Text("إضافة دفعة جديدة") }
-                Spacer(modifier = Modifier.height(16.dp))
-                Text("سجل الدفعات", style = MaterialTheme.typography.titleLarge)
-                Divider()
-                LazyColumn {
-                    items(uiState.payments) { payment ->
-                        PaymentItem(
-                            payment = payment,
-                            onEdit = { paymentToEdit = payment },
-                            onDelete = { paymentToDelete = payment }
-                        )
+        Column(modifier = Modifier.padding(padding).padding(16.dp)) {
+            if (uiState.isLoading) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            } else if (uiState.invoice != null) {
+                val invoice = uiState.invoice!!
+                Column {
+                    InvoiceHeader(invoice = invoice)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    // Show payment options only if the invoice is pending
+                    if (invoice.status.equals("pending", ignoreCase = true)) {
+                        Button(onClick = { showAddPaymentDialog = true }) { Text("إضافة دفعة جديدة") }
                     }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("سجل الدفعات", style = MaterialTheme.typography.titleLarge)
+                    Divider()
+                    LazyColumn {
+                        items(uiState.payments) { payment ->
+                            PaymentItem(
+                                payment = payment,
+                                onEdit = { paymentToEdit = payment },
+                                onDelete = { paymentToDelete = payment },
+                                // Editing/deleting payments is only allowed for pending invoices
+                                isEditable = invoice.status.equals("pending", ignoreCase = true)
+                            )
+                        }
+                    }
+                }
+            } else {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(uiState.errorMessage ?: "الفاتورة غير موجودة")
                 }
             }
         }
@@ -115,17 +126,25 @@ fun InvoiceHeader(invoice: com.batterysales.data.models.Invoice) {
 }
 
 @Composable
-fun PaymentItem(payment: Payment, onEdit: () -> Unit, onDelete: () -> Unit) {
+fun PaymentItem(payment: Payment, onEdit: () -> Unit, onDelete: () -> Unit, isEditable: Boolean) {
     var menuExpanded by remember { mutableStateOf(false) }
     ListItem(
         headlineContent = { Text("المبلغ: ${String.format("%.2f", payment.amount)}", fontWeight = FontWeight.Bold) },
         supportingContent = { Text("التاريخ: ${payment.timestamp.toFormattedString("yyyy-MM-dd HH:mm")}") },
         trailingContent = {
-            Box {
-                IconButton(onClick = { menuExpanded = true }) { Icon(Icons.Default.MoreVert, "خيارات") }
-                DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-                    DropdownMenuItem(text = { Text("تعديل") }, onClick = onEdit)
-                    DropdownMenuItem(text = { Text("حذف") }, onClick = onDelete)
+            if (isEditable) {
+                Box {
+                    IconButton(onClick = { menuExpanded = true }) { Icon(Icons.Default.MoreVert, "خيارات") }
+                    DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                        DropdownMenuItem(
+                            text = { Text("تعديل") },
+                            onClick = { onEdit(); menuExpanded = false }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("حذف") },
+                            onClick = { onDelete(); menuExpanded = false }
+                        )
+                    }
                 }
             }
         }
