@@ -16,7 +16,8 @@ data class StockEntry(
     val grandTotalAmperes: Int = 0,
     val grandTotalCost: Double = 0.0,
     val timestamp: Date = Date(),
-    val supplier: String = ""
+    val supplier: String = "",
+    val invoiceId: String? = null // Link to invoice for sales entries
 ) {
     companion object {
         const val COLLECTION_NAME = "stock_entries"

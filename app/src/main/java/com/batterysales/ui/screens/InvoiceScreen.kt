@@ -24,16 +24,15 @@ import java.util.*
 @Composable
 fun InvoiceScreen(navController: NavController, viewModel: InvoiceViewModel = hiltViewModel()) {
     val uiState by viewModel.uiState.collectAsState()
-    var showDeleteDialog by remember { mutableStateOf<Invoice?>(null) }
     var showEditDialog by remember { mutableStateOf<Invoice?>(null) }
 
-    if (showDeleteDialog != null) {
+    if (uiState.invoiceToDelete != null) {
         AlertDialog(
-            onDismissRequest = { showDeleteDialog = null },
+            onDismissRequest = { viewModel.onDismissDeleteDialog() },
             title = { Text("تأكيد الحذف") },
-            text = { Text("هل أنت متأكد أنك تريد حذف هذه الفاتورة وجميع دفعاتها؟") },
-            confirmButton = { Button(onClick = { viewModel.deleteInvoice(showDeleteDialog!!.id); showDeleteDialog = null }) { Text("حذف") } },
-            dismissButton = { Button(onClick = { showDeleteDialog = null }) { Text("إلغاء") } }
+            text = { Text(uiState.deletionWarningMessage) },
+            confirmButton = { Button(onClick = { viewModel.onConfirmDelete() }) { Text("حذف") } },
+            dismissButton = { Button(onClick = { viewModel.onDismissDeleteDialog() }) { Text("إلغاء") } }
         )
     }
 
@@ -63,7 +62,7 @@ fun InvoiceScreen(navController: NavController, viewModel: InvoiceViewModel = hi
                             }
                         },
                         onEditClick = { showEditDialog = invoice },
-                        onDeleteClick = { showDeleteDialog = invoice }
+                        onDeleteClick = { viewModel.deleteInvoice(invoice) }
                     )
                 }
             }
