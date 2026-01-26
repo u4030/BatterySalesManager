@@ -162,4 +162,20 @@ class SalesViewModel @Inject constructor(
     fun onDismissError() {
         _uiState.update { it.copy(errorMessage = null) }
     }
+
+    fun findProductByBarcode(barcode: String) {
+        viewModelScope.launch {
+            val allVariants = productVariantRepository.getAllVariants()
+            val variant = allVariants.find { it.barcode == barcode }
+            if (variant != null) {
+                val product = productRepository.getProduct(variant.productId)
+                if (product != null) {
+                    onProductSelected(product)
+                    onVariantSelected(variant)
+                }
+            } else {
+                _uiState.update { it.copy(errorMessage = "لم يتم العثور على منتج بهذا الباركود") }
+            }
+        }
+    }
 }

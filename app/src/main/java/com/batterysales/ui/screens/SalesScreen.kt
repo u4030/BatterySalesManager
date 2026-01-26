@@ -7,8 +7,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.batterysales.ui.components.BarcodeScanner
 import com.batterysales.ui.stockentry.Dropdown
 import com.batterysales.viewmodel.SalesViewModel
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.PhotoCamera
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -17,6 +21,7 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
     var customerName by remember { mutableStateOf("") }
     var customerPhone by remember { mutableStateOf("") }
     var paidAmount by remember { mutableStateOf("") }
+    var showScanner by remember { mutableStateOf(false) }
 
     LaunchedEffect(uiState.isFinished) {
         if (uiState.isFinished) {
@@ -28,12 +33,29 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
         }
     }
 
-    Column(modifier = Modifier.padding(16.dp).fillMaxWidth()) {
-
-        if (uiState.errorMessage != null) {
-            Text(text = uiState.errorMessage!!, color = MaterialTheme.colorScheme.error)
-            Spacer(modifier = Modifier.height(8.dp))
-        }
+    if (showScanner) {
+        BarcodeScanner(onBarcodeScanned = { barcode ->
+            viewModel.findProductByBarcode(barcode)
+            showScanner = false
+        })
+    } else {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text("فاتورة جديدة") },
+                    navigationIcon = {
+                        IconButton(onClick = { navController.popBackStack() }) {
+                            Icon(Icons.Default.ArrowBack, contentDescription = "رجوع")
+                        }
+                    }
+                )
+            }
+        ) { padding ->
+            Column(modifier = Modifier.padding(padding).padding(16.dp).fillMaxWidth()) {
+                if (uiState.errorMessage != null) {
+                    Text(text = uiState.errorMessage!!, color = MaterialTheme.colorScheme.error)
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
 
         if (uiState.isLoading) {
             CircularProgressIndicator()
@@ -93,6 +115,19 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
             enabled = uiState.selectedVariant != null && uiState.selectedWarehouse != null
         ) {
             Text("إنشاء عملية بيع")
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        OutlinedButton(
+            onClick = { showScanner = true },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(Icons.Default.PhotoCamera, contentDescription = "مسح الباركود")
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("مسح الباركود")
+        }
+    }
         }
     }
 }
