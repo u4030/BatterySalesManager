@@ -27,7 +27,15 @@ class InvoiceViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(InvoiceUiState())
     val uiState: StateFlow<InvoiceUiState> = _uiState.asStateFlow()
 
+    val invoices: StateFlow<List<Invoice>> = _uiState.map { it.invoices }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+    val isLoading: StateFlow<Boolean> = _uiState.map { it.isLoading }.stateIn(viewModelScope, SharingStarted.Lazily, true)
+
+
     init {
+        loadInvoices()
+    }
+
+    fun loadInvoices() {
         viewModelScope.launch {
             invoiceRepository.getAllInvoices()
                 .onStart { _uiState.update { it.copy(isLoading = true) } }
