@@ -42,7 +42,7 @@ fun BarcodeScanner(
 
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
-        onResult = { granted ->
+        onResult = { granted: Boolean ->
             hasCameraPermission = granted
         }
     )

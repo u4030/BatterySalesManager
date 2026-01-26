@@ -13,39 +13,87 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.batterysales.data.models.Warehouse
+import com.batterysales.ui.components.BarcodeScanner
 import com.batterysales.viewmodel.InventoryReportItem
 import com.batterysales.viewmodel.ReportsViewModel
 import java.util.Locale
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.PhotoCamera
+
+@Composable
+fun SearchBar(
+    barcodeFilter: String?,
+    onClear: () -> Unit,
+    onScan: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        OutlinedTextField(
+            value = barcodeFilter ?: "",
+            onValueChange = { },
+            readOnly = true,
+            label = { Text("فلترة بالباركود") },
+            modifier = Modifier.weight(1f)
+        )
+        IconButton(onClick = onScan) {
+            Icon(Icons.Default.PhotoCamera, contentDescription = "مسح الباركود")
+        }
+        if (!barcodeFilter.isNullOrBlank()) {
+            IconButton(onClick = onClear) {
+                Icon(Icons.Default.Clear, contentDescription = "مسح الفلتر")
+            }
+        }
+    }
+}
 
 @Composable
 fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hiltViewModel()) {
     val reportItems by viewModel.inventoryReport.collectAsState()
     val warehouses by viewModel.warehouses.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val barcodeFilter by viewModel.barcodeFilter.collectAsState()
+    var showScanner by remember { mutableStateOf(false) }
 
     val grandTotalQuantity = remember(reportItems) {
         reportItems.sumOf { it.totalQuantity }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(title = { Text("تقارير المخزون") })
-        }
-    ) { padding ->
-        if (isLoading) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
+    if (showScanner) {
+        BarcodeScanner(onBarcodeScanned = { barcode ->
+            viewModel.onBarcodeScanned(barcode)
+            showScanner = false
+        })
+    } else {
+        Scaffold(
+            topBar = {
+                TopAppBar(title = { Text("تقارير المخزون") })
             }
-        } else {
-            Column(modifier = Modifier.padding(padding)) {
-                // Grand Total Card
-                if (reportItems.isNotEmpty()) {
-                    GrandTotalCard(totalQuantity = grandTotalQuantity)
+        ) { padding ->
+            if (isLoading) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
                 }
+            } else {
+                Column(modifier = Modifier.padding(padding)) {
+                    SearchBar(
+                        barcodeFilter = barcodeFilter,
+                        onClear = { viewModel.onBarcodeScanned(null) },
+                        onScan = { showScanner = true }
+                    )
 
-                LazyColumn(
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    // Grand Total Card
+                    if (reportItems.isNotEmpty()) {
+                        GrandTotalCard(totalQuantity = grandTotalQuantity)
+                    }
+
+                    LazyColumn(
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     items(reportItems) { item ->
                         ReportItemCard(

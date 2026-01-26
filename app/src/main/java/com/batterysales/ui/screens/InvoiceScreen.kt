@@ -32,6 +32,7 @@ fun InvoiceScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
+    var showEditDialog by remember { mutableStateOf<Invoice?>(null) }
 
     val filteredInvoices = uiState.invoices.filter {
         it.invoiceNumber.contains(searchQuery, ignoreCase = true) ||

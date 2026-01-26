@@ -28,6 +28,9 @@ class ReportsViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(true)
     val isLoading = _isLoading.asStateFlow()
 
+    private val _barcodeFilter = MutableStateFlow<String?>(null)
+    val barcodeFilter = _barcodeFilter.asStateFlow()
+
     val warehouses: StateFlow<List<Warehouse>> = warehouseRepository.getWarehouses()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -35,8 +38,9 @@ class ReportsViewModel @Inject constructor(
         productRepository.getProducts(),
         productVariantRepository.getAllVariantsFlow(),
         stockEntryRepository.getAllStockEntriesFlow(),
-        warehouses
-    ) { products, allVariants, allStockEntries, warehouseList ->
+        warehouses,
+        _barcodeFilter
+    ) { products, allVariants, allStockEntries, warehouseList, barcode ->
 
         val reportItems = mutableListOf<InventoryReportItem>()
         val activeProducts = products.filter { !it.isArchived }.associateBy { it.id }
@@ -79,7 +83,17 @@ class ReportsViewModel @Inject constructor(
             )
         }
         reportItems
+    }.map { items ->
+        if (barcodeFilter.value.isNullOrBlank()) {
+            items
+        } else {
+            items.filter { it.variant.barcode == barcodeFilter.value }
+        }
     }.onStart { _isLoading.value = true }
         .onEach { _isLoading.value = false }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun onBarcodeScanned(barcode: String?) {
+        _barcodeFilter.value = barcode
+    }
 }
