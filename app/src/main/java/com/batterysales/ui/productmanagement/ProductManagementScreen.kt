@@ -179,26 +179,43 @@ fun AddVariantDialog(onDismiss: () -> Unit, onAddVariant: (Int, Double, String, 
     var sellingPrice by remember { mutableStateOf("") }
     var barcode by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
+    var showScanner by remember { mutableStateOf(false) }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("إضافة سعة جديدة") },
-        text = {
-            Column {
-                OutlinedTextField(value = capacity, onValueChange = { capacity = it }, label = { Text("السعة (أمبير)") })
-                OutlinedTextField(value = sellingPrice, onValueChange = { sellingPrice = it }, label = { Text("سعر البيع") })
-                OutlinedTextField(value = barcode, onValueChange = { barcode = it }, label = { Text("الباركود") })
-                OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("ملاحظات") })
-            }
-        },
-        confirmButton = {
-            Button(onClick = {
-                onAddVariant(capacity.toIntOrNull() ?: 0, sellingPrice.toDoubleOrNull() ?: 0.0, barcode, notes)
-                onDismiss()
-            }) { Text("إضافة") }
-        },
-        dismissButton = { Button(onClick = onDismiss) { Text("إلغاء") } }
-    )
+    if (showScanner) {
+        BarcodeScanner(onBarcodeScanned = {
+            barcode = it
+            showScanner = false
+        })
+    } else {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text("إضافة سعة جديدة") },
+            text = {
+                Column {
+                    OutlinedTextField(value = capacity, onValueChange = { capacity = it }, label = { Text("السعة (أمبير)") })
+                    OutlinedTextField(value = sellingPrice, onValueChange = { sellingPrice = it }, label = { Text("سعر البيع") })
+                    OutlinedTextField(
+                        value = barcode,
+                        onValueChange = { barcode = it },
+                        label = { Text("الباركود") },
+                        trailingIcon = {
+                            IconButton(onClick = { showScanner = true }) {
+                                Icon(Icons.Default.PhotoCamera, contentDescription = "مسح الباركود")
+                            }
+                        }
+                    )
+                    OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("ملاحظات") })
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    onAddVariant(capacity.toIntOrNull() ?: 0, sellingPrice.toDoubleOrNull() ?: 0.0, barcode, notes)
+                    onDismiss()
+                }) { Text("إضافة") }
+            },
+            dismissButton = { Button(onClick = onDismiss) { Text("إلغاء") } }
+        )
+    }
 }
 
 @Composable
@@ -207,31 +224,48 @@ fun EditVariantDialog(variant: ProductVariant, onDismiss: () -> Unit, onUpdateVa
     var sellingPrice by remember { mutableStateOf(variant.sellingPrice.toString()) }
     var barcode by remember { mutableStateOf(variant.barcode) }
     var notes by remember { mutableStateOf(variant.notes) }
+    var showScanner by remember { mutableStateOf(false) }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("تعديل السعة") },
-        text = {
-            Column {
-                OutlinedTextField(value = capacity, onValueChange = { capacity = it }, label = { Text("السعة (أمبير)") })
-                OutlinedTextField(value = sellingPrice, onValueChange = { sellingPrice = it }, label = { Text("سعر البيع") })
-                OutlinedTextField(value = barcode, onValueChange = { barcode = it }, label = { Text("الباركود") })
-                OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("ملاحظات") })
-            }
-        },
-        confirmButton = {
-            Button(onClick = {
-                onUpdateVariant(variant.copy(
-                    capacity = capacity.toIntOrNull() ?: 0,
-                    sellingPrice = sellingPrice.toDoubleOrNull() ?: 0.0,
-                    barcode = barcode,
-                    notes = notes
-                ))
-                onDismiss()
-            }) { Text("حفظ") }
-        },
-        dismissButton = { Button(onClick = onDismiss) { Text("إلغاء") } }
-    )
+    if (showScanner) {
+        BarcodeScanner(onBarcodeScanned = {
+            barcode = it
+            showScanner = false
+        })
+    } else {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text("تعديل السعة") },
+            text = {
+                Column {
+                    OutlinedTextField(value = capacity, onValueChange = { capacity = it }, label = { Text("السعة (أمبير)") })
+                    OutlinedTextField(value = sellingPrice, onValueChange = { sellingPrice = it }, label = { Text("سعر البيع") })
+                    OutlinedTextField(
+                        value = barcode,
+                        onValueChange = { barcode = it },
+                        label = { Text("الباركود") },
+                        trailingIcon = {
+                            IconButton(onClick = { showScanner = true }) {
+                                Icon(Icons.Default.PhotoCamera, contentDescription = "مسح الباركود")
+                            }
+                        }
+                    )
+                    OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("ملاحظات") })
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    onUpdateVariant(variant.copy(
+                        capacity = capacity.toIntOrNull() ?: 0,
+                        sellingPrice = sellingPrice.toDoubleOrNull() ?: 0.0,
+                        barcode = barcode,
+                        notes = notes
+                    ))
+                    onDismiss()
+                }) { Text("حفظ") }
+            },
+            dismissButton = { Button(onClick = onDismiss) { Text("إلغاء") } }
+        )
+    }
 }
 
 @Composable

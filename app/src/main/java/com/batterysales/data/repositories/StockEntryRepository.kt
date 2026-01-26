@@ -120,4 +120,12 @@ class StockEntryRepository @Inject constructor(
             .delete()
             .await()
     }
+
+    suspend fun getEntriesForInvoice(invoiceId: String): List<StockEntry> {
+        return firestore.collection(StockEntry.COLLECTION_NAME)
+            .whereEqualTo("invoiceId", invoiceId)
+            .get()
+            .await()
+            .toObjects(StockEntry::class.java)
+    }
 }

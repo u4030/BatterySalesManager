@@ -12,18 +12,30 @@ import javax.inject.Inject
 data class InvoiceUiState(
     val invoices: List<Invoice> = emptyList(),
     val isLoading: Boolean = true,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val invoiceToDelete: Invoice? = null,
+    val deletionWarningMessage: String = ""
 )
 
 @HiltViewModel
 class InvoiceViewModel @Inject constructor(
-    private val invoiceRepository: InvoiceRepository
+    private val invoiceRepository: InvoiceRepository,
+    private val stockEntryRepository: StockEntryRepository,
+    private val warehouseRepository: WarehouseRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(InvoiceUiState())
     val uiState: StateFlow<InvoiceUiState> = _uiState.asStateFlow()
 
+    val invoices: StateFlow<List<Invoice>> = _uiState.map { it.invoices }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+    val isLoading: StateFlow<Boolean> = _uiState.map { it.isLoading }.stateIn(viewModelScope, SharingStarted.Lazily, true)
+
+
     init {
+        loadInvoices()
+    }
+
+    fun loadInvoices() {
         viewModelScope.launch {
             invoiceRepository.getAllInvoices()
                 .onStart { _uiState.update { it.copy(isLoading = true) } }
@@ -34,12 +46,65 @@ class InvoiceViewModel @Inject constructor(
         }
     }
 
-    fun deleteInvoice(invoiceId: String) {
+    fun onDismissDeleteDialog() {
+        _uiState.update { it.copy(invoiceToDelete = null, deletionWarningMessage = "") }
+    }
+
+    fun onConfirmDelete() {
+        viewModelScope.launch {
+            _uiState.value.invoiceToDelete?.let { invoice ->
+                try {
+                    // 1. Get related stock entries
+                    val saleEntries = stockEntryRepository.getEntriesForInvoice(invoice.id)
+
+                    // 2. Create reversal stock entries
+                    val reversalEntries = saleEntries.map {
+                        it.copy(
+                            id = "", // Let Firestore generate a new ID
+                            quantity = -it.quantity, // Reverse the quantity
+                            supplier = "Reversal for Invoice ${invoice.id}",
+                            invoiceId = null // Clear the invoice ID
+                        )
+                    }
+                    stockEntryRepository.addStockEntries(reversalEntries)
+
+                    // 3. Delete the invoice and associated payments
+                    invoiceRepository.deleteInvoice(invoice.id)
+
+                } catch (e: Exception) {
+                    _uiState.update { it.copy(errorMessage = "Failed to delete invoice") }
+                } finally {
+                    onDismissDeleteDialog()
+                }
+            }
+        }
+    }
+
+    fun deleteInvoice(invoice: Invoice) {
         viewModelScope.launch {
             try {
-                invoiceRepository.deleteInvoice(invoiceId)
+                val saleEntries = stockEntryRepository.getEntriesForInvoice(invoice.id)
+                if (saleEntries.isEmpty()) {
+                    // No stock entries to reverse, proceed with normal deletion
+                    _uiState.update { it.copy(
+                        invoiceToDelete = invoice,
+                        deletionWarningMessage = "هل أنت متأكد أنك تريد حذف هذه الفاتورة؟"
+                    ) }
+                    return@launch
+                }
+
+                // Assuming all items in an invoice come from the same warehouse
+                val warehouseId = saleEntries.first().warehouseId
+                val warehouse = warehouseRepository.getWarehouse(warehouseId)
+                val warehouseName = warehouse?.name ?: "مستودع غير معروف"
+
+                _uiState.update { it.copy(
+                    invoiceToDelete = invoice,
+                    deletionWarningMessage = "عند حذف هذه الفاتورة، سيتم إرجاع الكمية المباعة إلى مستودع '$warehouseName'. هل تريد المتابعة؟"
+                ) }
+
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = "Failed to delete invoice") }
+                _uiState.update { it.copy(errorMessage = "Failed to prepare for deletion") }
             }
         }
     }

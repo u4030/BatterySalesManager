@@ -15,10 +15,11 @@ class InvoiceRepository @Inject constructor(
     private val firestore: FirebaseFirestore
 ) {
 
-    suspend fun createInvoice(invoice: Invoice) {
+    suspend fun createInvoice(invoice: Invoice): Invoice {
         val docRef = firestore.collection(Invoice.COLLECTION_NAME).document()
         val finalInvoice = invoice.copy(id = docRef.id, createdAt = Date(), updatedAt = Date())
         docRef.set(finalInvoice).await()
+        return finalInvoice
     }
 
     suspend fun getInvoice(invoiceId: String): Invoice? {

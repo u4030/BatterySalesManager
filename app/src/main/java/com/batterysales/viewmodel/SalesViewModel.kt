@@ -122,18 +122,9 @@ class SalesViewModel @Inject constructor(
                 val totalItemsPurchased = positiveEntries.sumOf { it.quantity }
                 val weightedAverageCost = if (totalItemsPurchased > 0) totalCostOfPurchases / totalItemsPurchased else 0.0
 
-                val stockEntry = StockEntry(
-                    productVariantId = variant.id,
-                    warehouseId = warehouse.id,
-                    quantity = -qty,
-                    costPrice = weightedAverageCost,
-                    supplier = "Sale",
-                    timestamp = Date()
-                )
-                stockEntryRepository.addStockEntry(stockEntry)
-
+                // First, create the invoice to get an ID
                 val total = qty * price
-                val invoice = Invoice(
+                val newInvoice = Invoice(
                     customerName = customerName,
                     customerPhone = customerPhone,
                     items = listOf(InvoiceItem(
@@ -147,7 +138,19 @@ class SalesViewModel @Inject constructor(
                     remainingAmount = total - paidAmount,
                     status = if (paidAmount >= total) "paid" else "pending"
                 )
-                invoiceRepository.createInvoice(invoice)
+                val createdInvoice = invoiceRepository.createInvoice(newInvoice)
+
+                // Now, create a single stock entry linked to the new invoice
+                val stockEntry = StockEntry(
+                    productVariantId = variant.id,
+                    warehouseId = warehouse.id,
+                    quantity = -qty,
+                    costPrice = weightedAverageCost,
+                    supplier = "Sale",
+                    timestamp = Date(),
+                    invoiceId = createdInvoice.id
+                )
+                stockEntryRepository.addStockEntry(stockEntry)
 
                 _uiState.update { it.copy(isFinished = true) }
             } catch (e: Exception) {
