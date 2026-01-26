@@ -48,6 +48,14 @@ fun InvoiceScreen(
         )
     }
 
+    if (showEditDialog != null) {
+        EditCustomerDialog(
+            invoice = showEditDialog!!,
+            onDismiss = { showEditDialog = null },
+            onConfirm = { invoice, newName, newPhone -> viewModel.updateCustomerInfo(invoice, newName, newPhone) }
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -123,7 +131,8 @@ fun InvoiceScreen(
                         InvoiceItemCard(
                             invoice = invoice,
                             onClick = { navController.navigate("invoice_detail/${invoice.id}") },
-                            onDeleteClick = { viewModel.deleteInvoice(invoice) }
+                            onDeleteClick = { viewModel.deleteInvoice(invoice) },
+                            onEditClick = { showEditDialog = invoice }
                         )
                     }
                 }
@@ -133,7 +142,27 @@ fun InvoiceScreen(
 }
 
 @Composable
-fun InvoiceItemCard(invoice: Invoice, onClick: () -> Unit, onDeleteClick: () -> Unit) {
+fun EditCustomerDialog(invoice: Invoice, onDismiss: () -> Unit, onConfirm: (Invoice, String, String) -> Unit) {
+    var customerName by remember { mutableStateOf(invoice.customerName) }
+    var customerPhone by remember { mutableStateOf(invoice.customerPhone) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("تعديل معلومات العميل") },
+        text = {
+            Column {
+                OutlinedTextField(value = customerName, onValueChange = { customerName = it }, label = { Text("اسم العميل") })
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(value = customerPhone, onValueChange = { customerPhone = it }, label = { Text("رقم الهاتف") })
+            }
+        },
+        confirmButton = { Button(onClick = { onConfirm(invoice, customerName, customerPhone); onDismiss() }) { Text("حفظ") } },
+        dismissButton = { Button(onClick = onDismiss) { Text("إلغاء") } }
+    )
+}
+
+@Composable
+fun InvoiceItemCard(invoice: Invoice, onClick: () -> Unit, onDeleteClick: () -> Unit, onEditClick: () -> Unit) {
     val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
     var menuExpanded by remember { mutableStateOf(false) }
 
@@ -164,7 +193,7 @@ fun InvoiceItemCard(invoice: Invoice, onClick: () -> Unit, onDeleteClick: () -> 
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(text = invoice.customerName, fontSize = 14.sp, fontWeight = FontWeight.Medium)
                 Text(
-                    text = dateFormatter.format(invoice.createdAt), // Changed from invoiceDate
+                    text = dateFormatter.format(invoice.invoiceDate),
                     fontSize = 12.sp,
                     color = Color.Gray
                 )
@@ -193,6 +222,13 @@ fun InvoiceItemCard(invoice: Invoice, onClick: () -> Unit, onDeleteClick: () -> 
                     expanded = menuExpanded,
                     onDismissRequest = { menuExpanded = false }
                 ) {
+                    DropdownMenuItem(
+                        text = { Text("تعديل العميل") },
+                        onClick = {
+                            onEditClick()
+                            menuExpanded = false
+                        }
+                    )
                     DropdownMenuItem(
                         text = { Text("حذف الفاتورة") },
                         onClick = {

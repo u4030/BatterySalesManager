@@ -175,7 +175,7 @@ fun InvoiceHeaderCard(invoice: Invoice) {
             }
             Divider(modifier = Modifier.padding(vertical = 12.dp))
             InfoRow(label = "العميل:", value = invoice.customerName)
-            InfoRow(label = "التاريخ:", value = dateFormatter.format(invoice.createdAt)) // Changed from invoiceDate
+            InfoRow(label = "التاريخ:", value = dateFormatter.format(invoice.invoiceDate))
             if (invoice.customerPhone.isNotEmpty()) InfoRow(label = "الجوال:", value = invoice.customerPhone)
         }
     }
@@ -187,9 +187,9 @@ fun InvoiceItemRow(item: InvoiceItem) {
         Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(text = item.productName, fontWeight = FontWeight.Bold)
-                Text(text = "${item.quantity} x SR ${item.unitPrice}", fontSize = 12.sp, color = Color.Gray) // Changed from price
+                Text(text = "${item.quantity} x SR ${item.price}", fontSize = 12.sp, color = Color.Gray)
             }
-            Text(text = "SR ${String.format("%.2f", item.totalPrice)}", fontWeight = FontWeight.Bold) // Changed from total
+            Text(text = "SR ${String.format("%.2f", item.total)}", fontWeight = FontWeight.Bold)
         }
     }
 }
