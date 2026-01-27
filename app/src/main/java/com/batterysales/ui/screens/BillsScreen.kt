@@ -46,17 +46,18 @@ fun BillsScreen(
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = Color.White,
-                    navigationIconContentColor = Color.White
+                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
                 )
             )
         },
         floatingActionButton = {
             FloatingActionButton(
                 onClick = { showAddBillDialog = true },
-                containerColor = MaterialTheme.colorScheme.primary
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
             ) {
-                Icon(Icons.Default.Add, contentDescription = "إضافة كمبيالة", tint = Color.White)
+                Icon(Icons.Default.Add, contentDescription = "إضافة كمبيالة")
             }
         }
     ) { paddingValues ->
@@ -64,7 +65,7 @@ fun BillsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .background(Color(0xFFF5F5F5))
+                .background(MaterialTheme.colorScheme.background)
                 .padding(16.dp)
         ) {
             if (isLoading) {
@@ -73,7 +74,10 @@ fun BillsScreen(
                 }
             } else if (bills.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("لا توجد كمبيالات أو شيكات مسجلة", color = Color.Gray)
+                    Text(
+                        "لا توجد كمبيالات أو شيكات مسجلة",
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    )
                 }
             } else {
                 LazyColumn(
@@ -107,12 +111,15 @@ fun BillsScreen(
 fun BillItemCard(bill: Bill, onPayClick: () -> Unit, onDeleteClick: () -> Unit) {
     val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
     val isPaid = bill.status == BillStatus.PAID
-    
+
+    val statusColor = if (isPaid) Color(0xFF4CAF50) else MaterialTheme.colorScheme.tertiary
+    val statusContainerColor = if (isPaid) Color(0xFF4CAF50).copy(alpha = 0.1f) else MaterialTheme.colorScheme.tertiaryContainer
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
@@ -120,29 +127,29 @@ fun BillItemCard(bill: Bill, onPayClick: () -> Unit, onDeleteClick: () -> Unit) 
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(bill.description, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text(bill.description, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
                 Surface(
-                    color = (if (isPaid) Color(0xFF4CAF50) else Color(0xFFFF9800)).copy(alpha = 0.1f),
+                    color = statusContainerColor,
                     shape = RoundedCornerShape(4.dp)
                 ) {
                     Text(
                         text = if (isPaid) "مسددة" else "غير مسددة",
-                        color = if (isPaid) Color(0xFF4CAF50) else Color(0xFFFF9800),
+                        color = statusColor,
                         fontSize = 10.sp,
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                         fontWeight = FontWeight.Bold
                     )
                 }
             }
-            
+
             Spacer(modifier = Modifier.height(8.dp))
-            
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column {
                     Text("المبلغ: SR ${String.format("%.2f", bill.amount)}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
-                    Text("تاريخ الاستحقاق: ${dateFormatter.format(bill.dueDate)}", fontSize = 12.sp, color = Color.Gray)
+                    Text("تاريخ الاستحقاق: ${dateFormatter.format(bill.dueDate)}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                
+
                 Row {
                     if (!isPaid) {
                         IconButton(onClick = onPayClick) {
@@ -150,7 +157,7 @@ fun BillItemCard(bill: Bill, onPayClick: () -> Unit, onDeleteClick: () -> Unit) 
                         }
                     }
                     IconButton(onClick = onDeleteClick) {
-                        Icon(Icons.Default.Delete, contentDescription = "حذف", tint = Color(0xFFF44336))
+                        Icon(Icons.Default.Delete, contentDescription = "حذف", tint = MaterialTheme.colorScheme.error)
                     }
                 }
             }
@@ -162,7 +169,7 @@ fun BillItemCard(bill: Bill, onPayClick: () -> Unit, onDeleteClick: () -> Unit) 
 fun AddBillDialog(onDismiss: () -> Unit, onAdd: (String, Double, Date) -> Unit) {
     var description by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
-    val dueDate = Date() 
+    val dueDate = Date()
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -182,16 +189,14 @@ fun AddBillDialog(onDismiss: () -> Unit, onAdd: (String, Double, Date) -> Unit) 
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth()
                 )
-                Text("تاريخ الاستحقاق: سيتم تعيينه لليوم", fontSize = 12.sp, color = Color.Gray)
+                Text("تاريخ الاستحقاق: سيتم تعيينه لليوم", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
         confirmButton = {
-            Button(onClick = { 
+            Button(onClick = {
                 val amt = amount.toDoubleOrNull() ?: 0.0
                 if (description.isNotEmpty() && amt > 0) onAdd(description, amt, dueDate)
-            }) {
-                Text("إضافة")
-            }
+            }) { Text("إضافة") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("إلغاء") }

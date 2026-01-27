@@ -30,4 +30,12 @@ class WarehouseRepository @Inject constructor(
     suspend fun addWarehouse(warehouse: Warehouse) {
         firestore.collection(Warehouse.COLLECTION_NAME).add(warehouse).await()
     }
+
+    suspend fun getWarehouse(warehouseId: String): Warehouse? {
+        return firestore.collection(Warehouse.COLLECTION_NAME)
+            .document(warehouseId)
+            .get()
+            .await()
+            .toObject(Warehouse::class.java)
+    }
 }

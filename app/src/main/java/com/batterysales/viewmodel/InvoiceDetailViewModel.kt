@@ -33,17 +33,22 @@ class InvoiceDetailViewModel @Inject constructor(
     val uiState: StateFlow<InvoiceDetailUiState> = _uiState.asStateFlow()
 
     init {
+        getInvoiceById(invoiceId)
+    }
+
+    fun getInvoiceById(id: String) {
         viewModelScope.launch {
             try {
+                _uiState.update { it.copy(isLoading = true) }
                 // Fetch the static invoice details once
-                val invoice = invoiceRepository.getInvoice(invoiceId)
+                val invoice = invoiceRepository.getInvoice(id)
                 if (invoice == null) {
                     _uiState.update { it.copy(isLoading = false, errorMessage = "Invoice not found") }
                     return@launch
                 }
 
                 // Then, start listening for real-time payment updates
-                paymentRepository.getPaymentsForInvoice(invoiceId)
+                paymentRepository.getPaymentsForInvoice(id)
                     .collect { payments ->
                         // Recalculate totals every time payments change
                         val paidAmount = payments.sumOf { it.amount }
@@ -57,7 +62,7 @@ class InvoiceDetailViewModel @Inject constructor(
                         )
 
                         // If the invoice status has changed, update it in the DB
-                        if (updatedInvoice != invoice) {
+                        if (updatedInvoice.paidAmount != invoice.paidAmount || updatedInvoice.status != invoice.status) {
                             invoiceRepository.updateInvoice(updatedInvoice)
                         }
 

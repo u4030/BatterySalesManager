@@ -23,7 +23,6 @@ import androidx.navigation.NavHostController
 data class DashboardItem(
     val title: String,
     val icon: ImageVector,
-    val color: Color,
     val route: String
 )
 
@@ -31,16 +30,16 @@ data class DashboardItem(
 @Composable
 fun DashboardScreen(navController: NavHostController) {
     val items = listOf(
-        DashboardItem("المبيعات", Icons.Default.ShoppingCart, Color(0xFF4CAF50), "sales"),
-        DashboardItem("الفواتير", Icons.Default.Receipt, Color(0xFF2196F3), "invoices"),
-        DashboardItem("المستودع", Icons.Default.Inventory, Color(0xFFFF9800), "warehouse"),
-        DashboardItem("إدارة المنتجات", Icons.Default.Settings, Color(0xFF03A9F4), "product_management"),
-        DashboardItem("إدخال مخزون", Icons.Default.AddBusiness, Color(0xFF009688), "stock_entry"),
-        DashboardItem("ترحيل مخزون", Icons.Default.MoveDown, Color(0xFF795548), "stock_transfer"),
-        DashboardItem("العملاء", Icons.Default.People, Color(0xFFE91E63), "clients"),
-        DashboardItem("الخزينة", Icons.Default.AccountBalance, Color(0xFF9C27B0), "accounting"),
-        DashboardItem("الكمبيالات", Icons.Default.Description, Color(0xFFF44336), "bills"),
-        DashboardItem("التقارير", Icons.Default.Assessment, Color(0xFF607D8B), "reports")
+        DashboardItem("المبيعات", Icons.Default.ShoppingCart, "sales"),
+        DashboardItem("الفواتير", Icons.Default.Receipt, "invoices"),
+        DashboardItem("المستودع", Icons.Default.Inventory, "warehouse"),
+        DashboardItem("إدارة المنتجات", Icons.Default.Settings, "product_management"),
+        DashboardItem("إدخال مخزون", Icons.Default.AddBusiness, "stock_entry"),
+        DashboardItem("ترحيل مخزون", Icons.Default.MoveDown, "stock_transfer"),
+        DashboardItem("العملاء", Icons.Default.People, "clients"),
+        DashboardItem("الخزينة", Icons.Default.AccountBalance, "accounting"),
+        DashboardItem("الكمبيالات", Icons.Default.Description, "bills"),
+        DashboardItem("التقارير", Icons.Default.Assessment, "reports")
     )
 
     Scaffold(
@@ -58,8 +57,8 @@ fun DashboardScreen(navController: NavHostController) {
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = Color.White,
-                    actionIconContentColor = Color.White
+                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
+                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 )
             )
         }
@@ -68,13 +67,13 @@ fun DashboardScreen(navController: NavHostController) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .background(Color(0xFFF5F5F5))
+                .background(MaterialTheme.colorScheme.background)
                 .padding(16.dp)
         ) {
             Text(
                 "مرحباً بك في نظام إدارة البطاريات",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onBackground,
                 modifier = Modifier.padding(bottom = 24.dp)
             )
 
@@ -102,8 +101,8 @@ fun DashboardCardItem(item: DashboardItem, onClick: () -> Unit) {
             .aspectRatio(1f)
             .clickable { onClick() },
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(
             modifier = Modifier.fillMaxSize(),
@@ -111,16 +110,16 @@ fun DashboardCardItem(item: DashboardItem, onClick: () -> Unit) {
             verticalArrangement = Arrangement.Center
         ) {
             Surface(
-                color = item.color.copy(alpha = 0.1f),
+                color = MaterialTheme.colorScheme.primaryContainer,
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.size(64.dp)
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Icon(item.icon, contentDescription = null, tint = item.color, modifier = Modifier.size(32.dp))
+                    Icon(item.icon, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(32.dp))
                 }
             }
             Spacer(modifier = Modifier.height(12.dp))
-            Text(item.title, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Text(item.title, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
         }
     }
 }

@@ -11,7 +11,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
@@ -72,97 +71,102 @@ fun StockEntryContent(
         )
     }
 
-    Column(modifier = modifier.padding(16.dp)) {
+    LazyColumn(
+        modifier = modifier.padding(horizontal = 16.dp),
+        contentPadding = PaddingValues(vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
         // Warehouse Dropdown
-        Row {
-            Dropdown(
-                label = "المستودع",
-                selectedValue = uiState.selectedWarehouse?.name ?: "",
-                options = uiState.warehouses.map { it.name },
-                onOptionSelected = { index -> viewModel.onWarehouseSelected(uiState.warehouses[index]) },
-                enabled = !uiState.isEditMode,
-                modifier = Modifier.weight(1f)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Button(onClick = { showAddWarehouseDialog = true }, enabled = !uiState.isEditMode) {
-                Text("إضافة مستودع")
+        item {
+            Row {
+                Dropdown(
+                    label = "المستودع",
+                    selectedValue = uiState.selectedWarehouse?.name ?: "",
+                    options = uiState.warehouses.map { it.name },
+                    onOptionSelected = { index -> viewModel.onWarehouseSelected(uiState.warehouses[index]) },
+                    enabled = !uiState.isEditMode,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Button(onClick = { showAddWarehouseDialog = true }, enabled = !uiState.isEditMode) {
+                    Text("إضافة مستودع")
+                }
             }
         }
-        Spacer(modifier = Modifier.height(16.dp))
 
         // Product and Variant Selection
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Dropdown(
-                label = "المنتج",
-                selectedValue = uiState.selectedProduct?.name ?: "",
-                options = uiState.products.map { it.name },
-                onOptionSelected = { index -> viewModel.onProductSelected(uiState.products[index]) },
-                enabled = !uiState.isEditMode,
-                modifier = Modifier.weight(1f)
-            )
-            Dropdown(
-                label = "السعة",
-                selectedValue = uiState.selectedVariant?.capacity?.toString()?.let { "$it أمبير" } ?: "",
-                options = uiState.variants.map { "${it.capacity} أمبير" },
-                onOptionSelected = { index -> viewModel.onVariantSelected(uiState.variants[index]) },
-                enabled = !uiState.isEditMode && uiState.selectedProduct != null,
-                modifier = Modifier.weight(1f)
-            )
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // --- Cost Calculation Section ---
-        CostCalculationSection(uiState = uiState, viewModel = viewModel)
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        if (!uiState.isEditMode) {
-            Button(
-                onClick = viewModel::onAddItemClicked,
-                modifier = Modifier.fillMaxWidth(),
-                enabled = uiState.selectedVariant != null
-            ) { Text("إضافة") }
-            Spacer(modifier = Modifier.height(16.dp))
-        }
-
-        // --- Items List ---
-        LazyColumn(modifier = Modifier.weight(1f)) {
-            items(uiState.stockItems, key = { it.id }) { item ->
-                ListItem(
-                    headlineContent = { Text("${item.productName} - ${item.productVariant.capacity} أمبير") },
-                    supportingContent = { Text("الكمية: ${item.quantity}, إجمالي التكلفة: ${String.format("%.2f", item.totalCost)}") },
-                    trailingContent = {
-                        if (!uiState.isEditMode) {
-                            IconButton(onClick = { viewModel.onRemoveItemClicked(item) }) {
-                                Icon(Icons.Default.Delete, contentDescription = "إزالة")
-                            }
-                        }
-                    }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Dropdown(
+                    label = "المنتج",
+                    selectedValue = uiState.selectedProduct?.name ?: "",
+                    options = uiState.products.map { it.name },
+                    onOptionSelected = { index -> viewModel.onProductSelected(uiState.products[index]) },
+                    enabled = !uiState.isEditMode,
+                    modifier = Modifier.weight(1f)
+                )
+                Dropdown(
+                    label = "السعة",
+                    selectedValue = uiState.selectedVariant?.capacity?.toString()?.let { "$it أمبير" } ?: "",
+                    options = uiState.variants.map { "${it.capacity} أمبير" },
+                    onOptionSelected = { index -> viewModel.onVariantSelected(uiState.variants[index]) },
+                    enabled = !uiState.isEditMode && uiState.selectedProduct != null,
+                    modifier = Modifier.weight(1f)
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        if (!uiState.isEditMode) {
-            GrandTotalsSection(uiState = uiState)
-            Spacer(modifier = Modifier.height(16.dp))
+        // --- Cost Calculation Section ---
+        item {
+            CostCalculationSection(uiState = uiState, viewModel = viewModel)
         }
 
-        OutlinedTextField(
-            value = uiState.supplierName,
-            onValueChange = viewModel::onSupplierNameChanged,
-            label = { Text("اسم المورد (اختياري)") },
-            modifier = Modifier.fillMaxWidth()
-        )
-        Spacer(modifier = Modifier.height(16.dp))
+        if (!uiState.isEditMode) {
+            item {
+                Button(
+                    onClick = viewModel::onAddItemClicked,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = uiState.selectedVariant != null
+                ) { Text("إضافة") }
+            }
+        }
 
-        Button(
-            onClick = viewModel::onSaveClicked,
-            modifier = Modifier.fillMaxWidth(),
-            enabled = uiState.stockItems.isNotEmpty() && uiState.selectedWarehouse != null
-        ) { Text(if (uiState.isEditMode) "تحديث القيد" else "حفظ إدخال المخزون") }
+        // --- Items List ---
+        items(uiState.stockItems, key = { it.id }) { item ->
+            ListItem(
+                headlineContent = { Text("${item.productName} - ${item.productVariant.capacity} أمبير") },
+                supportingContent = { Text("الكمية: ${item.quantity}, إجمالي التكلفة: ${String.format("%.2f", item.totalCost)}") },
+                trailingContent = {
+                    if (!uiState.isEditMode) {
+                        IconButton(onClick = { viewModel.onRemoveItemClicked(item) }) {
+                            Icon(Icons.Default.Delete, contentDescription = "إزالة")
+                        }
+                    }
+                }
+            )
+        }
+
+        if (!uiState.isEditMode) {
+            item {
+                GrandTotalsSection(uiState = uiState)
+            }
+        }
+        item {
+            OutlinedTextField(
+                value = uiState.supplierName,
+                onValueChange = viewModel::onSupplierNameChanged,
+                label = { Text("اسم المورد (اختياري)") },
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        item {
+            Button(
+                onClick = viewModel::onSaveClicked,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = uiState.stockItems.isNotEmpty() && uiState.selectedWarehouse != null
+            ) { Text(if (uiState.isEditMode) "تحديث القيد" else "حفظ إدخال المخزون") }
+        }
     }
 }
 
@@ -187,13 +191,36 @@ fun CostCalculationSection(uiState: StockEntryUiState, viewModel: StockEntryView
     val totalCost = String.format("%.2f", quantity * (costPerItem.toDoubleOrNull() ?: 0.0))
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("طريقة حساب التكلفة:", modifier = Modifier.padding(end = 8.dp))
-            RadioButton(selected = uiState.costInputMode == CostInputMode.BY_AMPERE, onClick = { viewModel.onCostInputModeChanged(CostInputMode.BY_AMPERE) })
-            Text("بسعر الأمبير")
-            Spacer(modifier = Modifier.width(8.dp))
-            RadioButton(selected = uiState.costInputMode == CostInputMode.BY_ITEM, onClick = { viewModel.onCostInputModeChanged(CostInputMode.BY_ITEM) })
-            Text("بسعر القطعة")
+        Text("طريقة حساب التكلفة:")
+        Column {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { viewModel.onCostInputModeChanged(CostInputMode.BY_AMPERE) }
+                    .padding(vertical = 2.dp)
+            ) {
+                RadioButton(
+                    selected = uiState.costInputMode == CostInputMode.BY_AMPERE,
+                    onClick = { viewModel.onCostInputModeChanged(CostInputMode.BY_AMPERE) }
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("بسعر الأمبير")
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { viewModel.onCostInputModeChanged(CostInputMode.BY_ITEM) }
+                    .padding(vertical = 2.dp)
+            ) {
+                RadioButton(
+                    selected = uiState.costInputMode == CostInputMode.BY_ITEM,
+                    onClick = { viewModel.onCostInputModeChanged(CostInputMode.BY_ITEM) }
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("بسعر القطعة")
+            }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(value = if (uiState.costInputMode == CostInputMode.BY_AMPERE) uiState.costValue else costPerAmpere, onValueChange = viewModel::onCostValueChanged, label = { Text("سعر الأمبير") }, modifier = Modifier.weight(1f), readOnly = uiState.costInputMode != CostInputMode.BY_AMPERE, enabled = uiState.selectedVariant != null)
@@ -237,7 +264,7 @@ fun Dropdown(
             modifier = Modifier.menuAnchor(),
             readOnly = true,
             value = selectedValue,
-            onValueChange = {},
+            onValueChange = { },
             label = { Text(label) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
             enabled = enabled

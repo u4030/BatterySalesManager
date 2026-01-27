@@ -71,4 +71,11 @@ class ProductVariantRepository @Inject constructor(
             .set(variant)
             .await()
     }
+
+    suspend fun getAllVariants(): List<ProductVariant> {
+        return firestore.collection(ProductVariant.COLLECTION_NAME)
+            .get()
+            .await()
+            .toObjects(ProductVariant::class.java)
+    }
 }

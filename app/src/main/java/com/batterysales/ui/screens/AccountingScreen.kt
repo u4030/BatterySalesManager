@@ -47,17 +47,18 @@ fun AccountingScreen(
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = Color.White,
-                    navigationIconContentColor = Color.White
+                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
                 )
             )
         },
         floatingActionButton = {
             FloatingActionButton(
                 onClick = { showAddExpenseDialog = true },
-                containerColor = MaterialTheme.colorScheme.error
+                containerColor = MaterialTheme.colorScheme.errorContainer,
+                contentColor = MaterialTheme.colorScheme.onErrorContainer
             ) {
-                Icon(Icons.Default.Remove, contentDescription = "إضافة مصروف", tint = Color.White)
+                Icon(Icons.Default.Remove, contentDescription = "إضافة مصروف")
             }
         }
     ) { paddingValues ->
@@ -65,7 +66,7 @@ fun AccountingScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .background(Color(0xFFF5F5F5))
+                .background(MaterialTheme.colorScheme.background)
                 .padding(16.dp)
         ) {
             // بطاقة الرصيد الحالي
@@ -75,15 +76,19 @@ fun AccountingScreen(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
             ) {
                 Column(
-                    modifier = Modifier.padding(24.dp),
+                    modifier = Modifier.padding(24.dp).fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text("الرصيد الحالي في الخزينة", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "الرصيد الحالي في الخزينة",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
                     Text(
                         "SR ${String.format("%.2f", balance)}",
                         style = MaterialTheme.typography.headlineLarge,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
                     )
                 }
             }
@@ -93,7 +98,8 @@ fun AccountingScreen(
             Text(
                 "آخر العمليات المالية",
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -104,7 +110,10 @@ fun AccountingScreen(
                 }
             } else if (transactions.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("لا توجد عمليات مالية مسجلة", color = Color.Gray)
+                    Text(
+                        "لا توجد عمليات مالية مسجلة",
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    )
                 }
             } else {
                 LazyColumn(
@@ -134,12 +143,13 @@ fun AccountingScreen(
 fun TransactionItemCard(transaction: Transaction) {
     val dateFormatter = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault())
     val isIncome = transaction.type == TransactionType.INCOME || transaction.type == TransactionType.PAYMENT
-    
+    val amountColor = if (isIncome) Color(0xFF4CAF50) else MaterialTheme.colorScheme.error
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -148,18 +158,22 @@ fun TransactionItemCard(transaction: Transaction) {
             Icon(
                 imageVector = if (isIncome) Icons.Default.TrendingUp else Icons.Default.TrendingDown,
                 contentDescription = null,
-                tint = if (isIncome) Color(0xFF4CAF50) else Color(0xFFF44336),
+                tint = amountColor,
                 modifier = Modifier.size(32.dp)
             )
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(transaction.description, fontWeight = FontWeight.Bold)
-                Text(dateFormatter.format(transaction.createdAt), fontSize = 12.sp, color = Color.Gray)
+                Text(transaction.description, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                Text(
+                    dateFormatter.format(transaction.createdAt),
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
             Text(
                 text = "${if (isIncome) "+" else "-"} SR ${String.format("%.2f", transaction.amount)}",
                 fontWeight = FontWeight.Bold,
-                color = if (isIncome) Color(0xFF4CAF50) else Color(0xFFF44336)
+                color = amountColor
             )
         }
     }
@@ -191,12 +205,10 @@ fun AddExpenseDialog(onDismiss: () -> Unit, onAdd: (String, Double) -> Unit) {
             }
         },
         confirmButton = {
-            Button(onClick = { 
+            Button(onClick = {
                 val amt = amount.toDoubleOrNull() ?: 0.0
                 if (description.isNotEmpty() && amt > 0) onAdd(description, amt)
-            }) {
-                Text("إضافة")
-            }
+            }) { Text("إضافة") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("إلغاء") }
