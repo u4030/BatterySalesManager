@@ -31,7 +31,8 @@ class SalesViewModel @Inject constructor(
     private val productVariantRepository: ProductVariantRepository,
     private val warehouseRepository: WarehouseRepository,
     private val stockEntryRepository: StockEntryRepository,
-    private val invoiceRepository: InvoiceRepository
+    private val invoiceRepository: InvoiceRepository,
+    private val paymentRepository: PaymentRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SalesUiState(isLoading = true))
@@ -128,17 +129,34 @@ class SalesViewModel @Inject constructor(
                     customerName = customerName,
                     customerPhone = customerPhone,
                     items = listOf(InvoiceItem(
+                        productId = variant.id,
                         productName = "${product.name} - ${variant.capacity} Amp",
                         quantity = qty,
+                        price = price,
+                        total = total,
                         unitPrice = price,
                         totalPrice = total
                     )),
+                    subtotal = total,
                     totalAmount = total,
+                    finalAmount = total,
                     paidAmount = paidAmount,
                     remainingAmount = total - paidAmount,
                     status = if (paidAmount >= total) "paid" else "pending"
                 )
                 val createdInvoice = invoiceRepository.createInvoice(newInvoice)
+
+                // If there's a paid amount, record it as a payment
+                if (paidAmount > 0) {
+                    val payment = Payment(
+                        invoiceId = createdInvoice.id,
+                        amount = paidAmount,
+                        timestamp = Date(),
+                        paymentMethod = "cash",
+                        notes = "الدفعة الأولى عند البيع"
+                    )
+                    paymentRepository.addPayment(payment)
+                }
 
                 // Now, create a single stock entry linked to the new invoice
                 val stockEntry = StockEntry(
