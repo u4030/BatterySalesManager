@@ -58,7 +58,7 @@ fun StockTransferScreen(
             selectedValue = uiState.sourceWarehouse?.name ?: "",
             options = uiState.warehouses.map { it.name },
             onOptionSelected = { index -> viewModel.onSourceWarehouseSelected(uiState.warehouses[index]) },
-            enabled = true
+            enabled = !uiState.isSourceWarehouseFixed
         )
         Spacer(modifier = Modifier.height(16.dp))
 

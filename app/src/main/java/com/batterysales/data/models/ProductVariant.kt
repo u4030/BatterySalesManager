@@ -27,6 +27,7 @@ data class ProductVariant(
     val capacity: Int = 0,
     val sellingPrice: Double = 0.0,
     val barcode: String = "",
+    val minQuantity: Int = 0,
     val notes: String = "",
     val createdAt: Date = Date(),
     val updatedAt: Date = Date(),

@@ -96,6 +96,11 @@ jspm_packages/
 .out
 .storybook-out
 
+# Gradle
+.gradle/
+build/
+local.properties
+
 # Temporary folders
 tmp/
 temp/

@@ -51,8 +51,8 @@ fun ProductManagementScreen(viewModel: ProductManagementViewModel = hiltViewMode
     if (showAddVariantDialog) {
         AddVariantDialog(
             onDismiss = { showAddVariantDialog = false },
-            onAddVariant = { capacity, sellingPrice, barcode, notes ->
-                viewModel.addVariant(capacity, sellingPrice, barcode, notes)
+            onAddVariant = { capacity, sellingPrice, barcode, minQuantity, notes ->
+                viewModel.addVariant(capacity, sellingPrice, barcode, minQuantity, notes)
             }
         )
     }
@@ -176,10 +176,11 @@ fun EditProductDialog(product: Product, onDismiss: () -> Unit, onUpdateProduct: 
 }
 
 @Composable
-fun AddVariantDialog(onDismiss: () -> Unit, onAddVariant: (Int, Double, String, String) -> Unit) {
+fun AddVariantDialog(onDismiss: () -> Unit, onAddVariant: (Int, Double, String, Int, String) -> Unit) {
     var capacity by remember { mutableStateOf("") }
     var sellingPrice by remember { mutableStateOf("") }
     var barcode by remember { mutableStateOf("") }
+    var minQuantity by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
     var showScanner by remember { mutableStateOf(false) }
 
@@ -206,12 +207,19 @@ fun AddVariantDialog(onDismiss: () -> Unit, onAddVariant: (Int, Double, String, 
                             }
                         }
                     )
+                    OutlinedTextField(value = minQuantity, onValueChange = { minQuantity = it }, label = { Text("الحد الأدنى للكمية") })
                     OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("ملاحظات") })
                 }
             },
             confirmButton = {
                 Button(onClick = {
-                    onAddVariant(capacity.toIntOrNull() ?: 0, sellingPrice.toDoubleOrNull() ?: 0.0, barcode, notes)
+                    onAddVariant(
+                        capacity.toIntOrNull() ?: 0,
+                        sellingPrice.toDoubleOrNull() ?: 0.0,
+                        barcode,
+                        minQuantity.toIntOrNull() ?: 0,
+                        notes
+                    )
                     onDismiss()
                 }) { Text("إضافة") }
             },
@@ -225,6 +233,7 @@ fun EditVariantDialog(variant: ProductVariant, onDismiss: () -> Unit, onUpdateVa
     var capacity by remember { mutableStateOf(variant.capacity.toString()) }
     var sellingPrice by remember { mutableStateOf(variant.sellingPrice.toString()) }
     var barcode by remember { mutableStateOf(variant.barcode) }
+    var minQuantity by remember { mutableStateOf(variant.minQuantity.toString()) }
     var notes by remember { mutableStateOf(variant.notes) }
     var showScanner by remember { mutableStateOf(false) }
 
@@ -251,6 +260,7 @@ fun EditVariantDialog(variant: ProductVariant, onDismiss: () -> Unit, onUpdateVa
                             }
                         }
                     )
+                    OutlinedTextField(value = minQuantity, onValueChange = { minQuantity = it }, label = { Text("الحد الأدنى للكمية") })
                     OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("ملاحظات") })
                 }
             },
@@ -260,6 +270,7 @@ fun EditVariantDialog(variant: ProductVariant, onDismiss: () -> Unit, onUpdateVa
                         capacity = capacity.toIntOrNull() ?: 0,
                         sellingPrice = sellingPrice.toDoubleOrNull() ?: 0.0,
                         barcode = barcode,
+                        minQuantity = minQuantity.toIntOrNull() ?: 0,
                         notes = notes
                     ))
                     onDismiss()
@@ -313,6 +324,7 @@ fun VariantItem(variant: ProductVariant, onEdit: () -> Unit, onDelete: () -> Uni
             Text("السعة: ${variant.capacity} أمبير")
             Text("السعر: ${variant.sellingPrice} ريال")
             Text("الباركود: ${variant.barcode}")
+            Text("الحد الأدنى: ${variant.minQuantity}")
             Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
                 IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, contentDescription = "تعديل") }
                 IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, contentDescription = "حذف") }

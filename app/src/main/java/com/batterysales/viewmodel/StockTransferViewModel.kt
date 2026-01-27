@@ -8,6 +8,7 @@ import com.batterysales.data.models.Warehouse
 import com.batterysales.data.repositories.ProductRepository
 import com.batterysales.data.repositories.ProductVariantRepository
 import com.batterysales.data.repositories.StockEntryRepository
+import com.batterysales.data.repositories.UserRepository
 import com.batterysales.data.repositories.WarehouseRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
@@ -23,6 +24,7 @@ data class StockTransferUiState(
     val sourceWarehouse: Warehouse? = null,
     val destinationWarehouse: Warehouse? = null,
     val quantity: String = "",
+    val isSourceWarehouseFixed: Boolean = false,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
     val isFinished: Boolean = false
@@ -33,15 +35,21 @@ class StockTransferViewModel @Inject constructor(
     private val productRepository: ProductRepository,
     private val productVariantRepository: ProductVariantRepository,
     private val warehouseRepository: WarehouseRepository,
-    private val stockEntryRepository: StockEntryRepository
+    private val stockEntryRepository: StockEntryRepository,
+    private val userRepository: UserRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(StockTransferUiState())
     val uiState: StateFlow<StockTransferUiState> = _uiState.asStateFlow()
 
+    private var currentUser: com.batterysales.data.models.User? = null
+
     init {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
+            val user = userRepository.getCurrentUser()
+            currentUser = user
+
             combine(
                 productRepository.getProducts(),
                 warehouseRepository.getWarehouses()
@@ -50,6 +58,8 @@ class StockTransferViewModel @Inject constructor(
                     it.copy(
                         products = products.filter { p -> !p.isArchived },
                         warehouses = warehouses,
+                        sourceWarehouse = if (user?.role == "seller") warehouses.find { w -> w.id == user.warehouseId } else it.sourceWarehouse,
+                        isSourceWarehouseFixed = user?.role == "seller",
                         isLoading = false
                     )
                 }
@@ -112,7 +122,9 @@ class StockTransferViewModel @Inject constructor(
                     productVariantId = variant.id,
                     sourceWarehouseId = source.id,
                     destinationWarehouseId = dest.id,
-                    quantity = qty
+                    quantity = qty,
+                    status = if (currentUser?.role == "seller") "pending" else "approved",
+                    createdBy = currentUser?.id ?: ""
                 )
                 _uiState.update { it.copy(isFinished = true) }
             } catch (e: Exception) {

@@ -73,6 +73,11 @@ data class User(
      */
     val role: String = "seller",
 
+    /**
+     * المستودع المرتبط بالمستخدم (خاص بالبائع)
+     */
+    val warehouseId: String? = null,
+
 
     /**
      * قائمة الصلاحيات

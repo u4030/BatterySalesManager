@@ -68,11 +68,18 @@ class ProductManagementViewModel @Inject constructor(
         }
     }
 
-    fun addVariant(capacity: Int, sellingPrice: Double, barcode: String, notes: String) {
+    fun addVariant(capacity: Int, sellingPrice: Double, barcode: String, minQuantity: Int, notes: String) {
         viewModelScope.launch {
             _selectedProduct.value?.let { product ->
                 try {
-                    val variant = ProductVariant(productId = product.id, capacity = capacity, sellingPrice = sellingPrice, barcode = barcode, notes = notes)
+                    val variant = ProductVariant(
+                        productId = product.id,
+                        capacity = capacity,
+                        sellingPrice = sellingPrice,
+                        barcode = barcode,
+                        minQuantity = minQuantity,
+                        notes = notes
+                    )
                     if (variant.isValid()) {
                         productVariantRepository.addVariant(variant)
                     } else {

@@ -10,6 +10,7 @@ import com.batterysales.data.models.Warehouse
 import com.batterysales.data.repositories.ProductRepository
 import com.batterysales.data.repositories.ProductVariantRepository
 import com.batterysales.data.repositories.StockEntryRepository
+import com.batterysales.data.repositories.UserRepository
 import com.batterysales.data.repositories.WarehouseRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
@@ -55,6 +56,7 @@ class StockEntryViewModel @Inject constructor(
     private val productVariantRepository: ProductVariantRepository,
     private val warehouseRepository: WarehouseRepository,
     private val stockEntryRepository: StockEntryRepository,
+    private val userRepository: UserRepository,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -62,17 +64,29 @@ class StockEntryViewModel @Inject constructor(
     val uiState: StateFlow<StockEntryUiState> = _uiState.asStateFlow()
 
     private val editingEntryId: String? = savedStateHandle.get<String>("entryId")
+    private var currentUser: com.batterysales.data.models.User? = null
 
     init {
         val isEditMode = editingEntryId != null
         _uiState.update { it.copy(isEditMode = isEditMode) }
 
         viewModelScope.launch {
+            val user = userRepository.getCurrentUser()
+            currentUser = user
+
             productRepository.getProducts().combine(warehouseRepository.getWarehouses()) { products, warehouses ->
                 Pair(products, warehouses)
             }.collectLatest { (products, warehouses) ->
                 val activeProducts = products.filter { !it.isArchived }
-                _uiState.update { it.copy(products = activeProducts, warehouses = warehouses) }
+                val selectedWH = warehouses.find { it.id == user?.warehouseId }
+
+                _uiState.update {
+                    it.copy(
+                        products = activeProducts,
+                        warehouses = warehouses,
+                        selectedWarehouse = if (user?.role == "seller") selectedWH else it.selectedWarehouse
+                    )
+                }
 
                 if (isEditMode && uiState.value.selectedProduct == null) { // Only load once
                     loadEntryForEdit(editingEntryId!!)
@@ -197,7 +211,9 @@ class StockEntryViewModel @Inject constructor(
                             grandTotalAmperes = grandTotalAmperes,
                             grandTotalCost = grandTotalCost,
                             timestamp = Date(),
-                            supplier = state.supplierName
+                            supplier = state.supplierName,
+                            status = if (currentUser?.role == "seller") "pending" else "approved",
+                            createdBy = currentUser?.id ?: ""
                         )
                     }
                     stockEntryRepository.addStockEntries(entries)
