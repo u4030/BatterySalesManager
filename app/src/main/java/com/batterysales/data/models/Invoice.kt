@@ -1,5 +1,6 @@
 package com.batterysales.data.models
 
+import com.google.firebase.firestore.DocumentId
 import java.util.Date
 
 /**
@@ -25,6 +26,7 @@ import java.util.Date
  * ```
  */
 data class Invoice(
+    @DocumentId
     val id: String = "",
     val invoiceNumber: String = "",
     val customerId: String = "",
