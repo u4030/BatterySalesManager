@@ -74,4 +74,26 @@ class AccountingViewModel @Inject constructor(
             }
         }
     }
+
+    fun deleteTransaction(id: String) {
+        viewModelScope.launch {
+            try {
+                repository.deleteTransaction(id)
+                loadData()
+            } catch (e: Exception) {
+                // Handle error
+            }
+        }
+    }
+
+    fun updateTransaction(transaction: Transaction) {
+        viewModelScope.launch {
+            try {
+                repository.updateTransaction(transaction)
+                loadData()
+            } catch (e: Exception) {
+                // Handle error
+            }
+        }
+    }
 }

@@ -60,4 +60,18 @@ class AccountingRepository @Inject constructor(
             batch.set(transactionRef, transaction)
         }.await()
     }
+
+    suspend fun updateTransaction(transaction: Transaction) {
+        firestore.collection(Transaction.COLLECTION_NAME)
+            .document(transaction.id)
+            .set(transaction)
+            .await()
+    }
+
+    suspend fun deleteTransaction(transactionId: String) {
+        firestore.collection(Transaction.COLLECTION_NAME)
+            .document(transactionId)
+            .delete()
+            .await()
+    }
 }

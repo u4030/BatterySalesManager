@@ -67,6 +67,24 @@ class UserRepository @Inject constructor(
         return firestore.collection("users").document(uid).get().await().toObject(User::class.java)
     }
 
+    fun getCurrentUserFlow(): Flow<User?> = callbackFlow {
+        val authListener = FirebaseAuth.AuthStateListener { firebaseAuth ->
+            val uid = firebaseAuth.currentUser?.uid
+            if (uid == null) {
+                trySend(null)
+            } else {
+                firestore.collection("users").document(uid)
+                    .addSnapshotListener { snapshot, error ->
+                        if (error == null) {
+                            trySend(snapshot?.toObject(User::class.java))
+                        }
+                    }
+            }
+        }
+        auth.addAuthStateListener(authListener)
+        awaitClose { auth.removeAuthStateListener(authListener) }
+    }
+
     fun logout() {
         auth.signOut()
     }

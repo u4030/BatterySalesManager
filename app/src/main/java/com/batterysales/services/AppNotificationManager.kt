@@ -15,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -36,45 +37,66 @@ class AppNotificationManager @Inject constructor(
         if (isInitialized) return
         isInitialized = true
 
-        setupRealtimeListeners()
+        userRepository.getCurrentUserFlow()
+            .onEach { user ->
+                if (user != null) {
+                    setupRealtimeListeners(user)
+                }
+            }.launchIn(scope)
+
         setupLowStockListener()
     }
 
-    private fun setupRealtimeListeners() {
-        scope.launch {
-            val currentUser = userRepository.getCurrentUser() ?: return@launch
+    private var pendingEntriesListener: com.google.firebase.firestore.ListenerRegistration? = null
 
-            // Listener for NEW Pending Stock Entries (For Admins)
-            if (currentUser.role == User.ROLE_ADMIN) {
-                listenForPendingEntries()
-            }
+    private fun setupRealtimeListeners(user: User) {
+        pendingEntriesListener?.remove()
+
+        // Listener for NEW Pending Stock Entries (For Admins)
+        if (user.role == User.ROLE_ADMIN) {
+            var isFirstSnapshot = true
+            pendingEntriesListener = firestore.collection(StockEntry.COLLECTION_NAME)
+                .whereEqualTo("status", StockEntry.STATUS_PENDING)
+                .addSnapshotListener { snapshot, e ->
+                    if (e != null) return@addSnapshotListener
+
+                    if (isFirstSnapshot) {
+                        isFirstSnapshot = false
+                        return@addSnapshotListener
+                    }
+
+                    snapshot?.documentChanges?.forEach { change ->
+                        if (change.type == com.google.firebase.firestore.DocumentChange.Type.ADDED) {
+                            val entry = change.document.toObject(StockEntry::class.java)
+                            NotificationHelper.showNotification(
+                                context,
+                                "طلب موافقة جديد",
+                                "يوجد طلب ${if (entry.supplier == "Transfer") "ترحيل" else "إدخال"} مخزون جديد بانتظار الموافقة"
+                            )
+                        }
+                    }
+                }
         }
     }
 
-    private fun listenForPendingEntries() {
-        firestore.collection(StockEntry.COLLECTION_NAME)
-            .whereEqualTo("status", StockEntry.STATUS_PENDING)
-            .addSnapshotListener { snapshot, e ->
-                if (e != null) return@addSnapshotListener
-                snapshot?.documentChanges?.forEach { change ->
-                    if (change.type == com.google.firebase.firestore.DocumentChange.Type.ADDED) {
-                        val entry = change.document.toObject(StockEntry::class.java)
-                        NotificationHelper.showNotification(
-                            context,
-                            "طلب موافقة جديد",
-                            "يوجد طلب ${if (entry.supplier == "Transfer") "ترحيل" else "إدخال"} مخزون جديد بانتظار الموافقة"
-                        )
-                    }
-                }
-            }
-    }
-
     private fun setupLowStockListener() {
+        var isFirstSnapshot = true
         combine(
             stockEntryRepository.getAllStockEntriesFlow(),
             productVariantRepository.getAllVariantsFlow(),
             productRepository.getProducts()
         ) { allEntries, allVariants, allProducts ->
+            if (isFirstSnapshot) {
+                isFirstSnapshot = false
+                // Just populate the notified list so we don't notify for existing ones
+                allVariants.filter { !it.isArchived && it.minQuantity > 0 }.forEach { variant ->
+                    val currentQty = allEntries.filter { it.productVariantId == variant.id && it.status == StockEntry.STATUS_APPROVED }.sumOf { it.quantity }
+                    if (currentQty <= variant.minQuantity) {
+                        notifiedLowStockIds.add(variant.id)
+                    }
+                }
+                return@combine
+            }
             val productMap = allProducts.associateBy { it.id }
             allVariants.filter { !it.isArchived && it.minQuantity > 0 }.forEach { variant ->
                 val currentQty = allEntries.filter { it.productVariantId == variant.id && it.status == StockEntry.STATUS_APPROVED }.sumOf { it.quantity }

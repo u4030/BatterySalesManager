@@ -66,7 +66,7 @@ class DashboardViewModel @Inject constructor(
         val nextWeek = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, 7) }
 
         val upcoming = allBills.filter {
-            it.status == BillStatus.UNPAID &&
+            it.status != BillStatus.PAID &&
             it.dueDate.after(now.time) &&
             it.dueDate.before(nextWeek.time)
         }.sortedBy { it.dueDate }
