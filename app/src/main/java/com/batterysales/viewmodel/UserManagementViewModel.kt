@@ -11,20 +11,22 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+data class UserManagementUiState(
+    val users: List<User> = emptyList(),
+    val warehouses: List<Warehouse> = emptyList(),
+    val isLoading: Boolean = true,
+    val successMessage: String? = null,
+    val errorMessage: String? = null
+)
+
 @HiltViewModel
 class UserManagementViewModel @Inject constructor(
     private val userRepository: UserRepository,
     private val warehouseRepository: WarehouseRepository
 ) : ViewModel() {
 
-    private val _users = MutableStateFlow<List<User>>(emptyList())
-    val users: StateFlow<List<User>> = _users.asStateFlow()
-
-    private val _warehouses = MutableStateFlow<List<Warehouse>>(emptyList())
-    val warehouses: StateFlow<List<Warehouse>> = _warehouses.asStateFlow()
-
-    private val _isLoading = MutableStateFlow(true)
-    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+    private val _uiState = MutableStateFlow(UserManagementUiState())
+    val uiState: StateFlow<UserManagementUiState> = _uiState.asStateFlow()
 
     init {
         viewModelScope.launch {
@@ -32,36 +34,62 @@ class UserManagementViewModel @Inject constructor(
                 userRepository.getAllUsersFlow(),
                 warehouseRepository.getWarehouses()
             ) { users, warehouses ->
-                _users.value = users
-                _warehouses.value = warehouses
-                _isLoading.value = false
+                _uiState.update { it.copy(
+                    users = users,
+                    warehouses = warehouses,
+                    isLoading = false
+                ) }
             }.collect()
         }
     }
 
     fun updateUserRole(user: User, newRole: String) {
         viewModelScope.launch {
-            val updatedUser = user.copy(role = newRole)
-            userRepository.updateUser(updatedUser)
+            try {
+                val updatedUser = user.copy(role = newRole)
+                userRepository.updateUser(updatedUser)
+                _uiState.update { it.copy(successMessage = "تم تحديث الدور بنجاح") }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "فشل تحديث الدور: ${e.message}") }
+            }
         }
     }
 
     fun linkUserToWarehouse(user: User, warehouseId: String?) {
         viewModelScope.launch {
-            val updatedUser = user.copy(warehouseId = warehouseId)
-            userRepository.updateUser(updatedUser)
+            try {
+                val updatedUser = user.copy(warehouseId = warehouseId)
+                userRepository.updateUser(updatedUser)
+                _uiState.update { it.copy(successMessage = "تم ربط المستودع بنجاح") }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "فشل ربط المستودع: ${e.message}") }
+            }
         }
     }
 
     fun createUser(email: String, password: String, displayName: String, role: String, warehouseId: String?) {
         viewModelScope.launch {
+            if (email.isBlank() || password.length < 6 || displayName.isBlank()) {
+                _uiState.update { it.copy(errorMessage = "الرجاء التأكد من صحة البيانات (كلمة المرور 6 أحرف على الأقل)") }
+                return@launch
+            }
+            _uiState.update { it.copy(isLoading = true) }
             try {
                 userRepository.registerUser(email, password, displayName, role, warehouseId)
-                // Note: On success, the current session will be switched to the new user.
-                // The Admin will need to log back in.
+                _uiState.update { it.copy(
+                    isLoading = false,
+                    successMessage = "تم إنشاء المستخدم بنجاح"
+                ) }
             } catch (e: Exception) {
-                // Handle error
+                _uiState.update { it.copy(
+                    isLoading = false,
+                    errorMessage = "فشل إنشاء المستخدم: ${e.message}"
+                ) }
             }
         }
+    }
+
+    fun dismissMessages() {
+        _uiState.update { it.copy(successMessage = null, errorMessage = null) }
     }
 }

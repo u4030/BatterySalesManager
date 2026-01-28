@@ -1,8 +1,12 @@
 package com.batterysales.data.repositories
 
+import android.content.Context
 import com.batterysales.data.models.User
+import com.google.firebase.FirebaseApp
+import com.google.firebase.FirebaseOptions
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -11,7 +15,8 @@ import javax.inject.Inject
 
 class UserRepository @Inject constructor(
     private val auth: FirebaseAuth,
-    private val firestore: FirebaseFirestore
+    private val firestore: FirebaseFirestore,
+    @ApplicationContext private val context: Context
 ) {
 
     suspend fun isUserLoggedIn(): Boolean {
@@ -29,15 +34,32 @@ class UserRepository @Inject constructor(
         role: String = "seller",
         warehouseId: String? = null
     ) {
-        val authResult = auth.createUserWithEmailAndPassword(email, password).await()
-        val user = User(
-            id = authResult.user!!.uid,
-            email = email,
-            displayName = displayName,
-            role = role,
-            warehouseId = warehouseId
-        )
-        firestore.collection(User.COLLECTION_NAME).document(user.id).set(user).await()
+        // This method will now use a secondary Firebase App to prevent logging out the Admin.
+        val options = FirebaseApp.getInstance().options
+        val secondaryAppName = "SecondaryApp_${System.currentTimeMillis()}"
+        val secondaryApp = FirebaseApp.initializeApp(context, options, secondaryAppName)
+
+        try {
+            val secondaryAuth = FirebaseAuth.getInstance(secondaryApp)
+            val authResult = secondaryAuth.createUserWithEmailAndPassword(email, password).await()
+            val userId = authResult.user!!.uid
+
+            val user = User(
+                id = userId,
+                email = email,
+                displayName = displayName,
+                role = role,
+                warehouseId = warehouseId
+            )
+
+            // Still use the main firestore instance (as the admin is still logged in there)
+            firestore.collection(User.COLLECTION_NAME).document(userId).set(user).await()
+
+            // Sign out from the secondary app (optional but good practice)
+            secondaryAuth.signOut()
+        } finally {
+            secondaryApp.delete()
+        }
     }
 
     suspend fun getCurrentUser(): User? {

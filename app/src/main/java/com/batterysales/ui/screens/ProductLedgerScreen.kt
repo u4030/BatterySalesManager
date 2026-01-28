@@ -8,6 +8,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -17,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.batterysales.viewmodel.LedgerCategory
 import com.batterysales.viewmodel.LedgerItem
 import com.batterysales.viewmodel.ProductLedgerViewModel
 import java.text.SimpleDateFormat
@@ -30,6 +32,7 @@ fun ProductLedgerScreen(
 ) {
     val ledgerItems by viewModel.ledgerItems.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val selectedCategory by viewModel.selectedCategory.collectAsState()
     var showDeleteConfirmation by remember { mutableStateOf<String?>(null) }
 
 
@@ -52,7 +55,8 @@ fun ProductLedgerScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
+            Column {
+                TopAppBar(
                 title = { Text(
                     "${viewModel.productName} - ${viewModel.variantCapacity} أمبير",
                     color = Color.White
@@ -62,8 +66,30 @@ fun ProductLedgerScreen(
                         Icon(Icons.Default.ArrowBack, contentDescription = "رجوع", tint = Color.White)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary)
-            )
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary)
+                )
+
+                ScrollableTabRow(
+                    selectedTabIndex = selectedCategory.ordinal,
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = Color.White,
+                    edgePadding = 16.dp,
+                    indicator = { tabPositions ->
+                        TabRowDefaults.Indicator(
+                            Modifier.tabIndicatorOffset(tabPositions[selectedCategory.ordinal]),
+                            color = Color.White
+                        )
+                    }
+                ) {
+                    LedgerCategory.values().forEach { category ->
+                        Tab(
+                            selected = selectedCategory == category,
+                            onClick = { viewModel.selectCategory(category) },
+                            text = { Text(category.label, color = Color.White) }
+                        )
+                    }
+                }
+            }
         }
     ) { padding ->
         if (isLoading) {
@@ -187,7 +213,7 @@ fun LedgerItemCard(
                     }
                 }
             }
-            Divider()
+            HorizontalDivider()
             Spacer(modifier = Modifier.height(16.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),

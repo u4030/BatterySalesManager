@@ -101,7 +101,7 @@ fun ApprovalCard(item: ApprovalItem, onApprove: () -> Unit, onReject: () -> Unit
             Text(text = "المورد/النوع: ${item.entry.supplier}", fontSize = 14.sp, color = Color.Gray)
             Text(text = "التاريخ: ${dateFormatter.format(item.entry.timestamp)}", fontSize = 12.sp, color = Color.Gray)
 
-            Divider(modifier = Modifier.padding(vertical = 12.dp))
+            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 OutlinedButton(

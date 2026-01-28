@@ -28,14 +28,24 @@ fun UserManagementScreen(
     navController: NavHostController,
     viewModel: UserManagementViewModel = hiltViewModel()
 ) {
-    val users by viewModel.users.collectAsState()
-    val warehouses by viewModel.warehouses.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
+    val uiState by viewModel.uiState.collectAsState()
     var showCreateDialog by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(uiState.successMessage, uiState.errorMessage) {
+        uiState.successMessage?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.dismissMessages()
+        }
+        uiState.errorMessage?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.dismissMessages()
+        }
+    }
 
     if (showCreateDialog) {
         CreateUserDialog(
-            warehouses = warehouses,
+            warehouses = uiState.warehouses,
             onDismiss = { showCreateDialog = false },
             onConfirm = { email, pass, name, role, whId ->
                 viewModel.createUser(email, pass, name, role, whId)
@@ -45,6 +55,7 @@ fun UserManagementScreen(
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("إدارة المستخدمين", fontWeight = FontWeight.Bold) },
@@ -66,7 +77,7 @@ fun UserManagementScreen(
             }
         }
     ) { paddingValues ->
-        if (isLoading) {
+        if (uiState.isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
@@ -78,10 +89,10 @@ fun UserManagementScreen(
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                items(users) { user ->
+                items(uiState.users) { user ->
                     UserCard(
                         user = user,
-                        warehouses = warehouses,
+                        warehouses = uiState.warehouses,
                         onRoleChange = { role -> viewModel.updateUserRole(user, role) },
                         onWarehouseChange = { warehouseId -> viewModel.linkUserToWarehouse(user, warehouseId) }
                     )
@@ -115,7 +126,7 @@ fun UserCard(
             }
             Text(text = user.email, color = Color.Gray, fontSize = 14.sp)
 
-            Divider(modifier = Modifier.padding(vertical = 12.dp))
+            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column {
@@ -231,8 +242,6 @@ fun CreateUserDialog(
                             }
                         }
                     }
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text("ملاحظة: عند إنشاء مستخدم بنجاح، سيتم تسجيل خروجك والدخول بالحساب الجديد.", color = Color.Red, fontSize = 12.sp)
                 }
             }
         },

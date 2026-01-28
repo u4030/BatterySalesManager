@@ -17,6 +17,14 @@ data class LedgerItem(
     val warehouseName: String
 )
 
+enum class LedgerCategory(val label: String) {
+    ALL("الكل"),
+    PURCHASES("مشتريات"),
+    SALES("مبيعات"),
+    TRANSFERS("تحويلات"),
+    RETURNS("مرتجعات")
+}
+
 @HiltViewModel
 class ProductLedgerViewModel @Inject constructor(
     private val stockEntryRepository: StockEntryRepository,
@@ -31,23 +39,39 @@ class ProductLedgerViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(true)
     val isLoading = _isLoading.asStateFlow()
 
+    private val _selectedCategory = MutableStateFlow(LedgerCategory.ALL)
+    val selectedCategory = _selectedCategory.asStateFlow()
+
     val ledgerItems: StateFlow<List<LedgerItem>> = if (productVariantId.isEmpty()) {
         flowOf(emptyList())
     } else {
         combine(
             stockEntryRepository.getEntriesForVariant(productVariantId),
-            warehouseRepository.getWarehouses()
-        ) { entries, warehouses ->
+            warehouseRepository.getWarehouses(),
+            _selectedCategory
+        ) { entries, warehouses, category ->
             val warehouseMap = warehouses.associateBy { it.id }
-            entries.mapNotNull { entry ->
+            val items = entries.mapNotNull { entry ->
                 warehouseMap[entry.warehouseId]?.let { warehouse ->
                     LedgerItem(entry = entry, warehouseName = warehouse.name)
                 }
+            }
+
+            when (category) {
+                LedgerCategory.ALL -> items
+                LedgerCategory.PURCHASES -> items.filter { it.entry.quantity > 0 && it.entry.supplier != "Sale" && it.entry.costPrice > 0 && !it.entry.supplier.contains("Reversal") }
+                LedgerCategory.SALES -> items.filter { it.entry.supplier == "Sale" }
+                LedgerCategory.TRANSFERS -> items.filter { it.entry.costPrice == 0.0 && !it.entry.supplier.contains("Reversal") }
+                LedgerCategory.RETURNS -> items.filter { it.entry.supplier.contains("Reversal") }
             }
         }
     }.onStart { _isLoading.value = true }
         .onEach { _isLoading.value = false }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun selectCategory(category: LedgerCategory) {
+        _selectedCategory.value = category
+    }
 
     fun deleteStockEntry(entryId: String) {
         viewModelScope.launch {
