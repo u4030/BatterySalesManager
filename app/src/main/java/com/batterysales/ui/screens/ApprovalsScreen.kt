@@ -8,6 +8,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -69,7 +70,8 @@ fun ApprovalsScreen(
                     ApprovalCard(
                         item = item,
                         onApprove = { viewModel.approveEntry(item.entry.id) },
-                        onReject = { viewModel.rejectEntry(item.entry.id) }
+                        onReject = { viewModel.rejectEntry(item.entry.id) },
+                        onEdit = { navController.navigate("stock_entry?entryId=${item.entry.id}") }
                     )
                 }
             }
@@ -78,7 +80,7 @@ fun ApprovalsScreen(
 }
 
 @Composable
-fun ApprovalCard(item: ApprovalItem, onApprove: () -> Unit, onReject: () -> Unit) {
+fun ApprovalCard(item: ApprovalItem, onApprove: () -> Unit, onReject: () -> Unit, onEdit: () -> Unit) {
     val dateFormatter = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault())
 
     Card(
@@ -103,25 +105,36 @@ fun ApprovalCard(item: ApprovalItem, onApprove: () -> Unit, onReject: () -> Unit
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 OutlinedButton(
-                    onClick = onReject,
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red),
+                    onClick = onEdit,
                     shape = RoundedCornerShape(8.dp)
                 ) {
-                    Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("رفض")
+                    Text("تعديل")
                 }
-                Spacer(modifier = Modifier.width(12.dp))
-                Button(
-                    onClick = onApprove,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("موافقة")
+
+                Row {
+                    OutlinedButton(
+                        onClick = onReject,
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("رفض")
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Button(
+                        onClick = onApprove,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("موافقة")
+                    }
                 }
             }
         }

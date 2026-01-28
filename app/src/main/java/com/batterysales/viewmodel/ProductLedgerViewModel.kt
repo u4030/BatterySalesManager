@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.batterysales.data.models.StockEntry
 import com.batterysales.data.models.Warehouse
 import com.batterysales.data.repositories.StockEntryRepository
+import com.batterysales.data.repositories.UserRepository
 import com.batterysales.data.repositories.WarehouseRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
@@ -28,6 +29,7 @@ enum class LedgerCategory(val label: String) {
 @HiltViewModel
 class ProductLedgerViewModel @Inject constructor(
     private val stockEntryRepository: StockEntryRepository,
+    private val userRepository: UserRepository,
     warehouseRepository: WarehouseRepository,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
@@ -39,8 +41,18 @@ class ProductLedgerViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(true)
     val isLoading = _isLoading.asStateFlow()
 
+    private val _userRole = MutableStateFlow("seller")
+    val userRole = _userRole.asStateFlow()
+
     private val _selectedCategory = MutableStateFlow(LedgerCategory.ALL)
     val selectedCategory = _selectedCategory.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            val user = userRepository.getCurrentUser()
+            _userRole.value = user?.role ?: "seller"
+        }
+    }
 
     val ledgerItems: StateFlow<List<LedgerItem>> = if (productVariantId.isEmpty()) {
         flowOf(emptyList())

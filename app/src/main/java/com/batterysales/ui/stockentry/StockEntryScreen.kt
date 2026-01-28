@@ -84,12 +84,14 @@ fun StockEntryContent(
                     selectedValue = uiState.selectedWarehouse?.name ?: "",
                     options = uiState.warehouses.map { it.name },
                     onOptionSelected = { index -> viewModel.onWarehouseSelected(uiState.warehouses[index]) },
-                    enabled = !uiState.isEditMode,
+                    enabled = !uiState.isEditMode && uiState.isAdmin,
                     modifier = Modifier.weight(1f)
                 )
-                Spacer(modifier = Modifier.width(8.dp))
-                Button(onClick = { showAddWarehouseDialog = true }, enabled = !uiState.isEditMode) {
-                    Text("إضافة مستودع")
+                if (uiState.isAdmin) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(onClick = { showAddWarehouseDialog = true }, enabled = !uiState.isEditMode) {
+                        Text("إضافة مستودع")
+                    }
                 }
             }
         }
@@ -116,9 +118,21 @@ fun StockEntryContent(
             }
         }
 
-        // --- Cost Calculation Section ---
-        item {
-            CostCalculationSection(uiState = uiState, viewModel = viewModel)
+        // --- Cost Calculation Section (Admin Only) ---
+        if (uiState.isAdmin) {
+            item {
+                CostCalculationSection(uiState = uiState, viewModel = viewModel)
+            }
+        } else {
+             // Seller only sees Quantity field
+             item {
+                 OutlinedTextField(
+                     value = uiState.quantity,
+                     onValueChange = viewModel::onQuantityChanged,
+                     label = { Text("الكمية") },
+                     modifier = Modifier.fillMaxWidth()
+                 )
+             }
         }
 
         if (!uiState.isEditMode) {
@@ -135,7 +149,13 @@ fun StockEntryContent(
         items(uiState.stockItems, key = { it.id }) { item ->
             ListItem(
                 headlineContent = { Text("${item.productName} - ${item.productVariant.capacity} أمبير") },
-                supportingContent = { Text("الكمية: ${item.quantity}, إجمالي التكلفة: ${String.format("%.2f", item.totalCost)}") },
+                supportingContent = {
+                    if (uiState.isAdmin) {
+                        Text("الكمية: ${item.quantity}, إجمالي التكلفة: ${String.format("%.2f", item.totalCost)}")
+                    } else {
+                        Text("الكمية: ${item.quantity}")
+                    }
+                },
                 trailingContent = {
                     if (!uiState.isEditMode) {
                         IconButton(onClick = { viewModel.onRemoveItemClicked(item) }) {
@@ -146,7 +166,7 @@ fun StockEntryContent(
             )
         }
 
-        if (!uiState.isEditMode) {
+        if (!uiState.isEditMode && uiState.isAdmin) {
             item {
                 GrandTotalsSection(uiState = uiState)
             }
@@ -164,7 +184,7 @@ fun StockEntryContent(
             Button(
                 onClick = viewModel::onSaveClicked,
                 modifier = Modifier.fillMaxWidth(),
-                enabled = uiState.stockItems.isNotEmpty() && uiState.selectedWarehouse != null
+                enabled = uiState.stockItems.isNotEmpty() && uiState.selectedWarehouse != null && (uiState.isAdmin || !uiState.isEditMode)
             ) { Text(if (uiState.isEditMode) "تحديث القيد" else "حفظ إدخال المخزون") }
         }
     }

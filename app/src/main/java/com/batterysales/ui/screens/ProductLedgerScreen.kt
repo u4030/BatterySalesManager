@@ -33,6 +33,8 @@ fun ProductLedgerScreen(
     val ledgerItems by viewModel.ledgerItems.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val selectedCategory by viewModel.selectedCategory.collectAsState()
+    val userRole by viewModel.userRole.collectAsState()
+    val isAdmin = userRole == "admin"
     var showDeleteConfirmation by remember { mutableStateOf<String?>(null) }
 
 
@@ -105,6 +107,7 @@ fun ProductLedgerScreen(
                 items(ledgerItems) { item ->
                     LedgerItemCard(
                         item = item,
+                        isAdmin = isAdmin,
                         onEdit = { entryId ->
                             // A sales entry is not a real stock entry, cannot be edited.
                             if (item.entry.supplier != "Sale") {
@@ -126,6 +129,7 @@ fun ProductLedgerScreen(
 @Composable
 fun LedgerItemCard(
     item: LedgerItem,
+    isAdmin: Boolean,
     onEdit: (String) -> Unit,
     onDelete: (String) -> Unit
 ) {
@@ -184,8 +188,8 @@ fun LedgerItemCard(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    // Show menu only for editable/deletable entries
-                    if (!isSale && !isTransfer) {
+                    // Show menu only for editable/deletable entries (Admin only)
+                    if (!isSale && !isTransfer && isAdmin) {
                         Box {
                             IconButton(onClick = { menuExpanded = true }) {
                                 Icon(Icons.Default.MoreVert, contentDescription = "خيارات")
@@ -220,8 +224,10 @@ fun LedgerItemCard(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 InfoColumnLedger(label = "الكمية", value = entry.quantity.toString(), valueColor = quantityColor)
-                InfoColumnLedger(label = "سعر القطعة", value = formatPrice(entry.costPrice))
-                InfoColumnLedger(label = "الإجمالي", value = formatPrice(if (isSale) entry.quantity * entry.costPrice * -1 else entry.totalCost))
+                if (isAdmin) {
+                    InfoColumnLedger(label = "سعر القطعة", value = formatPrice(entry.costPrice))
+                    InfoColumnLedger(label = "الإجمالي", value = formatPrice(if (isSale) entry.quantity * entry.costPrice * -1 else entry.totalCost))
+                }
             }
             Spacer(modifier = Modifier.height(16.dp))
             Row(

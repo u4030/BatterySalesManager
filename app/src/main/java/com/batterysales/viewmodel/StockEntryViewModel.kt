@@ -32,11 +32,14 @@ data class StockEntryUiState(
     val costValue: String = "",
     val supplierName: String = "",
     val stockItems: List<StockEntryItem> = emptyList(),
+    val userRole: String = "seller",
     val isEditMode: Boolean = false,
     val isLoading: Boolean = true,
     val errorMessage: String? = null,
     val isFinished: Boolean = false
-)
+) {
+    val isAdmin: Boolean get() = userRole == "admin"
+}
 
 // Represents a single item in the stock entry list
 data class StockEntryItem(
@@ -84,6 +87,7 @@ class StockEntryViewModel @Inject constructor(
                     it.copy(
                         products = activeProducts,
                         warehouses = warehouses,
+                        userRole = user?.role ?: "seller",
                         selectedWarehouse = if (user?.role == "seller") selectedWH else it.selectedWarehouse
                     )
                 }
@@ -169,10 +173,16 @@ class StockEntryViewModel @Inject constructor(
         val variant = state.selectedVariant ?: return
         val newItem = calculateItemFromState(state, variant)
 
-        if (newItem.quantity <= 0 || newItem.costPrice <= 0) {
-            _uiState.update { it.copy(errorMessage = "الرجاء إدخال كمية وتكلفة صحيحة") }
+        if (newItem.quantity <= 0) {
+            _uiState.update { it.copy(errorMessage = "الرجاء إدخال كمية صحيحة") }
             return
         }
+
+        if (state.isAdmin && newItem.costPrice <= 0) {
+             _uiState.update { it.copy(errorMessage = "الرجاء إدخال التكلفة") }
+             return
+        }
+
         _uiState.update { it.copy(stockItems = it.stockItems + newItem, quantity = "", costValue = "") }
     }
 
