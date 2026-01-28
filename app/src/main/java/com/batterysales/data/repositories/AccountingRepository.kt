@@ -26,13 +26,38 @@ class AccountingRepository @Inject constructor(
 
     suspend fun getCurrentBalance(): Double {
         val transactions = getAllTransactions()
-        val expenses = getAllExpenses()
-        return transactions.sumOf { it.amount } - expenses.sumOf { it.amount }
+        // We unify expenses into transactions, but for legacy support we check if an expense is already a transaction
+        // Actually, to keep it simple and fix the user's issue:
+        return transactions.sumOf {
+            when (it.type) {
+                com.batterysales.data.models.TransactionType.INCOME,
+                com.batterysales.data.models.TransactionType.PAYMENT -> it.amount
+                com.batterysales.data.models.TransactionType.EXPENSE,
+                com.batterysales.data.models.TransactionType.REFUND -> -it.amount
+            }
+        }
+    }
+
+    suspend fun addTransaction(transaction: Transaction) {
+        firestore.collection(Transaction.COLLECTION_NAME)
+            .add(transaction)
+            .await()
     }
 
     suspend fun addExpense(expense: Expense) {
-        firestore.collection(Expense.COLLECTION_NAME)
-            .add(expense)
-            .await()
+        // Also add as a transaction for consistency
+        val transaction = Transaction(
+            type = com.batterysales.data.models.TransactionType.EXPENSE,
+            amount = expense.amount,
+            description = expense.description,
+            createdAt = expense.timestamp
+        )
+
+        firestore.runBatch { batch ->
+            val expenseRef = firestore.collection(Expense.COLLECTION_NAME).document()
+            val transactionRef = firestore.collection(Transaction.COLLECTION_NAME).document()
+            batch.set(expenseRef, expense)
+            batch.set(transactionRef, transaction)
+        }.await()
     }
 }

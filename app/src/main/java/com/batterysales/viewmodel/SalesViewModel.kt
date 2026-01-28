@@ -34,7 +34,8 @@ class SalesViewModel @Inject constructor(
     private val stockEntryRepository: StockEntryRepository,
     private val invoiceRepository: InvoiceRepository,
     private val paymentRepository: PaymentRepository,
-    private val userRepository: UserRepository
+    private val userRepository: UserRepository,
+    private val accountingRepository: AccountingRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SalesUiState(isLoading = true))
@@ -170,6 +171,14 @@ class SalesViewModel @Inject constructor(
                         notes = "الدفعة الأولى عند البيع"
                     )
                     paymentRepository.addPayment(payment)
+
+                    // Record in treasury
+                    accountingRepository.addTransaction(Transaction(
+                        type = TransactionType.INCOME,
+                        amount = paidAmount,
+                        description = "دفعة أولى مبيعات: ${createdInvoice.customerName}",
+                        relatedId = createdInvoice.id
+                    ))
                 }
 
                 // Now, create a single stock entry linked to the new invoice

@@ -123,21 +123,58 @@ fun DashboardScreen(
             if (dashboardState.lowStockVariants.isNotEmpty()) {
                 item {
                     Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3E0)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { navController.navigate("reports") },
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFFF9800))
+                                Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error)
                                 Spacer(modifier = Modifier.width(12.dp))
-                                Text("تنبيه انخفاض المخزون", fontWeight = FontWeight.Bold, color = Color(0xFFE65100))
+                                Text("تنبيه انخفاض المخزون", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
                             }
                             dashboardState.lowStockVariants.take(3).forEach { lowStockItem ->
-                                Text("${lowStockItem.productName} (${lowStockItem.capacity} أمبير): الكمية ${lowStockItem.currentQuantity}", fontSize = 14.sp)
+                                Text(
+                                    "${lowStockItem.productName} (${lowStockItem.capacity} أمبير): الكمية ${lowStockItem.currentQuantity}",
+                                    fontSize = 14.sp,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
                             }
                             if (dashboardState.lowStockVariants.size > 3) {
-                                Text("المزيد...", fontSize = 12.sp, color = Color.Gray)
+                                Text("المزيد...", fontSize = 12.sp, color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f))
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (isAdmin && dashboardState.upcomingBills.isNotEmpty()) {
+                item {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { navController.navigate("bills") },
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        val dateFormatter = java.text.SimpleDateFormat("yyyy/MM/dd", java.util.Locale.getDefault())
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Event, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text("كمبيالات مستحقة قريباً", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                            }
+                            dashboardState.upcomingBills.take(3).forEach { bill ->
+                                Text(
+                                    "${bill.description}: SR ${String.format("%.2f", bill.amount)} (تاريخ: ${dateFormatter.format(bill.dueDate)})",
+                                    fontSize = 14.sp,
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                                )
+                            }
+                            if (dashboardState.upcomingBills.size > 3) {
+                                Text("المزيد...", fontSize = 12.sp, color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f))
                             }
                         }
                     }

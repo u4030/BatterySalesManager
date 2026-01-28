@@ -23,5 +23,8 @@ data class StockEntry(
 ) {
     companion object {
         const val COLLECTION_NAME = "stock_entries"
+
+        const val STATUS_APPROVED = "approved"
+        const val STATUS_PENDING = "pending"
     }
 }

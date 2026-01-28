@@ -34,7 +34,8 @@ fun AccountingScreen(
     val transactions by viewModel.transactions.collectAsState()
     val balance by viewModel.balance.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
-    var showAddExpenseDialog by remember { mutableStateOf(false) }
+    var showAddTransactionDialog by remember { mutableStateOf(false) }
+    var selectedType by remember { mutableStateOf(TransactionType.INCOME) }
 
     Scaffold(
         topBar = {
@@ -53,12 +54,27 @@ fun AccountingScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = { showAddExpenseDialog = true },
-                containerColor = MaterialTheme.colorScheme.errorContainer,
-                contentColor = MaterialTheme.colorScheme.onErrorContainer
-            ) {
-                Icon(Icons.Default.Remove, contentDescription = "إضافة مصروف")
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                FloatingActionButton(
+                    onClick = {
+                        selectedType = TransactionType.INCOME
+                        showAddTransactionDialog = true
+                    },
+                    containerColor = Color(0xFF4CAF50),
+                    contentColor = Color.White
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "إيداع")
+                }
+                FloatingActionButton(
+                    onClick = {
+                        selectedType = TransactionType.EXPENSE
+                        showAddTransactionDialog = true
+                    },
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = Color.White
+                ) {
+                    Icon(Icons.Default.Remove, contentDescription = "سحب")
+                }
             }
         }
     ) { paddingValues ->
@@ -128,12 +144,13 @@ fun AccountingScreen(
         }
     }
 
-    if (showAddExpenseDialog) {
-        AddExpenseDialog(
-            onDismiss = { showAddExpenseDialog = false },
-            onAdd = { desc, amount ->
-                viewModel.addExpense(desc, amount)
-                showAddExpenseDialog = false
+    if (showAddTransactionDialog) {
+        AddTransactionDialog(
+            type = selectedType,
+            onDismiss = { showAddTransactionDialog = false },
+            onAdd = { type, desc, amount ->
+                viewModel.addManualTransaction(type, amount, desc)
+                showAddTransactionDialog = false
             }
         )
     }
@@ -180,19 +197,23 @@ fun TransactionItemCard(transaction: Transaction) {
 }
 
 @Composable
-fun AddExpenseDialog(onDismiss: () -> Unit, onAdd: (String, Double) -> Unit) {
+fun AddTransactionDialog(
+    type: TransactionType,
+    onDismiss: () -> Unit,
+    onAdd: (TransactionType, String, Double) -> Unit
+) {
     var description by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("إضافة مصروف جديد") },
+        title = { Text(if (type == TransactionType.INCOME) "إيداع مبلغ" else "سحب مبلغ / مصروف") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = description,
                     onValueChange = { description = it },
-                    label = { Text("وصف المصروف") },
+                    label = { Text("الوصف") },
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
@@ -207,8 +228,10 @@ fun AddExpenseDialog(onDismiss: () -> Unit, onAdd: (String, Double) -> Unit) {
         confirmButton = {
             Button(onClick = {
                 val amt = amount.toDoubleOrNull() ?: 0.0
-                if (description.isNotEmpty() && amt > 0) onAdd(description, amt)
-            }) { Text("إضافة") }
+                if (description.isNotEmpty() && amt > 0) onAdd(type, description, amt)
+            }, colors = ButtonDefaults.buttonColors(
+                containerColor = if (type == TransactionType.INCOME) Color(0xFF4CAF50) else MaterialTheme.colorScheme.error
+            )) { Text("تأكيد") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("إلغاء") }
