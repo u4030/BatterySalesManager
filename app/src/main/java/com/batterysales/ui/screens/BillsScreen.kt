@@ -21,6 +21,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.batterysales.data.models.Bill
 import com.batterysales.data.models.BillStatus
+import com.batterysales.data.models.BillType
 import com.batterysales.viewmodel.BillViewModel
 import java.text.SimpleDateFormat
 import java.util.*
@@ -80,6 +81,8 @@ fun BillsScreen(
                     )
                 }
             } else {
+                var selectedBillForPayment by remember { mutableStateOf<Bill?>(null) }
+
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.fillMaxSize()
@@ -87,10 +90,21 @@ fun BillsScreen(
                     items(bills) { bill ->
                         BillItemCard(
                             bill = bill,
-                            onPayClick = { viewModel.markAsPaid(bill.id) },
+                            onPayClick = { selectedBillForPayment = bill },
                             onDeleteClick = { viewModel.deleteBill(bill.id) }
                         )
                     }
+                }
+
+                if (selectedBillForPayment != null) {
+                    PaymentDialog(
+                        bill = selectedBillForPayment!!,
+                        onDismiss = { selectedBillForPayment = null },
+                        onConfirm = { amount ->
+                            viewModel.recordPayment(selectedBillForPayment!!.id, amount)
+                            selectedBillForPayment = null
+                        }
+                    )
                 }
             }
         }
@@ -99,8 +113,8 @@ fun BillsScreen(
     if (showAddBillDialog) {
         AddBillDialog(
             onDismiss = { showAddBillDialog = false },
-            onAdd = { desc, amount, date ->
-                viewModel.addBill(desc, amount, date)
+            onAdd = { desc, amount, date, type ->
+                viewModel.addBill(desc, amount, date, type)
                 showAddBillDialog = false
             }
         )
@@ -111,9 +125,14 @@ fun BillsScreen(
 fun BillItemCard(bill: Bill, onPayClick: () -> Unit, onDeleteClick: () -> Unit) {
     val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
     val isPaid = bill.status == BillStatus.PAID
+    val isPartial = bill.status == BillStatus.PARTIAL
 
-    val statusColor = if (isPaid) Color(0xFF4CAF50) else MaterialTheme.colorScheme.tertiary
-    val statusContainerColor = if (isPaid) Color(0xFF4CAF50).copy(alpha = 0.1f) else MaterialTheme.colorScheme.tertiaryContainer
+    val statusColor = when {
+        isPaid -> Color(0xFF4CAF50)
+        isPartial -> Color(0xFFFF9800)
+        else -> MaterialTheme.colorScheme.tertiary
+    }
+    val statusContainerColor = statusColor.copy(alpha = 0.1f)
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -133,7 +152,11 @@ fun BillItemCard(bill: Bill, onPayClick: () -> Unit, onDeleteClick: () -> Unit) 
                     shape = RoundedCornerShape(4.dp)
                 ) {
                     Text(
-                        text = if (isPaid) "مسددة" else "غير مسددة",
+                        text = when {
+                            isPaid -> "مسددة"
+                            isPartial -> "مسددة جزئياً"
+                            else -> "غير مسددة"
+                        },
                         color = statusColor,
                         fontSize = 10.sp,
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
@@ -146,7 +169,13 @@ fun BillItemCard(bill: Bill, onPayClick: () -> Unit, onDeleteClick: () -> Unit) 
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column {
-                    Text("المبلغ: SR ${String.format("%.2f", bill.amount)}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
+                    Text("المبلغ الإجمالي: SR ${String.format("%.2f", bill.amount)}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                    if (bill.paidAmount > 0) {
+                        Text("المدفوع: SR ${String.format("%.2f", bill.paidAmount)}", color = Color(0xFF4CAF50), fontWeight = FontWeight.Medium)
+                        Text("المتبقي: SR ${String.format("%.2f", bill.amount - bill.paidAmount)}", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Medium)
+                    } else {
+                        Text("المبلغ: SR ${String.format("%.2f", bill.amount)}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
+                    }
                     Text("تاريخ الاستحقاق: ${dateFormatter.format(bill.dueDate)}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
 
@@ -166,10 +195,48 @@ fun BillItemCard(bill: Bill, onPayClick: () -> Unit, onDeleteClick: () -> Unit) 
 }
 
 @Composable
-fun AddBillDialog(onDismiss: () -> Unit, onAdd: (String, Double, Date) -> Unit) {
+fun PaymentDialog(bill: Bill, onDismiss: () -> Unit, onConfirm: (Double) -> Unit) {
+    var amount by remember { mutableStateOf((bill.amount - bill.paidAmount).toString()) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("تسديد مبلغ") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("المبلغ المتبقي: SR ${String.format("%.2f", bill.amount - bill.paidAmount)}")
+                OutlinedTextField(
+                    value = amount,
+                    onValueChange = { amount = it },
+                    label = { Text("مبلغ الدفع") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                val amt = amount.toDoubleOrNull() ?: 0.0
+                if (amt > 0) onConfirm(amt)
+            }) { Text("تسديد") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("إلغاء") }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AddBillDialog(onDismiss: () -> Unit, onAdd: (String, Double, Date, BillType) -> Unit) {
     var description by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
-    val dueDate = Date()
+    var selectedType by remember { mutableStateOf(BillType.CHECK) }
+    var showDatePicker by remember { mutableStateOf(false) }
+    val datePickerState = rememberDatePickerState(
+        initialSelectedDateMillis = System.currentTimeMillis()
+    )
+    val selectedDate = datePickerState.selectedDateMillis?.let { Date(it) } ?: Date()
+    val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -189,17 +256,73 @@ fun AddBillDialog(onDismiss: () -> Unit, onAdd: (String, Double, Date) -> Unit) 
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth()
                 )
-                Text("تاريخ الاستحقاق: سيتم تعيينه لليوم", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                Text("نوع الالتزام:", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    BillType.values().forEach { type ->
+                        FilterChip(
+                            selected = selectedType == type,
+                            onClick = { selectedType = type },
+                            label = {
+                                Text(
+                                    when (type) {
+                                        BillType.CHECK -> "شيك"
+                                        BillType.BILL -> "كمبيالة"
+                                        BillType.TRANSFER -> "تحويل"
+                                        BillType.OTHER -> "أخرى"
+                                    }
+                                )
+                            }
+                        )
+                    }
+                }
+
+                OutlinedCard(
+                    onClick = { showDatePicker = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .padding(16.dp)
+                            .fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("تاريخ الاستحقاق: ${dateFormatter.format(selectedDate)}")
+                        Icon(Icons.Default.DateRange, contentDescription = null)
+                    }
+                }
             }
         },
         confirmButton = {
             Button(onClick = {
                 val amt = amount.toDoubleOrNull() ?: 0.0
-                if (description.isNotEmpty() && amt > 0) onAdd(description, amt, dueDate)
+                if (description.isNotEmpty() && amt > 0) onAdd(description, amt, selectedDate, selectedType)
             }) { Text("إضافة") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("إلغاء") }
         }
     )
+
+    if (showDatePicker) {
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = { showDatePicker = false }) {
+                    Text("موافق")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) {
+                    Text("إلغاء")
+                }
+            }
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
 }

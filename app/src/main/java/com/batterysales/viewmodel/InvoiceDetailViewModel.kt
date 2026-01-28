@@ -5,6 +5,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.batterysales.data.models.Invoice
 import com.batterysales.data.models.Payment
+import com.batterysales.data.models.Transaction
+import com.batterysales.data.models.TransactionType
+import com.batterysales.data.repositories.AccountingRepository
 import com.batterysales.data.repositories.InvoiceRepository
 import com.batterysales.data.repositories.PaymentRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -24,6 +27,7 @@ data class InvoiceDetailUiState(
 class InvoiceDetailViewModel @Inject constructor(
     private val invoiceRepository: InvoiceRepository,
     private val paymentRepository: PaymentRepository,
+    private val accountingRepository: AccountingRepository,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -86,6 +90,16 @@ class InvoiceDetailViewModel @Inject constructor(
             try {
                 val payment = Payment(invoiceId = invoiceId, amount = amount, timestamp = Date())
                 paymentRepository.addPayment(payment)
+
+                // Record in treasury
+                val invoice = _uiState.value.invoice
+                val transaction = Transaction(
+                    type = TransactionType.PAYMENT,
+                    amount = amount,
+                    description = "دفعة فاتورة: ${invoice?.customerName ?: ""}",
+                    relatedId = invoiceId
+                )
+                accountingRepository.addTransaction(transaction)
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = "Failed to add payment") }
             }

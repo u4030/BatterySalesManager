@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.Color
 
 @Composable
 fun SearchBar(
@@ -170,12 +171,21 @@ fun ReportItemCard(
             Spacer(modifier = Modifier.height(16.dp))
 
             // Main Info: Totals
+            val isLowStock = item.variant.minQuantity > 0 && item.totalQuantity <= item.variant.minQuantity
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceAround,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                InfoColumn(label = "إجمالي الكمية", value = item.totalQuantity.toString())
+                InfoColumn(
+                    label = "إجمالي الكمية",
+                    value = item.totalQuantity.toString(),
+                    valueColor = if (isLowStock) Color(0xFFD32F2F) else Color.Unspecified
+                )
+                if (item.variant.minQuantity > 0) {
+                    InfoColumn(label = "الحد الأدنى", value = item.variant.minQuantity.toString())
+                }
                 InfoColumn(
                     label = "متوسط التكلفة",
                     value = String.format(Locale.US, "%.2f", item.averageCost)
@@ -224,7 +234,7 @@ fun ReportItemCard(
 }
 
 @Composable
-fun InfoColumn(label: String, value: String, modifier: Modifier = Modifier) {
+fun InfoColumn(label: String, value: String, valueColor: Color = Color.Unspecified, modifier: Modifier = Modifier) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = modifier
@@ -238,7 +248,8 @@ fun InfoColumn(label: String, value: String, modifier: Modifier = Modifier) {
         Text(
             text = value,
             style = MaterialTheme.typography.bodyLarge,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.Bold,
+            color = valueColor
         )
     }
 }

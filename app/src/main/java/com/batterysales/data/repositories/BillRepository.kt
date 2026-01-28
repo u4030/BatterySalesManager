@@ -3,6 +3,9 @@ package com.batterysales.data.repositories
 import com.batterysales.data.models.Bill
 import com.batterysales.data.models.BillStatus
 import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 import java.util.Date
 import javax.inject.Inject
@@ -18,17 +21,66 @@ class BillRepository @Inject constructor(
             .toObjects(Bill::class.java)
     }
 
+    fun getAllBillsFlow(): Flow<List<Bill>> = callbackFlow {
+        val listenerRegistration = firestore.collection(Bill.COLLECTION_NAME)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    val bills = snapshot.toObjects(Bill::class.java)
+                    trySend(bills).isSuccess
+                }
+            }
+        awaitClose { listenerRegistration.remove() }
+    }
+
     suspend fun addBill(bill: Bill) {
         firestore.collection(Bill.COLLECTION_NAME)
             .add(bill)
             .await()
     }
 
-    suspend fun updateBillStatus(billId: String, status: BillStatus) {
+    suspend fun updateBillStatus(billId: String, status: BillStatus, paidDate: Date? = null) {
+        val updates = mutableMapOf<String, Any>(
+            "status" to status,
+            "updatedAt" to Date()
+        )
+        paidDate?.let { updates["paidDate"] = it }
+
         firestore.collection(Bill.COLLECTION_NAME)
             .document(billId)
-            .update("status", status)
+            .update(updates)
             .await()
+    }
+
+    suspend fun recordPayment(billId: String, paymentAmount: Double) {
+        val billRef = firestore.collection(Bill.COLLECTION_NAME).document(billId)
+
+        firestore.runTransaction { transaction ->
+            val snapshot = transaction.get(billRef)
+            val bill = snapshot.toObject(Bill::class.java) ?: return@runTransaction
+
+            val newPaidAmount = bill.paidAmount + paymentAmount
+            val newStatus = when {
+                newPaidAmount >= bill.amount -> BillStatus.PAID
+                newPaidAmount > 0 -> BillStatus.PARTIAL
+                else -> BillStatus.UNPAID
+            }
+
+            val updates = mutableMapOf<String, Any>(
+                "paidAmount" to newPaidAmount,
+                "status" to newStatus,
+                "updatedAt" to Date()
+            )
+
+            if (newStatus == BillStatus.PAID) {
+                updates["paidDate"] = Date()
+            }
+
+            transaction.update(billRef, updates)
+        }.await()
     }
 
     suspend fun deleteBill(billId: String) {

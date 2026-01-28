@@ -5,6 +5,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
@@ -105,8 +106,11 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
                         selectedValue = uiState.selectedWarehouse?.name ?: "",
                         options = uiState.warehouses.map { it.name },
                         onOptionSelected = { index -> viewModel.onWarehouseSelected(uiState.warehouses[index]) },
-                        enabled = true
+                        enabled = !uiState.isWarehouseFixed
                     )
+                    if (uiState.isWarehouseFixed) {
+                        Text(text = "تم تقييد المستودع بناءً على صلاحياتك", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                    }
                 }
 
                 item {

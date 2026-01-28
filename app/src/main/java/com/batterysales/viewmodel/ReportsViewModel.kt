@@ -49,7 +49,8 @@ class ReportsViewModel @Inject constructor(
         for (variant in activeVariants) {
             val product = activeProducts[variant.productId] ?: continue
 
-            val variantEntries = allStockEntries.filter { it.productVariantId == variant.id }
+            // Only count approved stock for reports
+            val variantEntries = allStockEntries.filter { it.productVariantId == variant.id && it.status == "approved" }
             if (variantEntries.isEmpty()) continue
 
             val warehouseQuantities = mutableMapOf<String, Int>()

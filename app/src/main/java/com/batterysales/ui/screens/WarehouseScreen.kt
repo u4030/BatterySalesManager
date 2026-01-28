@@ -3,7 +3,9 @@ package com.batterysales.ui.screens
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
+import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -48,11 +50,14 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
 
                     // Stock Items in this warehouse
                     items(items) { stockItem ->
+                        val isLowStock = stockItem.variant.minQuantity > 0 && stockItem.quantity <= stockItem.variant.minQuantity
+
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = 4.dp),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                            colors = if (isLowStock) CardDefaults.cardColors(containerColor = Color(0xFFFFF3E0)) else CardDefaults.cardColors()
                         ) {
                             Row(
                                 modifier = Modifier
@@ -67,17 +72,44 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
                                         style = MaterialTheme.typography.bodyLarge,
                                         fontWeight = FontWeight.Bold
                                     )
-                                    Text(
-                                        text = "الكمية المتاحة:",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = "الكمية المتاحة:",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        if (stockItem.variant.minQuantity > 0) {
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Surface(
+                                                color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.1f),
+                                                shape = RoundedCornerShape(4.dp)
+                                            ) {
+                                                Text(
+                                                    text = "الحد الأدنى: ${stockItem.variant.minQuantity}",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                                                    color = MaterialTheme.colorScheme.secondary
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
-                                Text(
-                                    text = stockItem.quantity.toString(),
-                                    style = MaterialTheme.typography.headlineMedium,
-                                    fontWeight = FontWeight.Bold
-                                )
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(
+                                        text = stockItem.quantity.toString(),
+                                        style = MaterialTheme.typography.headlineMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isLowStock) Color(0xFFE65100) else Color.Unspecified
+                                    )
+                                    if (isLowStock) {
+                                        Text(
+                                            text = "مخزون منخفض",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = Color(0xFFE65100),
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

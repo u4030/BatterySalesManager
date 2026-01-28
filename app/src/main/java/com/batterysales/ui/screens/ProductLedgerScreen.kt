@@ -1,20 +1,24 @@
 package com.batterysales.ui.screens
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.batterysales.viewmodel.LedgerCategory
 import com.batterysales.viewmodel.LedgerItem
 import com.batterysales.viewmodel.ProductLedgerViewModel
 import java.text.SimpleDateFormat
@@ -28,6 +32,9 @@ fun ProductLedgerScreen(
 ) {
     val ledgerItems by viewModel.ledgerItems.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val selectedCategory by viewModel.selectedCategory.collectAsState()
+    val userRole by viewModel.userRole.collectAsState()
+    val isAdmin = userRole == "admin"
     var showDeleteConfirmation by remember { mutableStateOf<String?>(null) }
 
 
@@ -50,18 +57,41 @@ fun ProductLedgerScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(
-                    "${viewModel.productName} - ${viewModel.variantCapacity} أمبير",
-                    color = Color.White
-                ) },
-                navigationIcon = {
-                    IconButton(onClick = { navController.navigateUp() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "رجوع", tint = Color.White)
+            Column {
+                TopAppBar(
+                    title = { Text(
+                        "${viewModel.productName} - ${viewModel.variantCapacity} أمبير",
+                        color = Color.White
+                    ) },
+                    navigationIcon = {
+                        IconButton(onClick = { navController.navigateUp() }) {
+                            Icon(Icons.Default.ArrowBack, contentDescription = "رجوع", tint = Color.White)
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary)
+                )
+
+                ScrollableTabRow(
+                    selectedTabIndex = selectedCategory.ordinal,
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = Color.White,
+                    edgePadding = 16.dp,
+                    indicator = { tabPositions ->
+                        TabRowDefaults.Indicator(
+                            Modifier.tabIndicatorOffset(tabPositions[selectedCategory.ordinal]),
+                            color = Color.White
+                        )
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary)
-            )
+                ) {
+                    LedgerCategory.values().forEach { category ->
+                        Tab(
+                            selected = selectedCategory == category,
+                            onClick = { viewModel.selectCategory(category) },
+                            text = { Text(category.label, color = Color.White) }
+                        )
+                    }
+                }
+            }
         }
     ) { padding ->
         if (isLoading) {
@@ -77,6 +107,7 @@ fun ProductLedgerScreen(
                 items(ledgerItems) { item ->
                     LedgerItemCard(
                         item = item,
+                        isAdmin = isAdmin,
                         onEdit = { entryId ->
                             // A sales entry is not a real stock entry, cannot be edited.
                             if (item.entry.supplier != "Sale") {
@@ -98,6 +129,7 @@ fun ProductLedgerScreen(
 @Composable
 fun LedgerItemCard(
     item: LedgerItem,
+    isAdmin: Boolean,
     onEdit: (String) -> Unit,
     onDelete: (String) -> Unit
 ) {
@@ -127,11 +159,28 @@ fun LedgerItemCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = typeText,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = typeText,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (entry.status == "pending") {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Surface(
+                            color = Color(0xFFFF9800).copy(alpha = 0.1f),
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Text(
+                                text = "معلق",
+                                color = Color(0xFFFF9800),
+                                fontSize = 10.sp,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -139,8 +188,8 @@ fun LedgerItemCard(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    // Show menu only for editable/deletable entries
-                    if (!isSale && !isTransfer) {
+                    // Show menu only for editable/deletable entries (Admin only)
+                    if (!isSale && !isTransfer && isAdmin) {
                         Box {
                             IconButton(onClick = { menuExpanded = true }) {
                                 Icon(Icons.Default.MoreVert, contentDescription = "خيارات")
@@ -168,15 +217,17 @@ fun LedgerItemCard(
                     }
                 }
             }
-            Divider()
+            HorizontalDivider()
             Spacer(modifier = Modifier.height(16.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 InfoColumnLedger(label = "الكمية", value = entry.quantity.toString(), valueColor = quantityColor)
-                InfoColumnLedger(label = "سعر القطعة", value = formatPrice(entry.costPrice))
-                InfoColumnLedger(label = "الإجمالي", value = formatPrice(if (isSale) entry.quantity * entry.costPrice * -1 else entry.totalCost))
+                if (isAdmin) {
+                    InfoColumnLedger(label = "سعر القطعة", value = formatPrice(entry.costPrice))
+                    InfoColumnLedger(label = "الإجمالي", value = formatPrice(if (isSale) entry.quantity * entry.costPrice * -1 else entry.totalCost))
+                }
             }
             Spacer(modifier = Modifier.height(16.dp))
             Row(

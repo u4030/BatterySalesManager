@@ -57,4 +57,43 @@ class AccountingViewModel @Inject constructor(
             }
         }
     }
+
+    fun addManualTransaction(type: com.batterysales.data.models.TransactionType, amount: Double, description: String) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                val transaction = Transaction(
+                    type = type,
+                    amount = amount,
+                    description = description
+                )
+                repository.addTransaction(transaction)
+                loadData()
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    fun deleteTransaction(id: String) {
+        viewModelScope.launch {
+            try {
+                repository.deleteTransaction(id)
+                loadData()
+            } catch (e: Exception) {
+                // Handle error
+            }
+        }
+    }
+
+    fun updateTransaction(transaction: Transaction) {
+        viewModelScope.launch {
+            try {
+                repository.updateTransaction(transaction)
+                loadData()
+            } catch (e: Exception) {
+                // Handle error
+            }
+        }
+    }
 }

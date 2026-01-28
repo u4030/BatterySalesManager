@@ -10,6 +10,7 @@ import com.batterysales.data.models.Warehouse
 import com.batterysales.data.repositories.ProductRepository
 import com.batterysales.data.repositories.ProductVariantRepository
 import com.batterysales.data.repositories.StockEntryRepository
+import com.batterysales.data.repositories.UserRepository
 import com.batterysales.data.repositories.WarehouseRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
@@ -29,19 +30,24 @@ data class StockEntryUiState(
     val quantity: String = "",
     val costInputMode: CostInputMode = CostInputMode.BY_AMPERE,
     val costValue: String = "",
+    val minQuantity: String = "",
     val supplierName: String = "",
     val stockItems: List<StockEntryItem> = emptyList(),
+    val userRole: String = "seller",
     val isEditMode: Boolean = false,
     val isLoading: Boolean = true,
     val errorMessage: String? = null,
     val isFinished: Boolean = false
-)
+) {
+    val isAdmin: Boolean get() = userRole == "admin"
+}
 
 // Represents a single item in the stock entry list
 data class StockEntryItem(
     val id: String = UUID.randomUUID().toString(),
     val productVariant: ProductVariant,
     val quantity: Int,
+    val minQuantity: Int,
     val productName: String,
     val costPrice: Double,
     val costPerAmpere: Double,
@@ -55,6 +61,7 @@ class StockEntryViewModel @Inject constructor(
     private val productVariantRepository: ProductVariantRepository,
     private val warehouseRepository: WarehouseRepository,
     private val stockEntryRepository: StockEntryRepository,
+    private val userRepository: UserRepository,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -62,17 +69,30 @@ class StockEntryViewModel @Inject constructor(
     val uiState: StateFlow<StockEntryUiState> = _uiState.asStateFlow()
 
     private val editingEntryId: String? = savedStateHandle.get<String>("entryId")
+    private var currentUser: com.batterysales.data.models.User? = null
 
     init {
         val isEditMode = editingEntryId != null
         _uiState.update { it.copy(isEditMode = isEditMode) }
 
         viewModelScope.launch {
+            val user = userRepository.getCurrentUser()
+            currentUser = user
+
             productRepository.getProducts().combine(warehouseRepository.getWarehouses()) { products, warehouses ->
                 Pair(products, warehouses)
             }.collectLatest { (products, warehouses) ->
                 val activeProducts = products.filter { !it.isArchived }
-                _uiState.update { it.copy(products = activeProducts, warehouses = warehouses) }
+                val selectedWH = warehouses.find { it.id == user?.warehouseId }
+
+                _uiState.update {
+                    it.copy(
+                        products = activeProducts,
+                        warehouses = warehouses,
+                        userRole = user?.role ?: "seller",
+                        selectedWarehouse = if (user?.role == "seller") selectedWH else it.selectedWarehouse
+                    )
+                }
 
                 if (isEditMode && uiState.value.selectedProduct == null) { // Only load once
                     loadEntryForEdit(editingEntryId!!)
@@ -110,6 +130,7 @@ class StockEntryViewModel @Inject constructor(
                 selectedWarehouse = warehouse,
                 quantity = entry.quantity.toString(),
                 costValue = entry.costPrice.toString(),
+                minQuantity = variant.minQuantity.toString(),
                 costInputMode = CostInputMode.BY_ITEM,
                 supplierName = entry.supplier,
                 stockItems = listOf(
@@ -117,6 +138,7 @@ class StockEntryViewModel @Inject constructor(
                         id = entry.id,
                         productVariant = variant,
                         quantity = entry.quantity,
+                        minQuantity = variant.minQuantity,
                         productName = product.name,
                         costPrice = entry.costPrice,
                         costPerAmpere = entry.costPerAmpere,
@@ -141,9 +163,12 @@ class StockEntryViewModel @Inject constructor(
         }
     }
 
-    fun onVariantSelected(variant: ProductVariant) { _uiState.update { it.copy(selectedVariant = variant) } }
+    fun onVariantSelected(variant: ProductVariant) {
+        _uiState.update { it.copy(selectedVariant = variant, minQuantity = variant.minQuantity.toString()) }
+    }
     fun onWarehouseSelected(warehouse: Warehouse) { _uiState.update { it.copy(selectedWarehouse = warehouse) } }
     fun onQuantityChanged(quantity: String) { _uiState.update { it.copy(quantity = quantity) } }
+    fun onMinQuantityChanged(minQty: String) { _uiState.update { it.copy(minQuantity = minQty) } }
     fun onCostInputModeChanged(mode: CostInputMode) { _uiState.update { it.copy(costInputMode = mode, costValue = "") } }
     fun onCostValueChanged(cost: String) { _uiState.update { it.copy(costValue = cost) } }
     fun onSupplierNameChanged(name: String) { _uiState.update { it.copy(supplierName = name) } }
@@ -155,10 +180,16 @@ class StockEntryViewModel @Inject constructor(
         val variant = state.selectedVariant ?: return
         val newItem = calculateItemFromState(state, variant)
 
-        if (newItem.quantity <= 0 || newItem.costPrice <= 0) {
-            _uiState.update { it.copy(errorMessage = "الرجاء إدخال كمية وتكلفة صحيحة") }
+        if (newItem.quantity <= 0) {
+            _uiState.update { it.copy(errorMessage = "الرجاء إدخال كمية صحيحة") }
             return
         }
+
+        if (state.isAdmin && newItem.costPrice <= 0) {
+            _uiState.update { it.copy(errorMessage = "الرجاء إدخال التكلفة") }
+            return
+        }
+
         _uiState.update { it.copy(stockItems = it.stockItems + newItem, quantity = "", costValue = "") }
     }
 
@@ -173,6 +204,12 @@ class StockEntryViewModel @Inject constructor(
                 if (state.isEditMode) {
                     val originalEntry = stockEntryRepository.getStockEntryById(editingEntryId!!)!!
                     val updatedItem = calculateItemFromState(state, state.selectedVariant!!)
+
+                    if (state.isAdmin && updatedItem.costPrice <= 0) {
+                        _uiState.update { it.copy(errorMessage = "الرجاء إدخال سعر الأمبير أو تكلفة القطعة") }
+                        return@launch
+                    }
+
                     val updatedEntry = originalEntry.copy(
                         quantity = updatedItem.quantity,
                         costPrice = updatedItem.costPrice,
@@ -182,6 +219,12 @@ class StockEntryViewModel @Inject constructor(
                         supplier = state.supplierName
                     )
                     stockEntryRepository.updateStockEntry(updatedEntry)
+
+                    // Update variant minQuantity if Admin
+                    if (state.isAdmin) {
+                        val updatedVariant = state.selectedVariant!!.copy(minQuantity = updatedItem.minQuantity)
+                        productVariantRepository.updateVariant(updatedVariant)
+                    }
                 } else {
                     val grandTotalAmperes = state.stockItems.sumOf { it.totalAmperes }
                     val grandTotalCost = state.stockItems.sumOf { it.totalCost }
@@ -197,10 +240,20 @@ class StockEntryViewModel @Inject constructor(
                             grandTotalAmperes = grandTotalAmperes,
                             grandTotalCost = grandTotalCost,
                             timestamp = Date(),
-                            supplier = state.supplierName
+                            supplier = state.supplierName,
+                            status = if (currentUser?.role == "seller") "pending" else "approved",
+                            createdBy = currentUser?.id ?: ""
                         )
                     }
                     stockEntryRepository.addStockEntries(entries)
+
+                    // Update minQuantity for all added variants if Admin
+                    if (state.isAdmin) {
+                        state.stockItems.forEach { item ->
+                            val updatedVariant = item.productVariant.copy(minQuantity = item.minQuantity)
+                            productVariantRepository.updateVariant(updatedVariant)
+                        }
+                    }
                 }
                 _uiState.update { it.copy(isFinished = true) }
             } catch (e: Exception) {
@@ -211,6 +264,7 @@ class StockEntryViewModel @Inject constructor(
 
     private fun calculateItemFromState(state: StockEntryUiState, variant: ProductVariant): StockEntryItem {
         val quantity = state.quantity.toIntOrNull() ?: 0
+        val minQuantity = state.minQuantity.toIntOrNull() ?: 0
         val cost = state.costValue.toDoubleOrNull() ?: 0.0
 
         val costPerItem = if (state.costInputMode == CostInputMode.BY_ITEM) cost else if (variant.capacity > 0) cost * variant.capacity else 0.0
@@ -222,6 +276,7 @@ class StockEntryViewModel @Inject constructor(
             id = if(state.isEditMode) state.stockItems.first().id else UUID.randomUUID().toString(),
             productVariant = variant,
             quantity = quantity,
+            minQuantity = minQuantity,
             productName = state.selectedProduct?.name ?: "",
             costPrice = costPerItem,
             costPerAmpere = costPerAmpere,

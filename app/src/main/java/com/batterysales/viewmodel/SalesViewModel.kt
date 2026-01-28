@@ -20,6 +20,7 @@ data class SalesUiState(
     val selectedWarehouse: Warehouse? = null,
     val quantity: String = "1",
     val sellingPrice: String = "",
+    val isWarehouseFixed: Boolean = false,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
     val isFinished: Boolean = false
@@ -31,16 +32,23 @@ class SalesViewModel @Inject constructor(
     private val productVariantRepository: ProductVariantRepository,
     private val warehouseRepository: WarehouseRepository,
     private val stockEntryRepository: StockEntryRepository,
-    private val invoiceRepository: InvoiceRepository
+    private val invoiceRepository: InvoiceRepository,
+    private val paymentRepository: PaymentRepository,
+    private val userRepository: UserRepository,
+    private val accountingRepository: AccountingRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SalesUiState(isLoading = true))
     val uiState: StateFlow<SalesUiState> = _uiState.asStateFlow()
 
     private var allStockEntries: List<StockEntry> = emptyList()
+    private var currentUser: User? = null
 
     init {
         viewModelScope.launch {
+            val user = userRepository.getCurrentUser()
+            currentUser = user
+
             combine(
                 productRepository.getProducts(),
                 warehouseRepository.getWarehouses(),
@@ -48,16 +56,24 @@ class SalesViewModel @Inject constructor(
             ) { products, warehouses, stockEntries ->
 
                 allStockEntries = stockEntries // Cache for COGS calculation
+
+                // Only count approved entries for available stock
+                val approvedEntries = stockEntries.filter { it.status == "approved" }
+
                 val stockMap = mutableMapOf<Pair<String, String>, Int>()
-                for (entry in stockEntries) {
+                for (entry in approvedEntries) {
                     val key = Pair(entry.productVariantId, entry.warehouseId)
                     stockMap[key] = (stockMap[key] ?: 0) + entry.quantity
                 }
+
+                val selectedWH = warehouses.find { it.id == user?.warehouseId }
 
                 _uiState.update {
                     it.copy(
                         products = products.filter { p -> !p.isArchived },
                         warehouses = warehouses,
+                        selectedWarehouse = if (user?.role == "seller") selectedWH else it.selectedWarehouse,
+                        isWarehouseFixed = user?.role == "seller",
                         stockLevels = stockMap,
                         isLoading = false
                     )
@@ -128,17 +144,43 @@ class SalesViewModel @Inject constructor(
                     customerName = customerName,
                     customerPhone = customerPhone,
                     items = listOf(InvoiceItem(
+                        productId = variant.id,
                         productName = "${product.name} - ${variant.capacity} Amp",
                         quantity = qty,
+                        price = price,
+                        total = total,
                         unitPrice = price,
                         totalPrice = total
                     )),
+                    subtotal = total,
                     totalAmount = total,
+                    finalAmount = total,
                     paidAmount = paidAmount,
                     remainingAmount = total - paidAmount,
                     status = if (paidAmount >= total) "paid" else "pending"
                 )
                 val createdInvoice = invoiceRepository.createInvoice(newInvoice)
+
+                // If there's a paid amount, record it as a payment
+                if (paidAmount > 0) {
+                    val payment = Payment(
+                        invoiceId = createdInvoice.id,
+                        amount = paidAmount,
+                        timestamp = Date(),
+                        paymentMethod = "cash",
+                        notes = "الدفعة الأولى عند البيع"
+                    )
+                    paymentRepository.addPayment(payment)
+
+                    // Record in treasury
+                    val transaction = Transaction(
+                        type = TransactionType.INCOME,
+                        amount = paidAmount,
+                        description = "دفعة مبيعات: $customerName",
+                        relatedId = createdInvoice.id
+                    )
+                    accountingRepository.addTransaction(transaction)
+                }
 
                 // Now, create a single stock entry linked to the new invoice
                 val stockEntry = StockEntry(
@@ -148,7 +190,9 @@ class SalesViewModel @Inject constructor(
                     costPrice = weightedAverageCost,
                     supplier = "Sale",
                     timestamp = Date(),
-                    invoiceId = createdInvoice.id
+                    invoiceId = createdInvoice.id,
+                    status = if (currentUser?.role == "seller") "pending" else "approved",
+                    createdBy = currentUser?.id ?: ""
                 )
                 stockEntryRepository.addStockEntry(stockEntry)
 

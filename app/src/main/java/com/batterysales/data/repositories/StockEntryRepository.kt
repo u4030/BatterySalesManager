@@ -54,7 +54,9 @@ class StockEntryRepository @Inject constructor(
         productVariantId: String,
         sourceWarehouseId: String,
         destinationWarehouseId: String,
-        quantity: Int
+        quantity: Int,
+        status: String = "approved",
+        createdBy: String = ""
     ) {
         val batch = firestore.batch()
 
@@ -63,7 +65,9 @@ class StockEntryRepository @Inject constructor(
             productVariantId = productVariantId,
             warehouseId = sourceWarehouseId,
             quantity = -quantity,
-            costPrice = 0.0 // Cost is already accounted for
+            costPrice = 0.0, // Cost is already accounted for
+            status = status,
+            createdBy = createdBy
         )
         val sourceDocRef = firestore.collection(StockEntry.COLLECTION_NAME).document()
         batch.set(sourceDocRef, sourceStockEntry)
@@ -73,7 +77,9 @@ class StockEntryRepository @Inject constructor(
             productVariantId = productVariantId,
             warehouseId = destinationWarehouseId,
             quantity = quantity,
-            costPrice = 0.0 // Cost is already accounted for
+            costPrice = 0.0, // Cost is already accounted for
+            status = status,
+            createdBy = createdBy
         )
         val destinationDocRef = firestore.collection(StockEntry.COLLECTION_NAME).document()
         batch.set(destinationDocRef, destinationStockEntry)
@@ -127,5 +133,29 @@ class StockEntryRepository @Inject constructor(
             .get()
             .await()
             .toObjects(StockEntry::class.java)
+    }
+
+    fun getPendingEntriesFlow(): Flow<List<StockEntry>> = callbackFlow {
+        val listenerRegistration = firestore.collection(StockEntry.COLLECTION_NAME)
+            .whereEqualTo("status", "pending")
+            .orderBy("timestamp", Query.Direction.DESCENDING)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    val entries = snapshot.toObjects(StockEntry::class.java)
+                    trySend(entries).isSuccess
+                }
+            }
+        awaitClose { listenerRegistration.remove() }
+    }
+
+    suspend fun approveEntry(entryId: String) {
+        firestore.collection(StockEntry.COLLECTION_NAME)
+            .document(entryId)
+            .update("status", "approved")
+            .await()
     }
 }

@@ -4,13 +4,14 @@ import java.util.Date
 
 /**
  * نموذج الكمبيالة/الشيك
- * 
+ *
  * يمثل كمبيالة أو شيك واحد
  */
 data class Bill(
     val id: String = "",
     val description: String = "", // الوصف
     val amount: Double = 0.0, // القيمة
+    val paidAmount: Double = 0.0, // المبلغ المدفوع
     val dueDate: Date = Date(), // تاريخ الاستحقاق
     val status: BillStatus = BillStatus.UNPAID, // الحالة
     val billType: BillType = BillType.CHECK, // نوع الكمبيالة (شيك، كمبيالة، إلخ)
