@@ -1,8 +1,10 @@
 package com.batterysales.data.models
 
+import com.google.firebase.firestore.DocumentId
 import java.util.Date
 
 data class Client(
+    @DocumentId
     val id: String = "",
     val name: String = "",
     val phone: String = "",
