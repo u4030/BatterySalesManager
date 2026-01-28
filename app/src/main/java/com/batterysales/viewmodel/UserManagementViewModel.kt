@@ -52,4 +52,16 @@ class UserManagementViewModel @Inject constructor(
             userRepository.updateUser(updatedUser)
         }
     }
+
+    fun createUser(email: String, password: String, displayName: String, role: String, warehouseId: String?) {
+        viewModelScope.launch {
+            try {
+                userRepository.registerUser(email, password, displayName, role, warehouseId)
+                // Note: On success, the current session will be switched to the new user.
+                // The Admin will need to log back in.
+            } catch (e: Exception) {
+                // Handle error
+            }
+        }
+    }
 }

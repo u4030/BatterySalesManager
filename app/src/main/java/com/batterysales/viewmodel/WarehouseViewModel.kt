@@ -44,8 +44,10 @@ class WarehouseViewModel @Inject constructor(
 
         val stockMap = mutableMapOf<Pair<String, String>, Int>()
         for (entry in allStockEntries) {
-            val key = Pair(entry.productVariantId, entry.warehouseId)
-            stockMap[key] = (stockMap[key] ?: 0) + entry.quantity
+            if (entry.status == "approved") {
+                val key = Pair(entry.productVariantId, entry.warehouseId)
+                stockMap[key] = (stockMap[key] ?: 0) + entry.quantity
+            }
         }
 
         val stockList = stockMap.mapNotNull { (key, quantity) ->

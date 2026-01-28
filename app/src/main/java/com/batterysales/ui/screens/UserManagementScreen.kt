@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
@@ -30,6 +31,18 @@ fun UserManagementScreen(
     val users by viewModel.users.collectAsState()
     val warehouses by viewModel.warehouses.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    var showCreateDialog by remember { mutableStateOf(false) }
+
+    if (showCreateDialog) {
+        CreateUserDialog(
+            warehouses = warehouses,
+            onDismiss = { showCreateDialog = false },
+            onConfirm = { email, pass, name, role, whId ->
+                viewModel.createUser(email, pass, name, role, whId)
+                showCreateDialog = false
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -46,6 +59,11 @@ fun UserManagementScreen(
                     navigationIconContentColor = Color.White
                 )
             )
+        },
+        floatingActionButton = {
+            FloatingActionButton(onClick = { showCreateDialog = true }) {
+                Icon(Icons.Default.Add, contentDescription = "إضافة مستخدم")
+            }
         }
     ) { paddingValues ->
         if (isLoading) {
@@ -169,4 +187,62 @@ fun UserCard(
             dismissButton = { TextButton(onClick = { showWarehouseDialog = false }) { Text("إلغاء") } }
         )
     }
+}
+
+@Composable
+fun CreateUserDialog(
+    warehouses: List<com.batterysales.data.models.Warehouse>,
+    onDismiss: () -> Unit,
+    onConfirm: (String, String, String, String, String?) -> Unit
+) {
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var displayName by remember { mutableStateOf("") }
+    var role by remember { mutableStateOf("seller") }
+    var selectedWarehouseId by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("إنشاء مستخدم جديد") },
+        text = {
+            LazyColumn(modifier = Modifier.fillMaxWidth()) {
+                item {
+                    OutlinedTextField(value = displayName, onValueChange = { displayName = it }, label = { Text("الاسم الكامل") }, modifier = Modifier.fillMaxWidth())
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(value = email, onValueChange = { email = it }, label = { Text("البريد الإلكتروني") }, modifier = Modifier.fillMaxWidth())
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("كلمة المرور") }, modifier = Modifier.fillMaxWidth())
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("الدور:", fontWeight = FontWeight.Bold)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = role == "admin", onClick = { role = "admin" })
+                        Text("مدير")
+                        Spacer(modifier = Modifier.width(16.dp))
+                        RadioButton(selected = role == "seller", onClick = { role = "seller" })
+                        Text("بائع")
+                    }
+                    if (role == "seller") {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text("المستودع المرتبط:", fontWeight = FontWeight.Bold)
+                        warehouses.forEach { warehouse ->
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { selectedWarehouseId = warehouse.id }) {
+                                RadioButton(selected = selectedWarehouseId == warehouse.id, onClick = { selectedWarehouseId = warehouse.id })
+                                Text(warehouse.name)
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("ملاحظة: عند إنشاء مستخدم بنجاح، سيتم تسجيل خروجك والدخول بالحساب الجديد.", color = Color.Red, fontSize = 12.sp)
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onConfirm(email, password, displayName, role, if (role == "seller") selectedWarehouseId else null) }) {
+                Text("إنشاء")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("إلغاء") }
+        }
+    )
 }

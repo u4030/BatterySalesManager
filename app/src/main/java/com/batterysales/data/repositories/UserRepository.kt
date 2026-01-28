@@ -22,14 +22,22 @@ class UserRepository @Inject constructor(
         auth.signInWithEmailAndPassword(email, password).await()
     }
 
-    suspend fun registerUser(email: String, password: String, displayName: String) {
+    suspend fun registerUser(
+        email: String,
+        password: String,
+        displayName: String,
+        role: String = "seller",
+        warehouseId: String? = null
+    ) {
         val authResult = auth.createUserWithEmailAndPassword(email, password).await()
         val user = User(
             id = authResult.user!!.uid,
             email = email,
-            displayName = displayName
+            displayName = displayName,
+            role = role,
+            warehouseId = warehouseId
         )
-        firestore.collection("users").document(user.id).set(user).await()
+        firestore.collection(User.COLLECTION_NAME).document(user.id).set(user).await()
     }
 
     suspend fun getCurrentUser(): User? {
