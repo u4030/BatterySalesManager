@@ -58,15 +58,12 @@ class AppNotificationManager @Inject constructor(
     private fun setupUpcomingBillsListener() {
         upcomingBillsListener?.remove()
 
-        var isFirstSnapshot = true
+        var hasEmittedData = false
         // Listener for Upcoming Bills/Checks
         upcomingBillsListener = firestore.collection(com.batterysales.data.models.Bill.COLLECTION_NAME)
             .addSnapshotListener { snapshot, e ->
                 if (e != null) return@addSnapshotListener
-                if (snapshot == null || snapshot.isEmpty) {
-                    isFirstSnapshot = false
-                    return@addSnapshotListener
-                }
+                if (snapshot == null) return@addSnapshotListener
 
                 val now = java.util.Calendar.getInstance().apply { set(java.util.Calendar.HOUR_OF_DAY, 0) }
                 val nextWeek = java.util.Calendar.getInstance().apply {
@@ -82,8 +79,8 @@ class AppNotificationManager @Inject constructor(
                     !bill.dueDate.after(nextWeek.time)
                 }
 
-                if (isFirstSnapshot) {
-                    isFirstSnapshot = false
+                if (!hasEmittedData) {
+                    hasEmittedData = true
                     if (upcomingBills.isNotEmpty()) {
                         NotificationHelper.showNotification(
                             context,
@@ -152,34 +149,51 @@ class AppNotificationManager @Inject constructor(
     }
 
     private fun setupLowStockListener() {
-        var isFirstSnapshot = true
+        var hasEmittedData = false
         combine(
             stockEntryRepository.getAllStockEntriesFlow(),
             productVariantRepository.getAllVariantsFlow(),
             productRepository.getProducts()
         ) { allEntries, allVariants, allProducts ->
+            // Skip if no products or variants exist yet (initial load)
             if (allVariants.isEmpty() && allProducts.isEmpty()) return@combine
 
             val productMap = allProducts.associateBy { it.id }
 
-            // Group entries to optimize
+            // Group entries to optimize calculation
             val stockMap = allEntries.filter { it.status == StockEntry.STATUS_APPROVED }
                 .groupBy { it.productVariantId }
                 .mapValues { it.value.sumOf { entry -> entry.quantity } }
+
+            val lowStockVariants = allVariants.filter {
+                !it.isArchived && it.minQuantity > 0 && (stockMap[it.id] ?: 0) <= it.minQuantity
+            }
+
+            if (!hasEmittedData) {
+                hasEmittedData = true
+                if (lowStockVariants.isNotEmpty()) {
+                    NotificationHelper.showNotification(
+                        context,
+                        "تنبيه المخزون المنخفض",
+                        "يوجد عدد ${lowStockVariants.size} أصناف وصلت للحد الأدنى للمخزون"
+                    )
+                }
+                // Mark all existing low stock variants as notified
+                lowStockVariants.forEach { notifiedLowStockIds.add(it.id) }
+                return@combine
+            }
 
             allVariants.filter { !it.isArchived && it.minQuantity > 0 }.forEach { variant ->
                 val currentQty = stockMap[variant.id] ?: 0
 
                 if (currentQty <= variant.minQuantity) {
                     if (!notifiedLowStockIds.contains(variant.id)) {
-                        if (!isFirstSnapshot) {
-                            val product = productMap[variant.productId]
-                            NotificationHelper.showNotification(
-                                context,
-                                "تنبيه انخفاض المخزون",
-                                "المنتج ${product?.name ?: ""} (${variant.capacity} أمبير) وصل للحد الأدنى ($currentQty)"
-                            )
-                        }
+                        val product = productMap[variant.productId]
+                        NotificationHelper.showNotification(
+                            context,
+                            "تنبيه انخفاض المخزون",
+                            "المنتج ${product?.name ?: ""} (${variant.capacity} أمبير) وصل للحد الأدنى ($currentQty)"
+                        )
                         notifiedLowStockIds.add(variant.id)
                     }
                 } else {
@@ -188,27 +202,6 @@ class AppNotificationManager @Inject constructor(
                 }
             }
 
-            if (isFirstSnapshot) {
-                isFirstSnapshot = false
-                val initialLowCount = allVariants.count { variant ->
-                    val currentQty = stockMap[variant.id] ?: 0
-                    !variant.isArchived && variant.minQuantity > 0 && currentQty <= variant.minQuantity
-                }
-                if (initialLowCount > 0) {
-                    NotificationHelper.showNotification(
-                        context,
-                        "تنبيه المخزون المنخفض",
-                        "يوجد عدد $initialLowCount أصناف وصلت للحد الأدنى للمخزون"
-                    )
-                }
-                // Add existing low stock items to notified list to prevent double notifications
-                allVariants.forEach { variant ->
-                    val currentQty = stockMap[variant.id] ?: 0
-                    if (currentQty <= variant.minQuantity && variant.minQuantity > 0) {
-                        notifiedLowStockIds.add(variant.id)
-                    }
-                }
-            }
         }.launchIn(scope)
     }
 }
