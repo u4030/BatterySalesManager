@@ -1,6 +1,5 @@
 package com.batterysales.data.models
 
-import com.google.firebase.firestore.DocumentId
 import java.util.Date
 
 /**
@@ -54,7 +53,6 @@ import java.util.Date
  * يحتفظ بملخص المبيعات لكل يوم
  */
 data class DailySalesSummary(
-    @DocumentId
     val id: String = "",
     val date: Date = Date(),
     val totalSales: Double = 0.0, // إجمالي المبيعات

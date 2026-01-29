@@ -23,11 +23,11 @@ class InvoiceRepository @Inject constructor(
     }
 
     suspend fun getInvoice(invoiceId: String): Invoice? {
-        return firestore.collection(Invoice.COLLECTION_NAME)
+        val snapshot = firestore.collection(Invoice.COLLECTION_NAME)
             .document(invoiceId)
             .get()
             .await()
-            .toObject(Invoice::class.java)
+        return snapshot.toObject(Invoice::class.java)?.copy(id = snapshot.id)
     }
 
     fun getAllInvoices(): Flow<List<Invoice>> = callbackFlow {
@@ -39,7 +39,7 @@ class InvoiceRepository @Inject constructor(
                     return@addSnapshotListener
                 }
                 if (snapshot != null) {
-                    val invoices = snapshot.toObjects(Invoice::class.java)
+                    val invoices = snapshot.documents.mapNotNull { it.toObject(Invoice::class.java)?.copy(id = it.id) }
                     trySend(invoices).isSuccess
                 }
             }

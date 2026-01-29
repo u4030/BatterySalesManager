@@ -3,6 +3,7 @@ package com.batterysales.data.repositories
 import com.batterysales.data.models.Client
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
+import java.util.Date
 import javax.inject.Inject
 
 class ClientRepository @Inject constructor(
@@ -10,16 +11,16 @@ class ClientRepository @Inject constructor(
 ) {
 
     suspend fun getAllClients(): List<Client> {
-        return firestore.collection(Client.COLLECTION_NAME)
+        val snapshot = firestore.collection(Client.COLLECTION_NAME)
             .get()
             .await()
-            .toObjects(Client::class.java)
+        return snapshot.documents.mapNotNull { it.toObject(Client::class.java)?.copy(id = it.id) }
     }
 
     suspend fun addClient(client: Client) {
-        firestore.collection(Client.COLLECTION_NAME)
-            .add(client)
-            .await()
+        val docRef = firestore.collection(Client.COLLECTION_NAME).document()
+        val finalClient = client.copy(id = docRef.id, createdAt = Date(), updatedAt = Date())
+        docRef.set(finalClient).await()
     }
 
     suspend fun deleteClient(clientId: String) {

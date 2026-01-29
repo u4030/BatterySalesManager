@@ -11,17 +11,17 @@ class AccountingRepository @Inject constructor(
 ) {
 
     suspend fun getAllTransactions(): List<Transaction> {
-        return firestore.collection(Transaction.COLLECTION_NAME)
+        val snapshot = firestore.collection(Transaction.COLLECTION_NAME)
             .get()
             .await()
-            .toObjects(Transaction::class.java)
+        return snapshot.documents.mapNotNull { it.toObject(Transaction::class.java)?.copy(id = it.id) }
     }
 
     suspend fun getAllExpenses(): List<Expense> {
-        return firestore.collection(Expense.COLLECTION_NAME)
+        val snapshot = firestore.collection(Expense.COLLECTION_NAME)
             .get()
             .await()
-            .toObjects(Expense::class.java)
+        return snapshot.documents.mapNotNull { it.toObject(Expense::class.java)?.copy(id = it.id) }
     }
 
     suspend fun getCurrentBalance(): Double {
@@ -39,24 +39,29 @@ class AccountingRepository @Inject constructor(
     }
 
     suspend fun addTransaction(transaction: Transaction) {
-        firestore.collection(Transaction.COLLECTION_NAME)
-            .add(transaction)
-            .await()
+        val docRef = firestore.collection(Transaction.COLLECTION_NAME).document()
+        val finalTransaction = transaction.copy(id = docRef.id)
+        docRef.set(finalTransaction).await()
     }
 
     suspend fun addExpense(expense: Expense) {
+        val expenseRef = firestore.collection(Expense.COLLECTION_NAME).document()
+        val transactionRef = firestore.collection(Transaction.COLLECTION_NAME).document()
+
+        val finalExpense = expense.copy(id = expenseRef.id)
+
         // Also add as a transaction for consistency
         val transaction = Transaction(
+            id = transactionRef.id,
             type = com.batterysales.data.models.TransactionType.EXPENSE,
             amount = expense.amount,
             description = expense.description,
-            createdAt = expense.timestamp
+            createdAt = expense.timestamp,
+            relatedId = expenseRef.id
         )
 
         firestore.runBatch { batch ->
-            val expenseRef = firestore.collection(Expense.COLLECTION_NAME).document()
-            val transactionRef = firestore.collection(Transaction.COLLECTION_NAME).document()
-            batch.set(expenseRef, expense)
+            batch.set(expenseRef, finalExpense)
             batch.set(transactionRef, transaction)
         }.await()
     }
