@@ -86,6 +86,24 @@ class BillViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 repository.deleteBill(billId)
+                // Also delete related treasury transactions
+                accountingRepository.deleteTransactionsByRelatedId(billId)
+                loadBills()
+            } catch (e: Exception) {
+                // Handle error
+            }
+        }
+    }
+
+    fun updateBill(bill: Bill) {
+        viewModelScope.launch {
+            try {
+                repository.updateBill(bill)
+                // Also update treasury transactions description
+                accountingRepository.updateTransactionByRelatedId(
+                    relatedId = bill.id,
+                    newDescription = "تسديد لكمبيالة: ${bill.description}"
+                )
                 loadBills()
             } catch (e: Exception) {
                 // Handle error

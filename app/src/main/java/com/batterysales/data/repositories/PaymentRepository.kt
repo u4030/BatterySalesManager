@@ -30,8 +30,11 @@ class PaymentRepository @Inject constructor(
         awaitClose { listenerRegistration.remove() }
     }
 
-    suspend fun addPayment(payment: Payment) {
-        firestore.collection(Payment.COLLECTION_NAME).add(payment).await()
+    suspend fun addPayment(payment: Payment): String {
+        val docRef = firestore.collection(Payment.COLLECTION_NAME).document()
+        val finalPayment = payment.copy(id = docRef.id)
+        docRef.set(finalPayment).await()
+        return docRef.id
     }
 
     suspend fun updatePayment(payment: Payment) {

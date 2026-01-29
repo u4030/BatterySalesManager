@@ -74,4 +74,40 @@ class AccountingRepository @Inject constructor(
             .delete()
             .await()
     }
+
+    suspend fun deleteTransactionsByRelatedId(relatedId: String) {
+        val snapshots = firestore.collection(Transaction.COLLECTION_NAME)
+            .whereEqualTo("relatedId", relatedId)
+            .get()
+            .await()
+
+        if (snapshots.isEmpty) return
+
+        val batch = firestore.batch()
+        snapshots.documents.forEach { doc ->
+            batch.delete(doc.reference)
+        }
+        batch.commit().await()
+    }
+
+    suspend fun updateTransactionByRelatedId(relatedId: String, newAmount: Double? = null, newDescription: String? = null) {
+        val snapshots = firestore.collection(Transaction.COLLECTION_NAME)
+            .whereEqualTo("relatedId", relatedId)
+            .get()
+            .await()
+
+        if (snapshots.isEmpty) return
+
+        val batch = firestore.batch()
+        snapshots.documents.forEach { doc ->
+            val updates = mutableMapOf<String, Any>()
+            newAmount?.let { if (it >= 0) updates["amount"] = it }
+            newDescription?.let { updates["description"] = it }
+
+            if (updates.isNotEmpty()) {
+                batch.update(doc.reference, updates)
+            }
+        }
+        batch.commit().await()
+    }
 }
