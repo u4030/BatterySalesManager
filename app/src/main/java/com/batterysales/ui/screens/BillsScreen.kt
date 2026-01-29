@@ -1,7 +1,9 @@
 package com.batterysales.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -259,10 +261,12 @@ fun AddBillDialog(onDismiss: () -> Unit, onAdd: (String, Double, Date, BillType)
 
                 Text("نوع الالتزام:", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    BillType.values().forEach { type ->
+                    BillType.entries.forEach { type ->
                         FilterChip(
                             selected = selectedType == type,
                             onClick = { selectedType = type },

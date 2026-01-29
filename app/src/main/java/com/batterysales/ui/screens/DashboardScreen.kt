@@ -126,25 +126,17 @@ fun DashboardScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { navController.navigate("reports") },
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3E0)), // Light orange/warning background
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error)
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Text("تنبيه انخفاض المخزون", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
-                            }
-                            dashboardState.lowStockVariants.take(3).forEach { lowStockItem ->
-                                Text(
-                                    "${lowStockItem.productName} (${lowStockItem.capacity} أمبير): الكمية ${lowStockItem.currentQuantity}",
-                                    fontSize = 14.sp,
-                                    color = MaterialTheme.colorScheme.onErrorContainer
-                                )
-                            }
-                            if (dashboardState.lowStockVariants.size > 3) {
-                                Text("المزيد...", fontSize = 12.sp, color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f))
-                            }
+                        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFFF9800))
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                "لديك ${dashboardState.lowStockVariants.size} منتجات وصلت للحد الأدنى للمخزون",
+                                color = Color(0xFFE65100),
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                 }

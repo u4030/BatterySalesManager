@@ -63,7 +63,7 @@ fun AccountingScreen(
                         selectedType = TransactionType.INCOME
                         showAddTransactionDialog = true
                     },
-                    containerColor = Color(0xFF4CAF50),
+                    containerColor = Color(0xFF4CAF50).copy(alpha = 0.7f),
                     contentColor = Color.White
                 ) {
                     Icon(Icons.Default.Add, contentDescription = "إيداع")
@@ -73,7 +73,7 @@ fun AccountingScreen(
                         selectedType = TransactionType.EXPENSE
                         showAddTransactionDialog = true
                     },
-                    containerColor = MaterialTheme.colorScheme.error,
+                    containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
                     contentColor = Color.White
                 ) {
                     Icon(Icons.Default.Remove, contentDescription = "سحب")
@@ -229,17 +229,19 @@ fun TransactionItemCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(horizontalAlignment = Alignment.End) {
                 Text(
                     text = "${if (isIncome) "+" else "-"} SR ${String.format("%.2f", transaction.amount)}",
                     fontWeight = FontWeight.Bold,
                     color = amountColor
                 )
-                IconButton(onClick = onEdit) {
-                    Icon(Icons.Default.Edit, contentDescription = "تعديل", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                }
-                IconButton(onClick = onDelete) {
-                    Icon(Icons.Default.Delete, contentDescription = "حذف", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
+                Row {
+                    IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Default.Edit, contentDescription = "تعديل", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                    }
+                    IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Default.Delete, contentDescription = "حذف", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                    }
                 }
             }
         }
