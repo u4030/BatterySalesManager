@@ -8,6 +8,7 @@ import com.batterysales.data.models.StockEntry
 import com.batterysales.data.repositories.BillRepository
 import com.batterysales.data.repositories.ProductVariantRepository
 import com.batterysales.data.repositories.StockEntryRepository
+import com.batterysales.data.repositories.WarehouseRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import java.util.*
@@ -25,7 +26,8 @@ data class LowStockItem(
     val productName: String,
     val capacity: Int,
     val currentQuantity: Int,
-    val minQuantity: Int
+    val minQuantity: Int,
+    val warehouseName: String
 )
 
 @HiltViewModel
@@ -33,38 +35,48 @@ class DashboardViewModel @Inject constructor(
     private val stockEntryRepository: StockEntryRepository,
     private val productVariantRepository: ProductVariantRepository,
     private val productRepository: com.batterysales.data.repositories.ProductRepository,
-    private val billRepository: BillRepository
+    private val billRepository: BillRepository,
+    private val warehouseRepository: WarehouseRepository
 ) : ViewModel() {
 
     val uiState: StateFlow<DashboardUiState> = combine(
         stockEntryRepository.getAllStockEntriesFlow(),
         productVariantRepository.getAllVariantsFlow(),
         productRepository.getProducts(),
-        billRepository.getAllBillsFlow()
-    ) { allEntries, allVariants, allProducts, allBills ->
+        billRepository.getAllBillsFlow(),
+        warehouseRepository.getWarehouses()
+    ) { allEntries, allVariants, allProducts, allBills, allWarehouses ->
 
         val pendingCount = allEntries.count { it.status == StockEntry.STATUS_PENDING }
 
         val productMap = allProducts.associateBy { it.id }
 
-        // Optimize: Group approved entries by variant ID
+        // Optimize: Group approved entries by Pair(variantId, warehouseId)
         val stockMap = allEntries.filter { it.status == StockEntry.STATUS_APPROVED }
-            .groupBy { it.productVariantId }
+            .groupBy { Pair(it.productVariantId, it.warehouseId) }
             .mapValues { entry -> entry.value.sumOf { it.quantity } }
 
-        val lowStock = allVariants.filter { !it.archived && it.minQuantity > 0 }.mapNotNull { variant ->
-            val currentQty = stockMap[variant.id] ?: 0
-            if (currentQty <= variant.minQuantity) {
-                val product = productMap[variant.productId]
-                LowStockItem(
-                    variantId = variant.id,
-                    productName = product?.name ?: "Unknown",
-                    capacity = variant.capacity,
-                    currentQuantity = currentQty,
-                    minQuantity = variant.minQuantity
-                )
-            } else {
-                null
+        val lowStock = mutableListOf<LowStockItem>()
+
+        val activeVariants = allVariants.filter { !it.archived && it.minQuantity > 0 }
+
+        for (variant in activeVariants) {
+            val product = productMap[variant.productId] ?: continue
+
+            for (warehouse in allWarehouses) {
+                val currentQty = stockMap[Pair(variant.id, warehouse.id)] ?: 0
+                if (currentQty <= variant.minQuantity) {
+                    lowStock.add(
+                        LowStockItem(
+                            variantId = variant.id,
+                            productName = product.name,
+                            capacity = variant.capacity,
+                            currentQuantity = currentQty,
+                            minQuantity = variant.minQuantity,
+                            warehouseName = warehouse.name
+                        )
+                    )
+                }
             }
         }
 

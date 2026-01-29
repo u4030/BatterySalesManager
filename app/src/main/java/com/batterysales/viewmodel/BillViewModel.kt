@@ -99,10 +99,10 @@ class BillViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 repository.updateBill(bill)
-                // Also update treasury transactions
+                // Also update treasury transactions description only
+                // Overwriting amount would be wrong if partial payments exist
                 accountingRepository.updateTransactionByRelatedId(
                     relatedId = bill.id,
-                    newAmount = bill.amount,
                     newDescription = "تسديد لكمبيالة: ${bill.description}"
                 )
                 loadBills()

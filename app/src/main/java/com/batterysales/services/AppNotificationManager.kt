@@ -23,11 +23,17 @@ class AppNotificationManager @Inject constructor(
     private val productVariantRepository: ProductVariantRepository,
     private val productRepository: com.batterysales.data.repositories.ProductRepository,
     private val userRepository: UserRepository,
+    private val warehouseRepository: WarehouseRepository,
     private val firestore: FirebaseFirestore
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var isInitialized = false
-    private val notifiedLowStockIds = mutableSetOf<String>()
+    private val notifiedLowStockKeys = mutableSetOf<String>() // Key: "variantId:warehouseId"
+    private val notifiedBillIds = mutableSetOf<String>()
+
+    private var pendingEntriesListener: com.google.firebase.firestore.ListenerRegistration? = null
+    private var upcomingBillsListener: com.google.firebase.firestore.ListenerRegistration? = null
+    private var lowStockJob: kotlinx.coroutines.Job? = null
 
     fun startListening() {
         if (isInitialized) return
@@ -37,19 +43,18 @@ class AppNotificationManager @Inject constructor(
             .onEach { user ->
                 pendingEntriesListener?.remove()
                 upcomingBillsListener?.remove()
+                lowStockJob?.cancel()
 
                 if (user != null) {
                     setupRealtimeListeners(user)
                     setupUpcomingBillsListener()
+                    setupLowStockListener()
+                } else {
+                    notifiedLowStockKeys.clear()
+                    notifiedBillIds.clear()
                 }
             }.launchIn(scope)
-
-        setupLowStockListener()
     }
-
-    private var pendingEntriesListener: com.google.firebase.firestore.ListenerRegistration? = null
-    private var upcomingBillsListener: com.google.firebase.firestore.ListenerRegistration? = null
-    private val notifiedBillIds = mutableSetOf<String>()
 
     private fun setupUpcomingBillsListener() {
         upcomingBillsListener?.remove()
@@ -146,65 +151,72 @@ class AppNotificationManager @Inject constructor(
 
     private fun setupLowStockListener() {
         var hasEmittedData = false
-        combine(
+        lowStockJob = combine(
             stockEntryRepository.getAllStockEntriesFlow(),
             productVariantRepository.getAllVariantsFlow(),
-            productRepository.getProducts()
-        ) { allEntries, allVariants, allProducts ->
-            // Skip if no variants exist yet (likely still loading or really empty)
-            // But we should allow it if products are loaded and variants are empty but arrived.
-            // Firestore might emit empty list for a collection that exists but has no data.
-            // To be safe, we wait for both to emit at least once.
-            // Since combine waits for all, if any list is empty it means it's either truly empty or still loading.
+            productRepository.getProducts(),
+            warehouseRepository.getWarehouses()
+        ) { allEntries, allVariants, allProducts, allWarehouses ->
+            // Skip if no products or variants exist yet (initial load)
+            if (allProducts.isEmpty() && allVariants.isEmpty()) return@combine
 
             val productMap = allProducts.associateBy { it.id }
 
-            // Group entries to optimize calculation
+            // Group entries to optimize calculation by Pair(variantId, warehouseId)
             val stockMap = allEntries.filter { it.status == StockEntry.STATUS_APPROVED }
-                .groupBy { it.productVariantId }
+                .groupBy { Pair(it.productVariantId, it.warehouseId) }
                 .mapValues { it.value.sumOf { entry -> entry.quantity } }
 
-            val lowStockVariants = allVariants.filter {
-                !it.archived && it.minQuantity > 0 && (stockMap[it.id] ?: 0) <= it.minQuantity
+            val lowStockItems = mutableListOf<Pair<ProductVariant, Warehouse>>()
+            allVariants.filter { !it.archived && it.minQuantity > 0 }.forEach { variant ->
+                for (warehouse in allWarehouses) {
+                    val qty = stockMap[Pair(variant.id, warehouse.id)] ?: 0
+                    if (qty <= variant.minQuantity) {
+                        lowStockItems.add(Pair(variant, warehouse))
+                    }
+                }
             }
 
             if (!hasEmittedData) {
-                // If we have products but no variants yet, we might be in an intermediate state.
-                // However, if both collections are checked and we still have no variants, then it's fine.
+                // Wait for all data to load
                 if (allProducts.isNotEmpty() && allVariants.isEmpty()) return@combine
 
                 hasEmittedData = true
-                if (lowStockVariants.isNotEmpty()) {
+                if (lowStockItems.isNotEmpty()) {
                     NotificationHelper.showNotification(
                         context,
                         "تنبيه المخزون المنخفض",
-                        "يوجد عدد ${lowStockVariants.size} أصناف وصلت للحد الأدنى للمخزون"
+                        "يوجد عدد ${lowStockItems.size} أصناف وصلت للحد الأدنى للمخزون في المستودعات"
                     )
                 }
-                // Mark all existing low stock variants as notified
-                lowStockVariants.forEach { notifiedLowStockIds.add(it.id) }
+                // Mark existing low stock as notified
+                lowStockItems.forEach { (variant, warehouse) ->
+                    notifiedLowStockKeys.add("${variant.id}:${warehouse.id}")
+                }
                 return@combine
             }
 
             allVariants.filter { !it.archived && it.minQuantity > 0 }.forEach { variant ->
-                val currentQty = stockMap[variant.id] ?: 0
+                val product = productMap[variant.productId]
+                for (warehouse in allWarehouses) {
+                    val key = "${variant.id}:${warehouse.id}"
+                    val currentQty = stockMap[Pair(variant.id, warehouse.id)] ?: 0
 
-                if (currentQty <= variant.minQuantity) {
-                    if (!notifiedLowStockIds.contains(variant.id)) {
-                        val product = productMap[variant.productId]
-                        NotificationHelper.showNotification(
-                            context,
-                            "تنبيه انخفاض المخزون",
-                            "المنتج ${product?.name ?: ""} (${variant.capacity} أمبير) وصل للحد الأدنى ($currentQty)"
-                        )
-                        notifiedLowStockIds.add(variant.id)
+                    if (currentQty <= variant.minQuantity) {
+                        if (!notifiedLowStockKeys.contains(key)) {
+                            NotificationHelper.showNotification(
+                                context,
+                                "تنبيه انخفاض المخزون",
+                                "المنتج ${product?.name ?: ""} (${variant.capacity} أمبير) في ${warehouse.name} وصل للحد الأدنى ($currentQty)"
+                            )
+                            notifiedLowStockKeys.add(key)
+                        }
+                    } else {
+                        // Reset if stock goes up
+                        notifiedLowStockKeys.remove(key)
                     }
-                } else {
-                    // Reset if stock goes up
-                    notifiedLowStockIds.remove(variant.id)
                 }
             }
-
         }.launchIn(scope)
     }
 }

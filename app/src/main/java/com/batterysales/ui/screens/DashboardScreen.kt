@@ -137,7 +137,7 @@ fun DashboardScreen(
                             }
                             dashboardState.lowStockVariants.take(3).forEach { lowStockItem ->
                                 Text(
-                                    "${lowStockItem.productName} (${lowStockItem.capacity} أمبير): الكمية ${lowStockItem.currentQuantity}",
+                                    "${lowStockItem.productName} (${lowStockItem.capacity} أمبير) في ${lowStockItem.warehouseName}: الكمية ${lowStockItem.currentQuantity}",
                                     fontSize = 14.sp,
                                     color = MaterialTheme.colorScheme.onErrorContainer
                                 )
