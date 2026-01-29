@@ -4,7 +4,7 @@ import com.google.firebase.firestore.DocumentId
 import java.util.Date
 
 data class Transaction(
-//    @DocumentId
+    @com.google.firebase.firestore.DocumentId
     val id: String = "",
     val type: TransactionType = TransactionType.INCOME, // نوع العملية
     val amount: Double = 0.0, // المبلغ

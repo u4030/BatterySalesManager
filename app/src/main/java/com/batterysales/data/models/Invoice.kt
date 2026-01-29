@@ -25,6 +25,7 @@ import java.util.Date
  * ```
  */
 data class Invoice(
+    @com.google.firebase.firestore.DocumentId
     val id: String = "",
     val invoiceNumber: String = "",
     val customerId: String = "",

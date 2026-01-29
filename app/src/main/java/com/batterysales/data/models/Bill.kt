@@ -9,7 +9,7 @@ import java.util.Date
  * يمثل كمبيالة أو شيك واحد
  */
 data class Bill(
-//    @DocumentId
+    @com.google.firebase.firestore.DocumentId
     val id: String = "",
     val description: String = "", // الوصف
     val amount: Double = 0.0, // القيمة
