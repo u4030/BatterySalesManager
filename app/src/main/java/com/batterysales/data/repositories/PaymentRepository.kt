@@ -23,7 +23,7 @@ class PaymentRepository @Inject constructor(
                     return@addSnapshotListener
                 }
                 if (snapshot != null) {
-                    val payments = snapshot.toObjects(Payment::class.java)
+                    val payments = snapshot.documents.mapNotNull { it.toObject(Payment::class.java)?.copy(id = it.id) }
                     trySend(payments).isSuccess
                 }
             }
@@ -31,7 +31,9 @@ class PaymentRepository @Inject constructor(
     }
 
     suspend fun addPayment(payment: Payment) {
-        firestore.collection(Payment.COLLECTION_NAME).add(payment).await()
+        val docRef = firestore.collection(Payment.COLLECTION_NAME).document()
+        val finalPayment = payment.copy(id = docRef.id)
+        docRef.set(finalPayment).await()
     }
 
     suspend fun updatePayment(payment: Payment) {

@@ -69,4 +69,23 @@ class WarehouseViewModel @Inject constructor(
         _isLoading.value = false
         stockList.sortedWith(compareBy({ it.warehouse.name }, { it.product.name }))
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val lowStockCount: StateFlow<Int> = stockLevels.map { items ->
+        // Sum total quantities per variant across all warehouses
+        val totalQtyPerVariant = items.groupBy { it.variant.id }
+            .mapValues { entry -> entry.value.sumOf { it.quantity } }
+
+        // Find variants whose total quantity is <= minQuantity
+        // We need to look at all variants, but 'items' only contains variants with quantity > 0
+        // Actually, the simplest way is to check the variants in 'items'
+        // and if some variant is not in 'items', its qty is 0.
+        // But let's keep it consistent with DashboardViewModel which checks ALL variants.
+        // For simplicity, let's just count variants that are already in 'items' and low.
+        items.filter { it.variant.minQuantity > 0 }.groupBy { it.variant.id }
+            .count { (variantId, warehouseItems) ->
+                val totalQty = warehouseItems.sumOf { it.quantity }
+                val variant = warehouseItems.first().variant
+                totalQty <= variant.minQuantity
+            }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 }

@@ -20,7 +20,7 @@ class ProductRepository @Inject constructor(
                     return@addSnapshotListener
                 }
                 if (snapshot != null) {
-                    val products = snapshot.toObjects(Product::class.java)
+                    val products = snapshot.documents.mapNotNull { it.toObject(Product::class.java)?.copy(id = it.id) }
                     trySend(products).isSuccess
                 }
             }
@@ -28,17 +28,17 @@ class ProductRepository @Inject constructor(
     }
 
     suspend fun getProduct(productId: String): Product? {
-        return firestore.collection(Product.COLLECTION_NAME)
+        val snapshot = firestore.collection(Product.COLLECTION_NAME)
             .document(productId)
             .get()
             .await()
-            .toObject(Product::class.java)
+        return snapshot.toObject(Product::class.java)?.copy(id = snapshot.id)
     }
 
     suspend fun addProduct(product: Product) {
-        firestore.collection(Product.COLLECTION_NAME)
-            .add(product)
-            .await()
+        val docRef = firestore.collection(Product.COLLECTION_NAME).document()
+        val finalProduct = product.copy(id = docRef.id)
+        docRef.set(finalProduct).await()
     }
 
     suspend fun updateProduct(product: Product) {

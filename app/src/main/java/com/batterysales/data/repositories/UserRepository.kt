@@ -64,7 +64,8 @@ class UserRepository @Inject constructor(
 
     suspend fun getCurrentUser(): User? {
         val uid = auth.currentUser?.uid ?: return null
-        return firestore.collection("users").document(uid).get().await().toObject(User::class.java)
+        val snapshot = firestore.collection(User.COLLECTION_NAME).document(uid).get().await()
+        return snapshot.toObject(User::class.java)?.copy(id = snapshot.id)
     }
 
     fun getCurrentUserFlow(): Flow<User?> = callbackFlow {
@@ -73,10 +74,10 @@ class UserRepository @Inject constructor(
             if (uid == null) {
                 trySend(null)
             } else {
-                firestore.collection("users").document(uid)
+                firestore.collection(User.COLLECTION_NAME).document(uid)
                     .addSnapshotListener { snapshot, error ->
-                        if (error == null) {
-                            trySend(snapshot?.toObject(User::class.java))
+                        if (error == null && snapshot != null) {
+                            trySend(snapshot.toObject(User::class.java)?.copy(id = snapshot.id))
                         }
                     }
             }
@@ -97,7 +98,7 @@ class UserRepository @Inject constructor(
                     return@addSnapshotListener
                 }
                 if (snapshot != null) {
-                    val users = snapshot.toObjects(User::class.java)
+                    val users = snapshot.documents.mapNotNull { it.toObject(User::class.java)?.copy(id = it.id) }
                     trySend(users).isSuccess
                 }
             }

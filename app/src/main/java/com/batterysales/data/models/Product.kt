@@ -18,7 +18,6 @@ import java.util.Date
  * - isArchived: لتحديد ما إذا كان المنتج مؤرشفًا (محذوفًا منطقيًا)
  */
 data class Product(
-    @DocumentId
     val id: String = "",
     val name: String = "", // اسم المنتج العام، مثال: "بطاريات بوش"
     val notes: String = "",

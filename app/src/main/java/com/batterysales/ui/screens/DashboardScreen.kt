@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
+import com.batterysales.ui.components.LowStockSummaryCard
 import com.batterysales.viewmodel.AuthViewModel
 import com.batterysales.viewmodel.DashboardViewModel
 
@@ -122,23 +123,10 @@ fun DashboardScreen(
 
             if (dashboardState.lowStockVariants.isNotEmpty()) {
                 item {
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { navController.navigate("reports") },
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3E0)), // Light orange/warning background
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFFF9800))
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(
-                                "لديك ${dashboardState.lowStockVariants.size} منتجات وصلت للحد الأدنى للمخزون",
-                                color = Color(0xFFE65100),
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
+                    LowStockSummaryCard(
+                        count = dashboardState.lowStockVariants.size,
+                        onClick = { navController.navigate("reports") }
+                    )
                 }
             }
 

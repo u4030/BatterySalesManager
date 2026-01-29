@@ -15,12 +15,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.batterysales.ui.components.LowStockSummaryCard
 import com.batterysales.viewmodel.WarehouseViewModel
 
 @Composable
 fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel = hiltViewModel()) {
     val stockLevels by viewModel.stockLevels.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val lowStockCount by viewModel.lowStockCount.collectAsState()
 
     Scaffold(
         topBar = {
@@ -34,8 +36,18 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
         } else {
             LazyColumn(
                 modifier = Modifier.padding(padding),
-                contentPadding = PaddingValues(16.dp)
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                if (lowStockCount > 0) {
+                    item {
+                        LowStockSummaryCard(
+                            count = lowStockCount,
+                            onClick = { navController.navigate("reports") }
+                        )
+                    }
+                }
+
                 // Group items by warehouse
                 stockLevels.groupBy { it.warehouse.name }.forEach { (warehouseName, items) ->
                     // Warehouse Header

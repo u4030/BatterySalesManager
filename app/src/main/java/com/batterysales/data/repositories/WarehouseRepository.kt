@@ -20,7 +20,7 @@ class WarehouseRepository @Inject constructor(
                     return@addSnapshotListener
                 }
                 if (snapshot != null) {
-                    val warehouses = snapshot.toObjects(Warehouse::class.java)
+                    val warehouses = snapshot.documents.mapNotNull { it.toObject(Warehouse::class.java)?.copy(id = it.id) }
                     trySend(warehouses).isSuccess
                 }
             }
@@ -28,14 +28,16 @@ class WarehouseRepository @Inject constructor(
     }
 
     suspend fun addWarehouse(warehouse: Warehouse) {
-        firestore.collection(Warehouse.COLLECTION_NAME).add(warehouse).await()
+        val docRef = firestore.collection(Warehouse.COLLECTION_NAME).document()
+        val finalWarehouse = warehouse.copy(id = docRef.id)
+        docRef.set(finalWarehouse).await()
     }
 
     suspend fun getWarehouse(warehouseId: String): Warehouse? {
-        return firestore.collection(Warehouse.COLLECTION_NAME)
+        val snapshot = firestore.collection(Warehouse.COLLECTION_NAME)
             .document(warehouseId)
             .get()
             .await()
-            .toObject(Warehouse::class.java)
+        return snapshot.toObject(Warehouse::class.java)?.copy(id = snapshot.id)
     }
 }

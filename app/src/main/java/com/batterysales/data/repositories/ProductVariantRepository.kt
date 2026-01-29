@@ -13,19 +13,19 @@ class ProductVariantRepository @Inject constructor(
 ) {
 
     suspend fun getVariantsForProduct(productId: String): List<ProductVariant> {
-        return firestore.collection(ProductVariant.COLLECTION_NAME)
+        val snapshot = firestore.collection(ProductVariant.COLLECTION_NAME)
             .whereEqualTo("productId", productId)
             .get()
             .await()
-            .toObjects(ProductVariant::class.java)
+        return snapshot.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }
     }
 
     suspend fun getVariant(variantId: String): ProductVariant? {
-        return firestore.collection(ProductVariant.COLLECTION_NAME)
+        val snapshot = firestore.collection(ProductVariant.COLLECTION_NAME)
             .document(variantId)
             .get()
             .await()
-            .toObject(ProductVariant::class.java)
+        return snapshot.toObject(ProductVariant::class.java)?.copy(id = snapshot.id)
     }
 
     fun getVariantsForProductFlow(productId: String): Flow<List<ProductVariant>> = callbackFlow {
@@ -37,7 +37,7 @@ class ProductVariantRepository @Inject constructor(
                     return@addSnapshotListener
                 }
                 if (snapshot != null) {
-                    val variants = snapshot.toObjects(ProductVariant::class.java)
+                    val variants = snapshot.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }
                     trySend(variants).isSuccess
                 }
             }
@@ -52,7 +52,7 @@ class ProductVariantRepository @Inject constructor(
                     return@addSnapshotListener
                 }
                 if (snapshot != null) {
-                    val variants = snapshot.toObjects(ProductVariant::class.java)
+                    val variants = snapshot.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }
                     trySend(variants).isSuccess
                 }
             }
@@ -60,9 +60,9 @@ class ProductVariantRepository @Inject constructor(
     }
 
     suspend fun addVariant(variant: ProductVariant) {
-        firestore.collection(ProductVariant.COLLECTION_NAME)
-            .add(variant)
-            .await()
+        val docRef = firestore.collection(ProductVariant.COLLECTION_NAME).document()
+        val finalVariant = variant.copy(id = docRef.id)
+        docRef.set(finalVariant).await()
     }
 
     suspend fun updateVariant(variant: ProductVariant) {
@@ -73,9 +73,9 @@ class ProductVariantRepository @Inject constructor(
     }
 
     suspend fun getAllVariants(): List<ProductVariant> {
-        return firestore.collection(ProductVariant.COLLECTION_NAME)
+        val snapshot = firestore.collection(ProductVariant.COLLECTION_NAME)
             .get()
             .await()
-            .toObjects(ProductVariant::class.java)
+        return snapshot.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }
     }
 }

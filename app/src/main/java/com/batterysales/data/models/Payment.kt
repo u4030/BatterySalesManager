@@ -4,7 +4,6 @@ import com.google.firebase.firestore.DocumentId
 import java.util.Date
 
 data class Payment(
-    @DocumentId
     val id: String = "",
     val invoiceId: String = "", // معرف الفاتورة المرتبطة
     val amount: Double = 0.0, // مبلغ الدفعة

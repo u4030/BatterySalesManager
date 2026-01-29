@@ -14,16 +14,17 @@ class StockEntryRepository @Inject constructor(
 ) {
 
     suspend fun addStockEntry(stockEntry: StockEntry) {
-        firestore.collection(StockEntry.COLLECTION_NAME)
-            .add(stockEntry)
-            .await()
+        val docRef = firestore.collection(StockEntry.COLLECTION_NAME).document()
+        val finalEntry = stockEntry.copy(id = docRef.id)
+        docRef.set(finalEntry).await()
     }
 
     suspend fun addStockEntries(stockEntries: List<StockEntry>) {
         val batch = firestore.batch()
         stockEntries.forEach { entry ->
             val docRef = firestore.collection(StockEntry.COLLECTION_NAME).document()
-            batch.set(docRef, entry)
+            val finalEntry = entry.copy(id = docRef.id)
+            batch.set(docRef, finalEntry)
         }
         batch.commit().await()
     }
@@ -36,7 +37,7 @@ class StockEntryRepository @Inject constructor(
                     return@addSnapshotListener
                 }
                 if (snapshot != null) {
-                    val entries = snapshot.toObjects(StockEntry::class.java)
+                    val entries = snapshot.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
                     trySend(entries).isSuccess
                 }
             }
@@ -44,10 +45,10 @@ class StockEntryRepository @Inject constructor(
     }
 
     suspend fun getAllStockEntries(): List<StockEntry> {
-        return firestore.collection(StockEntry.COLLECTION_NAME)
+        val snapshot = firestore.collection(StockEntry.COLLECTION_NAME)
             .get()
             .await()
-            .toObjects(StockEntry::class.java)
+        return snapshot.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
     }
 
     suspend fun transferStock(
@@ -97,7 +98,7 @@ class StockEntryRepository @Inject constructor(
                     return@addSnapshotListener
                 }
                 if (snapshot != null) {
-                    val entries = snapshot.toObjects(StockEntry::class.java)
+                    val entries = snapshot.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
                     trySend(entries).isSuccess
                 }
             }
@@ -106,11 +107,11 @@ class StockEntryRepository @Inject constructor(
 
 
     suspend fun getStockEntryById(entryId: String): StockEntry? {
-        return firestore.collection(StockEntry.COLLECTION_NAME)
+        val snapshot = firestore.collection(StockEntry.COLLECTION_NAME)
             .document(entryId)
             .get()
             .await()
-            .toObject(StockEntry::class.java)
+        return snapshot.toObject(StockEntry::class.java)?.copy(id = snapshot.id)
     }
 
     suspend fun updateStockEntry(entry: StockEntry) {
@@ -128,11 +129,11 @@ class StockEntryRepository @Inject constructor(
     }
 
     suspend fun getEntriesForInvoice(invoiceId: String): List<StockEntry> {
-        return firestore.collection(StockEntry.COLLECTION_NAME)
+        val snapshot = firestore.collection(StockEntry.COLLECTION_NAME)
             .whereEqualTo("invoiceId", invoiceId)
             .get()
             .await()
-            .toObjects(StockEntry::class.java)
+        return snapshot.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
     }
 
     fun getPendingEntriesFlow(): Flow<List<StockEntry>> = callbackFlow {
@@ -145,7 +146,7 @@ class StockEntryRepository @Inject constructor(
                     return@addSnapshotListener
                 }
                 if (snapshot != null) {
-                    val entries = snapshot.toObjects(StockEntry::class.java)
+                    val entries = snapshot.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
                     trySend(entries).isSuccess
                 }
             }

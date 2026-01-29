@@ -21,7 +21,6 @@ import java.util.Date
  * - isArchived: لتحديد ما إذا كان المتغير مؤرشفًا
  */
 data class ProductVariant(
-    @DocumentId
     val id: String = "",
     val productId: String = "", // للربط مع المنتج الأساسي
     val capacity: Int = 0,

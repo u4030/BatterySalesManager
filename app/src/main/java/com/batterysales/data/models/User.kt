@@ -36,7 +36,6 @@ data class User(
      *
      * يتم إنشاؤه بواسطة Firebase Authentication
      */
-    @DocumentId
     val id: String = "",
 
     /**
