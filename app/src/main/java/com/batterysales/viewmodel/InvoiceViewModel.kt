@@ -3,7 +3,9 @@ package com.batterysales.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.batterysales.data.models.Invoice
+import com.batterysales.data.repositories.AccountingRepository
 import com.batterysales.data.repositories.InvoiceRepository
+import com.batterysales.data.repositories.PaymentRepository
 import com.batterysales.data.repositories.StockEntryRepository
 import com.batterysales.data.repositories.WarehouseRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -23,7 +25,9 @@ data class InvoiceUiState(
 class InvoiceViewModel @Inject constructor(
     private val invoiceRepository: InvoiceRepository,
     private val stockEntryRepository: StockEntryRepository,
-    private val warehouseRepository: WarehouseRepository
+    private val warehouseRepository: WarehouseRepository,
+    private val paymentRepository: PaymentRepository,
+    private val accountingRepository: AccountingRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(InvoiceUiState())
@@ -70,7 +74,16 @@ class InvoiceViewModel @Inject constructor(
                     }
                     stockEntryRepository.addStockEntries(reversalEntries)
 
-                    // 3. Delete the invoice and associated payments
+                    // 3. Delete related treasury transactions
+                    // Delete for each payment
+                    val payments = paymentRepository.getPaymentsForInvoice(invoice.id).first()
+                    payments.forEach { payment ->
+                        accountingRepository.deleteTransactionsByRelatedId(payment.id)
+                    }
+                    // Also delete any legacy transactions linked directly to the invoice ID
+                    accountingRepository.deleteTransactionsByRelatedId(invoice.id)
+
+                    // 4. Delete the invoice and associated payments
                     invoiceRepository.deleteInvoice(invoice.id)
 
                 } catch (e: Exception) {

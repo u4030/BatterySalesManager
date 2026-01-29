@@ -89,7 +89,7 @@ class InvoiceDetailViewModel @Inject constructor(
             if (amount <= 0) return@launch
             try {
                 val payment = Payment(invoiceId = invoiceId, amount = amount, timestamp = Date())
-                paymentRepository.addPayment(payment)
+                val paymentId = paymentRepository.addPayment(payment)
 
                 // Record in treasury
                 val invoice = _uiState.value.invoice
@@ -97,7 +97,7 @@ class InvoiceDetailViewModel @Inject constructor(
                     type = TransactionType.PAYMENT,
                     amount = amount,
                     description = "دفعة فاتورة: ${invoice?.customerName ?: ""}",
-                    relatedId = invoiceId
+                    relatedId = paymentId // Use paymentId instead of invoiceId for granular tracking
                 )
                 accountingRepository.addTransaction(transaction)
             } catch (e: Exception) {
@@ -112,6 +112,14 @@ class InvoiceDetailViewModel @Inject constructor(
             try {
                 val updatedPayment = payment.copy(amount = newAmount)
                 paymentRepository.updatePayment(updatedPayment)
+
+                // Also update treasury
+                val invoice = _uiState.value.invoice
+                accountingRepository.updateTransactionByRelatedId(
+                    relatedId = payment.id,
+                    newAmount = newAmount,
+                    newDescription = "تعديل دفعة فاتورة: ${invoice?.customerName ?: ""}"
+                )
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = "Failed to update payment") }
             }
@@ -122,6 +130,8 @@ class InvoiceDetailViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 paymentRepository.deletePayment(paymentId)
+                // Also delete from treasury
+                accountingRepository.deleteTransactionsByRelatedId(paymentId)
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = "Failed to delete payment") }
             }

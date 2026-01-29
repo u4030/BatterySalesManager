@@ -84,6 +84,8 @@ fun BillsScreen(
                 }
             } else {
                 var selectedBillForPayment by remember { mutableStateOf<Bill?>(null) }
+                var billToDelete by remember { mutableStateOf<Bill?>(null) }
+                var billToEdit by remember { mutableStateOf<Bill?>(null) }
 
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -93,9 +95,41 @@ fun BillsScreen(
                         BillItemCard(
                             bill = bill,
                             onPayClick = { selectedBillForPayment = bill },
-                            onDeleteClick = { viewModel.deleteBill(bill.id) }
+                            onDeleteClick = { billToDelete = bill },
+                            onEditClick = { billToEdit = bill }
                         )
                     }
+                }
+
+                if (billToDelete != null) {
+                    AlertDialog(
+                        onDismissRequest = { billToDelete = null },
+                        title = { Text("تأكيد الحذف") },
+                        text = { Text("هل أنت متأكد من حذف هذه الكمبيالة؟ سيتم أيضاً حذف جميع العمليات المالية المتعلقة بها من الخزينة.") },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    viewModel.deleteBill(billToDelete!!.id)
+                                    billToDelete = null
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                            ) { Text("حذف") }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { billToDelete = null }) { Text("إلغاء") }
+                        }
+                    )
+                }
+
+                if (billToEdit != null) {
+                    EditBillDialog(
+                        bill = billToEdit!!,
+                        onDismiss = { billToEdit = null },
+                        onConfirm = { updatedBill ->
+                            viewModel.updateBill(updatedBill)
+                            billToEdit = null
+                        }
+                    )
                 }
 
                 if (selectedBillForPayment != null) {
@@ -124,7 +158,7 @@ fun BillsScreen(
 }
 
 @Composable
-fun BillItemCard(bill: Bill, onPayClick: () -> Unit, onDeleteClick: () -> Unit) {
+fun BillItemCard(bill: Bill, onPayClick: () -> Unit, onDeleteClick: () -> Unit, onEditClick: () -> Unit) {
     val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
     val isPaid = bill.status == BillStatus.PAID
     val isPartial = bill.status == BillStatus.PARTIAL
@@ -186,6 +220,9 @@ fun BillItemCard(bill: Bill, onPayClick: () -> Unit, onDeleteClick: () -> Unit) 
                         IconButton(onClick = onPayClick) {
                             Icon(Icons.Default.CheckCircle, contentDescription = "تسديد", tint = Color(0xFF4CAF50))
                         }
+                    }
+                    IconButton(onClick = onEditClick) {
+                        Icon(Icons.Default.Edit, contentDescription = "تعديل", tint = MaterialTheme.colorScheme.primary)
                     }
                     IconButton(onClick = onDeleteClick) {
                         Icon(Icons.Default.Delete, contentDescription = "حذف", tint = MaterialTheme.colorScheme.error)
@@ -306,6 +343,111 @@ fun AddBillDialog(onDismiss: () -> Unit, onAdd: (String, Double, Date, BillType)
                 val amt = amount.toDoubleOrNull() ?: 0.0
                 if (description.isNotEmpty() && amt > 0) onAdd(description, amt, selectedDate, selectedType)
             }) { Text("إضافة") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("إلغاء") }
+        }
+    )
+
+    if (showDatePicker) {
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = { showDatePicker = false }) {
+                    Text("موافق")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) {
+                    Text("إلغاء")
+                }
+            }
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun EditBillDialog(bill: Bill, onDismiss: () -> Unit, onConfirm: (Bill) -> Unit) {
+    var description by remember { mutableStateOf(bill.description) }
+    var amount by remember { mutableStateOf(bill.amount.toString()) }
+    var selectedType by remember { mutableStateOf(bill.billType) }
+    var showDatePicker by remember { mutableStateOf(false) }
+    val datePickerState = rememberDatePickerState(
+        initialSelectedDateMillis = bill.dueDate.time
+    )
+    val selectedDate = datePickerState.selectedDateMillis?.let { Date(it) } ?: bill.dueDate
+    val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("تعديل كمبيالة/شيك") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("تنبيه: تعديل الوصف سيقوم بتعديل وصف العمليات المتعلقة في الخزينة.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("الوصف") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = amount,
+                    onValueChange = { amount = it },
+                    label = { Text("المبلغ الإجمالي") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Text("نوع الالتزام:", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    BillType.entries.forEach { type ->
+                        FilterChip(
+                            selected = selectedType == type,
+                            onClick = { selectedType = type },
+                            label = {
+                                Text(
+                                    when (type) {
+                                        BillType.CHECK -> "شيك"
+                                        BillType.BILL -> "كمبيالة"
+                                        BillType.TRANSFER -> "تحويل"
+                                        BillType.OTHER -> "أخرى"
+                                    }
+                                )
+                            }
+                        )
+                    }
+                }
+
+                OutlinedCard(
+                    onClick = { showDatePicker = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .padding(16.dp)
+                            .fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("تاريخ الاستحقاق: ${dateFormatter.format(selectedDate)}")
+                        Icon(Icons.Default.DateRange, contentDescription = null)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                val amt = amount.toDoubleOrNull() ?: bill.amount
+                onConfirm(bill.copy(description = description, amount = amt, dueDate = selectedDate, billType = selectedType))
+            }) { Text("حفظ التعديلات") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("إلغاء") }

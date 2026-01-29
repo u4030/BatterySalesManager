@@ -89,4 +89,18 @@ class BillRepository @Inject constructor(
             .delete()
             .await()
     }
+
+    suspend fun updateBill(bill: Bill) {
+        val updates = mutableMapOf<String, Any>(
+            "description" to bill.description,
+            "amount" to bill.amount,
+            "dueDate" to bill.dueDate,
+            "billType" to bill.billType,
+            "updatedAt" to Date()
+        )
+        firestore.collection(Bill.COLLECTION_NAME)
+            .document(bill.id)
+            .update(updates)
+            .await()
+    }
 }

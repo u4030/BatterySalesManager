@@ -39,8 +39,12 @@ class AppNotificationManager @Inject constructor(
 
         userRepository.getCurrentUserFlow()
             .onEach { user ->
+                pendingEntriesListener?.remove()
+                upcomingBillsListener?.remove()
+
                 if (user != null) {
                     setupRealtimeListeners(user)
+                    setupUpcomingBillsListener()
                 }
             }.launchIn(scope)
 
@@ -48,6 +52,44 @@ class AppNotificationManager @Inject constructor(
     }
 
     private var pendingEntriesListener: com.google.firebase.firestore.ListenerRegistration? = null
+    private var upcomingBillsListener: com.google.firebase.firestore.ListenerRegistration? = null
+    private val notifiedBillIds = mutableSetOf<String>()
+
+    private fun setupUpcomingBillsListener() {
+        upcomingBillsListener?.remove()
+
+        // Listener for Upcoming Bills/Checks
+        upcomingBillsListener = firestore.collection(com.batterysales.data.models.Bill.COLLECTION_NAME)
+            .addSnapshotListener { snapshot, e ->
+                if (e != null) return@addSnapshotListener
+
+                val now = java.util.Calendar.getInstance()
+                val nextWeek = java.util.Calendar.getInstance().apply { add(java.util.Calendar.DAY_OF_YEAR, 7) }
+
+                snapshot?.documentChanges?.forEach { change ->
+                    if (change.type == com.google.firebase.firestore.DocumentChange.Type.ADDED ||
+                        change.type == com.google.firebase.firestore.DocumentChange.Type.MODIFIED) {
+
+                        val bill = change.document.toObject(com.batterysales.data.models.Bill::class.java).copy(id = change.document.id)
+
+                        if (bill.status != com.batterysales.data.models.BillStatus.PAID &&
+                            bill.dueDate.after(now.time) &&
+                            bill.dueDate.before(nextWeek.time)) {
+
+                            if (!notifiedBillIds.contains(bill.id)) {
+                                val dateFormatter = java.text.SimpleDateFormat("yyyy/MM/dd", java.util.Locale.getDefault())
+                                NotificationHelper.showNotification(
+                                    context,
+                                    "موعد استحقاق قريب",
+                                    "الكمبيالة: ${bill.description} تستحق بتاريخ ${dateFormatter.format(bill.dueDate)}"
+                                )
+                                notifiedBillIds.add(bill.id)
+                            }
+                        }
+                    }
+                }
+            }
+    }
 
     private fun setupRealtimeListeners(user: User) {
         pendingEntriesListener?.remove()
@@ -86,33 +128,41 @@ class AppNotificationManager @Inject constructor(
             productVariantRepository.getAllVariantsFlow(),
             productRepository.getProducts()
         ) { allEntries, allVariants, allProducts ->
-            if (isFirstSnapshot) {
-                isFirstSnapshot = false
-                // Just populate the notified list so we don't notify for existing ones
-                allVariants.filter { !it.isArchived && it.minQuantity > 0 }.forEach { variant ->
-                    val currentQty = allEntries.filter { it.productVariantId == variant.id && it.status == StockEntry.STATUS_APPROVED }.sumOf { it.quantity }
-                    if (currentQty <= variant.minQuantity) {
-                        notifiedLowStockIds.add(variant.id)
-                    }
-                }
-                return@combine
-            }
             val productMap = allProducts.associateBy { it.id }
+
             allVariants.filter { !it.isArchived && it.minQuantity > 0 }.forEach { variant ->
                 val currentQty = allEntries.filter { it.productVariantId == variant.id && it.status == StockEntry.STATUS_APPROVED }.sumOf { it.quantity }
+
                 if (currentQty <= variant.minQuantity) {
                     if (!notifiedLowStockIds.contains(variant.id)) {
-                        val product = productMap[variant.productId]
-                        NotificationHelper.showNotification(
-                            context,
-                            "تنبيه انخفاض المخزون",
-                            "المنتج ${product?.name ?: ""} (${variant.capacity} أمبير) وصل للحد الأدنى (${currentQty})"
-                        )
+                        if (!isFirstSnapshot) {
+                            val product = productMap[variant.productId]
+                            NotificationHelper.showNotification(
+                                context,
+                                "تنبيه انخفاض المخزون",
+                                "المنتج ${product?.name ?: ""} (${variant.capacity} أمبير) وصل للحد الأدنى ($currentQty)"
+                            )
+                        }
                         notifiedLowStockIds.add(variant.id)
                     }
                 } else {
                     // Reset if stock goes up
                     notifiedLowStockIds.remove(variant.id)
+                }
+            }
+
+            if (isFirstSnapshot) {
+                isFirstSnapshot = false
+                val initialLowCount = allVariants.count { variant ->
+                    !variant.isArchived && variant.minQuantity > 0 &&
+                    allEntries.filter { it.productVariantId == variant.id && it.status == StockEntry.STATUS_APPROVED }.sumOf { it.quantity } <= variant.minQuantity
+                }
+                if (initialLowCount > 0) {
+                    NotificationHelper.showNotification(
+                        context,
+                        "تنبيه المخزون المنخفض",
+                        "يوجد عدد $initialLowCount أصناف وصلت للحد الأدنى للمخزون"
+                    )
                 }
             }
         }.launchIn(scope)

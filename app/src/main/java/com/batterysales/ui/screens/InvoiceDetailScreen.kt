@@ -275,12 +275,17 @@ fun PaymentHistoryDialog(
             onDismissRequest = { paymentToEdit = null },
             title = { Text("تعديل الدفعة") },
             text = {
-                OutlinedTextField(
-                    value = newAmount,
-                    onValueChange = { newAmount = it },
-                    label = { Text("المبلغ الجديد") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
-                )
+                Column {
+                    Text("سيتم أيضاً تعديل هذه العملية في الخزينة.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = newAmount,
+                        onValueChange = { newAmount = it },
+                        label = { Text("المبلغ الجديد") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             },
             confirmButton = {
                 Button(onClick = {
@@ -298,12 +303,15 @@ fun PaymentHistoryDialog(
         AlertDialog(
             onDismissRequest = { paymentToDelete = null },
             title = { Text("تأكيد الحذف") },
-            text = { Text("هل أنت متأكد أنك تريد حذف هذه الدفعة؟") },
+            text = { Text("هل أنت متأكد أنك تريد حذف هذه الدفعة؟ سيتم أيضاً حذف هذه العملية من الخزينة.") },
             confirmButton = {
-                Button(onClick = {
-                    onDelete(payment.id)
-                    paymentToDelete = null
-                }) { Text("حذف") }
+                Button(
+                    onClick = {
+                        onDelete(payment.id)
+                        paymentToDelete = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("حذف") }
             },
             dismissButton = {
                 TextButton(onClick = { paymentToDelete = null }) { Text("إلغاء") }
