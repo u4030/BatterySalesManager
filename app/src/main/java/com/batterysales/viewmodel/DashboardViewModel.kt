@@ -46,8 +46,14 @@ class DashboardViewModel @Inject constructor(
         val pendingCount = allEntries.count { it.status == StockEntry.STATUS_PENDING }
 
         val productMap = allProducts.associateBy { it.id }
+
+        // Optimize: Group approved entries by variant ID
+        val stockMap = allEntries.filter { it.status == StockEntry.STATUS_APPROVED }
+            .groupBy { it.productVariantId }
+            .mapValues { entry -> entry.value.sumOf { it.quantity } }
+
         val lowStock = allVariants.filter { !it.isArchived && it.minQuantity > 0 }.mapNotNull { variant ->
-            val currentQty = allEntries.filter { it.productVariantId == variant.id && it.status == StockEntry.STATUS_APPROVED }.sumOf { it.quantity }
+            val currentQty = stockMap[variant.id] ?: 0
             if (currentQty <= variant.minQuantity) {
                 val product = productMap[variant.productId]
                 LowStockItem(
@@ -62,13 +68,24 @@ class DashboardViewModel @Inject constructor(
             }
         }
 
-        val now = Calendar.getInstance()
-        val nextWeek = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, 7) }
+        val today = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val nextWeek = Calendar.getInstance().apply {
+            add(Calendar.DAY_OF_YEAR, 7)
+            set(Calendar.HOUR_OF_DAY, 23)
+            set(Calendar.MINUTE, 59)
+            set(Calendar.SECOND, 59)
+            set(Calendar.MILLISECOND, 999)
+        }
 
         val upcoming = allBills.filter {
             it.status != BillStatus.PAID &&
-                    it.dueDate.after(now.time) &&
-                    it.dueDate.before(nextWeek.time)
+                    !it.dueDate.before(today.time) &&
+                    !it.dueDate.after(nextWeek.time)
         }.sortedBy { it.dueDate }
 
         DashboardUiState(

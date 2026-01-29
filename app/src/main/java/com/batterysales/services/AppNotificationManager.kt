@@ -58,23 +58,53 @@ class AppNotificationManager @Inject constructor(
     private fun setupUpcomingBillsListener() {
         upcomingBillsListener?.remove()
 
+        var isFirstSnapshot = true
         // Listener for Upcoming Bills/Checks
         upcomingBillsListener = firestore.collection(com.batterysales.data.models.Bill.COLLECTION_NAME)
             .addSnapshotListener { snapshot, e ->
                 if (e != null) return@addSnapshotListener
+                if (snapshot == null || snapshot.isEmpty) {
+                    isFirstSnapshot = false
+                    return@addSnapshotListener
+                }
 
-                val now = java.util.Calendar.getInstance()
-                val nextWeek = java.util.Calendar.getInstance().apply { add(java.util.Calendar.DAY_OF_YEAR, 7) }
+                val now = java.util.Calendar.getInstance().apply { set(java.util.Calendar.HOUR_OF_DAY, 0) }
+                val nextWeek = java.util.Calendar.getInstance().apply {
+                    add(java.util.Calendar.DAY_OF_YEAR, 7)
+                    set(java.util.Calendar.HOUR_OF_DAY, 23)
+                }
 
-                snapshot?.documentChanges?.forEach { change ->
+                val upcomingBills = snapshot.documents.mapNotNull {
+                    it.toObject(com.batterysales.data.models.Bill::class.java)?.copy(id = it.id)
+                }.filter { bill ->
+                    bill.status != com.batterysales.data.models.BillStatus.PAID &&
+                    !bill.dueDate.before(now.time) &&
+                    !bill.dueDate.after(nextWeek.time)
+                }
+
+                if (isFirstSnapshot) {
+                    isFirstSnapshot = false
+                    if (upcomingBills.isNotEmpty()) {
+                        NotificationHelper.showNotification(
+                            context,
+                            "كمبيالات مستحقة قريباً",
+                            "يوجد عدد ${upcomingBills.size} كمبيالات/شيكات تستحق خلال الـ 7 أيام القادمة"
+                        )
+                        // Add to notified list to avoid individual notifications immediately
+                        upcomingBills.forEach { notifiedBillIds.add(it.id) }
+                    }
+                    return@addSnapshotListener
+                }
+
+                snapshot.documentChanges.forEach { change ->
                     if (change.type == com.google.firebase.firestore.DocumentChange.Type.ADDED ||
                         change.type == com.google.firebase.firestore.DocumentChange.Type.MODIFIED) {
 
                         val bill = change.document.toObject(com.batterysales.data.models.Bill::class.java).copy(id = change.document.id)
 
                         if (bill.status != com.batterysales.data.models.BillStatus.PAID &&
-                            bill.dueDate.after(now.time) &&
-                            bill.dueDate.before(nextWeek.time)) {
+                            !bill.dueDate.before(now.time) &&
+                            !bill.dueDate.after(nextWeek.time)) {
 
                             if (!notifiedBillIds.contains(bill.id)) {
                                 val dateFormatter = java.text.SimpleDateFormat("yyyy/MM/dd", java.util.Locale.getDefault())
@@ -128,10 +158,17 @@ class AppNotificationManager @Inject constructor(
             productVariantRepository.getAllVariantsFlow(),
             productRepository.getProducts()
         ) { allEntries, allVariants, allProducts ->
+            if (allVariants.isEmpty() && allProducts.isEmpty()) return@combine
+
             val productMap = allProducts.associateBy { it.id }
 
+            // Group entries to optimize
+            val stockMap = allEntries.filter { it.status == StockEntry.STATUS_APPROVED }
+                .groupBy { it.productVariantId }
+                .mapValues { it.value.sumOf { entry -> entry.quantity } }
+
             allVariants.filter { !it.isArchived && it.minQuantity > 0 }.forEach { variant ->
-                val currentQty = allEntries.filter { it.productVariantId == variant.id && it.status == StockEntry.STATUS_APPROVED }.sumOf { it.quantity }
+                val currentQty = stockMap[variant.id] ?: 0
 
                 if (currentQty <= variant.minQuantity) {
                     if (!notifiedLowStockIds.contains(variant.id)) {
@@ -154,8 +191,8 @@ class AppNotificationManager @Inject constructor(
             if (isFirstSnapshot) {
                 isFirstSnapshot = false
                 val initialLowCount = allVariants.count { variant ->
-                    !variant.isArchived && variant.minQuantity > 0 &&
-                    allEntries.filter { it.productVariantId == variant.id && it.status == StockEntry.STATUS_APPROVED }.sumOf { it.quantity } <= variant.minQuantity
+                    val currentQty = stockMap[variant.id] ?: 0
+                    !variant.isArchived && variant.minQuantity > 0 && currentQty <= variant.minQuantity
                 }
                 if (initialLowCount > 0) {
                     NotificationHelper.showNotification(
@@ -163,6 +200,13 @@ class AppNotificationManager @Inject constructor(
                         "تنبيه المخزون المنخفض",
                         "يوجد عدد $initialLowCount أصناف وصلت للحد الأدنى للمخزون"
                     )
+                }
+                // Add existing low stock items to notified list to prevent double notifications
+                allVariants.forEach { variant ->
+                    val currentQty = stockMap[variant.id] ?: 0
+                    if (currentQty <= variant.minQuantity && variant.minQuantity > 0) {
+                        notifiedLowStockIds.add(variant.id)
+                    }
                 }
             }
         }.launchIn(scope)
