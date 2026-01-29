@@ -99,9 +99,10 @@ class BillViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 repository.updateBill(bill)
-                // Also update treasury transactions description
+                // Also update treasury transactions
                 accountingRepository.updateTransactionByRelatedId(
                     relatedId = bill.id,
+                    newAmount = bill.amount,
                     newDescription = "تسديد لكمبيالة: ${bill.description}"
                 )
                 loadBills()

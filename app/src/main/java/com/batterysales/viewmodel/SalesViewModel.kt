@@ -70,7 +70,7 @@ class SalesViewModel @Inject constructor(
 
                 _uiState.update {
                     it.copy(
-                        products = products.filter { p -> !p.isArchived },
+                        products = products.filter { p -> !p.archived },
                         warehouses = warehouses,
                         selectedWarehouse = if (user?.role == "seller") selectedWH else it.selectedWarehouse,
                         isWarehouseFixed = user?.role == "seller",
@@ -86,7 +86,7 @@ class SalesViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(selectedProduct = product, selectedVariant = null, variants = emptyList(), isLoading = true) }
             productVariantRepository.getVariantsForProductFlow(product.id)
-                .map { variants -> variants.filter { !it.isArchived } }
+                .map { variants -> variants.filter { !it.archived } }
                 .onEach { variants ->
                     _uiState.update { it.copy(variants = variants, isLoading = false) }
                 }

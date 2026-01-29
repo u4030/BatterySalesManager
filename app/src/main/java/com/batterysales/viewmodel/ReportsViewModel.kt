@@ -43,8 +43,8 @@ class ReportsViewModel @Inject constructor(
     ) { products, allVariants, allStockEntries, warehouseList, barcode ->
 
         val reportItems = mutableListOf<InventoryReportItem>()
-        val activeProducts = products.filter { !it.isArchived }.associateBy { it.id }
-        val activeVariants = allVariants.filter { !it.isArchived }
+        val activeProducts = products.filter { !it.archived }.associateBy { it.id }
+        val activeVariants = allVariants.filter { !it.archived }
 
         for (variant in activeVariants) {
             val product = activeProducts[variant.productId] ?: continue

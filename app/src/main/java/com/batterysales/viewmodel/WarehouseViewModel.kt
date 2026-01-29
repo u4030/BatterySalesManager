@@ -38,9 +38,9 @@ class WarehouseViewModel @Inject constructor(
         stockEntryRepository.getAllStockEntriesFlow()
     ) { products, allVariants, warehouses, allStockEntries ->
         _isLoading.value = true
-        val activeProducts = products.filter { !it.isArchived }
+        val activeProducts = products.filter { !it.archived }
         val productMap = activeProducts.associateBy { it.id }
-        val activeVariants = allVariants.filter { !it.isArchived }.associateBy { it.id }
+        val activeVariants = allVariants.filter { !it.archived }.associateBy { it.id }
 
         val stockMap = mutableMapOf<Pair<String, String>, Int>()
         for (entry in allStockEntries) {

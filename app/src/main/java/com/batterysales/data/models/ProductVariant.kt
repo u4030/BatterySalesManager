@@ -18,7 +18,7 @@ import java.util.Date
  * - notes: ملاحظات خاصة بهذه السعة
  * - createdAt: تاريخ إنشاء سجل المتغير
  * - updatedAt: تاريخ آخر تحديث
- * - isArchived: لتحديد ما إذا كان المتغير مؤرشفًا
+ * - archived: لتحديد ما إذا كان المتغير مؤرشفًا
  */
 data class ProductVariant(
     @DocumentId
@@ -31,7 +31,7 @@ data class ProductVariant(
     val notes: String = "",
     val createdAt: Date = Date(),
     val updatedAt: Date = Date(),
-    val isArchived: Boolean = false
+    val archived: Boolean = false
 ) {
     companion object {
         const val COLLECTION_NAME = "product_variants"

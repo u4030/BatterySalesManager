@@ -1,12 +1,8 @@
 package com.batterysales.services
 
 import android.content.Context
-import com.batterysales.data.models.StockEntry
-import com.batterysales.data.models.User
-import com.batterysales.data.repositories.ProductRepository
-import com.batterysales.data.repositories.ProductVariantRepository
-import com.batterysales.data.repositories.StockEntryRepository
-import com.batterysales.data.repositories.UserRepository
+import com.batterysales.data.models.*
+import com.batterysales.data.repositories.*
 import com.batterysales.ui.components.NotificationHelper
 import com.google.firebase.firestore.FirebaseFirestore
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -60,7 +56,7 @@ class AppNotificationManager @Inject constructor(
 
         var hasEmittedData = false
         // Listener for Upcoming Bills/Checks
-        upcomingBillsListener = firestore.collection(com.batterysales.data.models.Bill.COLLECTION_NAME)
+        upcomingBillsListener = firestore.collection(Bill.COLLECTION_NAME)
             .addSnapshotListener { snapshot, e ->
                 if (e != null) return@addSnapshotListener
                 if (snapshot == null) return@addSnapshotListener
@@ -72,9 +68,9 @@ class AppNotificationManager @Inject constructor(
                 }
 
                 val upcomingBills = snapshot.documents.mapNotNull {
-                    it.toObject(com.batterysales.data.models.Bill::class.java)?.copy(id = it.id)
+                    it.toObject(Bill::class.java)?.copy(id = it.id)
                 }.filter { bill ->
-                    bill.status != com.batterysales.data.models.BillStatus.PAID &&
+                    bill.status != BillStatus.PAID &&
                     !bill.dueDate.before(now.time) &&
                     !bill.dueDate.after(nextWeek.time)
                 }
@@ -97,9 +93,9 @@ class AppNotificationManager @Inject constructor(
                     if (change.type == com.google.firebase.firestore.DocumentChange.Type.ADDED ||
                         change.type == com.google.firebase.firestore.DocumentChange.Type.MODIFIED) {
 
-                        val bill = change.document.toObject(com.batterysales.data.models.Bill::class.java).copy(id = change.document.id)
+                        val bill = change.document.toObject(Bill::class.java).copy(id = change.document.id)
 
-                        if (bill.status != com.batterysales.data.models.BillStatus.PAID &&
+                        if (bill.status != BillStatus.PAID &&
                             !bill.dueDate.before(now.time) &&
                             !bill.dueDate.after(nextWeek.time)) {
 
@@ -155,8 +151,11 @@ class AppNotificationManager @Inject constructor(
             productVariantRepository.getAllVariantsFlow(),
             productRepository.getProducts()
         ) { allEntries, allVariants, allProducts ->
-            // Skip if no products or variants exist yet (initial load)
-            if (allVariants.isEmpty() && allProducts.isEmpty()) return@combine
+            // Skip if no variants exist yet (likely still loading or really empty)
+            // But we should allow it if products are loaded and variants are empty but arrived.
+            // Firestore might emit empty list for a collection that exists but has no data.
+            // To be safe, we wait for both to emit at least once.
+            // Since combine waits for all, if any list is empty it means it's either truly empty or still loading.
 
             val productMap = allProducts.associateBy { it.id }
 
@@ -166,10 +165,14 @@ class AppNotificationManager @Inject constructor(
                 .mapValues { it.value.sumOf { entry -> entry.quantity } }
 
             val lowStockVariants = allVariants.filter {
-                !it.isArchived && it.minQuantity > 0 && (stockMap[it.id] ?: 0) <= it.minQuantity
+                !it.archived && it.minQuantity > 0 && (stockMap[it.id] ?: 0) <= it.minQuantity
             }
 
             if (!hasEmittedData) {
+                // If we have products but no variants yet, we might be in an intermediate state.
+                // However, if both collections are checked and we still have no variants, then it's fine.
+                if (allProducts.isNotEmpty() && allVariants.isEmpty()) return@combine
+
                 hasEmittedData = true
                 if (lowStockVariants.isNotEmpty()) {
                     NotificationHelper.showNotification(
@@ -183,7 +186,7 @@ class AppNotificationManager @Inject constructor(
                 return@combine
             }
 
-            allVariants.filter { !it.isArchived && it.minQuantity > 0 }.forEach { variant ->
+            allVariants.filter { !it.archived && it.minQuantity > 0 }.forEach { variant ->
                 val currentQty = stockMap[variant.id] ?: 0
 
                 if (currentQty <= variant.minQuantity) {

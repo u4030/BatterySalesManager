@@ -15,7 +15,7 @@ import java.util.Date
  * - notes: ملاحظات عامة عن هذا النوع من المنتجات
  * - createdAt: تاريخ إنشاء سجل المنتج
  * - updatedAt: تاريخ آخر تحديث
- * - isArchived: لتحديد ما إذا كان المنتج مؤرشفًا (محذوفًا منطقيًا)
+ * - archived: لتحديد ما إذا كان المنتج مؤرشفًا (محذوفًا منطقيًا)
  */
 data class Product(
     @DocumentId
@@ -24,7 +24,7 @@ data class Product(
     val notes: String = "",
     val createdAt: Date = Date(),
     val updatedAt: Date = Date(),
-    val isArchived: Boolean = false
+    val archived: Boolean = false
 ) {
     companion object {
         const val COLLECTION_NAME = "products"

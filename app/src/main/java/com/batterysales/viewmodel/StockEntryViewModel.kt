@@ -82,7 +82,7 @@ class StockEntryViewModel @Inject constructor(
             productRepository.getProducts().combine(warehouseRepository.getWarehouses()) { products, warehouses ->
                 Pair(products, warehouses)
             }.collectLatest { (products, warehouses) ->
-                val activeProducts = products.filter { !it.isArchived }
+                val activeProducts = products.filter { !it.archived }
                 val selectedWH = warehouses.find { it.id == user?.warehouseId }
 
                 _uiState.update {
@@ -155,7 +155,7 @@ class StockEntryViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(selectedProduct = product, selectedVariant = null, variants = emptyList(), isLoading = true) }
             try {
-                val variants = productVariantRepository.getVariantsForProduct(product.id).filter { !it.isArchived }
+                val variants = productVariantRepository.getVariantsForProduct(product.id).filter { !it.archived }
                 _uiState.update { it.copy(variants = variants, isLoading = false) }
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = "فشل تحميل السعات", isLoading = false) }

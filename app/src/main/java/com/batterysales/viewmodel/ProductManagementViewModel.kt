@@ -40,9 +40,9 @@ class ProductManagementViewModel @Inject constructor(
         _isLoading
     ) { products, selectedProduct, variants, isLoading ->
         ProductManagementUiState(
-            products = products.filter { !it.isArchived },
+            products = products.filter { !it.archived },
             selectedProduct = selectedProduct,
-            variants = variants.filter { !it.isArchived },
+            variants = variants.filter { !it.archived },
             isLoading = isLoading,
             errorMessage = _errorMessage.value
         )
@@ -109,7 +109,7 @@ class ProductManagementViewModel @Inject constructor(
     fun archiveProduct(product: Product) {
         viewModelScope.launch {
             try {
-                val archivedProduct = product.copy(isArchived = true)
+                val archivedProduct = product.copy(archived = true)
                 productRepository.updateProduct(archivedProduct)
                 _selectedProduct.value = null // Deselect after archiving
             } catch (e: Exception) {
@@ -135,7 +135,7 @@ class ProductManagementViewModel @Inject constructor(
     fun archiveVariant(variant: ProductVariant) {
         viewModelScope.launch {
             try {
-                val archivedVariant = variant.copy(isArchived = true)
+                val archivedVariant = variant.copy(archived = true)
                 productVariantRepository.updateVariant(archivedVariant)
             } catch (e: Exception) {
                 _errorMessage.value = "Failed to archive variant: ${e.message}"

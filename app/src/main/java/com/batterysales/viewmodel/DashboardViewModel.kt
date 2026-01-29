@@ -52,7 +52,7 @@ class DashboardViewModel @Inject constructor(
             .groupBy { it.productVariantId }
             .mapValues { entry -> entry.value.sumOf { it.quantity } }
 
-        val lowStock = allVariants.filter { !it.isArchived && it.minQuantity > 0 }.mapNotNull { variant ->
+        val lowStock = allVariants.filter { !it.archived && it.minQuantity > 0 }.mapNotNull { variant ->
             val currentQty = stockMap[variant.id] ?: 0
             if (currentQty <= variant.minQuantity) {
                 val product = productMap[variant.productId]
