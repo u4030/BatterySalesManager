@@ -1,5 +1,6 @@
 package com.batterysales.data.models
 
+import com.google.firebase.firestore.DocumentId
 import java.util.Date
 
 /**
@@ -8,6 +9,7 @@ import java.util.Date
  * يمثل كمبيالة أو شيك واحد
  */
 data class Bill(
+//    @DocumentId
     val id: String = "",
     val description: String = "", // الوصف
     val amount: Double = 0.0, // القيمة

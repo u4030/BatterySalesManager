@@ -15,10 +15,10 @@ class BillRepository @Inject constructor(
 ) {
 
     suspend fun getAllBills(): List<Bill> {
-        return firestore.collection(Bill.COLLECTION_NAME)
+        val snapshot = firestore.collection(Bill.COLLECTION_NAME)
             .get()
             .await()
-            .toObjects(Bill::class.java)
+        return snapshot.documents.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) }
     }
 
     fun getAllBillsFlow(): Flow<List<Bill>> = callbackFlow {
@@ -29,7 +29,7 @@ class BillRepository @Inject constructor(
                     return@addSnapshotListener
                 }
                 if (snapshot != null) {
-                    val bills = snapshot.toObjects(Bill::class.java)
+                    val bills = snapshot.documents.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) }
                     trySend(bills).isSuccess
                 }
             }
@@ -37,9 +37,9 @@ class BillRepository @Inject constructor(
     }
 
     suspend fun addBill(bill: Bill) {
-        firestore.collection(Bill.COLLECTION_NAME)
-            .add(bill)
-            .await()
+        val docRef = firestore.collection(Bill.COLLECTION_NAME).document()
+        val finalBill = bill.copy(id = docRef.id, createdAt = Date(), updatedAt = Date())
+        docRef.set(finalBill).await()
     }
 
     suspend fun updateBillStatus(billId: String, status: BillStatus, paidDate: Date? = null) {

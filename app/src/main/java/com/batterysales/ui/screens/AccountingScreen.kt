@@ -63,7 +63,7 @@ fun AccountingScreen(
                         selectedType = TransactionType.INCOME
                         showAddTransactionDialog = true
                     },
-                    containerColor = Color(0xFF4CAF50),
+                    containerColor = Color(0xFF4CAF50).copy(alpha = 0.7f),
                     contentColor = Color.White
                 ) {
                     Icon(Icons.Default.Add, contentDescription = "إيداع")
@@ -73,7 +73,7 @@ fun AccountingScreen(
                         selectedType = TransactionType.EXPENSE
                         showAddTransactionDialog = true
                     },
-                    containerColor = MaterialTheme.colorScheme.error,
+                    containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
                     contentColor = Color.White
                 ) {
                     Icon(Icons.Default.Remove, contentDescription = "سحب")
@@ -203,7 +203,6 @@ fun TransactionItemCard(
     val dateFormatter = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault())
     val isIncome = transaction.type == TransactionType.INCOME || transaction.type == TransactionType.PAYMENT
     val amountColor = if (isIncome) Color(0xFF4CAF50) else MaterialTheme.colorScheme.error
-    var showMenu by remember { mutableStateOf(false) }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -230,36 +229,18 @@ fun TransactionItemCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(horizontalAlignment = Alignment.End) {
                 Text(
                     text = "${if (isIncome) "+" else "-"} SR ${String.format("%.2f", transaction.amount)}",
                     fontWeight = FontWeight.Bold,
                     color = amountColor
                 )
-                Box {
-                    IconButton(onClick = { showMenu = true }) {
-                        Icon(Icons.Default.MoreVert, contentDescription = "خيارات")
+                Row {
+                    IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Default.Edit, contentDescription = "تعديل", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                     }
-                    DropdownMenu(
-                        expanded = showMenu,
-                        onDismissRequest = { showMenu = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("تعديل") },
-                            onClick = {
-                                showMenu = false
-                                onEdit()
-                            },
-                            leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("حذف") },
-                            onClick = {
-                                showMenu = false
-                                onDelete()
-                            },
-                            leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
-                        )
+                    IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Default.Delete, contentDescription = "حذف", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
                     }
                 }
             }
