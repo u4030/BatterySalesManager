@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">العصرية للبطاريات</string>
+    
+    <!-- Login Screen -->
+    <string name="login_title">تسجيل الدخول</string>
+    <string name="email_hint">البريد الإلكتروني</string>
+    <string name="password_hint">كلمة المرور</string>
+    <string name="login_button">دخول</string>
+    <string name="invalid_email">البريد الإلكتروني غير صحيح</string>
+    <string name="invalid_password">كلمة المرور قصيرة جداً</string>
+    <string name="login_error">فشل تسجيل الدخول</string>
+    
+    <!-- Dashboard -->
+    <string name="dashboard_title">لوحة التحكم</string>
+    <string name="sales">المبيع</string>
+    <string name="warehouse">المستودعات</string>
+    <string name="bills">الكمبيالات والشيكات</string>
+    <string name="reports">الطباعة والتقارير</string>
+    <string name="accounting">الخزينة والمحاسبة</string>
+    
+    <!-- Sales Screen -->
+    <string name="sales_title">إدارة المبيع</string>
+    <string name="product_name">اسم المنتج</string>
+    <string name="battery_capacity">سعة البطارية (أمبير)</string>
+    <string name="sale_price">سعر البيع</string>
+    <string name="buyer_name">اسم المشتري</string>
+    <string name="buyer_phone">رقم الهاتف</string>
+    <string name="remaining_amount">المبلغ المتبقي</string>
+    <string name="old_battery_capacity">سعة البطارية القديمة</string>
+    <string name="add_sale">إضافة مبيعة</string>
+    <string name="search_invoices">البحث عن فاتورة</string>
+    <string name="edit_invoice">تعديل الفاتورة</string>
+    <string name="delete_invoice">حذف الفاتورة</string>
+    <string name="pay_debt">تسديد الذمم</string>
+    
+    <!-- Warehouse Screen -->
+    <string name="warehouse_title">إدارة المستودعات</string>
+    <string name="add_product">إضافة منتج</string>
+    <string name="restock">إعادة تزويد</string>
+    <string name="product_code">رمز المنتج</string>
+    <string name="quantity">الكمية</string>
+    <string name="minimum_quantity">الحد الأدنى</string>
+    <string name="cost_price">سعر التكلفة</string>
+    <string name="product_type">نوع المنتج</string>
+    <string name="barcode">الباركود</string>
+    <string name="low_stock_alert">تنبيه: المخزون منخفض</string>
+    
+    <!-- Bills Screen -->
+    <string name="bills_title">الكمبيالات والشيكات</string>
+    <string name="add_bill">إضافة كمبيالة</string>
+    <string name="bill_description">الوصف</string>
+    <string name="bill_amount">القيمة</string>
+    <string name="due_date">تاريخ الاستحقاق</string>
+    <string name="bill_status">الحالة</string>
+    <string name="paid">مسدد</string>
+    <string name="unpaid">غير مسدد</string>
+    
+    <!-- Reports Screen -->
+    <string name="reports_title">الطباعة والتقارير</string>
+    <string name="daily_report">تقرير اليوم</string>
+    <string name="period_report">تقرير فترة زمنية</string>
+    <string name="print">طباعة</string>
+    <string name="export_pdf">تصدير PDF</string>
+    
+    <!-- Accounting Screen -->
+    <string name="accounting_title">الخزينة والمحاسبة</string>
+    <string name="total_income">إجمالي الواردات</string>
+    <string name="total_expenses">إجمالي المصروفات</string>
+    <string name="net_amount">الصافي</string>
+    <string name="add_expense">إضافة مصروف</string>
+    <string name="expense_description">وصف المصروف</string>
+    <string name="expense_amount">مبلغ المصروف</string>
+    
+    <!-- General -->
+    <string name="logout">تسجيل الخروج</string>
+    <string name="save">حفظ</string>
+    <string name="cancel">إلغاء</string>
+    <string name="delete">حذف</string>
+    <string name="edit">تعديل</string>
+    <string name="search">بحث</string>
+    <string name="no_data">لا توجد بيانات</string>
+    <string name="error">خطأ</string>
+    <string name="success">نجح</string>
+</resources>
