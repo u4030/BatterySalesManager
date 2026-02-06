@@ -15,6 +15,7 @@ import javax.inject.Inject
 class BillViewModel @Inject constructor(
     private val repository: BillRepository,
     private val supplierRepository: SupplierRepository,
+    private val stockEntryRepository: StockEntryRepository,
     private val accountingRepository: AccountingRepository,
     private val bankRepository: BankRepository
 ) : ViewModel() {
@@ -25,12 +26,16 @@ class BillViewModel @Inject constructor(
     private val _suppliers = MutableStateFlow<List<Supplier>>(emptyList())
     val suppliers = _suppliers.asStateFlow()
 
+    private val _pendingPurchases = MutableStateFlow<List<StockEntry>>(emptyList())
+    val pendingPurchases = _pendingPurchases.asStateFlow()
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading = _isLoading.asStateFlow()
 
     init {
         loadBills()
         loadSuppliers()
+        loadPendingPurchases()
     }
 
     fun loadBills() {
@@ -52,7 +57,15 @@ class BillViewModel @Inject constructor(
         }
     }
 
-    fun addBill(description: String, amount: Double, dueDate: Date, billType: BillType, referenceNumber: String = "", supplierId: String = "") {
+    fun loadPendingPurchases() {
+        viewModelScope.launch {
+            stockEntryRepository.getAllStockEntriesFlow().collect { entries ->
+                _pendingPurchases.value = entries.filter { it.status == "approved" && it.totalCost > 0 }
+            }
+        }
+    }
+
+    fun addBill(description: String, amount: Double, dueDate: Date, billType: BillType, referenceNumber: String = "", supplierId: String = "", relatedEntryId: String? = null) {
         viewModelScope.launch {
             _isLoading.value = true
             try {
@@ -62,7 +75,8 @@ class BillViewModel @Inject constructor(
                     dueDate = dueDate,
                     billType = billType,
                     referenceNumber = referenceNumber,
-                    supplierId = supplierId
+                    supplierId = supplierId,
+                    relatedEntryId = relatedEntryId
                 )
                 repository.addBill(bill)
                 loadBills()

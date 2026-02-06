@@ -58,6 +58,7 @@ fun DashboardScreen(
         items.add(DashboardItem("الخزينة", Icons.Default.AccountBalance, "accounting"))
         items.add(DashboardItem("البنك", Icons.Default.Savings, "bank"))
         items.add(DashboardItem("الكمبيالات", Icons.Default.Description, "bills"))
+        items.add(DashboardItem("الموردين", Icons.Default.LocalShipping, "suppliers"))
     }
 
     items.add(DashboardItem("التقارير", Icons.Default.Assessment, "reports"))

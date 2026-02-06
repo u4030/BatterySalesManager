@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="gcm_defaultSenderId" translatable="false">91362967016</string>
+    <string name="google_api_key" translatable="false">AIzaSyAouDM3y_4St7RToxtTTXH0JTk56Yzb33Q</string>
+    <string name="google_app_id" translatable="false">1:91362967016:android:0c08c3c339b86533a4385d</string>
+    <string name="google_crash_reporting_api_key" translatable="false">AIzaSyAouDM3y_4St7RToxtTTXH0JTk56Yzb33Q</string>
+    <string name="google_storage_bucket" translatable="false">batterysales-b7972.firebasestorage.app</string>
+    <string name="project_id" translatable="false">batterysales-b7972</string>
+</resources>

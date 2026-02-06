@@ -20,10 +20,17 @@ data class InventoryReportItem(
 
 data class SupplierReportItem(
     val supplier: Supplier,
-    val totalPurchases: Double,
-    val totalDebt: Double,
-    val targetProgress: Double, // 0.0 to 1.0
-    val balance: Double // TotalPurchases - PaidAmount (basically Debt)
+    val totalDebit: Double, // Purchases
+    val totalCredit: Double, // Payments
+    val balance: Double, // Debit - Credit
+    val targetProgress: Double,
+    val purchaseOrders: List<PurchaseOrderItem>
+)
+
+data class PurchaseOrderItem(
+    val entry: StockEntry,
+    val linkedPaidAmount: Double,
+    val remainingBalance: Double
 )
 
 @HiltViewModel
@@ -141,16 +148,29 @@ class ReportsViewModel @Inject constructor(
                 (end == null || it.dueDate.time <= end)
             }
 
-            val totalPurchases = supplierEntries.sumOf { it.totalCost }
-            val totalDebt = supplierBills.sumOf { it.amount - it.paidAmount }
-            val targetProgress = if (supplier.yearlyTarget > 0) totalPurchases / supplier.yearlyTarget else 0.0
+            val totalDebit = supplierEntries.sumOf { it.totalCost }
+            val totalCredit = supplierBills.sumOf { it.paidAmount }
+            val balance = totalDebit - totalCredit
+
+            val purchaseOrders = supplierEntries.map { entry ->
+                val linkedBills = supplierBills.filter { it.relatedEntryId == entry.id }
+                val linkedPaid = linkedBills.sumOf { it.paidAmount }
+                PurchaseOrderItem(
+                    entry = entry,
+                    linkedPaidAmount = linkedPaid,
+                    remainingBalance = entry.totalCost - linkedPaid
+                )
+            }
+
+            val targetProgress = if (supplier.yearlyTarget > 0) totalDebit / supplier.yearlyTarget else 0.0
 
             SupplierReportItem(
                 supplier = supplier,
-                totalPurchases = totalPurchases,
-                totalDebt = totalDebt,
+                totalDebit = totalDebit,
+                totalCredit = totalCredit,
+                balance = balance,
                 targetProgress = targetProgress,
-                balance = totalDebt
+                purchaseOrders = purchaseOrders
             )
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())

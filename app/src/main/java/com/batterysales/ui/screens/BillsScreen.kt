@@ -37,6 +37,7 @@ fun BillsScreen(
 ) {
     val bills by viewModel.bills.collectAsState()
     val suppliers by viewModel.suppliers.collectAsState()
+    val pendingPurchases by viewModel.pendingPurchases.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     var showAddBillDialog by remember { mutableStateOf(false) }
 
@@ -155,9 +156,10 @@ fun BillsScreen(
     if (showAddBillDialog) {
         AddBillDialog(
             suppliers = suppliers,
+            pendingPurchases = pendingPurchases,
             onDismiss = { showAddBillDialog = false },
-            onAdd = { desc, amount, date, type, ref, supplierId ->
-                viewModel.addBill(desc, amount, date, type, ref, supplierId)
+            onAdd = { desc, amount, date, type, ref, supplierId, relatedEntryId ->
+                viewModel.addBill(desc, amount, date, type, ref, supplierId, relatedEntryId)
                 showAddBillDialog = false
             }
         )
@@ -284,11 +286,13 @@ fun PaymentDialog(
 @Composable
 fun AddBillDialog(
     suppliers: List<com.batterysales.data.models.Supplier>,
+    pendingPurchases: List<com.batterysales.data.models.StockEntry>,
     onDismiss: () -> Unit,
-    onAdd: (String, Double, Date, BillType, String, String) -> Unit
+    onAdd: (String, Double, Date, BillType, String, String, String?) -> Unit
 ) {
     var description by remember { mutableStateOf("") }
     var selectedSupplier by remember { mutableStateOf<com.batterysales.data.models.Supplier?>(null) }
+    var selectedPurchase by remember { mutableStateOf<com.batterysales.data.models.StockEntry?>(null) }
     var amount by remember { mutableStateOf("") }
     var refNum by remember { mutableStateOf("") }
     var selectedType by remember { mutableStateOf(BillType.CHECK) }
@@ -324,9 +328,31 @@ fun AddBillDialog(
                     label = "المورد",
                     selectedValue = selectedSupplier?.name ?: "",
                     options = suppliers.map { it.name },
-                    onOptionSelected = { index -> selectedSupplier = suppliers[index] },
+                    onOptionSelected = { index ->
+                        selectedSupplier = suppliers[index]
+                        selectedPurchase = null // Reset purchase if supplier changes
+                    },
                     enabled = true
                 )
+
+                val supplierPurchases = pendingPurchases.filter { it.supplierId == selectedSupplier?.id }
+                if (supplierPurchases.isNotEmpty()) {
+                    val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
+                    com.batterysales.ui.stockentry.Dropdown(
+                        label = "ربط بطلبية شراء (اختياري)",
+                        selectedValue = selectedPurchase?.let { "طلبية: ${dateFormatter.format(it.timestamp)} - JD ${it.totalCost}" } ?: "غير مرتبط",
+                        options = listOf("غير مرتبط") + supplierPurchases.map { "طلبية: ${dateFormatter.format(it.timestamp)} - JD ${it.totalCost}" },
+                        onOptionSelected = { index ->
+                            selectedPurchase = if (index == 0) null else supplierPurchases[index - 1]
+                            // Auto-fill amount if linked
+                            selectedPurchase?.let {
+                                if (amount.isEmpty()) amount = it.totalCost.toString()
+                                if (description.isEmpty()) description = "تسديد لطلبية شراء بتاريخ ${dateFormatter.format(it.timestamp)}"
+                            }
+                        },
+                        enabled = true
+                    )
+                }
 
                 Text("نوع الالتزام:", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                 Row(
@@ -374,7 +400,7 @@ fun AddBillDialog(
         confirmButton = {
             Button(onClick = {
                 val amt = amount.toDoubleOrNull() ?: 0.0
-                if (description.isNotEmpty() && amt > 0) onAdd(description, amt, selectedDate, selectedType, refNum, selectedSupplier?.id ?: "")
+                if (description.isNotEmpty() && amt > 0) onAdd(description, amt, selectedDate, selectedType, refNum, selectedSupplier?.id ?: "", selectedPurchase?.id)
             }) { Text("إضافة") }
         },
         dismissButton = {

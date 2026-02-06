@@ -52,6 +52,7 @@ fun AppNavigation(navController: NavHostController) {
         composable("reports") { ReportsScreen(navController) }
         composable("user_management") { UserManagementScreen(navController) }
         composable("approvals") { ApprovalsScreen(navController) }
+        composable("suppliers") { SupplierManagementScreen(navController) }
         composable(
             route = "product_ledger/{variantId}/{productName}/{variantCapacity}/{variantSpecification}",
             arguments = listOf(

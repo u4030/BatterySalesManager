@@ -23,8 +23,7 @@ import com.batterysales.viewmodel.InventoryReportItem
 import com.batterysales.viewmodel.ReportsViewModel
 import java.util.Locale
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
@@ -349,14 +348,14 @@ fun SupplierReportSection(viewModel: ReportsViewModel, items: List<com.batterysa
             }
         }
 
-        val totalSuppliersDebt = items.sumOf { it.totalDebt }
+        val totalSuppliersDebit = items.sumOf { it.balance }
         Card(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
         ) {
             Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("إجمالي المبالغ المستحقة للموردين", fontWeight = FontWeight.Bold)
-                Text("JD ${String.format("%.3f", totalSuppliersDebt)}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
+                Text("JD ${String.format("%.3f", totalSuppliersDebit)}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
             }
         }
 
@@ -381,16 +380,44 @@ fun SupplierReportSection(viewModel: ReportsViewModel, items: List<com.batterysa
 
 @Composable
 fun SupplierCard(item: com.batterysales.viewmodel.SupplierReportItem) {
-    Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text(item.supplier.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(item.supplier.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, contentDescription = null)
+            }
             Spacer(modifier = Modifier.height(8.dp))
             HorizontalDivider()
             Spacer(modifier = Modifier.height(16.dp))
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                InfoColumn(label = "إجمالي المشتريات", value = "JD ${String.format("%.3f", item.totalPurchases)}", modifier = Modifier.weight(1f))
-                InfoColumn(label = "المبالغ المستحقة", value = "JD ${String.format("%.3f", item.totalDebt)}", valueColor = if (item.totalDebt > 0) Color.Red else Color.Unspecified, modifier = Modifier.weight(1f))
+                InfoColumn(label = "مدين (مشتريات)", value = "JD ${String.format("%.3f", item.totalDebit)}", modifier = Modifier.weight(1f))
+                InfoColumn(label = "دائن (دفعات)", value = "JD ${String.format("%.3f", item.totalCredit)}", modifier = Modifier.weight(1f))
+                InfoColumn(label = "الرصيد", value = "JD ${String.format("%.3f", item.balance)}", valueColor = if (item.balance > 0) Color.Red else Color.Unspecified, modifier = Modifier.weight(1f))
+            }
+
+            if (expanded && item.purchaseOrders.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("تفاصيل طلبيات الشراء:", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(8.dp))
+                val dateFormatter = java.text.SimpleDateFormat("yyyy/MM/dd", java.util.Locale.getDefault())
+                item.purchaseOrders.forEach { po ->
+                    Column(modifier = Modifier.padding(start = 8.dp, bottom = 8.dp)) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("${dateFormatter.format(po.entry.timestamp)}: JD ${String.format("%.3f", po.entry.totalCost)}", fontSize = 14.sp)
+                            Text("رصيد: JD ${String.format("%.3f", po.remainingBalance)}", fontSize = 14.sp, color = if (po.remainingBalance > 0) Color.Red else Color.Gray)
+                        }
+                        if (po.linkedPaidAmount > 0) {
+                            Text("تم دفع: JD ${String.format("%.3f", po.linkedPaidAmount)}", fontSize = 12.sp, color = Color(0xFF4CAF50))
+                        }
+                        HorizontalDivider(modifier = Modifier.padding(top = 4.dp), thickness = 0.5.dp, color = Color.LightGray)
+                    }
+                }
             }
 
             if (item.supplier.yearlyTarget > 0) {
