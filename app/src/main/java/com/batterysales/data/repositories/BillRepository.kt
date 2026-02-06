@@ -97,6 +97,7 @@ class BillRepository @Inject constructor(
             "dueDate" to bill.dueDate,
             "billType" to bill.billType,
             "referenceNumber" to bill.referenceNumber,
+            "supplierId" to bill.supplierId,
             "updatedAt" to Date()
         )
         firestore.collection(Bill.COLLECTION_NAME)

@@ -83,10 +83,21 @@ class AppNotificationManager @Inject constructor(
                 if (!hasEmittedData) {
                     hasEmittedData = true
                     if (upcomingBills.isNotEmpty()) {
+                        val minDaysRemaining = upcomingBills.minOf { bill ->
+                            val diff = bill.dueDate.time - now.time.time
+                            (diff / (1000 * 60 * 60 * 24)).toInt()
+                        }
+
+                        val message = when (minDaysRemaining) {
+                            0 -> "يوجد كمبيالات تستحق اليوم"
+                            1 -> "يوجد كمبيالات تستحق غداً"
+                            else -> "يوجد كمبيالات تستحق خلال $minDaysRemaining أيام"
+                        } + " (إجمالي: ${upcomingBills.size})"
+
                         NotificationHelper.showNotification(
                             context,
-                            "كمبيالات مستحقة قريباً",
-                            "يوجد عدد ${upcomingBills.size} كمبيالات/شيكات تستحق خلال الـ 7 أيام القادمة"
+                            "تنبيه الاستحقاق",
+                            message
                         )
                         // Add to notified list to avoid individual notifications immediately
                         upcomingBills.forEach { notifiedBillIds.add(it.id) }
@@ -168,10 +179,13 @@ class AppNotificationManager @Inject constructor(
                 .mapValues { it.value.sumOf { entry -> entry.quantity } }
 
             val lowStockItems = mutableListOf<Pair<ProductVariant, Warehouse>>()
-            allVariants.filter { !it.archived && it.minQuantity > 0 }.forEach { variant ->
+            allVariants.filter { !it.archived }.forEach { variant ->
                 for (warehouse in allWarehouses) {
+                    val threshold = variant.minQuantities[warehouse.id] ?: variant.minQuantity
+                    if (threshold <= 0) continue
+
                     val qty = stockMap[Pair(variant.id, warehouse.id)] ?: 0
-                    if (qty <= variant.minQuantity) {
+                    if (qty <= threshold) {
                         lowStockItems.add(Pair(variant, warehouse))
                     }
                 }
@@ -196,13 +210,16 @@ class AppNotificationManager @Inject constructor(
                 return@combine
             }
 
-            allVariants.filter { !it.archived && it.minQuantity > 0 }.forEach { variant ->
+            allVariants.filter { !it.archived }.forEach { variant ->
                 val product = productMap[variant.productId]
                 for (warehouse in allWarehouses) {
+                    val threshold = variant.minQuantities[warehouse.id] ?: variant.minQuantity
+                    if (threshold <= 0) continue
+
                     val key = "${variant.id}:${warehouse.id}"
                     val currentQty = stockMap[Pair(variant.id, warehouse.id)] ?: 0
 
-                    if (currentQty <= variant.minQuantity) {
+                    if (currentQty <= threshold) {
                         if (!notifiedLowStockKeys.contains(key)) {
                             NotificationHelper.showNotification(
                                 context,

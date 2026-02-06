@@ -3,15 +3,8 @@ package com.batterysales.ui.stockentry
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.batterysales.data.models.Product
-import com.batterysales.data.models.ProductVariant
-import com.batterysales.data.models.StockEntry
-import com.batterysales.data.models.Warehouse
-import com.batterysales.data.repositories.ProductRepository
-import com.batterysales.data.repositories.ProductVariantRepository
-import com.batterysales.data.repositories.StockEntryRepository
-import com.batterysales.data.repositories.UserRepository
-import com.batterysales.data.repositories.WarehouseRepository
+import com.batterysales.data.models.*
+import com.batterysales.data.repositories.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -24,9 +17,11 @@ data class StockEntryUiState(
     val products: List<Product> = emptyList(),
     val variants: List<ProductVariant> = emptyList(),
     val warehouses: List<Warehouse> = emptyList(),
+    val suppliers: List<Supplier> = emptyList(),
     val selectedProduct: Product? = null,
     val selectedVariant: ProductVariant? = null,
     val selectedWarehouse: Warehouse? = null,
+    val selectedSupplier: Supplier? = null,
     val quantity: String = "",
     val costInputMode: CostInputMode = CostInputMode.BY_AMPERE,
     val costValue: String = "",
@@ -61,6 +56,7 @@ class StockEntryViewModel @Inject constructor(
     private val productVariantRepository: ProductVariantRepository,
     private val warehouseRepository: WarehouseRepository,
     private val stockEntryRepository: StockEntryRepository,
+    private val supplierRepository: SupplierRepository,
     private val userRepository: UserRepository,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
@@ -79,9 +75,13 @@ class StockEntryViewModel @Inject constructor(
             val user = userRepository.getCurrentUser()
             currentUser = user
 
-            productRepository.getProducts().combine(warehouseRepository.getWarehouses()) { products, warehouses ->
-                Pair(products, warehouses)
-            }.collectLatest { (products, warehouses) ->
+            combine(
+                productRepository.getProducts(),
+                warehouseRepository.getWarehouses(),
+                supplierRepository.getSuppliers()
+            ) { products, warehouses, suppliers ->
+                Triple(products, warehouses, suppliers)
+            }.collectLatest { (products, warehouses, suppliers) ->
                 val activeProducts = products.filter { !it.archived }
                 val selectedWH = warehouses.find { it.id == user?.warehouseId }
 
@@ -89,6 +89,7 @@ class StockEntryViewModel @Inject constructor(
                     it.copy(
                         products = activeProducts,
                         warehouses = warehouses,
+                        suppliers = suppliers,
                         userRole = user?.role ?: "seller",
                         selectedWarehouse = if (user?.role == "seller") selectedWH else it.selectedWarehouse
                     )
@@ -114,6 +115,7 @@ class StockEntryViewModel @Inject constructor(
         val variant = productVariantRepository.getVariant(entry.productVariantId)
         val product = variant?.let { uiState.value.products.find { p -> p.id == it.productId } }
         val warehouse = uiState.value.warehouses.find { it.id == entry.warehouseId }
+        val supplier = uiState.value.suppliers.find { it.id == entry.supplierId }
 
         if (variant == null || product == null || warehouse == null) {
             _uiState.update { it.copy(isLoading = false, errorMessage = "فشل تحميل تفاصيل القيد") }
@@ -128,6 +130,7 @@ class StockEntryViewModel @Inject constructor(
                 variants = variantsForProduct,
                 selectedVariant = variant,
                 selectedWarehouse = warehouse,
+                selectedSupplier = supplier,
                 quantity = entry.quantity.toString(),
                 costValue = entry.costPrice.toString(),
                 minQuantity = variant.minQuantity.toString(),
@@ -167,6 +170,7 @@ class StockEntryViewModel @Inject constructor(
         _uiState.update { it.copy(selectedVariant = variant, minQuantity = variant.minQuantity.toString()) }
     }
     fun onWarehouseSelected(warehouse: Warehouse) { _uiState.update { it.copy(selectedWarehouse = warehouse) } }
+    fun onSupplierSelected(supplier: Supplier) { _uiState.update { it.copy(selectedSupplier = supplier, supplierName = supplier.name) } }
     fun onQuantityChanged(quantity: String) { _uiState.update { it.copy(quantity = quantity) } }
     fun onMinQuantityChanged(minQty: String) { _uiState.update { it.copy(minQuantity = minQty) } }
     fun onCostInputModeChanged(mode: CostInputMode) { _uiState.update { it.copy(costInputMode = mode, costValue = "") } }
@@ -247,7 +251,8 @@ class StockEntryViewModel @Inject constructor(
                         costPerAmpere = updatedItem.costPerAmpere,
                         totalAmperes = updatedItem.totalAmperes,
                         totalCost = updatedItem.totalCost,
-                        supplier = state.supplierName
+                        supplier = state.supplierName,
+                        supplierId = state.selectedSupplier?.id ?: ""
                     )
                     stockEntryRepository.updateStockEntry(updatedEntry)
 
@@ -272,6 +277,7 @@ class StockEntryViewModel @Inject constructor(
                             grandTotalCost = grandTotalCost,
                             timestamp = Date(),
                             supplier = state.supplierName,
+                            supplierId = state.selectedSupplier?.id ?: "",
                             status = if (currentUser?.role == "seller") "pending" else "approved",
                             createdBy = currentUser?.id ?: ""
                         )
@@ -322,6 +328,16 @@ class StockEntryViewModel @Inject constructor(
                 warehouseRepository.addWarehouse(Warehouse(name = name, location = ""))
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = "فشل إضافة المستودع") }
+            }
+        }
+    }
+
+    fun onAddSupplier(name: String, target: Double) {
+        viewModelScope.launch {
+            try {
+                supplierRepository.addSupplier(Supplier(name = name, yearlyTarget = target))
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "فشل إضافة المورد") }
             }
         }
     }

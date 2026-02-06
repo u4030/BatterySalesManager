@@ -53,11 +53,12 @@ fun AppNavigation(navController: NavHostController) {
         composable("user_management") { UserManagementScreen(navController) }
         composable("approvals") { ApprovalsScreen(navController) }
         composable(
-            route = "product_ledger/{variantId}/{productName}/{variantCapacity}",
+            route = "product_ledger/{variantId}/{productName}/{variantCapacity}/{variantSpecification}",
             arguments = listOf(
                 navArgument("variantId") { type = NavType.StringType },
                 navArgument("productName") { type = NavType.StringType },
-                navArgument("variantCapacity") { type = NavType.StringType }
+                navArgument("variantCapacity") { type = NavType.StringType },
+                navArgument("variantSpecification") { type = NavType.StringType }
             )
         ) {
             ProductLedgerScreen(navController)

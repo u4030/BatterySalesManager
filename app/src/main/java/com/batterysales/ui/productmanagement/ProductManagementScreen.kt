@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.batterysales.data.models.Product
 import com.batterysales.data.models.ProductVariant
+import com.batterysales.data.models.Warehouse
 import com.batterysales.ui.components.BarcodeScanner
 import com.batterysales.viewmodel.ProductManagementViewModel
 
@@ -39,7 +40,7 @@ fun ProductManagementScreen(viewModel: ProductManagementViewModel = hiltViewMode
     if (showAddProductDialog) {
         AddProductDialog(
             onDismiss = { showAddProductDialog = false },
-            onAddProduct = { name, notes -> viewModel.addProduct(name, notes) }
+            onAddProduct = { name, specification -> viewModel.addProduct(name, specification) }
         )
     }
 
@@ -53,9 +54,10 @@ fun ProductManagementScreen(viewModel: ProductManagementViewModel = hiltViewMode
 
     if (showAddVariantDialog) {
         AddVariantDialog(
+            warehouses = uiState.warehouses,
             onDismiss = { showAddVariantDialog = false },
-            onAddVariant = { capacity, sellingPrice, barcode, minQuantity, notes ->
-                viewModel.addVariant(capacity, sellingPrice, barcode, minQuantity, notes)
+            onAddVariant = { capacity, sellingPrice, barcode, minQuantity, minQuantities, specification ->
+                viewModel.addVariant(capacity, sellingPrice, barcode, minQuantity, minQuantities, specification)
             }
         )
     }
@@ -63,6 +65,7 @@ fun ProductManagementScreen(viewModel: ProductManagementViewModel = hiltViewMode
     variantToEdit?.let { variant ->
         EditVariantDialog(
             variant = variant,
+            warehouses = uiState.warehouses,
             onDismiss = { variantToEdit = null },
             onUpdateVariant = { updatedVariant -> viewModel.updateVariant(updatedVariant) }
         )
@@ -160,8 +163,8 @@ fun ProductCard(
                 }
             }
 
-            if (product.notes.isNotEmpty()) {
-                Text(product.notes, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (product.specification.isNotEmpty()) {
+                Text(product.specification, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
             if (isSelected) {
@@ -236,7 +239,7 @@ fun AddProductDialog(
     onAddProduct: (String, String) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
-    var notes by remember { mutableStateOf("") }
+    var specification by remember { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -249,14 +252,14 @@ fun AddProductDialog(
                     label = "اسم المنتج"
                 )
                 com.batterysales.ui.components.CustomKeyboardTextField(
-                    value = notes,
-                    onValueChange = { notes = it },
-                    label = "ملاحظات"
+                    value = specification,
+                    onValueChange = { specification = it },
+                    label = "المواصفة"
                 )
                 Spacer(modifier = Modifier.height(com.batterysales.ui.components.LocalCustomKeyboardController.current.keyboardHeight.value))
             }
         },
-        confirmButton = { Button(onClick = { if(name.isNotBlank()) onAddProduct(name, notes); onDismiss() }) { Text("إضافة") } },
+        confirmButton = { Button(onClick = { if(name.isNotBlank()) onAddProduct(name, specification); onDismiss() }) { Text("إضافة") } },
         dismissButton = { Button(onClick = onDismiss) { Text("إلغاء") } }
     )
 }
@@ -268,7 +271,7 @@ fun EditProductDialog(
     onUpdateProduct: (Product) -> Unit
 ) {
     var name by remember { mutableStateOf(product.name) }
-    var notes by remember { mutableStateOf(product.notes) }
+    var specification by remember { mutableStateOf(product.specification) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -281,16 +284,16 @@ fun EditProductDialog(
                     label = "اسم المنتج"
                 )
                 com.batterysales.ui.components.CustomKeyboardTextField(
-                    value = notes,
-                    onValueChange = { notes = it },
-                    label = "ملاحظات"
+                    value = specification,
+                    onValueChange = { specification = it },
+                    label = "المواصفة"
                 )
                 Spacer(modifier = Modifier.height(com.batterysales.ui.components.LocalCustomKeyboardController.current.keyboardHeight.value))
             }
         },
         confirmButton = {
             Button(onClick = {
-                if(name.isNotBlank()) onUpdateProduct(product.copy(name = name, notes = notes))
+                if(name.isNotBlank()) onUpdateProduct(product.copy(name = name, specification = specification))
                 onDismiss()
             }) { Text("حفظ") }
         },
@@ -301,14 +304,16 @@ fun EditProductDialog(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AddVariantDialog(
+    warehouses: List<Warehouse>,
     onDismiss: () -> Unit,
-    onAddVariant: (Int, Double, String, Int, String) -> Unit
+    onAddVariant: (Int, Double, String, Int, Map<String, Int>, String) -> Unit
 ) {
     var capacity by remember { mutableStateOf("") }
     var sellingPrice by remember { mutableStateOf("") }
     var barcode by remember { mutableStateOf("") }
     var minQuantity by remember { mutableStateOf("") }
-    var notes by remember { mutableStateOf("") }
+    var minQuantities by remember { mutableStateOf(mutableMapOf<String, String>()) }
+    var specification by remember { mutableStateOf("") }
     var showScanner by remember { mutableStateOf(false) }
 
     if (showScanner) {
@@ -357,13 +362,27 @@ fun AddVariantDialog(
                         com.batterysales.ui.components.CustomKeyboardTextField(
                             value = minQuantity,
                             onValueChange = { minQuantity = it },
-                            label = "الحد الأدنى للكمية",
+                            label = "الحد الأدنى العام",
                             modifier = Modifier.weight(1f).widthIn(min = 120.dp)
                         )
+
+                        warehouses.forEach { warehouse ->
+                            com.batterysales.ui.components.CustomKeyboardTextField(
+                                value = minQuantities[warehouse.id] ?: "",
+                                onValueChange = { newValue ->
+                                    val newMap = minQuantities.toMutableMap()
+                                    newMap[warehouse.id] = newValue
+                                    minQuantities = newMap
+                                },
+                                label = "الحد الأدنى (${warehouse.name})",
+                                modifier = Modifier.weight(1f).widthIn(min = 120.dp)
+                            )
+                        }
+
                         com.batterysales.ui.components.CustomKeyboardTextField(
-                            value = notes,
-                            onValueChange = { notes = it },
-                            label = "ملاحظات",
+                            value = specification,
+                            onValueChange = { specification = it },
+                            label = "المواصفة",
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
@@ -377,7 +396,8 @@ fun AddVariantDialog(
                         sellingPrice.toDoubleOrNull() ?: 0.0,
                         barcode,
                         minQuantity.toIntOrNull() ?: 0,
-                        notes
+                        minQuantities.mapValues { it.value.toIntOrNull() ?: 0 },
+                        specification
                     )
                     onDismiss()
                 }) { Text("إضافة") }
@@ -391,6 +411,7 @@ fun AddVariantDialog(
 @Composable
 fun EditVariantDialog(
     variant: ProductVariant,
+    warehouses: List<Warehouse>,
     onDismiss: () -> Unit,
     onUpdateVariant: (ProductVariant) -> Unit
 ) {
@@ -398,7 +419,8 @@ fun EditVariantDialog(
     var sellingPrice by remember { mutableStateOf(variant.sellingPrice.toString()) }
     var barcode by remember { mutableStateOf(variant.barcode) }
     var minQuantity by remember { mutableStateOf(variant.minQuantity.toString()) }
-    var notes by remember { mutableStateOf(variant.notes) }
+    var minQuantities by remember { mutableStateOf(variant.minQuantities.mapValues { it.value.toString() }.toMutableMap()) }
+    var specification by remember { mutableStateOf(variant.specification) }
     var showScanner by remember { mutableStateOf(false) }
 
     if (showScanner) {
@@ -447,13 +469,27 @@ fun EditVariantDialog(
                         com.batterysales.ui.components.CustomKeyboardTextField(
                             value = minQuantity,
                             onValueChange = { minQuantity = it },
-                            label = "الحد الأدنى للكمية",
+                            label = "الحد الأدنى العام",
                             modifier = Modifier.weight(1f).widthIn(min = 120.dp)
                         )
+
+                        warehouses.forEach { warehouse ->
+                            com.batterysales.ui.components.CustomKeyboardTextField(
+                                value = minQuantities[warehouse.id] ?: "",
+                                onValueChange = { newValue ->
+                                    val newMap = minQuantities.toMutableMap()
+                                    newMap[warehouse.id] = newValue
+                                    minQuantities = newMap
+                                },
+                                label = "الحد الأدنى (${warehouse.name})",
+                                modifier = Modifier.weight(1f).widthIn(min = 120.dp)
+                            )
+                        }
+
                         com.batterysales.ui.components.CustomKeyboardTextField(
-                            value = notes,
-                            onValueChange = { notes = it },
-                            label = "ملاحظات",
+                            value = specification,
+                            onValueChange = { specification = it },
+                            label = "المواصفة",
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
@@ -467,7 +503,8 @@ fun EditVariantDialog(
                         sellingPrice = sellingPrice.toDoubleOrNull() ?: 0.0,
                         barcode = barcode,
                         minQuantity = minQuantity.toIntOrNull() ?: 0,
-                        notes = notes
+                        minQuantities = minQuantities.mapValues { it.value.toIntOrNull() ?: 0 },
+                        specification = specification
                     ))
                     onDismiss()
                 }) { Text("حفظ") }
