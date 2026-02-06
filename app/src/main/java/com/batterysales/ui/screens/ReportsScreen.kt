@@ -62,6 +62,7 @@ fun SearchBar(
 @Composable
 fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hiltViewModel()) {
     val reportItems by viewModel.inventoryReport.collectAsState()
+    val supplierItems by viewModel.supplierReport.collectAsState()
     val warehouses by viewModel.warehouses.collectAsState()
     val oldBatterySummary by viewModel.oldBatterySummary.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -85,10 +86,13 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                     TopAppBar(title = { Text("التقارير والإحصائيات") })
                     TabRow(selectedTabIndex = selectedTab) {
                         Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }) {
-                            Text("مخزون المنتجات", modifier = Modifier.padding(16.dp))
+                            Text("مخزون المنتجات", modifier = Modifier.padding(8.dp))
                         }
                         Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) {
-                            Text("البطاريات القديمة", modifier = Modifier.padding(16.dp))
+                            Text("البطاريات القديمة", modifier = Modifier.padding(8.dp))
+                        }
+                        Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }) {
+                            Text("حالة الموردين", modifier = Modifier.padding(8.dp))
                         }
                     }
                 }
@@ -123,17 +127,20 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                                     onClick = {
                                         val capacityStr = item.variant.capacity.toString()
                                         val productName = item.product.name
+                                        val spec = item.variant.specification.ifEmpty { "no_spec" }
                                         navController.navigate(
-                                            "product_ledger/${item.variant.id}/$productName/$capacityStr"
+                                            "product_ledger/${item.variant.id}/$productName/$capacityStr/$spec"
                                         )
                                     }
                                 )
                             }
                         }
-                    } else {
+                    } else if (selectedTab == 1) {
                         OldBatteryReportSection(oldBatterySummary) {
                             navController.navigate("old_battery_ledger")
                         }
+                    } else {
+                        SupplierReportSection(viewModel, supplierItems)
                     }
                 }
             }
@@ -186,7 +193,8 @@ fun ReportItemCard(
         Column(modifier = Modifier.padding(16.dp)) {
             // Card Header: Product Name
             Text(
-                text = "${item.product.name} - ${item.variant.capacity} أمبير",
+                text = "${item.product.name} - ${item.variant.capacity} أمبير" +
+                        if (item.variant.specification.isNotEmpty()) " (${item.variant.specification})" else "",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold
             )
@@ -195,7 +203,11 @@ fun ReportItemCard(
             Spacer(modifier = Modifier.height(16.dp))
 
             // Main Info: Totals
-            val isLowStock = item.variant.minQuantity > 0 && item.totalQuantity <= item.variant.minQuantity
+            val anyWarehouseLowStock = item.warehouseQuantities.any { (whId, qty) ->
+                val threshold = item.variant.minQuantities[whId] ?: item.variant.minQuantity
+                threshold > 0 && qty <= threshold
+            }
+            val isLowStock = anyWarehouseLowStock || (item.variant.minQuantity > 0 && item.totalQuantity <= item.variant.minQuantity)
 
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
@@ -232,7 +244,9 @@ fun ReportItemCard(
             val quantitiesInWarehouses = warehouses.mapNotNull { warehouse ->
                 val quantity = item.warehouseQuantities[warehouse.id]
                 if (quantity != null && quantity != 0) {
-                    warehouse.name to quantity
+                    val threshold = item.variant.minQuantities[warehouse.id] ?: item.variant.minQuantity
+                    val isWHLow = threshold > 0 && quantity <= threshold
+                    Triple(warehouse.name, quantity, isWHLow)
                 } else null
             }
 
@@ -246,8 +260,8 @@ fun ReportItemCard(
                     modifier = Modifier.padding(start = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    quantitiesInWarehouses.forEach { (warehouseName, quantity) ->
-                        Row {
+                    quantitiesInWarehouses.forEach { (warehouseName, quantity, isWHLow) ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = "$warehouseName: ",
                                 fontWeight = FontWeight.SemiBold,
@@ -255,8 +269,13 @@ fun ReportItemCard(
                             )
                             Text(
                                 text = quantity.toString(),
-                                style = MaterialTheme.typography.bodyMedium
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (isWHLow) Color(0xFFD32F2F) else Color.Unspecified
                             )
+                            if (isWHLow) {
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("(منخفض)", style = MaterialTheme.typography.labelSmall, color = Color(0xFFD32F2F))
+                            }
                         }
                     }
                 }
@@ -294,6 +313,113 @@ fun OldBatteryReportSection(summary: Pair<Int, Double>, onViewDetails: () -> Uni
                 }
             }
         }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SupplierReportSection(viewModel: ReportsViewModel, items: List<com.batterysales.viewmodel.SupplierReportItem>) {
+    val startDate by viewModel.startDate.collectAsState()
+    val endDate by viewModel.endDate.collectAsState()
+    var showDatePicker by remember { mutableStateOf(false) }
+
+    val dateRangePickerState = rememberDateRangePickerState()
+    val dateFormatter = java.text.SimpleDateFormat("yyyy/MM/dd", java.util.Locale.getDefault())
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+                .clickable { showDatePicker = true },
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+        ) {
+            Row(
+                modifier = Modifier.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column {
+                    Text("الفترة الزمنية", style = MaterialTheme.typography.labelMedium)
+                    val startStr = startDate?.let { dateFormatter.format(java.util.Date(it)) } ?: "البداية"
+                    val endStr = endDate?.let { dateFormatter.format(java.util.Date(it)) } ?: "النهاية"
+                    Text("$startStr - $endStr", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                }
+                Icon(Icons.Default.PhotoCamera, contentDescription = null) // Just an icon for now, could be DateRange
+            }
+        }
+
+        val totalSuppliersDebt = items.sumOf { it.totalDebt }
+        Card(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+        ) {
+            Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("إجمالي المبالغ المستحقة للموردين", fontWeight = FontWeight.Bold)
+                Text("JD ${String.format("%.3f", totalSuppliersDebt)}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
+            }
+        }
+
+        LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            items(items) { item ->
+                SupplierCard(item)
+            }
+        }
+    }
+
+    if (showDatePicker) {
+        DateRangePickerDialog(
+            state = dateRangePickerState,
+            onDismiss = { showDatePicker = false },
+            onConfirm = {
+                viewModel.onDateRangeSelected(dateRangePickerState.selectedStartDateMillis, dateRangePickerState.selectedEndDateMillis)
+                showDatePicker = false
+            }
+        )
+    }
+}
+
+@Composable
+fun SupplierCard(item: com.batterysales.viewmodel.SupplierReportItem) {
+    Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(item.supplier.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(8.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                InfoColumn(label = "إجمالي المشتريات", value = "JD ${String.format("%.3f", item.totalPurchases)}", modifier = Modifier.weight(1f))
+                InfoColumn(label = "المبالغ المستحقة", value = "JD ${String.format("%.3f", item.totalDebt)}", valueColor = if (item.totalDebt > 0) Color.Red else Color.Unspecified, modifier = Modifier.weight(1f))
+            }
+
+            if (item.supplier.yearlyTarget > 0) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("الهدف السنوي: JD ${String.format("%.3f", item.supplier.yearlyTarget)}", style = MaterialTheme.typography.labelMedium)
+                LinearProgressIndicator(
+                    progress = item.targetProgress.toFloat().coerceIn(0f, 1f),
+                    modifier = Modifier.fillMaxWidth().height(8.dp),
+                    color = if (item.targetProgress >= 1.0) Color(0xFF4CAF50) else MaterialTheme.colorScheme.primary
+                )
+                Text("${(item.targetProgress * 100).toInt()}% محقق", style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.End))
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DateRangePickerDialog(
+    state: DateRangePickerState,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = { TextButton(onClick = onConfirm) { Text("موافق") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
+    ) {
+        DateRangePicker(state = state, modifier = Modifier.weight(1f))
     }
 }
 

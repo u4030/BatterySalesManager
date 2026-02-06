@@ -18,12 +18,22 @@ data class InventoryReportItem(
     val totalCostValue: Double
 )
 
+data class SupplierReportItem(
+    val supplier: Supplier,
+    val totalPurchases: Double,
+    val totalDebt: Double,
+    val targetProgress: Double, // 0.0 to 1.0
+    val balance: Double // TotalPurchases - PaidAmount (basically Debt)
+)
+
 @HiltViewModel
 class ReportsViewModel @Inject constructor(
     productRepository: ProductRepository,
     productVariantRepository: ProductVariantRepository,
     warehouseRepository: WarehouseRepository,
-    stockEntryRepository: StockEntryRepository,
+    private val stockEntryRepository: StockEntryRepository,
+    private val supplierRepository: SupplierRepository,
+    private val billRepository: BillRepository,
     private val oldBatteryRepository: OldBatteryRepository
 ) : ViewModel() {
 
@@ -32,6 +42,12 @@ class ReportsViewModel @Inject constructor(
 
     private val _barcodeFilter = MutableStateFlow<String?>(null)
     val barcodeFilter = _barcodeFilter.asStateFlow()
+
+    private val _startDate = MutableStateFlow<Long?>(null)
+    val startDate = _startDate.asStateFlow()
+
+    private val _endDate = MutableStateFlow<Long?>(null)
+    val endDate = _endDate.asStateFlow()
 
     val warehouses: StateFlow<List<Warehouse>> = warehouseRepository.getWarehouses()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -99,6 +115,45 @@ class ReportsViewModel @Inject constructor(
     fun onBarcodeScanned(barcode: String?) {
         _barcodeFilter.value = barcode
     }
+
+    fun onDateRangeSelected(start: Long?, end: Long?) {
+        _startDate.value = start
+        _endDate.value = end
+    }
+
+    val supplierReport: StateFlow<List<SupplierReportItem>> = combine(
+        supplierRepository.getSuppliers(),
+        stockEntryRepository.getAllStockEntriesFlow(),
+        billRepository.getAllBillsFlow(),
+        _startDate,
+        _endDate
+    ) { suppliers, allEntries, allBills, start, end ->
+        suppliers.map { supplier ->
+            val supplierEntries = allEntries.filter { 
+                it.supplierId == supplier.id && 
+                it.status == "approved" &&
+                (start == null || it.timestamp.time >= start) &&
+                (end == null || it.timestamp.time <= end)
+            }
+            val supplierBills = allBills.filter { 
+                it.supplierId == supplier.id &&
+                (start == null || it.dueDate.time >= start) &&
+                (end == null || it.dueDate.time <= end)
+            }
+
+            val totalPurchases = supplierEntries.sumOf { it.totalCost }
+            val totalDebt = supplierBills.sumOf { it.amount - it.paidAmount }
+            val targetProgress = if (supplier.yearlyTarget > 0) totalPurchases / supplier.yearlyTarget else 0.0
+
+            SupplierReportItem(
+                supplier = supplier,
+                totalPurchases = totalPurchases,
+                totalDebt = totalDebt,
+                targetProgress = targetProgress,
+                balance = totalDebt
+            )
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val oldBatterySummary: StateFlow<Pair<Int, Double>> = oldBatteryRepository.getAllTransactionsFlow()
         .map { transactions ->

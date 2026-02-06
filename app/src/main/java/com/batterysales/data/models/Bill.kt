@@ -21,7 +21,8 @@ data class Bill(
     val updatedAt: Date = Date(),
     val paidDate: Date? = null, // تاريخ التسديد
     val notes: String = "",
-    val referenceNumber: String = "" // رقم السند/الشيك
+    val referenceNumber: String = "", // رقم السند/الشيك
+    val supplierId: String = "" // Link to Supplier model
 ) {
     companion object {
         const val COLLECTION_NAME = "bills"

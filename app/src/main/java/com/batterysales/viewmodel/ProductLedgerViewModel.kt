@@ -37,6 +37,7 @@ class ProductLedgerViewModel @Inject constructor(
     private val productVariantId: String = savedStateHandle.get<String>("variantId") ?: ""
     val productName: String = savedStateHandle.get<String>("productName") ?: "سجل المنتج"
     val variantCapacity: String = savedStateHandle.get<String>("variantCapacity") ?: ""
+    val variantSpecification: String = (savedStateHandle.get<String>("variantSpecification") ?: "").let { if(it == "no_spec") "" else it }
 
     private val _isLoading = MutableStateFlow(true)
     val isLoading = _isLoading.asStateFlow()

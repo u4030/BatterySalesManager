@@ -36,6 +36,7 @@ fun BillsScreen(
     viewModel: BillViewModel = hiltViewModel()
 ) {
     val bills by viewModel.bills.collectAsState()
+    val suppliers by viewModel.suppliers.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     var showAddBillDialog by remember { mutableStateOf(false) }
 
@@ -94,8 +95,10 @@ fun BillsScreen(
                     modifier = Modifier.fillMaxSize()
                 ) {
                     items(bills) { bill ->
+                        val supplier = suppliers.find { it.id == bill.supplierId }
                         BillItemCard(
                             bill = bill,
+                            supplierName = supplier?.name ?: "",
                             onPayClick = { selectedBillForPayment = bill },
                             onDeleteClick = { billToDelete = bill },
                             onEditClick = { billToEdit = bill }
@@ -126,6 +129,7 @@ fun BillsScreen(
                 if (billToEdit != null) {
                     EditBillDialog(
                         bill = billToEdit!!,
+                        suppliers = suppliers,
                         onDismiss = { billToEdit = null },
                         onConfirm = { updatedBill ->
                             viewModel.updateBill(updatedBill)
@@ -150,9 +154,10 @@ fun BillsScreen(
 
     if (showAddBillDialog) {
         AddBillDialog(
+            suppliers = suppliers,
             onDismiss = { showAddBillDialog = false },
-            onAdd = { desc, amount, date, type, ref ->
-                viewModel.addBill(desc, amount, date, type, ref)
+            onAdd = { desc, amount, date, type, ref, supplierId ->
+                viewModel.addBill(desc, amount, date, type, ref, supplierId)
                 showAddBillDialog = false
             }
         )
@@ -160,7 +165,7 @@ fun BillsScreen(
 }
 
 @Composable
-fun BillItemCard(bill: Bill, onPayClick: () -> Unit, onDeleteClick: () -> Unit, onEditClick: () -> Unit) {
+fun BillItemCard(bill: Bill, supplierName: String, onPayClick: () -> Unit, onDeleteClick: () -> Unit, onEditClick: () -> Unit) {
     val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
     val isPaid = bill.status == BillStatus.PAID
     val isPartial = bill.status == BillStatus.PARTIAL
@@ -207,6 +212,9 @@ fun BillItemCard(bill: Bill, onPayClick: () -> Unit, onDeleteClick: () -> Unit, 
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column {
+                    if (supplierName.isNotEmpty()) {
+                        Text("المورد: $supplierName", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary, fontSize = 14.sp)
+                    }
                     if (bill.referenceNumber.isNotEmpty()) {
                         Text("رقم السند: ${bill.referenceNumber}", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary, fontSize = 14.sp)
                     }
@@ -275,10 +283,12 @@ fun PaymentDialog(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddBillDialog(
+    suppliers: List<com.batterysales.data.models.Supplier>,
     onDismiss: () -> Unit,
-    onAdd: (String, Double, Date, BillType, String) -> Unit
+    onAdd: (String, Double, Date, BillType, String, String) -> Unit
 ) {
     var description by remember { mutableStateOf("") }
+    var selectedSupplier by remember { mutableStateOf<com.batterysales.data.models.Supplier?>(null) }
     var amount by remember { mutableStateOf("") }
     var refNum by remember { mutableStateOf("") }
     var selectedType by remember { mutableStateOf(BillType.CHECK) }
@@ -308,6 +318,14 @@ fun AddBillDialog(
                     value = refNum,
                     onValueChange = { refNum = it },
                     label = "رقم السند / الشيك"
+                )
+
+                com.batterysales.ui.stockentry.Dropdown(
+                    label = "المورد",
+                    selectedValue = selectedSupplier?.name ?: "",
+                    options = suppliers.map { it.name },
+                    onOptionSelected = { index -> selectedSupplier = suppliers[index] },
+                    enabled = true
                 )
 
                 Text("نوع الالتزام:", fontSize = 14.sp, fontWeight = FontWeight.Medium)
@@ -356,7 +374,7 @@ fun AddBillDialog(
         confirmButton = {
             Button(onClick = {
                 val amt = amount.toDoubleOrNull() ?: 0.0
-                if (description.isNotEmpty() && amt > 0) onAdd(description, amt, selectedDate, selectedType, refNum)
+                if (description.isNotEmpty() && amt > 0) onAdd(description, amt, selectedDate, selectedType, refNum, selectedSupplier?.id ?: "")
             }) { Text("إضافة") }
         },
         dismissButton = {
@@ -387,10 +405,12 @@ fun AddBillDialog(
 @Composable
 fun EditBillDialog(
     bill: Bill,
+    suppliers: List<com.batterysales.data.models.Supplier>,
     onDismiss: () -> Unit,
     onConfirm: (Bill) -> Unit
 ) {
     var description by remember { mutableStateOf(bill.description) }
+    var selectedSupplier by remember { mutableStateOf(suppliers.find { it.id == bill.supplierId }) }
     var amount by remember { mutableStateOf(bill.amount.toString()) }
     var refNum by remember { mutableStateOf(bill.referenceNumber) }
     var selectedType by remember { mutableStateOf(bill.billType) }
@@ -421,6 +441,14 @@ fun EditBillDialog(
                     value = refNum,
                     onValueChange = { refNum = it },
                     label = "رقم السند / الشيك"
+                )
+
+                com.batterysales.ui.stockentry.Dropdown(
+                    label = "المورد",
+                    selectedValue = selectedSupplier?.name ?: "",
+                    options = suppliers.map { it.name },
+                    onOptionSelected = { index -> selectedSupplier = suppliers[index] },
+                    enabled = true
                 )
 
                 Text("نوع الالتزام:", fontSize = 14.sp, fontWeight = FontWeight.Medium)
@@ -469,7 +497,7 @@ fun EditBillDialog(
         confirmButton = {
             Button(onClick = {
                 val amt = amount.toDoubleOrNull() ?: bill.amount
-                onConfirm(bill.copy(description = description, amount = amt, dueDate = selectedDate, billType = selectedType, referenceNumber = refNum))
+                onConfirm(bill.copy(description = description, amount = amt, dueDate = selectedDate, billType = selectedType, referenceNumber = refNum, supplierId = selectedSupplier?.id ?: ""))
             }) { Text("حفظ التعديلات") }
         },
         dismissButton = {

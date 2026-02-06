@@ -1,6 +1,7 @@
 package com.batterysales.data.models
 
 import com.google.firebase.firestore.DocumentId
+import com.google.firebase.firestore.PropertyName
 import java.util.Date
 
 /**
@@ -15,7 +16,7 @@ import java.util.Date
  * - capacity: السعة بالأمبير (مثال: 55, 70)
  * - sellingPrice: سعر بيع هذه السعة المحددة
  * - barcode: الباركود الخاص بهذه السعة
- * - notes: ملاحظات خاصة بهذه السعة
+ * - specification: المواصفة الفنية لهذه السعة
  * - createdAt: تاريخ إنشاء سجل المتغير
  * - updatedAt: تاريخ آخر تحديث
  * - archived: لتحديد ما إذا كان المتغير مؤرشفًا
@@ -27,8 +28,11 @@ data class ProductVariant(
     val capacity: Int = 0,
     val sellingPrice: Double = 0.0,
     val barcode: String = "",
-    val minQuantity: Int = 0,
-    val notes: String = "",
+    val minQuantity: Int = 0, // Default/Legacy minimum quantity
+    val minQuantities: Map<String, Int> = emptyMap(), // Per-warehouse minimum quantities: WarehouseId -> MinQuantity
+    @get:PropertyName("notes")
+    @set:PropertyName("notes")
+    var specification: String = "",
     val createdAt: Date = Date(),
     val updatedAt: Date = Date(),
     val archived: Boolean = false
