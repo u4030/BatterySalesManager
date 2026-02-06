@@ -1,6 +1,7 @@
 package com.batterysales.data.models
 
 import com.google.firebase.firestore.DocumentId
+import com.google.firebase.firestore.PropertyName
 import java.util.Date
 
 /**
@@ -12,7 +13,7 @@ import java.util.Date
  * الخصائص:
  * - id: معرف المنتج (معرف Firestore)
  * - name: اسم المنتج أو العلامة التجارية (مثال: "بطاريات بوش")
- * - notes: ملاحظات عامة عن هذا النوع من المنتجات
+ * - specification: المواصفة الفنية للمنتج
  * - createdAt: تاريخ إنشاء سجل المنتج
  * - updatedAt: تاريخ آخر تحديث
  * - archived: لتحديد ما إذا كان المنتج مؤرشفًا (محذوفًا منطقيًا)
@@ -21,7 +22,9 @@ data class Product(
 //    @DocumentId
     val id: String = "",
     val name: String = "", // اسم المنتج العام، مثال: "بطاريات بوش"
-    val notes: String = "",
+    @get:PropertyName("notes")
+    @set:PropertyName("notes")
+    var specification: String = "",
     val createdAt: Date = Date(),
     val updatedAt: Date = Date(),
     val archived: Boolean = false

@@ -2,13 +2,8 @@ package com.batterysales.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.batterysales.data.models.Bill
-import com.batterysales.data.models.BillStatus
-import com.batterysales.data.models.BillType
-import com.batterysales.data.models.Transaction
-import com.batterysales.data.repositories.AccountingRepository
-import com.batterysales.data.repositories.BankRepository
-import com.batterysales.data.repositories.BillRepository
+import com.batterysales.data.models.*
+import com.batterysales.data.repositories.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,6 +14,7 @@ import javax.inject.Inject
 @HiltViewModel
 class BillViewModel @Inject constructor(
     private val repository: BillRepository,
+    private val supplierRepository: SupplierRepository,
     private val accountingRepository: AccountingRepository,
     private val bankRepository: BankRepository
 ) : ViewModel() {
@@ -26,11 +22,15 @@ class BillViewModel @Inject constructor(
     private val _bills = MutableStateFlow<List<Bill>>(emptyList())
     val bills = _bills.asStateFlow()
 
+    private val _suppliers = MutableStateFlow<List<Supplier>>(emptyList())
+    val suppliers = _suppliers.asStateFlow()
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading = _isLoading.asStateFlow()
 
     init {
         loadBills()
+        loadSuppliers()
     }
 
     fun loadBills() {
@@ -44,7 +44,15 @@ class BillViewModel @Inject constructor(
         }
     }
 
-    fun addBill(description: String, amount: Double, dueDate: Date, billType: BillType, referenceNumber: String = "") {
+    fun loadSuppliers() {
+        viewModelScope.launch {
+            supplierRepository.getSuppliers().collect {
+                _suppliers.value = it
+            }
+        }
+    }
+
+    fun addBill(description: String, amount: Double, dueDate: Date, billType: BillType, referenceNumber: String = "", supplierId: String = "") {
         viewModelScope.launch {
             _isLoading.value = true
             try {
@@ -53,7 +61,8 @@ class BillViewModel @Inject constructor(
                     amount = amount,
                     dueDate = dueDate,
                     billType = billType,
-                    referenceNumber = referenceNumber
+                    referenceNumber = referenceNumber,
+                    supplierId = supplierId
                 )
                 repository.addBill(bill)
                 loadBills()

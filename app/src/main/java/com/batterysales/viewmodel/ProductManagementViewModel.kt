@@ -4,8 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.batterysales.data.models.Product
 import com.batterysales.data.models.ProductVariant
+import com.batterysales.data.models.Warehouse
 import com.batterysales.data.repositories.ProductRepository
 import com.batterysales.data.repositories.ProductVariantRepository
+import com.batterysales.data.repositories.WarehouseRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
@@ -15,6 +17,7 @@ import javax.inject.Inject
 data class ProductManagementUiState(
     val products: List<Product> = emptyList(),
     val variants: List<ProductVariant> = emptyList(),
+    val warehouses: List<Warehouse> = emptyList(),
     val selectedProduct: Product? = null,
     val isLoading: Boolean = false,
     val errorMessage: String? = null
@@ -24,7 +27,8 @@ data class ProductManagementUiState(
 @HiltViewModel
 class ProductManagementViewModel @Inject constructor(
     private val productRepository: ProductRepository,
-    private val productVariantRepository: ProductVariantRepository
+    private val productVariantRepository: ProductVariantRepository,
+    private val warehouseRepository: WarehouseRepository
 ) : ViewModel() {
 
     private val _selectedProduct = MutableStateFlow<Product?>(null)
@@ -37,12 +41,14 @@ class ProductManagementViewModel @Inject constructor(
         _selectedProduct.flatMapLatest { product ->
             if (product == null) flowOf(emptyList()) else productVariantRepository.getVariantsForProductFlow(product.id)
         },
+        warehouseRepository.getWarehouses(),
         _isLoading
-    ) { products, selectedProduct, variants, isLoading ->
+    ) { products, selectedProduct, variants, warehouses, isLoading ->
         ProductManagementUiState(
             products = products.filter { !it.archived },
             selectedProduct = selectedProduct,
             variants = variants.filter { !it.archived },
+            warehouses = warehouses,
             isLoading = isLoading,
             errorMessage = _errorMessage.value
         )
@@ -53,10 +59,10 @@ class ProductManagementViewModel @Inject constructor(
         _selectedProduct.value = product
     }
 
-    fun addProduct(name: String, notes: String) {
+    fun addProduct(name: String, specification: String) {
         viewModelScope.launch {
             try {
-                val product = Product(name = name, notes = notes)
+                val product = Product(name = name, specification = specification)
                 if (product.isValid()) {
                     productRepository.addProduct(product)
                 } else {
@@ -68,7 +74,7 @@ class ProductManagementViewModel @Inject constructor(
         }
     }
 
-    fun addVariant(capacity: Int, sellingPrice: Double, barcode: String, minQuantity: Int, notes: String) {
+    fun addVariant(capacity: Int, sellingPrice: Double, barcode: String, minQuantity: Int, minQuantities: Map<String, Int>, specification: String) {
         viewModelScope.launch {
             _selectedProduct.value?.let { product ->
                 try {
@@ -78,7 +84,8 @@ class ProductManagementViewModel @Inject constructor(
                         sellingPrice = sellingPrice,
                         barcode = barcode,
                         minQuantity = minQuantity,
-                        notes = notes
+                        minQuantities = minQuantities,
+                        specification = specification
                     )
                     if (variant.isValid()) {
                         productVariantRepository.addVariant(variant)

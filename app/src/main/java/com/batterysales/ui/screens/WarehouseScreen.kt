@@ -50,7 +50,8 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
 
                     // Stock Items in this warehouse
                     items(items) { stockItem ->
-                        val isLowStock = stockItem.variant.minQuantity > 0 && stockItem.quantity <= stockItem.variant.minQuantity
+                        val threshold = stockItem.variant.minQuantities[stockItem.warehouse.id] ?: stockItem.variant.minQuantity
+                        val isLowStock = threshold > 0 && stockItem.quantity <= threshold
 
                         Card(
                             modifier = Modifier
@@ -68,7 +69,8 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = "${stockItem.product.name} - ${stockItem.variant.capacity} أمبير",
+                                        text = "${stockItem.product.name} - ${stockItem.variant.capacity} أمبير" +
+                                                if (stockItem.variant.specification.isNotEmpty()) " (${stockItem.variant.specification})" else "",
                                         style = MaterialTheme.typography.bodyLarge,
                                         fontWeight = FontWeight.Bold
                                     )
@@ -78,14 +80,14 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
-                                        if (stockItem.variant.minQuantity > 0) {
+                                        if (threshold > 0) {
                                             Spacer(modifier = Modifier.width(8.dp))
                                             Surface(
                                                 color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.1f),
                                                 shape = RoundedCornerShape(4.dp)
                                             ) {
                                                 Text(
-                                                    text = "الحد الأدنى: ${stockItem.variant.minQuantity}",
+                                                    text = "الحد الأدنى: $threshold",
                                                     style = MaterialTheme.typography.labelSmall,
                                                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
                                                     color = MaterialTheme.colorScheme.secondary

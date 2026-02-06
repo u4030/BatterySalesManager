@@ -16,7 +16,8 @@ data class StockEntry(
     val grandTotalAmperes: Int = 0,
     val grandTotalCost: Double = 0.0,
     val timestamp: Date = Date(),
-    val supplier: String = "",
+    val supplier: String = "", // Legacy supplier name
+    val supplierId: String = "", // Link to Supplier model
     val invoiceId: String? = null, // Link to invoice for sales entries
     val status: String = "approved", // approved, pending
     val createdBy: String = ""

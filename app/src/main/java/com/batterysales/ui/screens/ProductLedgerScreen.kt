@@ -62,7 +62,8 @@ fun ProductLedgerScreen(
             Column {
                 TopAppBar(
                     title = { Text(
-                        "${viewModel.productName} - ${viewModel.variantCapacity} أمبير",
+                        "${viewModel.productName} - ${viewModel.variantCapacity} أمبير" +
+                                if (viewModel.variantSpecification.isNotEmpty()) " (${viewModel.variantSpecification})" else "",
                         color = Color.White
                     ) },
                     navigationIcon = {
@@ -110,6 +111,9 @@ fun ProductLedgerScreen(
                     LedgerItemCard(
                         item = item,
                         isAdmin = isAdmin,
+                        productName = viewModel.productName,
+                        variantCapacity = viewModel.variantCapacity,
+                        variantSpecification = viewModel.variantSpecification,
                         onEdit = { entryId ->
                             // A sales entry is not a real stock entry, cannot be edited.
                             if (item.entry.supplier != "Sale") {
@@ -133,6 +137,9 @@ fun ProductLedgerScreen(
 fun LedgerItemCard(
     item: LedgerItem,
     isAdmin: Boolean,
+    productName: String,
+    variantCapacity: String,
+    variantSpecification: String,
     onEdit: (String) -> Unit,
     onDelete: (String) -> Unit
 ) {
@@ -235,15 +242,20 @@ fun LedgerItemCard(
                     valueColor = quantityColor,
                     modifier = Modifier.weight(1f).widthIn(min = 100.dp)
                 )
-                if (isAdmin) {
+                InfoColumnLedger(
+                    label = "اسم المنتج",
+                    value = productName,
+                    modifier = Modifier.weight(1f).widthIn(min = 100.dp)
+                )
+                InfoColumnLedger(
+                    label = "السعة",
+                    value = "$variantCapacity أمبير",
+                    modifier = Modifier.weight(1f).widthIn(min = 100.dp)
+                )
+                if (variantSpecification.isNotEmpty()) {
                     InfoColumnLedger(
-                        label = "سعر القطعة",
-                        value = formatPrice(entry.costPrice),
-                        modifier = Modifier.weight(1f).widthIn(min = 100.dp)
-                    )
-                    InfoColumnLedger(
-                        label = "الإجمالي",
-                        value = formatPrice(if (isSale) entry.quantity * entry.costPrice * -1 else entry.totalCost),
+                        label = "المواصفة",
+                        value = variantSpecification,
                         modifier = Modifier.weight(1f).widthIn(min = 100.dp)
                     )
                 }

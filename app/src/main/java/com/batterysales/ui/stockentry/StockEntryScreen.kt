@@ -82,11 +82,19 @@ fun StockEntryContent(
     viewModel: StockEntryViewModel
 ) {
     var showAddWarehouseDialog by remember { mutableStateOf(false) }
+    var showAddSupplierDialog by remember { mutableStateOf(false) }
 
     if (showAddWarehouseDialog) {
         AddWarehouseDialog(
             onDismiss = { showAddWarehouseDialog = false },
             onAddWarehouse = { name -> viewModel.onAddWarehouse(name) }
+        )
+    }
+
+    if (showAddSupplierDialog) {
+        AddSupplierDialog(
+            onDismiss = { showAddSupplierDialog = false },
+            onAddSupplier = { name, target -> viewModel.onAddSupplier(name, target) }
         )
     }
 
@@ -128,8 +136,12 @@ fun StockEntryContent(
                 )
                 Dropdown(
                     label = "السعة",
-                    selectedValue = uiState.selectedVariant?.capacity?.toString()?.let { "$it أمبير" } ?: "",
-                    options = uiState.variants.map { "${it.capacity} أمبير" },
+                    selectedValue = uiState.selectedVariant?.let { v ->
+                        "${v.capacity} أمبير" + if (v.specification.isNotEmpty()) " (${v.specification})" else ""
+                    } ?: "",
+                    options = uiState.variants.map { v ->
+                        "${v.capacity} أمبير" + if (v.specification.isNotEmpty()) " (${v.specification})" else ""
+                    },
                     onOptionSelected = { index -> viewModel.onVariantSelected(uiState.variants[index]) },
                     enabled = !uiState.isEditMode && uiState.selectedProduct != null,
                     modifier = Modifier.weight(1f)
@@ -169,7 +181,12 @@ fun StockEntryContent(
         // --- Items List ---
         items(uiState.stockItems, key = { it.id }) { item ->
             ListItem(
-                headlineContent = { Text("${item.productName} - ${item.productVariant.capacity} أمبير") },
+                headlineContent = {
+                    Text(
+                        "${item.productName} - ${item.productVariant.capacity} أمبير" +
+                                if (item.productVariant.specification.isNotEmpty()) " (${item.productVariant.specification})" else ""
+                    )
+                },
                 supportingContent = {
                     if (uiState.isAdmin) {
                         Text("الكمية: ${item.quantity}, إجمالي التكلفة: JD ${String.format("%.4f", item.totalCost)}")
@@ -193,13 +210,22 @@ fun StockEntryContent(
             }
         }
         item {
-            OutlinedTextField(
-                value = uiState.supplierName,
-                onValueChange = viewModel::onSupplierNameChanged,
-                label = { Text("اسم المورد (اختياري)") },
-                modifier = Modifier.fillMaxWidth(),
-                textStyle = LocalInputTextStyle.current
-            )
+            Row {
+                Dropdown(
+                    label = "المورد",
+                    selectedValue = uiState.selectedSupplier?.name ?: uiState.supplierName,
+                    options = uiState.suppliers.map { it.name },
+                    onOptionSelected = { index -> viewModel.onSupplierSelected(uiState.suppliers[index]) },
+                    enabled = true,
+                    modifier = Modifier.weight(1f)
+                )
+                if (uiState.isAdmin) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(onClick = { showAddSupplierDialog = true }) {
+                        Text("إضافة مورد")
+                    }
+                }
+            }
         }
 
         item {
@@ -370,4 +396,29 @@ fun Dropdown(
 fun AddWarehouseDialog(onDismiss: () -> Unit, onAddWarehouse: (String) -> Unit) {
     var name by remember { mutableStateOf("") }
     AlertDialog(onDismissRequest = onDismiss, title = { Text("إضافة مستودع جديد") }, text = { OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("اسم المستودع") }, textStyle = LocalInputTextStyle.current) }, confirmButton = { Button(onClick = { if (name.isNotBlank()) { onAddWarehouse(name); onDismiss() } }) { Text("إضافة") } }, dismissButton = { Button(onClick = onDismiss) { Text("إلغاء") } })
+}
+
+@Composable
+fun AddSupplierDialog(onDismiss: () -> Unit, onAddSupplier: (String, Double) -> Unit) {
+    var name by remember { mutableStateOf("") }
+    var target by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("إضافة مورد جديد") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("اسم المورد") }, textStyle = LocalInputTextStyle.current)
+                OutlinedTextField(value = target, onValueChange = { target = it }, label = { Text("الهدف السنوي (Target)") }, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal), textStyle = LocalInputTextStyle.current)
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                if (name.isNotBlank()) {
+                    onAddSupplier(name, target.toDoubleOrNull() ?: 0.0)
+                    onDismiss()
+                }
+            }) { Text("إضافة") }
+        },
+        dismissButton = { Button(onClick = onDismiss) { Text("إلغاء") } }
+    )
 }
