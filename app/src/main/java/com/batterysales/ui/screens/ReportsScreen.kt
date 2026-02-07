@@ -315,7 +315,7 @@ fun OldBatteryReportSection(summary: Pair<Int, Double>, onViewDetails: () -> Uni
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SupplierReportSection(viewModel: ReportsViewModel, items: List<com.batterysales.viewmodel.SupplierReportItem>) {
     val startDate by viewModel.startDate.collectAsState()
@@ -326,40 +326,60 @@ fun SupplierReportSection(viewModel: ReportsViewModel, items: List<com.batterysa
     val dateFormatter = java.text.SimpleDateFormat("yyyy/MM/dd", java.util.Locale.getDefault())
 
     Column(modifier = Modifier.fillMaxSize()) {
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-                .clickable { showDatePicker = true },
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+        // Summary Header Section
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            tonalElevation = 1.dp
         ) {
-            Row(
-                modifier = Modifier.padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+            FlowRow(
+                modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                maxItemsInEachRow = 2
             ) {
-                Column {
-                    Text("الفترة الزمنية", style = MaterialTheme.typography.labelMedium)
-                    val startStr = startDate?.let { dateFormatter.format(java.util.Date(it)) } ?: "البداية"
-                    val endStr = endDate?.let { dateFormatter.format(java.util.Date(it)) } ?: "النهاية"
-                    Text("$startStr - $endStr", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                // Date Range Filter Card
+                Card(
+                    modifier = Modifier.weight(1f).heightIn(min = 60.dp).clickable { showDatePicker = true },
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                ) {
+                    Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.DateRange, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text("الفترة الزمنية", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                            val startStr = startDate?.let { dateFormatter.format(java.util.Date(it)) } ?: "البداية"
+                            val endStr = endDate?.let { dateFormatter.format(java.util.Date(it)) } ?: "النهاية"
+                            Text("$startStr - $endStr", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
-                Icon(Icons.Default.PhotoCamera, contentDescription = null) // Just an icon for now, could be DateRange
+
+                // Total Debt Card
+                val totalSuppliersDebit = items.sumOf { it.balance }
+                Card(
+                    modifier = Modifier.weight(1f).heightIn(min = 60.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.7f)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                ) {
+                    Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text("إجمالي المستحقات", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                            Text("JD ${String.format("%.3f", totalSuppliersDebit)}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                }
             }
         }
 
-        val totalSuppliersDebit = items.sumOf { it.balance }
-        Card(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+        LazyColumn(
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.weight(1f)
         ) {
-            Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("إجمالي المبالغ المستحقة للموردين", fontWeight = FontWeight.Bold)
-                Text("JD ${String.format("%.3f", totalSuppliersDebit)}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
-            }
-        }
-
-        LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             items(items) { item ->
                 SupplierCard(item)
             }
@@ -378,59 +398,103 @@ fun SupplierReportSection(viewModel: ReportsViewModel, items: List<com.batterysa
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SupplierCard(item: com.batterysales.viewmodel.SupplierReportItem) {
     var expanded by remember { mutableStateOf(false) }
 
     Card(
         modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        shape = RoundedCornerShape(12.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(12.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text(item.supplier.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, contentDescription = null)
+                Text(item.supplier.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                Icon(
+                    if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
             Spacer(modifier = Modifier.height(8.dp))
-            HorizontalDivider()
-            Spacer(modifier = Modifier.height(16.dp))
+            HorizontalDivider(alpha = 0.5f)
+            Spacer(modifier = Modifier.height(12.dp))
 
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                InfoColumn(label = "مدين (مشتريات)", value = "JD ${String.format("%.3f", item.totalDebit)}", modifier = Modifier.weight(1f))
-                InfoColumn(label = "دائن (دفعات)", value = "JD ${String.format("%.3f", item.totalCredit)}", modifier = Modifier.weight(1f))
-                InfoColumn(label = "الرصيد", value = "JD ${String.format("%.3f", item.balance)}", valueColor = if (item.balance > 0) Color.Red else Color.Unspecified, modifier = Modifier.weight(1f))
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                maxItemsInEachRow = 3
+            ) {
+                InfoColumnSmall(label = "مدين", value = "JD ${String.format("%.3f", item.totalDebit)}", modifier = Modifier.weight(1f))
+                InfoColumnSmall(label = "دائن", value = "JD ${String.format("%.3f", item.totalCredit)}", modifier = Modifier.weight(1f))
+                InfoColumnSmall(label = "الرصيد", value = "JD ${String.format("%.3f", item.balance)}", valueColor = if (item.balance > 0) Color(0xFFD32F2F) else Color.Unspecified, modifier = Modifier.weight(1f))
             }
 
             if (expanded && item.purchaseOrders.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(16.dp))
-                Text("تفاصيل طلبيات الشراء:", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Text("سجل المشتريات:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
                 Spacer(modifier = Modifier.height(8.dp))
                 val dateFormatter = java.text.SimpleDateFormat("yyyy/MM/dd", java.util.Locale.getDefault())
                 item.purchaseOrders.forEach { po ->
-                    Column(modifier = Modifier.padding(start = 8.dp, bottom = 8.dp)) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 6.dp)
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                            .padding(8.dp)
+                    ) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("${dateFormatter.format(po.entry.timestamp)}: JD ${String.format("%.3f", po.entry.totalCost)}", fontSize = 14.sp)
-                            Text("رصيد: JD ${String.format("%.3f", po.remainingBalance)}", fontSize = 14.sp, color = if (po.remainingBalance > 0) Color.Red else Color.Gray)
+                            Text(dateFormatter.format(po.entry.timestamp), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
+                            Text("رصيد: JD ${String.format("%.3f", po.remainingBalance)}", style = MaterialTheme.typography.bodySmall, color = if (po.remainingBalance > 0) Color(0xFFD32F2F) else Color.Gray, fontWeight = FontWeight.Bold)
                         }
-                        if (po.linkedPaidAmount > 0) {
-                            Text("تم دفع: JD ${String.format("%.3f", po.linkedPaidAmount)}", fontSize = 12.sp, color = Color(0xFF4CAF50))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("إجمالي: JD ${String.format("%.3f", po.entry.totalCost)}", style = MaterialTheme.typography.labelSmall)
+                            if (po.linkedPaidAmount > 0) {
+                                Text("دُفع: JD ${String.format("%.3f", po.linkedPaidAmount)}", style = MaterialTheme.typography.labelSmall, color = Color(0xFF2E7D32))
+                            }
                         }
-                        HorizontalDivider(modifier = Modifier.padding(top = 4.dp), thickness = 0.5.dp, color = Color.LightGray)
                     }
                 }
             }
 
             if (item.supplier.yearlyTarget > 0) {
                 Spacer(modifier = Modifier.height(16.dp))
-                Text("الهدف السنوي: JD ${String.format("%.3f", item.supplier.yearlyTarget)}", style = MaterialTheme.typography.labelMedium)
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text("الهدف السنوي: JD ${String.format("%.3f", item.supplier.yearlyTarget)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("${(item.targetProgress * 100).toInt()}%", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = if (item.targetProgress >= 1.0) Color(0xFF2E7D32) else MaterialTheme.colorScheme.primary)
+                }
+                Spacer(modifier = Modifier.height(4.dp))
                 LinearProgressIndicator(
-                    progress = item.targetProgress.toFloat().coerceIn(0f, 1f),
-                    modifier = Modifier.fillMaxWidth().height(8.dp),
-                    color = if (item.targetProgress >= 1.0) Color(0xFF4CAF50) else MaterialTheme.colorScheme.primary
+                    progress = { item.targetProgress.toFloat().coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth().height(6.dp),
+                    color = if (item.targetProgress >= 1.0) Color(0xFF4CAF50) else MaterialTheme.colorScheme.primary,
+                    strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
                 )
-                Text("${(item.targetProgress * 100).toInt()}% محقق", style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.End))
             }
         }
+    }
+}
+
+@Composable
+fun InfoColumnSmall(label: String, value: String, valueColor: Color = Color.Unspecified, modifier: Modifier = Modifier) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = modifier
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Bold,
+            color = valueColor
+        )
     }
 }
 
