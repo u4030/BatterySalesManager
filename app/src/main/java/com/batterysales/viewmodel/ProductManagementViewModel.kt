@@ -37,16 +37,18 @@ class ProductManagementViewModel @Inject constructor(
     private val _barcodeFilter = MutableStateFlow("")
 
     val uiState: StateFlow<ProductManagementUiState> = combine(
-        productRepository.getProducts(),
-        productVariantRepository.getAllVariantsFlow(),
+        combine(
+            productRepository.getProducts(),
+            productVariantRepository.getAllVariantsFlow(),
+            _barcodeFilter
+        ) { p, v, b -> Triple(p, v, b) },
         _selectedProduct,
         _selectedProduct.flatMapLatest { product ->
             if (product == null) flowOf(emptyList()) else productVariantRepository.getVariantsForProductFlow(product.id)
         },
         warehouseRepository.getWarehouses(),
-        _isLoading,
-        _barcodeFilter
-    ) { products, allVariants, selectedProduct, variants, warehouses, isLoading, barcodeFilter ->
+        _isLoading
+    ) { (products, allVariants, barcodeFilter), selectedProduct, variants, warehouses, isLoading ->
         val filteredProducts = if (barcodeFilter.isBlank()) {
             products.filter { !it.archived }
         } else {

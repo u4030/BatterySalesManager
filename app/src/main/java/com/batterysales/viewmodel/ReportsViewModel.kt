@@ -163,10 +163,8 @@ class ReportsViewModel @Inject constructor(
         supplierRepository.getSuppliers(),
         stockEntryRepository.getAllStockEntriesFlow(),
         billRepository.getAllBillsFlow(),
-        _startDate,
-        _endDate,
-        _supplierSearchQuery
-    ) { suppliers, allEntries, allBills, start, end, query ->
+        combine(_startDate, _endDate, _supplierSearchQuery) { s, e, q -> Triple(s, e, q) }
+    ) { suppliers, allEntries, allBills, (start, end, query) ->
         suppliers.map { supplier ->
             val supplierEntries = allEntries.filter { 
                 it.supplierId == supplier.id && 
