@@ -442,6 +442,7 @@ fun SupplierReportSection(viewModel: ReportsViewModel, items: List<com.batterysa
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SupplierCard(item: com.batterysales.viewmodel.SupplierReportItem) {
     var expanded by remember { mutableStateOf(false) }
