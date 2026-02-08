@@ -10,6 +10,7 @@ data class Transaction(
     val amount: Double = 0.0, // المبلغ
     val description: String = "", // الوصف
     val relatedId: String? = null, // معرف الفاتورة أو المصروف المرتبطة
+    val referenceNumber: String = "", // رقم الشيك أو السند
     val createdAt: Date = Date(),
     val notes: String = ""
 ) {

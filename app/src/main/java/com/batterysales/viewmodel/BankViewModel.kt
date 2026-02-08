@@ -43,7 +43,7 @@ class BankViewModel @Inject constructor(
         }
     }
 
-    fun addManualTransaction(type: com.batterysales.data.models.BankTransactionType, amount: Double, description: String) {
+    fun addManualTransaction(type: com.batterysales.data.models.BankTransactionType, amount: Double, description: String, referenceNumber: String = "") {
         viewModelScope.launch {
             _isLoading.value = true
             try {
@@ -51,6 +51,7 @@ class BankViewModel @Inject constructor(
                     type = type,
                     amount = amount,
                     description = description,
+                    referenceNumber = referenceNumber,
                     date = java.util.Date()
                 )
                 repository.addTransaction(transaction)

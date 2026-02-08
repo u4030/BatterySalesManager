@@ -33,11 +33,26 @@ fun StockTransferScreen(
     }
 
     if (showScanner) {
-        com.batterysales.ui.components.BarcodeScanner(onBarcodeScanned = { barcode ->
-            viewModel.onBarcodeScanned(barcode)
-            showScanner = false
-        })
-    } else {
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { showScanner = false },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(modifier = Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black)) {
+                com.batterysales.ui.components.BarcodeScanner(onBarcodeScanned = { barcode ->
+                    viewModel.onBarcodeScanned(barcode)
+                    showScanner = false
+                })
+                IconButton(
+                    onClick = { showScanner = false },
+                    modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = "إغلاق", tint = androidx.compose.ui.graphics.Color.White)
+                }
+            }
+        }
+    }
+
+    if (true) {
         Scaffold(
             topBar = {
                 TopAppBar(

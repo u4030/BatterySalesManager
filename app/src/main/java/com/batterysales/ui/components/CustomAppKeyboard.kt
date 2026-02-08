@@ -249,12 +249,14 @@ fun KeyboardKey(
             modifier = Modifier
                 .height(50.dp)
                 .fillMaxWidth()
-                .combinedClickable(
-                    onClick = onClick,
-                    onLongClick = {
-                        if (alternatives.isNotEmpty()) {
-                            showAlternatives = true
-                        }
+                .then(
+                    if (alternatives.isEmpty()) {
+                        Modifier.clickable(onClick = onClick)
+                    } else {
+                        Modifier.combinedClickable(
+                            onClick = onClick,
+                            onLongClick = { showAlternatives = true }
+                        )
                     }
                 ),
             shape = RoundedCornerShape(8.dp),
