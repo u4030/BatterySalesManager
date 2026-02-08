@@ -44,7 +44,6 @@ fun AppNavigation(navController: NavHostController) {
             StockEntryScreen(navController = navController)
         }
         composable("stock_transfer") { StockTransferScreen(navController = navController) }
-        composable("clients") { ClientScreen(navController) }
         composable("accounting") { AccountingScreen(navController) }
         composable("bank") { BankScreen(navController) }
         composable("old_battery_ledger") { OldBatteryLedgerScreen(navController) }

@@ -57,7 +57,8 @@ class StockEntryRepository @Inject constructor(
         destinationWarehouseId: String,
         quantity: Int,
         status: String = "approved",
-        createdBy: String = ""
+        createdBy: String = "",
+        createdByUserName: String = ""
     ) {
         val batch = firestore.batch()
 
@@ -70,7 +71,8 @@ class StockEntryRepository @Inject constructor(
             quantity = -quantity,
             costPrice = 0.0, // Cost is already accounted for
             status = status,
-            createdBy = createdBy
+            createdBy = createdBy,
+            createdByUserName = createdByUserName
         )
         batch.set(sourceDocRef, sourceStockEntry)
 
@@ -83,7 +85,8 @@ class StockEntryRepository @Inject constructor(
             quantity = quantity,
             costPrice = 0.0, // Cost is already accounted for
             status = status,
-            createdBy = createdBy
+            createdBy = createdBy,
+            createdByUserName = createdByUserName
         )
         batch.set(destinationDocRef, destinationStockEntry)
 

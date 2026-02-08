@@ -44,6 +44,36 @@ fun InvoiceScreen(
         )
     }
 
+    if (showDateRangePicker) {
+        DatePickerDialog(
+            onDismissRequest = { showDateRangePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.onDateRangeSelected(
+                        dateRangePickerState.selectedStartDateMillis,
+                        dateRangePickerState.selectedEndDateMillis
+                    )
+                    showDateRangePicker = false
+                }) {
+                    Text("موافق")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDateRangePicker = false }) {
+                    Text("إلغاء")
+                }
+            },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+                DateRangePicker(
+                    state = dateRangePickerState,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+    }
+
     if (showEditDialog != null) {
         EditCustomerDialog(
             invoice = showEditDialog!!,
@@ -177,9 +207,18 @@ fun EditCustomerDialog(invoice: Invoice, onDismiss: () -> Unit, onConfirm: (Invo
         title = { Text("تعديل معلومات العميل") },
         text = {
             Column {
-                OutlinedTextField(value = customerName, onValueChange = { customerName = it }, label = { Text("اسم العميل") })
+                com.batterysales.ui.components.CustomKeyboardTextField(
+                    value = customerName,
+                    onValueChange = { customerName = it },
+                    label = "اسم العميل"
+                )
                 Spacer(modifier = Modifier.height(8.dp))
-                OutlinedTextField(value = customerPhone, onValueChange = { customerPhone = it }, label = { Text("رقم الهاتف") })
+                com.batterysales.ui.components.CustomKeyboardTextField(
+                    value = customerPhone,
+                    onValueChange = { customerPhone = it },
+                    label = "رقم الهاتف"
+                )
+                Spacer(modifier = Modifier.height(com.batterysales.ui.components.LocalCustomKeyboardController.current.keyboardHeight.value))
             }
         },
         confirmButton = { Button(onClick = { onConfirm(invoice, customerName, customerPhone); onDismiss() }) { Text("حفظ") } },

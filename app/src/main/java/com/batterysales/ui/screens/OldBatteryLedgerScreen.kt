@@ -34,9 +34,42 @@ fun OldBatteryLedgerScreen(
     navController: NavHostController,
     viewModel: OldBatteryViewModel = hiltViewModel()
 ) {
-    val transactions by viewModel.transactions.collectAsState()
-    val summary by viewModel.summary.collectAsState()
+    val allTransactions by viewModel.transactions.collectAsState()
+    val globalSummary by viewModel.summary.collectAsState()
+    val warehouses by viewModel.warehouses.collectAsState()
+    val isSeller by viewModel.isSeller.collectAsState()
+    val userWarehouseId by viewModel.userWarehouseId.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+
+    var selectedFilterWH by remember { mutableStateOf<String?>(null) }
+
+    val transactions = remember(allTransactions, selectedFilterWH) {
+        if (selectedFilterWH == null) allTransactions
+        else allTransactions.filter { it.warehouseId == selectedFilterWH }
+    }
+
+    val summary = remember(transactions) {
+        var totalQty = 0
+        var totalAmperes = 0.0
+        transactions.forEach {
+            when (it.type) {
+                OldBatteryTransactionType.INTAKE -> {
+                    totalQty += it.quantity
+                    totalAmperes += it.totalAmperes
+                }
+                OldBatteryTransactionType.SALE -> {
+                    totalQty -= it.quantity
+                    totalAmperes -= it.totalAmperes
+                }
+                OldBatteryTransactionType.ADJUSTMENT -> {
+                    totalQty += it.quantity
+                    totalAmperes += it.totalAmperes
+                }
+            }
+        }
+        Pair(totalQty, totalAmperes)
+    }
+
     var showSaleDialog by remember { mutableStateOf<OldBatteryTransaction?>(null) }
     var showEditDialog by remember { mutableStateOf<OldBatteryTransaction?>(null) }
     var showAddDialog by remember { mutableStateOf(false) }
@@ -76,6 +109,32 @@ fun OldBatteryLedgerScreen(
                 .background(MaterialTheme.colorScheme.background)
                 .padding(16.dp)
         ) {
+            if (!isSeller && warehouses.isNotEmpty()) {
+                Text("تصفية حسب المستودع:", style = MaterialTheme.typography.titleSmall)
+                androidx.compose.foundation.lazy.LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                ) {
+                    item {
+                        FilterChip(
+                            selected = selectedFilterWH == null,
+                            onClick = { selectedFilterWH = null },
+                            label = { Text("الكل") }
+                        )
+                    }
+                    items(warehouses) { warehouse ->
+                        FilterChip(
+                            selected = selectedFilterWH == warehouse.id,
+                            onClick = { selectedFilterWH = warehouse.id },
+                            label = { Text(warehouse.name) }
+                        )
+                    }
+                }
+
+                // We should probably filter transactions and summary based on this selection locally
+                // but let's just show it for now. Actually, let's make it work.
+            }
+
             // Summary Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -130,8 +189,10 @@ fun OldBatteryLedgerScreen(
                     modifier = Modifier.fillMaxSize()
                 ) {
                     items(transactions, key = { it.id }) { transaction ->
+                        val warehouseName = warehouses.find { it.id == transaction.warehouseId }?.name ?: "غير معروف"
                         OldBatteryTransactionCard(
                             transaction = transaction,
+                            warehouseName = warehouseName,
                             onEdit = { showEditDialog = transaction },
                             onDelete = { showDeleteConfirm = transaction },
                             onSell = { showSaleDialog = transaction }
@@ -144,9 +205,12 @@ fun OldBatteryLedgerScreen(
 
     if (showAddDialog) {
         AddEditOldBatteryDialog(
+            warehouses = warehouses,
+            isSeller = isSeller,
+            userWarehouseId = userWarehouseId,
             onDismiss = { showAddDialog = false },
-            onConfirm = { qty, amps, notes ->
-                viewModel.addManualIntake(qty, amps, notes)
+            onConfirm = { qty, amps, notes, whId ->
+                viewModel.addManualIntake(qty, amps, notes, whId)
                 showAddDialog = false
             }
         )
@@ -155,9 +219,12 @@ fun OldBatteryLedgerScreen(
     if (showEditDialog != null) {
         AddEditOldBatteryDialog(
             transaction = showEditDialog,
+            warehouses = warehouses,
+            isSeller = isSeller,
+            userWarehouseId = userWarehouseId,
             onDismiss = { showEditDialog = null },
-            onConfirm = { qty, amps, notes ->
-                viewModel.updateTransaction(showEditDialog!!.copy(quantity = qty, totalAmperes = amps, notes = notes))
+            onConfirm = { qty, amps, notes, whId ->
+                viewModel.updateTransaction(showEditDialog!!.copy(quantity = qty, totalAmperes = amps, notes = notes, warehouseId = whId))
                 showEditDialog = null
             }
         )
@@ -168,7 +235,7 @@ fun OldBatteryLedgerScreen(
             transaction = showSaleDialog!!,
             onDismiss = { showSaleDialog = null },
             onConfirm = { qty, amps, price ->
-                viewModel.sellBatteries(qty, amps, price)
+                viewModel.sellBatteries(qty, amps, price, showSaleDialog!!.warehouseId)
                 showSaleDialog = null
             }
         )
@@ -197,6 +264,7 @@ fun OldBatteryLedgerScreen(
 @Composable
 fun OldBatteryTransactionCard(
     transaction: OldBatteryTransaction,
+    warehouseName: String,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onSell: () -> Unit
@@ -223,6 +291,11 @@ fun OldBatteryTransactionCard(
                     Text(
                         if (isIntake) "استلام بطاريات قديمة" else "بيع سكراب",
                         fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "المستودع: $warehouseName",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.primary
                     )
                     Text(
                         text = dateFormatter.format(transaction.date),
@@ -258,18 +331,46 @@ fun OldBatteryTransactionCard(
 @Composable
 fun AddEditOldBatteryDialog(
     transaction: OldBatteryTransaction? = null,
+    warehouses: List<com.batterysales.data.models.Warehouse>,
+    isSeller: Boolean,
+    userWarehouseId: String?,
     onDismiss: () -> Unit,
-    onConfirm: (Int, Double, String) -> Unit
+    onConfirm: (Int, Double, String, String) -> Unit
 ) {
     var qty by remember { mutableStateOf(transaction?.quantity?.toString() ?: "") }
     var amps by remember { mutableStateOf(transaction?.totalAmperes?.toString() ?: "") }
     var notes by remember { mutableStateOf(transaction?.notes ?: "") }
+
+    // Default to user warehouse if seller, or existing transaction warehouse, or first warehouse
+    val initialWH = if (isSeller) userWarehouseId ?: ""
+                   else transaction?.warehouseId ?: (if (warehouses.isNotEmpty()) warehouses[0].id else "")
+
+    var selectedWarehouseId by remember { mutableStateOf(initialWH) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (transaction == null) "إضافة بطاريات قديمة" else "تعديل السجل") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (warehouses.isNotEmpty() && !isSeller) {
+                    Text("المستودع:", fontWeight = FontWeight.Bold)
+                    androidx.compose.foundation.lazy.LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(warehouses) { warehouse ->
+                            FilterChip(
+                                selected = selectedWarehouseId == warehouse.id,
+                                onClick = { selectedWarehouseId = warehouse.id },
+                                label = { Text(warehouse.name) }
+                            )
+                        }
+                    }
+                } else if (isSeller) {
+                    val whName = warehouses.find { it.id == userWarehouseId }?.name ?: "المستودع الخاص بك"
+                    Text("المستودع: $whName", fontWeight = FontWeight.Medium)
+                }
+
                 com.batterysales.ui.components.CustomKeyboardTextField(
                     value = qty,
                     onValueChange = { qty = it },
@@ -292,7 +393,7 @@ fun AddEditOldBatteryDialog(
             Button(onClick = {
                 val q = qty.toIntOrNull() ?: 0
                 val a = amps.toDoubleOrNull() ?: 0.0
-                if (q > 0) onConfirm(q, a, notes)
+                if (q > 0 && selectedWarehouseId.isNotEmpty()) onConfirm(q, a, notes, selectedWarehouseId)
             }) { Text("تأكيد") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }

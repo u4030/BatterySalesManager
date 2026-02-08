@@ -91,6 +91,31 @@ fun ProductManagementScreen(viewModel: ProductManagementViewModel = hiltViewMode
         Text("إدارة المنتجات", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
         Spacer(modifier = Modifier.height(16.dp))
 
+        // Search Bar
+        var searchQuery by remember { mutableStateOf("") }
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = {
+                searchQuery = it
+                viewModel.onBarcodeFilterChanged(it)
+            },
+            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+            placeholder = { Text("بحث بالاسم أو الباركود...") },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+            trailingIcon = {
+                if (searchQuery.isNotEmpty()) {
+                    IconButton(onClick = {
+                        searchQuery = ""
+                        viewModel.onBarcodeFilterChanged("")
+                    }) {
+                        Icon(Icons.Default.Clear, contentDescription = "مسح")
+                    }
+                }
+            },
+            shape = RoundedCornerShape(12.dp),
+            singleLine = true
+        )
+
         Button(
             onClick = { showAddProductDialog = true },
             modifier = Modifier.fillMaxWidth()
@@ -222,9 +247,8 @@ fun VariantItemRow(variant: ProductVariant, onEdit: () -> Unit, onDelete: () -> 
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("السعر: JD ${String.format("%.3f", variant.sellingPrice)}", style = MaterialTheme.typography.bodyMedium)
+                Text("المواصفة: ${variant.specification}", style = MaterialTheme.typography.bodyMedium)
                 Text("الباركود: ${variant.barcode}", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
-                Text("الحد الأدنى: ${variant.minQuantity}", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
             }
         }
     }
@@ -317,14 +341,28 @@ fun AddVariantDialog(
     var showScanner by remember { mutableStateOf(false) }
 
     if (showScanner) {
-        BarcodeScanner(onBarcodeScanned = {
-            barcode = it
-            showScanner = false
-        })
-    } else {
-        AlertDialog(
-            onDismissRequest = onDismiss,
-            title = { Text("إضافة سعة جديدة") },
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { showScanner = false },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+                BarcodeScanner(onBarcodeScanned = {
+                    barcode = it
+                    showScanner = false
+                })
+                IconButton(
+                    onClick = { showScanner = false },
+                    modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = "إغلاق", tint = Color.White)
+                }
+            }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("إضافة سعة جديدة") },
             text = {
                 Column {
                     FlowRow(
@@ -424,14 +462,28 @@ fun EditVariantDialog(
     var showScanner by remember { mutableStateOf(false) }
 
     if (showScanner) {
-        BarcodeScanner(onBarcodeScanned = {
-            barcode = it
-            showScanner = false
-        })
-    } else {
-        AlertDialog(
-            onDismissRequest = onDismiss,
-            title = { Text("تعديل السعة") },
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { showScanner = false },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+                BarcodeScanner(onBarcodeScanned = {
+                    barcode = it
+                    showScanner = false
+                })
+                IconButton(
+                    onClick = { showScanner = false },
+                    modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = "إغلاق", tint = Color.White)
+                }
+            }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("تعديل السعة") },
             text = {
                 Column {
                     FlowRow(

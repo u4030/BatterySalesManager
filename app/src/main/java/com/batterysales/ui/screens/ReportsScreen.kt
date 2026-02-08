@@ -62,8 +62,10 @@ fun SearchBar(
 fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hiltViewModel()) {
     val reportItems by viewModel.inventoryReport.collectAsState()
     val supplierItems by viewModel.supplierReport.collectAsState()
-    val warehouses by viewModel.warehouses.collectAsState()
+    val isSeller by viewModel.isSeller.collectAsState()
+    val warehouses by viewModel.filteredWarehouses.collectAsState()
     val oldBatterySummary by viewModel.oldBatterySummary.collectAsState()
+    val oldBatteryWarehouseSummary by viewModel.oldBatteryWarehouseSummary.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val barcodeFilter by viewModel.barcodeFilter.collectAsState()
     var showScanner by remember { mutableStateOf(false) }
@@ -74,11 +76,26 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
     }
 
     if (showScanner) {
-        BarcodeScanner(onBarcodeScanned = { barcode ->
-            viewModel.onBarcodeScanned(barcode)
-            showScanner = false
-        })
-    } else {
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { showScanner = false },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+                BarcodeScanner(onBarcodeScanned = { barcode ->
+                    viewModel.onBarcodeScanned(barcode)
+                    showScanner = false
+                })
+                IconButton(
+                    onClick = { showScanner = false },
+                    modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = "إغلاق", tint = Color.White)
+                }
+            }
+        }
+    }
+
+    if (true) {
         Scaffold(
             topBar = {
                 Column {
@@ -112,7 +129,7 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
 
                         // Grand Total Card
                         if (reportItems.isNotEmpty()) {
-                            GrandTotalCard(totalQuantity = grandTotalQuantity)
+                            GrandTotalCard(totalQuantity = grandTotalQuantity, isSeller = isSeller)
                         }
 
                         LazyColumn(
@@ -123,6 +140,7 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                                 ReportItemCard(
                                     item = item,
                                     warehouses = warehouses,
+                                    isSeller = isSeller,
                                     onClick = {
                                         val capacityStr = item.variant.capacity.toString()
                                         val productName = item.product.name
@@ -135,8 +153,34 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                             }
                         }
                     } else if (selectedTab == 1) {
-                        OldBatteryReportSection(oldBatterySummary) {
-                            navController.navigate("old_battery_ledger")
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            // Actually the user wants a tab for each warehouse in old batteries
+                            var selectedWHIndex by remember { mutableIntStateOf(0) }
+                            val whList = warehouses
+
+                            if (whList.isNotEmpty()) {
+                                ScrollableTabRow(selectedTabIndex = selectedWHIndex, edgePadding = 16.dp) {
+                                    Tab(selected = selectedWHIndex == 0, onClick = { selectedWHIndex = 0 }) {
+                                        Text("الكل", modifier = Modifier.padding(16.dp))
+                                    }
+                                    whList.forEachIndexed { index, warehouse ->
+                                        Tab(selected = selectedWHIndex == index + 1, onClick = { selectedWHIndex = index + 1 }) {
+                                            Text(warehouse.name, modifier = Modifier.padding(16.dp))
+                                        }
+                                    }
+                                }
+
+                                val currentSummary = if (selectedWHIndex == 0) oldBatterySummary
+                                                    else oldBatteryWarehouseSummary[whList[selectedWHIndex - 1].id] ?: Pair(0, 0.0)
+
+                                OldBatteryReportSection(currentSummary) {
+                                    navController.navigate("old_battery_ledger")
+                                }
+                            } else {
+                                OldBatteryReportSection(oldBatterySummary) {
+                                    navController.navigate("old_battery_ledger")
+                                }
+                            }
                         }
                     } else {
                         SupplierReportSection(viewModel, supplierItems)
@@ -147,7 +191,7 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
     }
 }
 @Composable
-fun GrandTotalCard(totalQuantity: Int) {
+fun GrandTotalCard(totalQuantity: Int, isSeller: Boolean) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -181,6 +225,7 @@ fun GrandTotalCard(totalQuantity: Int) {
 fun ReportItemCard(
     item: InventoryReportItem,
     warehouses: List<Warehouse>,
+    isSeller: Boolean,
     onClick: () -> Unit
 ) {
     Card(
@@ -211,8 +256,7 @@ fun ReportItemCard(
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                maxItemsInEachRow = 2
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 InfoColumn(
                     label = "إجمالي الكمية",
@@ -227,16 +271,18 @@ fun ReportItemCard(
                         modifier = Modifier.weight(1f).widthIn(min = 120.dp)
                     )
                 }
-                InfoColumn(
-                    label = "متوسط التكلفة",
-                    value = "JD " + String.format(Locale.US, "%.3f", item.averageCost),
-                    modifier = Modifier.weight(1f).widthIn(min = 120.dp)
-                )
-                InfoColumn(
-                    label = "قيمة المخزون",
-                    value = "JD " + String.format(Locale.US, "%.3f", item.totalCostValue),
-                    modifier = Modifier.weight(1f).widthIn(min = 120.dp)
-                )
+                if (!isSeller) {
+                    InfoColumn(
+                        label = "متوسط التكلفة",
+                        value = "JD " + String.format(Locale.US, "%.3f", item.averageCost),
+                        modifier = Modifier.weight(1f).widthIn(min = 120.dp)
+                    )
+                    InfoColumn(
+                        label = "قيمة المخزون",
+                        value = "JD " + String.format(Locale.US, "%.3f", item.totalCostValue),
+                        modifier = Modifier.weight(1f).widthIn(min = 120.dp)
+                    )
+                }
             }
 
             // Warehouse Breakdown
@@ -320,12 +366,30 @@ fun OldBatteryReportSection(summary: Pair<Int, Double>, onViewDetails: () -> Uni
 fun SupplierReportSection(viewModel: ReportsViewModel, items: List<com.batterysales.viewmodel.SupplierReportItem>) {
     val startDate by viewModel.startDate.collectAsState()
     val endDate by viewModel.endDate.collectAsState()
+    val searchQuery by viewModel.supplierSearchQuery.collectAsState()
     var showDatePicker by remember { mutableStateOf(false) }
 
     val dateRangePickerState = rememberDateRangePickerState()
     val dateFormatter = java.text.SimpleDateFormat("yyyy/MM/dd", java.util.Locale.getDefault())
 
     Column(modifier = Modifier.fillMaxSize()) {
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { viewModel.onSupplierSearchQueryChanged(it) },
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            placeholder = { Text("بحث باسم المورد أو رقم الشيك/السند...") },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+            trailingIcon = {
+                if (searchQuery.isNotEmpty()) {
+                    IconButton(onClick = { viewModel.onSupplierSearchQueryChanged("") }) {
+                        Icon(Icons.Default.Clear, contentDescription = "مسح")
+                    }
+                }
+            },
+            shape = RoundedCornerShape(12.dp),
+            singleLine = true
+        )
+
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -395,10 +459,15 @@ fun SupplierCard(item: com.batterysales.viewmodel.SupplierReportItem) {
             HorizontalDivider()
             Spacer(modifier = Modifier.height(16.dp))
 
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                InfoColumn(label = "مدين (مشتريات)", value = "JD ${String.format("%.3f", item.totalDebit)}", modifier = Modifier.weight(1f))
-                InfoColumn(label = "دائن (دفعات)", value = "JD ${String.format("%.3f", item.totalCredit)}", modifier = Modifier.weight(1f))
-                InfoColumn(label = "الرصيد", value = "JD ${String.format("%.3f", item.balance)}", valueColor = if (item.balance > 0) Color.Red else Color.Unspecified, modifier = Modifier.weight(1f))
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                maxItemsInEachRow = 3
+            ) {
+                InfoColumn(label = "مدين (مشتريات)", value = "JD ${String.format("%.3f", item.totalDebit)}", modifier = Modifier.weight(1f).widthIn(min = 100.dp))
+                InfoColumn(label = "دائن (دفعات)", value = "JD ${String.format("%.3f", item.totalCredit)}", modifier = Modifier.weight(1f).widthIn(min = 100.dp))
+                InfoColumn(label = "الرصيد", value = "JD ${String.format("%.3f", item.balance)}", valueColor = if (item.balance > 0) Color.Red else Color.Unspecified, modifier = Modifier.weight(1f).widthIn(min = 100.dp))
             }
 
             if (expanded && item.purchaseOrders.isNotEmpty()) {
@@ -408,12 +477,15 @@ fun SupplierCard(item: com.batterysales.viewmodel.SupplierReportItem) {
                 val dateFormatter = java.text.SimpleDateFormat("yyyy/MM/dd", java.util.Locale.getDefault())
                 item.purchaseOrders.forEach { po ->
                     Column(modifier = Modifier.padding(start = 8.dp, bottom = 8.dp)) {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("${dateFormatter.format(po.entry.timestamp)}: JD ${String.format("%.3f", po.entry.totalCost)}", fontSize = 14.sp)
-                            Text("رصيد: JD ${String.format("%.3f", po.remainingBalance)}", fontSize = 14.sp, color = if (po.remainingBalance > 0) Color.Red else Color.Gray)
+                        FlowRow(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalArrangement = Arrangement.Center) {
+                            Text("${dateFormatter.format(po.entry.timestamp)}: JD ${String.format("%.3f", po.entry.totalCost)}", style = MaterialTheme.typography.bodyMedium)
+                            Text("رصيد: JD ${String.format("%.3f", po.remainingBalance)}", style = MaterialTheme.typography.bodyMedium, color = if (po.remainingBalance > 0) Color.Red else Color.Gray)
                         }
                         if (po.linkedPaidAmount > 0) {
                             Text("تم دفع: JD ${String.format("%.3f", po.linkedPaidAmount)}", fontSize = 12.sp, color = Color(0xFF4CAF50))
+                        }
+                        if (po.referenceNumbers.isNotEmpty()) {
+                            Text("أرقام المرجع: ${po.referenceNumbers.joinToString(", ")}", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
                         }
                         HorizontalDivider(modifier = Modifier.padding(top = 4.dp), thickness = 0.5.dp, color = Color.LightGray)
                     }
@@ -444,9 +516,12 @@ fun DateRangePickerDialog(
     DatePickerDialog(
         onDismissRequest = onDismiss,
         confirmButton = { TextButton(onClick = onConfirm) { Text("موافق") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } },
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
     ) {
-        DateRangePicker(state = state, modifier = Modifier.weight(1f))
+        Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+            DateRangePicker(state = state, modifier = Modifier.fillMaxSize())
+        }
     }
 }
 
