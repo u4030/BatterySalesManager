@@ -128,14 +128,6 @@ fun ProductLedgerScreen(
                     )
                 }
             }
-            if (entry.createdByUserName.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "بواسطة: ${entry.createdByUserName}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray
-                )
-            }
         }
     }
 }
@@ -286,6 +278,14 @@ fun LedgerItemCard(
                         fontWeight = FontWeight.SemiBold
                     )
                 }
+            }
+            if (entry.createdByUserName.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "بواسطة: ${entry.createdByUserName}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray
+                )
             }
         }
     }
