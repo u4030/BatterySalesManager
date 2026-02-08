@@ -1,0 +1,102 @@
+package com.batterysales.viewmodel
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.batterysales.data.models.User
+import com.batterysales.data.repositories.UserRepository
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+
+@HiltViewModel
+class AuthViewModel @Inject constructor(
+    private val userRepository: UserRepository
+) : ViewModel() {
+
+    private val _currentUser = MutableStateFlow<User?>(null)
+    val currentUser: StateFlow<User?> = _currentUser.asStateFlow()
+
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
+
+    private val _isLoggedIn = MutableStateFlow(false)
+    val isLoggedIn: StateFlow<Boolean> = _isLoggedIn.asStateFlow()
+
+    init {
+        checkUserStatus()
+    }
+
+    fun checkUserStatus() {
+        viewModelScope.launch {
+            try {
+                if (userRepository.isUserLoggedIn()) {
+                    fetchCurrentUser()
+                } else {
+                    _isLoggedIn.value = false
+                }
+            } catch (e: Exception) {
+                // Handle error
+            }
+        }
+    }
+
+    fun login(email: String, password: String) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            _errorMessage.value = null
+            try {
+                userRepository.loginUser(email, password)
+                fetchCurrentUser()
+                _isLoggedIn.value = true
+            } catch (e: Exception) {
+                _errorMessage.value = e.message ?: "فشل تسجيل الدخول"
+                _isLoggedIn.value = false
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    fun register(email: String, password: String, displayName: String) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            _errorMessage.value = null
+            try {
+                userRepository.registerUser(email, password, displayName)
+                fetchCurrentUser()
+                _isLoggedIn.value = true
+            } catch (e: Exception) {
+                _errorMessage.value = e.message ?: "فشل إنشاء الحساب"
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    private fun fetchCurrentUser() {
+        viewModelScope.launch {
+            try {
+                _currentUser.value = userRepository.getCurrentUser()
+                _isLoggedIn.value = _currentUser.value != null
+            } catch (e: Exception) {
+                // Handle error
+            }
+        }
+    }
+
+    fun logout() {
+        userRepository.logout()
+        _currentUser.value = null
+        _isLoggedIn.value = false
+    }
+
+    fun clearError() {
+        _errorMessage.value = null
+    }
+}
