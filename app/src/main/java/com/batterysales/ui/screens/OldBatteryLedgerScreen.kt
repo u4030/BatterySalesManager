@@ -148,11 +148,11 @@ fun OldBatteryLedgerScreen(
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                         maxItemsInEachRow = 2
                     ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f).widthIn(min = 120.dp)) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.widthIn(min = 120.dp)) {
                             Text("إجمالي الكمية", style = MaterialTheme.typography.bodyMedium, color = Color(0xFF5D4037), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                             Text("${summary.first}", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Color(0xFF5D4037), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                         }
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f).widthIn(min = 120.dp)) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.widthIn(min = 120.dp)) {
                             Text("إجمالي الأمبيرات", style = MaterialTheme.typography.bodyMedium, color = Color(0xFF5D4037), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                             Text("${String.format("%.1f", summary.second)}", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Color(0xFF5D4037), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                         }

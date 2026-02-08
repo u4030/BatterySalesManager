@@ -52,24 +52,23 @@ fun StockTransferScreen(
         }
     }
 
-    if (true) {
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = { Text("ترحيل مخزون") },
-                    navigationIcon = {
-                        IconButton(onClick = { navController.popBackStack() }) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "رجوع")
-                        }
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("ترحيل مخزون") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "رجوع")
                     }
-                )
-            }
-        ) { padding ->
-            LazyColumn(
-                modifier = Modifier.padding(padding).fillMaxSize().imePadding(),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
+                }
+            )
+        }
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier.padding(padding).fillMaxSize().imePadding(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
                 item {
                     OutlinedButton(
                         onClick = { showScanner = true },

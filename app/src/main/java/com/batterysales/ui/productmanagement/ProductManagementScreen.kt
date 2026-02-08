@@ -93,6 +93,29 @@ fun ProductManagementScreen(viewModel: ProductManagementViewModel = hiltViewMode
 
         // Search Bar
         var searchQuery by remember { mutableStateOf("") }
+        var showSearchScanner by remember { mutableStateOf(false) }
+
+        if (showSearchScanner) {
+            androidx.compose.ui.window.Dialog(
+                onDismissRequest = { showSearchScanner = false },
+                properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+            ) {
+                Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+                    BarcodeScanner(onBarcodeScanned = {
+                        searchQuery = it
+                        viewModel.onBarcodeFilterChanged(it)
+                        showSearchScanner = false
+                    })
+                    IconButton(
+                        onClick = { showSearchScanner = false },
+                        modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = "إغلاق", tint = Color.White)
+                    }
+                }
+            }
+        }
+
         OutlinedTextField(
             value = searchQuery,
             onValueChange = {
@@ -103,12 +126,17 @@ fun ProductManagementScreen(viewModel: ProductManagementViewModel = hiltViewMode
             placeholder = { Text("بحث بالاسم أو الباركود...") },
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
             trailingIcon = {
-                if (searchQuery.isNotEmpty()) {
-                    IconButton(onClick = {
-                        searchQuery = ""
-                        viewModel.onBarcodeFilterChanged("")
-                    }) {
-                        Icon(Icons.Default.Clear, contentDescription = "مسح")
+                Row {
+                    IconButton(onClick = { showSearchScanner = true }) {
+                        Icon(Icons.Default.PhotoCamera, contentDescription = "مسح الباركود")
+                    }
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = {
+                            searchQuery = ""
+                            viewModel.onBarcodeFilterChanged("")
+                        }) {
+                            Icon(Icons.Default.Clear, contentDescription = "مسح")
+                        }
                     }
                 }
             },
@@ -375,15 +403,15 @@ fun AddVariantDialog(
                             value = capacity,
                             onValueChange = { capacity = it },
                             label = "السعة (أمبير)",
-                            modifier = Modifier.weight(1f).widthIn(min = 120.dp)
+                            modifier = Modifier.widthIn(min = 120.dp)
                         )
                         com.batterysales.ui.components.CustomKeyboardTextField(
                             value = sellingPrice,
                             onValueChange = { sellingPrice = it },
                             label = "سعر البيع",
-                            modifier = Modifier.weight(1f).widthIn(min = 120.dp)
+                            modifier = Modifier.widthIn(min = 120.dp)
                         )
-                        Box(modifier = Modifier.weight(1f).widthIn(min = 120.dp)) {
+                        Box(modifier = Modifier.widthIn(min = 120.dp)) {
                             com.batterysales.ui.components.CustomKeyboardTextField(
                                 value = barcode,
                                 onValueChange = { barcode = it },
@@ -401,7 +429,7 @@ fun AddVariantDialog(
                             value = minQuantity,
                             onValueChange = { minQuantity = it },
                             label = "الحد الأدنى العام",
-                            modifier = Modifier.weight(1f).widthIn(min = 120.dp)
+                            modifier = Modifier.widthIn(min = 120.dp)
                         )
 
                         warehouses.forEach { warehouse ->
@@ -413,7 +441,7 @@ fun AddVariantDialog(
                                     minQuantities = newMap
                                 },
                                 label = "الحد الأدنى (${warehouse.name})",
-                                modifier = Modifier.weight(1f).widthIn(min = 120.dp)
+                                modifier = Modifier.widthIn(min = 120.dp)
                             )
                         }
 
@@ -494,15 +522,15 @@ fun EditVariantDialog(
                             value = capacity,
                             onValueChange = { capacity = it },
                             label = "السعة (أمبير)",
-                            modifier = Modifier.weight(1f).widthIn(min = 120.dp)
+                            modifier = Modifier.widthIn(min = 120.dp)
                         )
                         com.batterysales.ui.components.CustomKeyboardTextField(
                             value = sellingPrice,
                             onValueChange = { sellingPrice = it },
                             label = "سعر البيع",
-                            modifier = Modifier.weight(1f).widthIn(min = 120.dp)
+                            modifier = Modifier.widthIn(min = 120.dp)
                         )
-                        Box(modifier = Modifier.weight(1f).widthIn(min = 120.dp)) {
+                        Box(modifier = Modifier.widthIn(min = 120.dp)) {
                             com.batterysales.ui.components.CustomKeyboardTextField(
                                 value = barcode,
                                 onValueChange = { barcode = it },
@@ -520,7 +548,7 @@ fun EditVariantDialog(
                             value = minQuantity,
                             onValueChange = { minQuantity = it },
                             label = "الحد الأدنى العام",
-                            modifier = Modifier.weight(1f).widthIn(min = 120.dp)
+                            modifier = Modifier.widthIn(min = 120.dp)
                         )
 
                         warehouses.forEach { warehouse ->
@@ -532,7 +560,7 @@ fun EditVariantDialog(
                                     minQuantities = newMap
                                 },
                                 label = "الحد الأدنى (${warehouse.name})",
-                                modifier = Modifier.weight(1f).widthIn(min = 120.dp)
+                                modifier = Modifier.widthIn(min = 120.dp)
                             )
                         }
 
@@ -563,6 +591,7 @@ fun EditVariantDialog(
         )
 }
 
+@Composable
 fun DeleteConfirmationDialog(itemName: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,

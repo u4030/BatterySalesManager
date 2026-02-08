@@ -254,15 +254,12 @@ fun AccountingScreen(
                 TextButton(onClick = { showDateRangePicker = false }) {
                     Text("موافق")
                 }
-            },
-            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
-        ) {
-            Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-                DateRangePicker(
-                    state = dateRangePickerState,
-                    modifier = Modifier.fillMaxSize()
-                )
             }
+        ) {
+            DateRangePicker(
+                state = dateRangePickerState,
+                modifier = Modifier.weight(1f).padding(16.dp)
+            )
         }
     }
 

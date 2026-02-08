@@ -53,38 +53,36 @@ fun StockEntryScreen(
         }
     }
 
-    if (true) {
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = { Text(if (uiState.isEditMode) "تعديل قيد المخزون" else "إدخال مخزون جديد") },
-                    navigationIcon = {
-                        IconButton(onClick = { navController.popBackStack() }) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "رجوع")
-                        }
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(if (uiState.isEditMode) "تعديل قيد المخزون" else "إدخال مخزون جديد") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "رجوع")
                     }
-                )
+                }
+            )
+        }
+    ) { padding ->
+        if (uiState.isLoading) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
             }
-        ) { padding ->
-            if (uiState.isLoading) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
+        } else {
+            Column(modifier = Modifier.padding(padding).imePadding()) {
+                OutlinedButton(
+                    onClick = { showScanner = true },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    Icon(Icons.Default.PhotoCamera, contentDescription = "مسح الباركود")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("مسح الباركود")
                 }
-            } else {
-                Column(modifier = Modifier.padding(padding).imePadding()) {
-                    OutlinedButton(
-                        onClick = { showScanner = true },
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
-                    ) {
-                        Icon(Icons.Default.PhotoCamera, contentDescription = "مسح الباركود")
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("مسح الباركود")
-                    }
-                    StockEntryContent(
-                        uiState = uiState,
-                        viewModel = viewModel
-                    )
-                }
+                StockEntryContent(
+                    uiState = uiState,
+                    viewModel = viewModel
+                )
             }
         }
     }

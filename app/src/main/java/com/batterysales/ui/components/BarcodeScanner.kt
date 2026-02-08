@@ -63,10 +63,19 @@ fun BarcodeScanner(
         }
     }
 
-    val toneGenerator = remember { ToneGenerator(AudioManager.STREAM_NOTIFICATION, 100) }
+    val toneGenerator = remember {
+        try {
+            ToneGenerator(AudioManager.STREAM_NOTIFICATION, 100)
+        } catch (e: Exception) {
+            null
+        }
+    }
     DisposableEffect(Unit) {
         onDispose {
-            toneGenerator.release()
+            try {
+                toneGenerator?.release()
+            } catch (e: Exception) {
+            }
         }
     }
 
@@ -101,7 +110,10 @@ fun BarcodeScanner(
                                     .addOnSuccessListener { barcodes ->
                                         if (barcodes.isNotEmpty()) {
                                             barcodes.first().rawValue?.let {
-                                                toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP, 150)
+                                                try {
+                                                    toneGenerator?.startTone(ToneGenerator.TONE_PROP_BEEP, 150)
+                                                } catch (e: Exception) {
+                                                }
                                                 onBarcodeScanned(it)
                                             }
                                         }

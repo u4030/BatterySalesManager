@@ -128,7 +128,7 @@ fun ApprovalCard(item: ApprovalItem, onApprove: () -> Unit, onReject: () -> Unit
                 OutlinedButton(
                     onClick = onEdit,
                     shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.weight(1f, fill = false).minWidth(100.dp)
+                    modifier = Modifier.minWidth(100.dp)
                 ) {
                     Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(4.dp))
@@ -139,7 +139,7 @@ fun ApprovalCard(item: ApprovalItem, onApprove: () -> Unit, onReject: () -> Unit
                     onClick = onReject,
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red),
                     shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.weight(1f, fill = false).minWidth(100.dp)
+                    modifier = Modifier.minWidth(100.dp)
                 ) {
                     Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(4.dp))
@@ -150,7 +150,7 @@ fun ApprovalCard(item: ApprovalItem, onApprove: () -> Unit, onReject: () -> Unit
                     onClick = onApprove,
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
                     shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.weight(1f, fill = false).minWidth(100.dp)
+                    modifier = Modifier.minWidth(100.dp)
                 ) {
                     Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(4.dp))

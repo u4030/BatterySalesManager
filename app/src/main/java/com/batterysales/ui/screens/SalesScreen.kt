@@ -56,24 +56,23 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
         }
     }
 
-    if (true) {
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = { Text("فاتورة جديدة") },
-                    navigationIcon = {
-                        IconButton(onClick = { navController.popBackStack() }) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "رجوع")
-                        }
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("فاتورة جديدة") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "رجوع")
                     }
-                )
-            }
-        ) { padding ->
-            LazyColumn(
-                modifier = Modifier.padding(padding).fillMaxSize().imePadding(),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
+                }
+            )
+        }
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier.padding(padding).fillMaxSize().imePadding(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
                 item {
                     OutlinedButton(
                         onClick = { showScanner = true },
@@ -244,7 +243,6 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
                         enabled = uiState.selectedVariant != null && uiState.selectedWarehouse != null
                     ) {
                         Text("إنشاء عملية بيع")
-                    }
                 }
             }
         }
