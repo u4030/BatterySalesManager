@@ -442,9 +442,7 @@ fun AddVariantDialog(
             },
             dismissButton = { Button(onClick = onDismiss) { Text("إلغاء") } }
         )
-    }
 }
-
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun EditVariantDialog(
@@ -563,10 +561,8 @@ fun EditVariantDialog(
             },
             dismissButton = { Button(onClick = onDismiss) { Text("إلغاء") } }
         )
-    }
 }
 
-@Composable
 fun DeleteConfirmationDialog(itemName: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
