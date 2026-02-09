@@ -279,6 +279,16 @@ fun LedgerItemCard(
                     )
                 }
             }
+            if (item.originalEntryTimestamp != null) {
+                val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "مرتجع لطلبية بتاريخ: ${dateFormatter.format(item.originalEntryTimestamp)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Red,
+                    fontWeight = FontWeight.Bold
+                )
+            }
             if (entry.createdByUserName.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(

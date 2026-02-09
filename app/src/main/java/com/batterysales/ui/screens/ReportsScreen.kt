@@ -263,25 +263,25 @@ fun ReportItemCard(
                     label = "إجمالي الكمية",
                     value = item.totalQuantity.toString(),
                     valueColor = if (isLowStock) Color(0xFFD32F2F) else Color.Unspecified,
-                    modifier = Modifier.weight(1f).widthIn(min = 120.dp)
+                    modifier = Modifier.widthIn(min = 120.dp)
                 )
                 if (item.variant.minQuantity > 0) {
                     InfoColumn(
                         label = "الحد الأدنى",
                         value = item.variant.minQuantity.toString(),
-                        modifier = Modifier.weight(1f).widthIn(min = 120.dp)
+                        modifier = Modifier.widthIn(min = 120.dp)
                     )
                 }
                 if (!isSeller) {
                     InfoColumn(
                         label = "متوسط التكلفة",
                         value = "JD " + String.format(Locale.US, "%.3f", item.averageCost),
-                        modifier = Modifier.weight(1f).widthIn(min = 120.dp)
+                        modifier = Modifier.widthIn(min = 120.dp)
                     )
                     InfoColumn(
                         label = "قيمة المخزون",
                         value = "JD " + String.format(Locale.US, "%.3f", item.totalCostValue),
-                        modifier = Modifier.weight(1f).widthIn(min = 120.dp)
+                        modifier = Modifier.widthIn(min = 120.dp)
                     )
                 }
             }
@@ -516,6 +516,12 @@ fun SupplierCard(item: com.batterysales.viewmodel.SupplierReportItem) {
                         }
                         if (po.referenceNumbers.isNotEmpty()) {
                             Text("أرقام المرجع: ${po.referenceNumbers.joinToString(", ")}", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                        }
+                        if (po.returns.isNotEmpty()) {
+                            Text("المرتجعات:", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Red, modifier = Modifier.padding(top = 4.dp))
+                            po.returns.forEach { ret ->
+                                Text("- ${dateFormatter.format(ret.timestamp)}: ارجاع ${kotlin.math.abs(ret.quantity)} حبة (JD ${String.format("%.3f", kotlin.math.abs(ret.totalCost))})", fontSize = 11.sp, color = Color.Red)
+                            }
                         }
                         HorizontalDivider(modifier = Modifier.padding(top = 4.dp), thickness = 0.5.dp, color = Color.LightGray)
                     }

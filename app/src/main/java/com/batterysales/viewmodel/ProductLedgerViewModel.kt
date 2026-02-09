@@ -11,11 +11,13 @@ import com.batterysales.data.repositories.WarehouseRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.util.Date
 import javax.inject.Inject
 
 data class LedgerItem(
     val entry: StockEntry,
-    val warehouseName: String
+    val warehouseName: String,
+    val originalEntryTimestamp: Date? = null
 )
 
 enum class LedgerCategory(val label: String) {
@@ -64,9 +66,14 @@ class ProductLedgerViewModel @Inject constructor(
             _selectedCategory
         ) { entries, warehouses, category ->
             val warehouseMap = warehouses.associateBy { it.id }
+            val entriesMap = entries.associateBy { it.id }
             val items = entries.mapNotNull { entry ->
                 warehouseMap[entry.warehouseId]?.let { warehouse ->
-                    LedgerItem(entry = entry, warehouseName = warehouse.name)
+                    LedgerItem(
+                        entry = entry,
+                        warehouseName = warehouse.name,
+                        originalEntryTimestamp = entry.originalEntryId?.let { entriesMap[it]?.timestamp }
+                    )
                 }
             }
 

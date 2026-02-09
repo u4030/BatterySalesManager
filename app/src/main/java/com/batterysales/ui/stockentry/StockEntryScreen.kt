@@ -16,6 +16,11 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.batterysales.ui.theme.LocalInputTextStyle
+import com.batterysales.viewmodel.StockEntryViewModel
+import com.batterysales.viewmodel.StockEntryUiState
+import com.batterysales.viewmodel.CostInputMode
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -175,6 +180,24 @@ fun StockEntryContent(
                     onOptionSelected = { index -> viewModel.onVariantSelected(uiState.variants[index]) },
                     enabled = !uiState.isEditMode && uiState.selectedProduct != null,
                     modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        if (uiState.isReturnMode && uiState.eligibleEntries.isNotEmpty()) {
+            item {
+                val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
+                Dropdown(
+                    label = "اختر الطلبية السابقة للإرجاع منها",
+                    selectedValue = uiState.selectedOriginalEntry?.let {
+                        "${dateFormatter.format(it.entry.timestamp)} - المتاح: ${it.availableQuantity} - السعر: ${it.entry.costPrice}"
+                    } ?: "",
+                    options = uiState.eligibleEntries.map {
+                        "${dateFormatter.format(it.entry.timestamp)} - المتاح: ${it.availableQuantity} - السعر: ${it.entry.costPrice}"
+                    },
+                    onOptionSelected = { index -> viewModel.onOriginalEntrySelected(uiState.eligibleEntries[index]) },
+                    enabled = true,
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
         }

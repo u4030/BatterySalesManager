@@ -31,7 +31,8 @@ data class PurchaseOrderItem(
     val entry: StockEntry,
     val linkedPaidAmount: Double,
     val remainingBalance: Double,
-    val referenceNumbers: List<String> = emptyList()
+    val referenceNumbers: List<String> = emptyList(),
+    val returns: List<StockEntry> = emptyList()
 )
 
 @HiltViewModel
@@ -182,14 +183,16 @@ class ReportsViewModel @Inject constructor(
             val totalCredit = supplierBills.sumOf { it.paidAmount }
             val balance = totalDebit - totalCredit
             
-            val purchaseOrders = supplierEntries.map { entry ->
+            val purchaseOrders = supplierEntries.filter { it.quantity > 0 }.map { entry ->
                 val linkedBills = supplierBills.filter { it.relatedEntryId == entry.id }
                 val linkedPaid = linkedBills.sumOf { it.paidAmount }
+                val returns = supplierEntries.filter { it.originalEntryId == entry.id }
                 PurchaseOrderItem(
                     entry = entry,
                     linkedPaidAmount = linkedPaid,
-                    remainingBalance = entry.totalCost - linkedPaid,
-                    referenceNumbers = linkedBills.map { it.referenceNumber }.filter { it.isNotEmpty() }
+                    remainingBalance = entry.totalCost - linkedPaid + returns.sumOf { it.totalCost },
+                    referenceNumbers = linkedBills.map { it.referenceNumber }.filter { it.isNotEmpty() },
+                    returns = returns
                 )
             }
 

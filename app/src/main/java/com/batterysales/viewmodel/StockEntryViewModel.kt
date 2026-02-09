@@ -1,4 +1,4 @@
-package com.batterysales.ui.stockentry
+package com.batterysales.viewmodel
 
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
@@ -31,12 +31,19 @@ data class StockEntryUiState(
     val userRole: String = "seller",
     val isEditMode: Boolean = false,
     val isReturnMode: Boolean = false,
+    val eligibleEntries: List<EligibleReturnEntry> = emptyList(),
+    val selectedOriginalEntry: EligibleReturnEntry? = null,
     val isLoading: Boolean = true,
     val errorMessage: String? = null,
     val isFinished: Boolean = false
 ) {
     val isAdmin: Boolean get() = userRole == "admin"
 }
+
+data class EligibleReturnEntry(
+    val entry: StockEntry,
+    val availableQuantity: Int
+)
 
 // Represents a single item in the stock entry list
 data class StockEntryItem(
@@ -125,6 +132,14 @@ class StockEntryViewModel @Inject constructor(
 
         val variantsForProduct = productVariantRepository.getVariantsForProduct(product.id)
 
+        val originalEntry = entry.originalEntryId?.let { stockEntryRepository.getStockEntryById(it) }
+        val eligibleOriginal = originalEntry?.let {
+            val allEntries = stockEntryRepository.getAllStockEntriesFlow().first()
+            val returns = allEntries.filter { e -> e.originalEntryId == it.id && e.id != entry.id }
+            val returnedQty = returns.sumOf { e -> kotlin.math.abs(e.quantity) }
+            EligibleReturnEntry(it, it.quantity - returnedQty)
+        }
+
         _uiState.update {
             it.copy(
                 selectedProduct = product,
@@ -132,7 +147,9 @@ class StockEntryViewModel @Inject constructor(
                 selectedVariant = variant,
                 selectedWarehouse = warehouse,
                 selectedSupplier = supplier,
-                quantity = entry.quantity.toString(),
+                isReturnMode = entry.originalEntryId != null,
+                selectedOriginalEntry = eligibleOriginal,
+                quantity = kotlin.math.abs(entry.quantity).toString(),
                 costValue = entry.costPrice.toString(),
                 minQuantity = variant.minQuantity.toString(),
                 costInputMode = CostInputMode.BY_ITEM,
@@ -168,10 +185,18 @@ class StockEntryViewModel @Inject constructor(
     }
 
     fun onVariantSelected(variant: ProductVariant) {
-        _uiState.update { it.copy(selectedVariant = variant, minQuantity = variant.minQuantity.toString()) }
+        _uiState.update { it.copy(selectedVariant = variant, minQuantity = variant.minQuantity.toString(), selectedOriginalEntry = null) }
+        if (uiState.value.isReturnMode) {
+            fetchEligibleEntries()
+        }
     }
     fun onWarehouseSelected(warehouse: Warehouse) { _uiState.update { it.copy(selectedWarehouse = warehouse) } }
-    fun onSupplierSelected(supplier: Supplier) { _uiState.update { it.copy(selectedSupplier = supplier, supplierName = supplier.name) } }
+    fun onSupplierSelected(supplier: Supplier) {
+        _uiState.update { it.copy(selectedSupplier = supplier, supplierName = supplier.name, selectedOriginalEntry = null) }
+        if (uiState.value.isReturnMode) {
+            fetchEligibleEntries()
+        }
+    }
     fun onQuantityChanged(quantity: String) { _uiState.update { it.copy(quantity = quantity) } }
     fun onMinQuantityChanged(minQty: String) { _uiState.update { it.copy(minQuantity = minQty) } }
     fun onCostInputModeChanged(mode: CostInputMode) { _uiState.update { it.copy(costInputMode = mode, costValue = "") } }
@@ -180,7 +205,49 @@ class StockEntryViewModel @Inject constructor(
     }
 
     fun onReturnModeChanged(isReturn: Boolean) {
-        _uiState.update { it.copy(isReturnMode = isReturn) }
+        _uiState.update { it.copy(isReturnMode = isReturn, selectedOriginalEntry = null) }
+        if (isReturn) {
+            fetchEligibleEntries()
+        }
+    }
+
+    fun onOriginalEntrySelected(eligible: EligibleReturnEntry) {
+        _uiState.update {
+            it.copy(
+                selectedOriginalEntry = eligible,
+                costValue = eligible.entry.costPrice.toString(),
+                costInputMode = CostInputMode.BY_ITEM,
+                selectedWarehouse = it.warehouses.find { w -> w.id == eligible.entry.warehouseId } ?: it.selectedWarehouse
+            )
+        }
+    }
+
+    private fun fetchEligibleEntries() {
+        val state = uiState.value
+        val variantId = state.selectedVariant?.id ?: return
+        val supplierId = state.selectedSupplier?.id ?: return
+
+        viewModelScope.launch {
+            try {
+                stockEntryRepository.getAllStockEntriesFlow().take(1).collect { allEntries ->
+                    val purchases = allEntries.filter {
+                        it.productVariantId == variantId &&
+                        it.supplierId == supplierId &&
+                        it.quantity > 0 &&
+                        it.status == "approved"
+                    }
+
+                    val returns = allEntries.filter { it.originalEntryId != null }
+
+                    val eligible = purchases.map { p ->
+                        val returnedQty = returns.filter { it.originalEntryId == p.id }.sumOf { kotlin.math.abs(it.quantity) }
+                        EligibleReturnEntry(p, p.quantity - returnedQty)
+                    }.filter { it.availableQuantity > 0 }.sortedByDescending { it.entry.timestamp }
+
+                    _uiState.update { it.copy(eligibleEntries = eligible) }
+                }
+            } catch (e: Exception) {}
+        }
     }
 
     private fun parseCurrency(input: String): Double {
@@ -218,9 +285,23 @@ class StockEntryViewModel @Inject constructor(
     fun onAddItemClicked() {
         val state = uiState.value
         val variant = state.selectedVariant ?: return
+
+        if (state.isReturnMode) {
+            val original = state.selectedOriginalEntry
+            if (original == null) {
+                _uiState.update { it.copy(errorMessage = "الرجاء اختيار الطلبية الأصلية للإرجاع منها") }
+                return
+            }
+            val qty = state.quantity.toIntOrNull() ?: 0
+            if (qty > original.availableQuantity) {
+                _uiState.update { it.copy(errorMessage = "الكمية المرتجعة ($qty) تتجاوز الكمية المتاحة للإرجاع (${original.availableQuantity})") }
+                return
+            }
+        }
+
         val newItem = calculateItemFromState(state, variant)
 
-        if (newItem.quantity <= 0) {
+        if (kotlin.math.abs(newItem.quantity) <= 0) {
             _uiState.update { it.copy(errorMessage = "الرجاء إدخال كمية صحيحة") }
             return
         }
@@ -285,7 +366,8 @@ class StockEntryViewModel @Inject constructor(
                             supplierId = state.selectedSupplier?.id ?: "",
                             status = if (currentUser?.role == "seller") "pending" else "approved",
                             createdBy = currentUser?.id ?: "",
-                            createdByUserName = currentUser?.displayName ?: ""
+                            createdByUserName = currentUser?.displayName ?: "",
+                            originalEntryId = state.selectedOriginalEntry?.entry?.id
                         )
                     }
                     stockEntryRepository.addStockEntries(entries)
