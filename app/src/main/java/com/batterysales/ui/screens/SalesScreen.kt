@@ -165,6 +165,12 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
                 item {
                     HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                     Text("البطاريات القديمة (سكراب)", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                    Text(
+                        text = "سيتم إضافة البطاريات المستلمة إلى ${uiState.selectedWarehouse?.name ?: "المستودع المختار"}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
                 }
 
                 item {
