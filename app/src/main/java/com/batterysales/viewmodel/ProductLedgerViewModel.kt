@@ -75,7 +75,7 @@ class ProductLedgerViewModel @Inject constructor(
                 LedgerCategory.PURCHASES -> items.filter { it.entry.quantity > 0 && it.entry.supplier != "Sale" && it.entry.costPrice > 0 && !it.entry.supplier.contains("Reversal") }
                 LedgerCategory.SALES -> items.filter { it.entry.supplier == "Sale" }
                 LedgerCategory.TRANSFERS -> items.filter { it.entry.costPrice == 0.0 && !it.entry.supplier.contains("Reversal") }
-                LedgerCategory.RETURNS -> items.filter { it.entry.supplier.contains("Reversal") }
+                LedgerCategory.RETURNS -> items.filter { it.entry.supplier.contains("Reversal") || (it.entry.quantity < 0 && it.entry.supplierId.isNotEmpty() && it.entry.supplier != "Sale") }
             }
         }
     }.onStart { _isLoading.value = true }

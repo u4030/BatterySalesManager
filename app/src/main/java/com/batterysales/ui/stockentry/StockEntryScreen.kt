@@ -116,6 +116,23 @@ fun StockEntryContent(
         contentPadding = PaddingValues(vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+            if (!uiState.isEditMode) {
+                item {
+                    TabRow(selectedTabIndex = if (uiState.isReturnMode) 1 else 0) {
+                        Tab(
+                            selected = !uiState.isReturnMode,
+                            onClick = { viewModel.onReturnModeChanged(false) },
+                            text = { Text("إدخال مشتريات") }
+                        )
+                        Tab(
+                            selected = uiState.isReturnMode,
+                            onClick = { viewModel.onReturnModeChanged(true) },
+                            text = { Text("مرتجع مشتريات") }
+                        )
+                    }
+                }
+            }
+
         // Warehouse Dropdown
         item {
             Row {

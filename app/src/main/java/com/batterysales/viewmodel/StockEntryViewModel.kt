@@ -30,6 +30,7 @@ data class StockEntryUiState(
     val stockItems: List<StockEntryItem> = emptyList(),
     val userRole: String = "seller",
     val isEditMode: Boolean = false,
+    val isReturnMode: Boolean = false,
     val isLoading: Boolean = true,
     val errorMessage: String? = null,
     val isFinished: Boolean = false
@@ -178,6 +179,10 @@ class StockEntryViewModel @Inject constructor(
         _uiState.update { it.copy(costValue = cost) }
     }
 
+    fun onReturnModeChanged(isReturn: Boolean) {
+        _uiState.update { it.copy(isReturnMode = isReturn) }
+    }
+
     private fun parseCurrency(input: String): Double {
         if (input.count { it == '.' } > 1) {
             val parts = input.split(".")
@@ -301,9 +306,13 @@ class StockEntryViewModel @Inject constructor(
     }
 
     private fun calculateItemFromState(state: StockEntryUiState, variant: ProductVariant): StockEntryItem {
-        val quantity = state.quantity.toIntOrNull() ?: 0
+        var quantity = state.quantity.toIntOrNull() ?: 0
         val minQuantity = state.minQuantity.toIntOrNull() ?: 0
         val cost = parseCurrency(state.costValue)
+
+        if (state.isReturnMode) {
+            quantity = -kotlin.math.abs(quantity)
+        }
 
         val costPerItem = if (state.costInputMode == CostInputMode.BY_ITEM) cost else if (variant.capacity > 0) cost * variant.capacity else 0.0
         val costPerAmpere = if (state.costInputMode == CostInputMode.BY_AMPERE) cost else if (variant.capacity > 0) cost / variant.capacity else 0.0
