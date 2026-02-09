@@ -108,8 +108,10 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                     Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) {
                         Text("البطاريات القديمة", modifier = Modifier.padding(8.dp))
                     }
-                    Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }) {
-                        Text("حالة الموردين", modifier = Modifier.padding(8.dp))
+                    if (!isSeller) {
+                        Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }) {
+                            Text("حالة الموردين", modifier = Modifier.padding(8.dp))
+                        }
                     }
                 }
             }
@@ -183,7 +185,7 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                             }
                         }
                     }
-                } else {
+                } else if (!isSeller) {
                     SupplierReportSection(viewModel, supplierItems)
                 }
             }
