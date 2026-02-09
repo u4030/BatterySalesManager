@@ -75,176 +75,182 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-                item {
-                    OutlinedButton(
-                        onClick = { showScanner = true },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.PhotoCamera, contentDescription = "مسح الباركود")
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("مسح الباركود")
+            item {
+                OutlinedButton(
+                    onClick = { showScanner = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.PhotoCamera, contentDescription = "مسح الباركود")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("مسح الباركود")
+                }
+            }
+
+            item {
+                if (uiState.errorMessage != null) {
+                    Text(text = uiState.errorMessage!!, color = MaterialTheme.colorScheme.error)
+                }
+            }
+
+            item {
+                if (uiState.isLoading) {
+                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
                     }
                 }
+            }
 
-                item {
-                    if (uiState.errorMessage != null) {
-                        Text(text = uiState.errorMessage!!, color = MaterialTheme.colorScheme.error)
-                    }
+            item {
+                Dropdown(
+                    label = "اختر المنتج",
+                    selectedValue = uiState.selectedProduct?.name ?: "",
+                    options = uiState.products.map { it.name },
+                    onOptionSelected = { index -> viewModel.onProductSelected(uiState.products[index]) },
+                    enabled = true
+                )
+            }
+
+            item {
+                Dropdown(
+                    label = "اختر الصنف (السعة)",
+                    selectedValue = uiState.selectedVariant?.let { v ->
+                        "${v.capacity} أمبير" + if (v.specification.isNotEmpty()) " (${v.specification})" else ""
+                    } ?: "",
+                    options = uiState.variants.map { v ->
+                        "${v.capacity} أمبير" + if (v.specification.isNotEmpty()) " (${v.specification})" else ""
+                    },
+                    onOptionSelected = { index -> viewModel.onVariantSelected(uiState.variants[index]) },
+                    enabled = uiState.selectedProduct != null
+                )
+            }
+
+            item {
+                Dropdown(
+                    label = "اختر المستودع",
+                    selectedValue = uiState.selectedWarehouse?.name ?: "",
+                    options = uiState.warehouses.map { it.name },
+                    onOptionSelected = { index -> viewModel.onWarehouseSelected(uiState.warehouses[index]) },
+                    enabled = !uiState.isWarehouseFixed
+                )
+                if (uiState.isWarehouseFixed) {
+                    Text(text = "تم تقييد المستودع بناءً على صلاحياتك", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
                 }
+            }
 
-                item {
-                    if (uiState.isLoading) {
-                        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator()
-                        }
-                    }
-                }
+            item {
+                val availableQty = uiState.selectedVariant?.let { uiState.stockLevels[Pair(it.id, uiState.selectedWarehouse?.id ?: "")] ?: 0 } ?: 0
+                Text("الكمية المتاحة: $availableQty")
+            }
 
-                item {
-                    Dropdown(
-                        label = "اختر المنتج",
-                        selectedValue = uiState.selectedProduct?.name ?: "",
-                        options = uiState.products.map { it.name },
-                        onOptionSelected = { index -> viewModel.onProductSelected(uiState.products[index]) },
-                        enabled = true
-                    )
-                }
+            item {
+                OutlinedTextField(
+                    value = uiState.quantity,
+                    onValueChange = viewModel::onQuantityChanged,
+                    label = { Text("الكمية") },
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                    textStyle = LocalInputTextStyle.current
+                )
+            }
 
-                item {
-                    Dropdown(
-                        label = "اختر الصنف (السعة)",
-                        selectedValue = uiState.selectedVariant?.let { v ->
-                            "${v.capacity} أمبير" + if (v.specification.isNotEmpty()) " (${v.specification})" else ""
-                        } ?: "",
-                        options = uiState.variants.map { v ->
-                            "${v.capacity} أمبير" + if (v.specification.isNotEmpty()) " (${v.specification})" else ""
-                        },
-                        onOptionSelected = { index -> viewModel.onVariantSelected(uiState.variants[index]) },
-                        enabled = uiState.selectedProduct != null
-                    )
-                }
+            item {
+                OutlinedTextField(
+                    value = uiState.sellingPrice,
+                    onValueChange = viewModel::onSellingPriceChanged,
+                    label = { Text("سعر البيع") },
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
+                    textStyle = LocalInputTextStyle.current
+                )
+            }
 
-                item {
-                    Dropdown(
-                        label = "اختر المستودع",
-                        selectedValue = uiState.selectedWarehouse?.name ?: "",
-                        options = uiState.warehouses.map { it.name },
-                        onOptionSelected = { index -> viewModel.onWarehouseSelected(uiState.warehouses[index]) },
-                        enabled = !uiState.isWarehouseFixed
-                    )
-                    if (uiState.isWarehouseFixed) {
-                        Text(text = "تم تقييد المستودع بناءً على صلاحياتك", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
-                    }
-                }
+            item {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                Text("البطاريات القديمة (سكراب)", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                Text(
+                    text = "سيتم إضافة البطاريات المستلمة إلى ${uiState.selectedWarehouse?.name ?: "المستودع المختار"}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
 
-                item {
-                    val availableQty = uiState.selectedVariant?.let { uiState.stockLevels[Pair(it.id, uiState.selectedWarehouse?.id ?: "")] ?: 0 } ?: 0
-                    Text("الكمية المتاحة: $availableQty")
-                }
-
-                item {
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
-                        value = uiState.quantity,
-                        onValueChange = viewModel::onQuantityChanged,
+                        value = uiState.oldBatteriesQuantity,
+                        onValueChange = viewModel::onOldBatteriesQuantityChanged,
                         label = { Text("الكمية") },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.weight(1f),
                         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
                         textStyle = LocalInputTextStyle.current
                     )
-                }
-
-                item {
                     OutlinedTextField(
-                        value = uiState.sellingPrice,
-                        onValueChange = viewModel::onSellingPriceChanged,
-                        label = { Text("سعر البيع") },
-                        modifier = Modifier.fillMaxWidth(),
+                        value = uiState.oldBatteriesTotalAmps,
+                        onValueChange = viewModel::onOldBatteriesTotalAmpsChanged,
+                        label = { Text("إجمالي الأمبيرات") },
+                        modifier = Modifier.weight(1f),
                         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
                         textStyle = LocalInputTextStyle.current
                     )
                 }
+            }
 
-                item {
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                    Text("البطاريات القديمة (سكراب)", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
-                }
+            item {
+                OutlinedTextField(
+                    value = uiState.oldBatteriesValue,
+                    onValueChange = viewModel::onOldBatteriesValueChanged,
+                    label = { Text("قيمة الخصم مقابل البطاريات القديمة") },
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
+                    textStyle = LocalInputTextStyle.current
+                )
+            }
 
-                item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(
-                            value = uiState.oldBatteriesQuantity,
-                            onValueChange = viewModel::onOldBatteriesQuantityChanged,
-                            label = { Text("الكمية") },
-                            modifier = Modifier.weight(1f),
-                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
-                            textStyle = LocalInputTextStyle.current
+            item {
+                CustomKeyboardTextField(
+                    value = customerName,
+                    onValueChange = { customerName = it },
+                    label = "اسم العميل",
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardType = KeyboardLanguage.ARABIC
+                )
+            }
+
+            item {
+                CustomKeyboardTextField(
+                    value = customerPhone,
+                    onValueChange = { customerPhone = it },
+                    label = "رقم هاتف العميل",
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardType = KeyboardLanguage.NUMERIC
+                )
+            }
+
+            item {
+                OutlinedTextField(
+                    value = paidAmount,
+                    onValueChange = { paidAmount = it },
+                    label = { Text("المبلغ المدفوع") },
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
+                    textStyle = LocalInputTextStyle.current
+                )
+            }
+
+            item {
+                Button(
+                    onClick = {
+                        viewModel.createSale(
+                            customerName = customerName,
+                            customerPhone = customerPhone,
+                            paidAmount = paidAmount.toDoubleOrNull() ?: 0.0
                         )
-                        OutlinedTextField(
-                            value = uiState.oldBatteriesTotalAmps,
-                            onValueChange = viewModel::onOldBatteriesTotalAmpsChanged,
-                            label = { Text("إجمالي الأمبيرات") },
-                            modifier = Modifier.weight(1f),
-                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
-                            textStyle = LocalInputTextStyle.current
-                        )
-                    }
-                }
-
-                item {
-                    OutlinedTextField(
-                        value = uiState.oldBatteriesValue,
-                        onValueChange = viewModel::onOldBatteriesValueChanged,
-                        label = { Text("قيمة الخصم مقابل البطاريات القديمة") },
-                        modifier = Modifier.fillMaxWidth(),
-                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
-                        textStyle = LocalInputTextStyle.current
-                    )
-                }
-
-                item {
-                    CustomKeyboardTextField(
-                        value = customerName,
-                        onValueChange = { customerName = it },
-                        label = "اسم العميل",
-                        modifier = Modifier.fillMaxWidth(),
-                        keyboardType = KeyboardLanguage.ARABIC
-                    )
-                }
-
-                item {
-                    CustomKeyboardTextField(
-                        value = customerPhone,
-                        onValueChange = { customerPhone = it },
-                        label = "رقم هاتف العميل",
-                        modifier = Modifier.fillMaxWidth(),
-                        keyboardType = KeyboardLanguage.NUMERIC
-                    )
-                }
-
-                item {
-                    OutlinedTextField(
-                        value = paidAmount,
-                        onValueChange = { paidAmount = it },
-                        label = { Text("المبلغ المدفوع") },
-                        modifier = Modifier.fillMaxWidth(),
-                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
-                        textStyle = LocalInputTextStyle.current
-                    )
-                }
-
-                item {
-                    Button(
-                        onClick = {
-                            viewModel.createSale(
-                                customerName = customerName,
-                                customerPhone = customerPhone,
-                                paidAmount = paidAmount.toDoubleOrNull() ?: 0.0
-                            )
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = uiState.selectedVariant != null && uiState.selectedWarehouse != null
-                    ) {
-                        Text("إنشاء عملية بيع")
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = uiState.selectedVariant != null && uiState.selectedWarehouse != null
+                ) {
+                    Text("إنشاء عملية بيع")
                 }
             }
         }

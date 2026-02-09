@@ -158,7 +158,7 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                         // Actually the user wants a tab for each warehouse in old batteries
                         var selectedWHIndex by remember { mutableIntStateOf(0) }
                         val whList = warehouses
-                        
+
                         if (whList.isNotEmpty()) {
                             ScrollableTabRow(selectedTabIndex = selectedWHIndex, edgePadding = 16.dp) {
                                 Tab(selected = selectedWHIndex == 0, onClick = { selectedWHIndex = 0 }) {
@@ -170,10 +170,10 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                                     }
                                 }
                             }
-                            
-                            val currentSummary = if (selectedWHIndex == 0) oldBatterySummary 
-                                                else oldBatteryWarehouseSummary[whList[selectedWHIndex - 1].id] ?: Pair(0, 0.0)
-                            
+
+                            val currentSummary = if (selectedWHIndex == 0) oldBatterySummary
+                            else oldBatteryWarehouseSummary[whList[selectedWHIndex - 1].id] ?: Pair(0, 0.0)
+
                             OldBatteryReportSection(currentSummary) {
                                 navController.navigate("old_battery_ledger")
                             }
@@ -378,72 +378,82 @@ fun SupplierReportSection(viewModel: ReportsViewModel, items: List<com.batterysa
     val dateRangePickerState = rememberDateRangePickerState()
     val dateFormatter = java.text.SimpleDateFormat("yyyy/MM/dd", java.util.Locale.getDefault())
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { viewModel.onSupplierSearchQueryChanged(it) },
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            placeholder = { Text("بحث باسم المورد أو رقم الشيك/السند...") },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-            trailingIcon = {
-                if (searchQuery.isNotEmpty()) {
-                    IconButton(onClick = { viewModel.onSupplierSearchQueryChanged("") }) {
-                        Icon(Icons.Default.Clear, contentDescription = "مسح")
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        item {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { viewModel.onSupplierSearchQueryChanged(it) },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                placeholder = { Text("بحث باسم المورد أو رقم الشيك/السند...") },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { viewModel.onSupplierSearchQueryChanged("") }) {
+                            Icon(Icons.Default.Clear, contentDescription = "مسح")
+                        }
                     }
-                }
-            },
-            shape = RoundedCornerShape(12.dp),
-            singleLine = true
-        )
+                },
+                shape = RoundedCornerShape(12.dp),
+                singleLine = true
+            )
+        }
 
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-                .clickable { showDatePicker = true },
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
-        ) {
-            Row(
-                modifier = Modifier.padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                onClick = { showDatePicker = true },
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
             ) {
-                Column {
-                    Text("الفترة الزمنية", style = MaterialTheme.typography.labelMedium)
-                    val startStr = startDate?.let { dateFormatter.format(java.util.Date(it)) } ?: "البداية"
-                    val endStr = endDate?.let { dateFormatter.format(java.util.Date(it)) } ?: "النهاية"
-                    Text("$startStr - $endStr", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column {
+                        Text("الفترة الزمنية", style = MaterialTheme.typography.labelMedium)
+                        val startStr = startDate?.let { dateFormatter.format(java.util.Date(it)) } ?: "البداية"
+                        val endStr = endDate?.let { dateFormatter.format(java.util.Date(it)) } ?: "النهاية"
+                        Text("$startStr - $endStr", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                    }
+                    Icon(Icons.Default.DateRange, contentDescription = null)
                 }
-                Icon(Icons.Default.PhotoCamera, contentDescription = null) // Just an icon for now, could be DateRange
             }
         }
 
-        val totalSuppliersDebit = items.sumOf { it.balance }
-        Card(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
-        ) {
-            FlowRow(
-                modifier = Modifier.padding(16.dp).fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalArrangement = Arrangement.Center
+        item {
+            val totalSuppliersDebit = items.sumOf { it.balance }
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
             ) {
-                Text(
-                    "إجمالي المبالغ المستحقة للموردين",
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(vertical = 4.dp)
-                )
-                Text(
-                    "JD ${String.format("%.3f", totalSuppliersDebit)}",
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(vertical = 4.dp)
-                )
+                FlowRow(
+                    modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        "إجمالي المبالغ المستحقة للموردين",
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    )
+                    Text(
+                        "JD ${String.format("%.3f", totalSuppliersDebit)}",
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    )
+                }
             }
         }
 
-        LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            items(items) { item ->
+        items(items) { item ->
+            Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                 SupplierCard(item)
             }
         }

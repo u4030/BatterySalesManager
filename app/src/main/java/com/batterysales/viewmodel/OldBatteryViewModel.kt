@@ -57,19 +57,23 @@ class OldBatteryViewModel @Inject constructor(
                 val currentUser = userRepository.getCurrentUser()
                 _isSeller.value = currentUser?.role == "seller"
                 _userWarehouseId.value = currentUser?.warehouseId
-                
-                warehouseRepository.getWarehouses().collect { _warehouses.value = it }
 
-                repository.getAllTransactionsFlow().collect { allTransactions ->
-                    val filtered = if (_isSeller.value) {
-                        allTransactions.filter { it.warehouseId == _userWarehouseId.value }
-                    } else {
-                        allTransactions
+                launch {
+                    warehouseRepository.getWarehouses().collect { _warehouses.value = it }
+                }
+
+                launch {
+                    repository.getAllTransactionsFlow().collect { allTransactions ->
+                        val filtered = if (_isSeller.value) {
+                            allTransactions.filter { it.warehouseId == _userWarehouseId.value }
+                        } else {
+                            allTransactions
+                        }
+                        _transactions.value = filtered.sortedByDescending { t -> t.date }
+                        _summary.value = calculateSummary(filtered)
+                        _warehouseSummary.value = allTransactions.groupBy { it.warehouseId }.mapValues { calculateSummary(it.value) }
+                        _isLoading.value = false
                     }
-                    _transactions.value = filtered.sortedByDescending { t -> t.date }
-                    _summary.value = calculateSummary(filtered)
-                    _warehouseSummary.value = allTransactions.groupBy { it.warehouseId }.mapValues { calculateSummary(it.value) }
-                    _isLoading.value = false
                 }
             } catch (e: Exception) {
                 _isLoading.value = false
