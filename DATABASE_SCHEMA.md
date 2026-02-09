@@ -2,7 +2,7 @@
 
 ## نظرة عامة
 
-تطبيق Battery Sales Manager يستخدم **Firebase Firestore** كقاعدة بيانات NoSQL. الهيكل أدناه يوضح جميع المجموعات والمستندات والحقول.
+تطبيق Battery Sales Manager يستخدم **Firebase Firestore** كقاعدة بيانات NoSQL. الهيكل أدناه يوضح جميع المجموعات والمستندات والحقول الحالية بناءً على آخر تحديثات النظام.
 
 ---
 
@@ -10,357 +10,254 @@
 
 ### 1. **users** - المستخدمون
 
-تخزين بيانات المستخدمين والمدراء.
+تخزين بيانات المستخدمين والمدراء مع الصلاحيات والارتباط بالمستودعات.
 
 ```
 Collection: users
 ├── Document: {userId}
-│   ├── id: string (معرف المستخدم من Firebase Auth)
+│   ├── id: string (معرف المستخدم)
 │   ├── email: string
 │   ├── displayName: string
-│   ├── role: string (ADMIN | SELLER)
+│   ├── phone: string
+│   ├── role: string (admin | manager | seller | accountant | warehouse)
+│   ├── warehouseId: string? (المستودع المرتبط بالبائع)
+│   ├── permissions: list<string> (قائمة الصلاحيات المخصصة)
 │   ├── isActive: boolean
-│   ├── phoneNumber: string (اختياري)
+│   ├── isEmailVerified: boolean
+│   ├── notes: string
+│   ├── profileImage: string?
+│   ├── address: string
+│   ├── city: string
+│   ├── postalCode: string
 │   ├── createdAt: timestamp
 │   ├── updatedAt: timestamp
-│   └── lastLoginAt: timestamp (اختياري)
+│   └── lastLoginAt: timestamp
 ```
-
-**الفهارس:**
-- `role` (للفرز حسب الدور)
-- `isActive` (للبحث عن المستخدمين النشطين)
-- `createdAt` (للترتيب الزمني)
 
 ---
 
-### 2. **products** - المنتجات
+### 2. **warehouses** - المستودعات
 
-تخزين بيانات البطاريات والمنتجات في المستودع.
+إدارة مواقع التخزين المختلفة.
+
+```
+Collection: warehouses
+├── Document: {warehouseId}
+│   ├── id: string
+│   ├── name: string (اسم المستودع)
+│   └── location: string (الموقع)
+```
+
+---
+
+### 3. **products** - المنتجات (العلامات التجارية)
+
+تخزين أسماء الشركات المصنعة أو العلامات التجارية.
 
 ```
 Collection: products
 ├── Document: {productId}
 │   ├── id: string
-│   ├── name: string (اسم المنتج)
-│   ├── capacity: number (السعة بالأمبير)
-│   ├── type: string (نوع/الشركة)
-│   ├── costPrice: number (سعر التكلفة - مخفي عن البائع)
-│   ├── barcode: string (الباركود/QR Code)
-│   ├── quantity: number (الكمية الحالية)
-│   ├── minimumQuantity: number (الحد الأدنى)
-│   ├── isArchived: boolean (للحذف المنطقي)
+│   ├── name: string (مثلاً: Bosch, ACDelco)
+│   ├── notes: string (تستخدم للمواصفة الفنية)
+│   ├── archived: boolean
 │   ├── createdAt: timestamp
 │   └── updatedAt: timestamp
 ```
 
-**الفهارس:**
-- `barcode` (للبحث السريع)
-- `name` (للبحث التقريبي)
-- `quantity` (للتنبيهات)
-- `isArchived` (لعرض المنتجات النشطة فقط)
+---
+
+### 4. **product_variants** - أنواع المنتجات (السعات)
+
+تخزين التفاصيل الفنية لكل سعة تابعة لعلامة تجارية.
+
+```
+Collection: product_variants
+├── Document: {variantId}
+│   ├── id: string
+│   ├── productId: string (الارتباط بالمنتج الأساسي)
+│   ├── capacity: number (السعة بالأمبير)
+│   ├── sellingPrice: number
+│   ├── barcode: string
+│   ├── minQuantity: number (الحد الأدنى العام)
+│   ├── minQuantities: map<string, number> (الحد الأدنى لكل مستودع: warehouseId -> qty)
+│   ├── notes: string (تستخدم للمواصفة الفنية)
+│   ├── archived: boolean
+│   ├── createdAt: timestamp
+│   └── updatedAt: timestamp
+```
 
 ---
 
-### 3. **invoices** - الفواتير/المبيعات
+### 5. **stock_entries** - حركات المخزون (وارد وصادر)
 
-تخزين بيانات الفواتير والمبيعات.
+تسجيل جميع عمليات التوريد، التحويل، والبيع المؤثرة على المخزون.
+
+```
+Collection: stock_entries
+├── Document: {entryId}
+│   ├── id: string
+│   ├── productVariantId: string
+│   ├── warehouseId: string
+│   ├── quantity: number (موجب للتوريد، سالب للبيع/التحويل الصادر)
+│   ├── costPrice: number (سعر التكلفة للوحدة)
+│   ├── totalCost: number (إجمالي التكلفة)
+│   ├── timestamp: timestamp
+│   ├── supplier: string (اسم المورد - نصي للنسخ القديمة)
+│   ├── supplierId: string (الارتباط بمجموعة الموردين)
+│   ├── invoiceId: string? (مرتبط بفاتورة مبيعات في حال كان صادر)
+│   ├── status: string (approved | pending)
+│   ├── createdBy: string (معرف المستخدم)
+│   └── createdByUserName: string (اسم المستخدم الذي قام بالعملية)
+```
+
+---
+
+### 6. **invoices** - فواتير المبيعات
+
+تخزين الفواتير وتفاصيل المبيعات والذمم.
 
 ```
 Collection: invoices
 ├── Document: {invoiceId}
 │   ├── id: string
-│   ├── invoiceNumber: string (رقم الفاتورة الفريد)
-│   ├── productId: string (معرف المنتج)
-│   ├── productName: string
-│   ├── capacity: number (السعة المباعة)
-│   ├── salePrice: number (سعر البيع)
-│   ├── buyerName: string (اسم المشتري)
-│   ├── buyerPhone: string (رقم هاتف المشتري)
-│   ├── remainingAmount: number (المبلغ المتبقي - ذمم)
-│   ├── oldBatteryCapacity: number (سعة البطارية القديمة)
-│   ├── userId: string (معرف البائع)
-│   ├── isDeleted: boolean (للحذف المنطقي)
+│   ├── invoiceNumber: string
+│   ├── customerName: string
+│   ├── customerPhone: string
+│   ├── items: list<map> (InvoiceItem: productId, productName, quantity, price, total...)
+│   ├── subtotal: number
+│   ├── totalAmount: number
+│   ├── oldBatteriesValue: number (قيمة الخصم مقابل السكراب)
+│   ├── oldBatteriesQuantity: number
+│   ├── oldBatteriesTotalAmperes: number
+│   ├── finalAmount: number (المبلغ النهائي بعد خصم السكراب)
+│   ├── paidAmount: number
+│   ├── remainingAmount: number (الذمم)
+│   ├── status: string (paid | pending | cancelled)
+│   ├── invoiceDate: timestamp
+│   ├── sellerId: string
+│   ├── sellerName: string
 │   ├── createdAt: timestamp
 │   └── updatedAt: timestamp
 ```
 
-**الفهارس:**
-- `invoiceNumber` (للبحث السريع)
-- `userId` + `createdAt` (لعرض فواتير البائع اليومية)
-- `remainingAmount` (للبحث عن الذمم)
-- `createdAt` (للترتيب الزمني)
-
-**Sub-collection: payments**
-```
-Collection: invoices/{invoiceId}/payments
-├── Document: {paymentId}
-│   ├── id: string
-│   ├── amount: number (مبلغ الدفعة)
-│   ├── paymentDate: timestamp
-│   ├── paymentMethod: string (نقد، شيك، تحويل)
-│   ├── notes: string
-│   └── createdAt: timestamp
-```
-
 ---
 
-### 4. **old_batteries** - البطاريات القديمة
+### 7. **suppliers** - الموردون
 
-تخزين بيانات البطاريات القديمة المرتجعة.
+إدارة بيانات الموردين والأهداف السنوية.
 
 ```
-Collection: old_batteries
-├── Document: {batteryId}
+Collection: suppliers
+├── Document: {supplierId}
 │   ├── id: string
-│   ├── capacity: number (السعة بالأمبير)
-│   ├── quantity: number (الكمية)
+│   ├── name: string
+│   ├── phone: string
+│   ├── email: string
+│   ├── yearlyTarget: number (الهدف السنوي للمشتريات)
 │   ├── createdAt: timestamp
 │   └── updatedAt: timestamp
 ```
 
-**الفهارس:**
-- `createdAt` (للترتيب الزمني)
-
 ---
 
-### 5. **bills** - الكمبيالات والشيكات
+### 8. **bills** - الشيكات والكمبيالات
 
-تخزين بيانات الكمبيالات والشيكات.
+إدارة الالتزامات المالية للموردين.
 
 ```
 Collection: bills
 ├── Document: {billId}
 │   ├── id: string
-│   ├── description: string (الوصف)
-│   ├── amount: number (القيمة)
-│   ├── dueDate: timestamp (تاريخ الاستحقاق)
+│   ├── description: string
+│   ├── amount: number
+│   ├── paidAmount: number
+│   ├── dueDate: timestamp
 │   ├── status: string (PAID | UNPAID | OVERDUE | PARTIAL)
 │   ├── billType: string (CHECK | BILL | TRANSFER | OTHER)
-│   ├── paidDate: timestamp (تاريخ التسديد - اختياري)
-│   ├── notes: string
-│   ├── createdAt: timestamp
-│   └── updatedAt: timestamp
+│   ├── referenceNumber: string (رقم الشيك أو السند)
+│   ├── supplierId: string
+│   ├── relatedEntryId: string? (مرتبط بعملية توريد محددة)
+│   ├── paidDate: timestamp?
+│   └── createdAt: timestamp
 ```
-
-**الفهارس:**
-- `status` (للفرز حسب الحالة)
-- `dueDate` (للتنبيهات)
-- `createdAt` (للترتيب الزمني)
 
 ---
 
-### 6. **expenses** - المصروفات
+### 9. **transactions** - الخزينة (Treasury)
 
-تخزين بيانات المصروفات.
-
-```
-Collection: expenses
-├── Document: {expenseId}
-│   ├── id: string
-│   ├── description: string (وصف المصروف)
-│   ├── amount: number (مبلغ المصروف)
-│   ├── category: string (SALARY | UTILITIES | RENT | TRANSPORTATION | MAINTENANCE | SUPPLIES | ADVERTISING | INSURANCE | TAXES | OTHER)
-│   ├── relatedBillId: string (معرف الكمبيالة المرتبطة - اختياري)
-│   ├── notes: string
-│   ├── createdAt: timestamp
-│   └── updatedAt: timestamp
-```
-
-**الفهارس:**
-- `category` (للفرز حسب الفئة)
-- `createdAt` (للترتيب الزمني)
-
----
-
-### 7. **transactions** - العمليات المحاسبية
-
-تسجيل جميع العمليات المالية (واردة وصادرة).
+تسجيل جميع التدفقات النقدية الفعلية.
 
 ```
 Collection: transactions
 ├── Document: {transactionId}
 │   ├── id: string
 │   ├── type: string (INCOME | EXPENSE | PAYMENT | REFUND)
-│   ├── amount: number (المبلغ)
-│   ├── description: string (الوصف)
-│   ├── relatedId: string (معرف الفاتورة أو المصروف - اختياري)
-│   ├── notes: string
-│   └── createdAt: timestamp
+│   ├── amount: number
+│   ├── description: string
+│   ├── relatedId: string? (مرتبط بفاتورة أو دفعة)
+│   ├── referenceNumber: string (رقم الشيك أو السند المالي)
+│   ├── createdAt: timestamp
+│   └── notes: string
 ```
-
-**الفهارس:**
-- `type` (للفرز حسب النوع)
-- `createdAt` (للترتيب الزمني)
 
 ---
 
-### 8. **daily_sales_summary** - ملخص المبيعات اليومية
+### 10. **bank_transactions** - حركة البنك
 
-تخزين ملخص المبيعات لكل يوم.
+تسجيل عمليات الإيداع والسحب البنكي (خاصة الشيكات).
 
 ```
-Collection: daily_sales_summary
-├── Document: {date}_{userId}
+Collection: bank_transactions
+├── Document: {bankTransId}
 │   ├── id: string
-│   ├── date: timestamp (تاريخ اليوم)
-│   ├── totalSales: number (إجمالي المبيعات)
-│   ├── totalInvoices: number (عدد الفواتير)
-│   ├── totalDebts: number (إجمالي الذمم)
-│   ├── totalOldBatteryCapacity: number (إجمالي سعة البطاريات القديمة)
-│   ├── userId: string (معرف البائع)
-│   ├── createdAt: timestamp
-│   └── updatedAt: timestamp
+│   ├── billId: string? (الارتباط بالكمبيالة/الشيك)
+│   ├── amount: number
+│   ├── type: string (DEPOSIT | WITHDRAWAL)
+│   ├── description: string
+│   ├── referenceNumber: string
+│   ├── date: timestamp
+│   └── notes: string
 ```
-
-**الفهارس:**
-- `date` + `userId` (للبحث عن ملخص يوم معين لبائع معين)
 
 ---
 
-### 9. **daily_accounting_summary** - ملخص المحاسبة اليومية
+### 11. **old_battery_transactions** - سجل البطاريات القديمة (السكراب)
 
-تخزين ملخص الواردات والمصروفات لكل يوم.
+إدارة مخزون السكراب في المستودعات المختلفة.
 
 ```
-Collection: daily_accounting_summary
-├── Document: {date}
+Collection: old_battery_transactions
+├── Document: {scrapId}
 │   ├── id: string
-│   ├── date: timestamp (تاريخ اليوم)
-│   ├── totalIncome: number (إجمالي الواردات)
-│   ├── totalExpenses: number (إجمالي المصروفات)
-│   ├── netAmount: number (الصافي)
-│   ├── totalDebts: number (إجمالي الذمم المتبقية)
-│   ├── createdAt: timestamp
-│   └── updatedAt: timestamp
+│   ├── invoiceId: string? (إذا كان مستلم من فاتورة)
+│   ├── warehouseId: string (المستودع الذي توجد فيه البطاريات)
+│   ├── quantity: number
+│   ├── totalAmperes: number
+│   ├── type: string (INTAKE | SALE | ADJUSTMENT)
+│   ├── amount: number (قيمة البيع في حال كان النوع SALE)
+│   ├── date: timestamp
+│   └── notes: string
 ```
-
-**الفهارس:**
-- `date` (للبحث عن ملخص يوم معين)
 
 ---
 
 ## 🔐 قواعد الأمان (Security Rules)
 
-```javascript
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    // السماح للمستخدمين المصرح لهم فقط
-    match /users/{userId} {
-      allow read: if request.auth.uid == userId || isAdmin();
-      allow write: if isAdmin();
-    }
-
-    match /products/{productId} {
-      allow read: if request.auth != null;
-      allow write: if isAdmin();
-    }
-
-    match /invoices/{invoiceId} {
-      allow read: if request.auth != null;
-      allow write: if isAdmin() || request.auth.uid == resource.data.userId;
-      
-      match /payments/{paymentId} {
-        allow read: if request.auth != null;
-        allow write: if isAdmin() || request.auth.uid == get(/databases/$(database)/documents/invoices/$(invoiceId)).data.userId;
-      }
-    }
-
-    match /old_batteries/{batteryId} {
-      allow read: if request.auth != null;
-      allow write: if isAdmin();
-    }
-
-    match /bills/{billId} {
-      allow read: if request.auth != null;
-      allow write: if isAdmin();
-    }
-
-    match /expenses/{expenseId} {
-      allow read: if request.auth != null;
-      allow write: if isAdmin();
-    }
-
-    match /transactions/{transactionId} {
-      allow read: if request.auth != null;
-      allow write: if isAdmin();
-    }
-
-    match /daily_sales_summary/{document=**} {
-      allow read: if request.auth != null;
-      allow write: if isAdmin();
-    }
-
-    match /daily_accounting_summary/{document=**} {
-      allow read: if request.auth != null;
-      allow write: if isAdmin();
-    }
-
-    // دالة مساعدة للتحقق من أن المستخدم مدير
-    function isAdmin() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN';
-    }
-  }
-}
-```
+تعتمد قواعد الأمان على أدوار المستخدمين المعرفة في مجموعة `users`. يتم التحقق من حقل `role` للسماح بالوصول:
+- **admin/manager**: وصول كامل للقراءة والكتابة لجميع المجموعات.
+- **seller**: وصول للقراءة لجميع المجموعات، وكتابة محدودة للفواتير وعمليات السكراب وحركات المخزون الخاصة بمستودعه فقط.
+- **accountant**: وصول كامل للبيانات المالية (bills, transactions, bank) وتقارير الموردين.
 
 ---
 
-## 📈 استراتيجيات الفهرسة
+## 📋 ملاحظات برمجية (Developer Notes)
 
-### الفهارس المركبة المهمة:
+1. **الارتباط التلقائي**:
+   - تسجيل دفعة لفاتورة ينشئ تلقائياً مستند في `transactions`.
+   - تسجيل شيك مسدد ينشئ تلقائياً مستند في `bank_transactions` و `transactions`.
+   - استلام سكراب في فاتورة مبيعات ينشئ تلقائياً مستند في `old_battery_transactions` مرتبط بنفس مستودع الفاتورة.
 
-1. **invoices** - `userId` + `createdAt` (للحصول على فواتير البائع اليومية)
-2. **invoices** - `remainingAmount` + `createdAt` (للبحث عن الذمم)
-3. **products** - `isArchived` + `quantity` (للتنبيهات)
-4. **bills** - `status` + `dueDate` (للتنبيهات)
-5. **expenses** - `category` + `createdAt` (للتقارير)
+2. **الدقة المالية**: يتم حفظ المبالغ كـ `number` بدقة تصل إلى 4 منازل عشرية لمنع أخطاء التقريب في العملات (JD).
 
----
-
-## 🔄 تدفق البيانات
-
-### عملية البيع:
-```
-1. البائع يختار منتج من قائمة products
-2. يتم إنشاء invoice جديد
-3. يتم تقليل quantity في products
-4. يتم تحديث daily_sales_summary
-5. إذا كان هناك ذمم، يتم تسجيل remainingAmount
-```
-
-### تسديد الذمم:
-```
-1. يتم إضافة payment إلى sub-collection payments
-2. يتم تحديث remainingAmount في invoice
-3. يتم إنشاء transaction من نوع PAYMENT
-4. يتم تحديث daily_accounting_summary
-```
-
-### إضافة مصروف:
-```
-1. يتم إنشاء expense جديد
-2. يتم إنشاء transaction من نوع EXPENSE
-3. يتم تحديث daily_accounting_summary
-```
-
----
-
-## 📋 ملاحظات مهمة
-
-1. **الحذف المنطقي**: بدلاً من حذف البيانات مباشرة، يتم وضع علم `isDeleted` أو `isArchived`
-2. **الفهارس**: يتم إنشاء الفهارس تلقائياً عند الحاجة
-3. **الأمان**: جميع العمليات محمية بقواعد الأمان
-4. **الأداء**: استخدام sub-collections للبيانات المرتبطة (مثل الدفعات)
-5. **التقارير**: يتم استخدام المجموعات الملخصة لتسريع التقارير
-
----
-
-## 🚀 الخطوات التالية
-
-
-1. إعداد Firebase Project وتفعيل Firestore
-2. تطبيق قواعد الأمان
-3. إنشاء الفهارس المركبة
-4. ربط التطبيق بـ Firebase
-5. تطبيق عمليات CRUD في الـ Repository Layer
+3. **الحذف المنطقي**: يتم استخدام حقل `archived` في المنتجات لمنع حذف البيانات التي لها سجلات تاريخية.
