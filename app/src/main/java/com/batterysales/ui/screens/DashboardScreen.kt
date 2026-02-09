@@ -50,8 +50,7 @@ fun DashboardScreen(
         DashboardItem("المستودع", Icons.Default.Inventory, "warehouse"),
         DashboardItem("إدارة المنتجات", Icons.Default.Settings, "product_management"),
         DashboardItem("إدخال مخزون", Icons.Default.AddBusiness, "stock_entry"),
-        DashboardItem("ترحيل مخزون", Icons.Default.MoveDown, "stock_transfer"),
-        DashboardItem("العملاء", Icons.Default.People, "clients")
+        DashboardItem("ترحيل مخزون", Icons.Default.MoveDown, "stock_transfer")
     )
 
     if (isAdmin) {

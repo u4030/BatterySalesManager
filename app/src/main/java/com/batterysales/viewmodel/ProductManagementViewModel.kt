@@ -34,18 +34,33 @@ class ProductManagementViewModel @Inject constructor(
     private val _selectedProduct = MutableStateFlow<Product?>(null)
     private val _errorMessage = MutableStateFlow<String?>(null)
     private val _isLoading = MutableStateFlow(false)
+    private val _barcodeFilter = MutableStateFlow("")
 
     val uiState: StateFlow<ProductManagementUiState> = combine(
-        productRepository.getProducts(),
+        combine(
+            productRepository.getProducts(),
+            productVariantRepository.getAllVariantsFlow(),
+            _barcodeFilter
+        ) { p, v, b -> Triple(p, v, b) },
         _selectedProduct,
         _selectedProduct.flatMapLatest { product ->
             if (product == null) flowOf(emptyList()) else productVariantRepository.getVariantsForProductFlow(product.id)
         },
         warehouseRepository.getWarehouses(),
         _isLoading
-    ) { products, selectedProduct, variants, warehouses, isLoading ->
+    ) { (products, allVariants, barcodeFilter), selectedProduct, variants, warehouses, isLoading ->
+        val filteredProducts = if (barcodeFilter.isBlank()) {
+            products.filter { !it.archived }
+        } else {
+            val productIdsWithMatchingBarcode = allVariants
+                .filter { it.barcode.contains(barcodeFilter, ignoreCase = true) }
+                .map { it.productId }
+                .toSet()
+            products.filter { !it.archived && (it.id in productIdsWithMatchingBarcode || it.name.contains(barcodeFilter, ignoreCase = true)) }
+        }
+
         ProductManagementUiState(
-            products = products.filter { !it.archived },
+            products = filteredProducts,
             selectedProduct = selectedProduct,
             variants = variants.filter { !it.archived },
             warehouses = warehouses,
@@ -53,6 +68,10 @@ class ProductManagementViewModel @Inject constructor(
             errorMessage = _errorMessage.value
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ProductManagementUiState(isLoading = true))
+
+    fun onBarcodeFilterChanged(query: String) {
+        _barcodeFilter.value = query
+    }
 
 
     fun selectProduct(product: Product) {

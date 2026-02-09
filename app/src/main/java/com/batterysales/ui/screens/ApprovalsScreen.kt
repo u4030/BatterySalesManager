@@ -79,6 +79,7 @@ fun ApprovalsScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ApprovalCard(item: ApprovalItem, onApprove: () -> Unit, onReject: () -> Unit, onEdit: () -> Unit) {
     val dateFormatter = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault())
@@ -86,57 +87,79 @@ fun ApprovalCard(item: ApprovalItem, onApprove: () -> Unit, onReject: () -> Unit
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(text = item.productName, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = item.productName,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
                 Text(
                     text = if (item.entry.quantity > 0) "+${item.entry.quantity}" else "${item.entry.quantity}",
                     color = if (item.entry.quantity > 0) Color(0xFF4CAF50) else Color.Red,
+                    style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
             }
-            Text(text = "سعة: ${item.variantCapacity} أمبير", fontSize = 14.sp, color = Color.Gray)
-            Text(text = "المستودع: ${item.warehouseName}", fontSize = 14.sp, color = Color.Gray)
-            Text(text = "المورد/النوع: ${item.entry.supplier}", fontSize = 14.sp, color = Color.Gray)
-            Text(text = "التاريخ: ${dateFormatter.format(item.entry.timestamp)}", fontSize = 12.sp, color = Color.Gray)
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(text = "سعة: ${item.variantCapacity} أمبير", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(text = "المستودع: ${item.warehouseName}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(text = "المورد/النوع: ${item.entry.supplier}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(text = "التاريخ: ${dateFormatter.format(item.entry.timestamp)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (item.entry.createdByUserName.isNotEmpty()) {
+                Text(text = "بواسطة: ${item.entry.createdByUserName}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 OutlinedButton(
                     onClick = onEdit,
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.minWidth(100.dp)
                 ) {
                     Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(4.dp))
                     Text("تعديل")
                 }
 
-                Row {
-                    OutlinedButton(
-                        onClick = onReject,
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("رفض")
-                    }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Button(
-                        onClick = onApprove,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("موافقة")
-                    }
+                OutlinedButton(
+                    onClick = onReject,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.minWidth(100.dp)
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("رفض")
+                }
+
+                Button(
+                    onClick = onApprove,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.minWidth(100.dp)
+                ) {
+                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("موافقة")
                 }
             }
         }
     }
 }
+
+// Extension to use minWidth with weight
+fun Modifier.minWidth(min: androidx.compose.ui.unit.Dp) = this.then(Modifier.widthIn(min = min))

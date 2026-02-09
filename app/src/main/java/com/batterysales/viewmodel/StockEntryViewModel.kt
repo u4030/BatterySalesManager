@@ -279,7 +279,8 @@ class StockEntryViewModel @Inject constructor(
                             supplier = state.supplierName,
                             supplierId = state.selectedSupplier?.id ?: "",
                             status = if (currentUser?.role == "seller") "pending" else "approved",
-                            createdBy = currentUser?.id ?: ""
+                            createdBy = currentUser?.id ?: "",
+                            createdByUserName = currentUser?.displayName ?: ""
                         )
                     }
                     stockEntryRepository.addStockEntries(entries)

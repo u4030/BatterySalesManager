@@ -20,7 +20,8 @@ data class StockEntry(
     val supplierId: String = "", // Link to Supplier model
     val invoiceId: String? = null, // Link to invoice for sales entries
     val status: String = "approved", // approved, pending
-    val createdBy: String = ""
+    val createdBy: String = "",
+    val createdByUserName: String = ""
 ) {
     companion object {
         const val COLLECTION_NAME = "stock_entries"

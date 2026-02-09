@@ -41,7 +41,9 @@ fun BankScreen(
     var showDateRangePicker by remember { mutableStateOf(false) }
     val dateRangePickerState = rememberDateRangePickerState()
 
-    val filteredTransactions = remember(transactions, selectedTab, dateRangePickerState.selectedStartDateMillis, dateRangePickerState.selectedEndDateMillis) {
+    var searchQuery by remember { mutableStateOf("") }
+
+    val filteredTransactions = remember(transactions, selectedTab, dateRangePickerState.selectedStartDateMillis, dateRangePickerState.selectedEndDateMillis, searchQuery) {
         transactions.filter { transaction ->
             val matchesTab = when (selectedTab) {
                 0 -> true // All
@@ -52,7 +54,9 @@ fun BankScreen(
                 transaction.date.time >= dateRangePickerState.selectedStartDateMillis!! &&
                         transaction.date.time <= dateRangePickerState.selectedEndDateMillis!! + 86400000 // End of day
             } else true
-            matchesTab && matchesDateRange
+            val matchesSearch = transaction.description.contains(searchQuery, ignoreCase = true) || 
+                               transaction.referenceNumber.contains(searchQuery, ignoreCase = true)
+            matchesTab && matchesDateRange && matchesSearch
         }.sortedByDescending { it.date }
     }
 
@@ -150,6 +154,26 @@ fun BankScreen(
                 }
             }
 
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Search Bar
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("بحث بالوصف أو رقم الشيك/السند...") },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(Icons.Default.Clear, contentDescription = "مسح")
+                        }
+                    }
+                },
+                shape = RoundedCornerShape(12.dp),
+                singleLine = true
+            )
+
             if (dateRangePickerState.selectedStartDateMillis != null) {
                 val sdf = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
                 Row(
@@ -206,7 +230,7 @@ fun BankScreen(
         ) {
             DateRangePicker(
                 state = dateRangePickerState,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f).padding(16.dp)
             )
         }
     }
@@ -215,8 +239,8 @@ fun BankScreen(
         AddBankTransactionDialog(
             type = selectedType,
             onDismiss = { showAddDialog = false },
-            onAdd = { type, desc, amount ->
-                viewModel.addManualTransaction(type, amount, desc)
+            onAdd = { type, desc, amount, ref ->
+                viewModel.addManualTransaction(type, amount, desc, ref)
                 showAddDialog = false
             }
         )
@@ -227,10 +251,11 @@ fun BankScreen(
 fun AddBankTransactionDialog(
     type: com.batterysales.data.models.BankTransactionType,
     onDismiss: () -> Unit,
-    onAdd: (com.batterysales.data.models.BankTransactionType, String, Double) -> Unit
+    onAdd: (com.batterysales.data.models.BankTransactionType, String, Double, String) -> Unit
 ) {
     var description by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
+    var referenceNumber by remember { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -243,6 +268,11 @@ fun AddBankTransactionDialog(
                     label = "الوصف"
                 )
                 com.batterysales.ui.components.CustomKeyboardTextField(
+                    value = referenceNumber,
+                    onValueChange = { referenceNumber = it },
+                    label = "رقم الشيك/السند (اختياري)"
+                )
+                com.batterysales.ui.components.CustomKeyboardTextField(
                     value = amount,
                     onValueChange = { amount = it },
                     label = "المبلغ"
@@ -253,7 +283,7 @@ fun AddBankTransactionDialog(
         confirmButton = {
             Button(onClick = {
                 val amt = amount.toDoubleOrNull() ?: 0.0
-                if (description.isNotEmpty() && amt > 0) onAdd(type, description, amt)
+                if (description.isNotEmpty() && amt > 0) onAdd(type, description, amt, referenceNumber)
             }, colors = ButtonDefaults.buttonColors(
                 containerColor = if (type == com.batterysales.data.models.BankTransactionType.DEPOSIT) Color(0xFF4CAF50) else Color(0xFFF44336)
             )) { Text("تأكيد") }
@@ -305,6 +335,14 @@ fun BankTransactionItemCard(transaction: BankTransaction) {
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface
             )
+
+            if (transaction.referenceNumber.isNotEmpty()) {
+                Text(
+                    text = "رقم الشيك/السند: ${transaction.referenceNumber}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color(0xFF1976D2)
+                )
+            }
 
             Text(
                 dateFormatter.format(transaction.date),

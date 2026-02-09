@@ -45,7 +45,9 @@ fun AccountingScreen(
     var showDateRangePicker by remember { mutableStateOf(false) }
     val dateRangePickerState = rememberDateRangePickerState()
 
-    val filteredTransactions = remember(transactions, selectedTab, dateRangePickerState.selectedStartDateMillis, dateRangePickerState.selectedEndDateMillis) {
+    var searchQuery by remember { mutableStateOf("") }
+
+    val filteredTransactions = remember(transactions, selectedTab, dateRangePickerState.selectedStartDateMillis, dateRangePickerState.selectedEndDateMillis, searchQuery) {
         transactions.filter { transaction ->
             val matchesTab = when (selectedTab) {
                 0 -> true // All
@@ -56,7 +58,9 @@ fun AccountingScreen(
                 transaction.createdAt.time >= dateRangePickerState.selectedStartDateMillis!! &&
                         transaction.createdAt.time <= dateRangePickerState.selectedEndDateMillis!! + 86400000 // End of day
             } else true
-            matchesTab && matchesDateRange
+            val matchesSearch = transaction.description.contains(searchQuery, ignoreCase = true) || 
+                               transaction.referenceNumber.contains(searchQuery, ignoreCase = true)
+            matchesTab && matchesDateRange && matchesSearch
         }.sortedByDescending { it.createdAt }
     }
 
@@ -152,6 +156,26 @@ fun AccountingScreen(
                 }
             }
 
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Search Bar
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("بحث بالوصف أو رقم الشيك/السند...") },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(Icons.Default.Clear, contentDescription = "مسح")
+                        }
+                    }
+                },
+                shape = RoundedCornerShape(12.dp),
+                singleLine = true
+            )
+
             if (dateRangePickerState.selectedStartDateMillis != null) {
                 val sdf = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
                 Row(
@@ -205,8 +229,8 @@ fun AccountingScreen(
         AddTransactionDialog(
             type = selectedType,
             onDismiss = { showAddTransactionDialog = false },
-            onAdd = { type, desc, amount ->
-                viewModel.addManualTransaction(type, amount, desc)
+            onAdd = { type, desc, amount, ref ->
+                viewModel.addManualTransaction(type, amount, desc, ref)
                 showAddTransactionDialog = false
             }
         )
@@ -234,7 +258,7 @@ fun AccountingScreen(
         ) {
             DateRangePicker(
                 state = dateRangePickerState,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f).padding(16.dp)
             )
         }
     }
@@ -316,6 +340,14 @@ fun TransactionItemCard(
                 color = MaterialTheme.colorScheme.onSurface
             )
 
+            if (transaction.referenceNumber.isNotEmpty()) {
+                Text(
+                    text = "رقم المرجع/السند: ${transaction.referenceNumber}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+
             Text(
                 dateFormatter.format(transaction.createdAt),
                 style = MaterialTheme.typography.bodyMedium,
@@ -368,10 +400,11 @@ fun EditTransactionDialog(
 fun AddTransactionDialog(
     type: TransactionType,
     onDismiss: () -> Unit,
-    onAdd: (TransactionType, String, Double) -> Unit
+    onAdd: (TransactionType, String, Double, String) -> Unit
 ) {
     var description by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
+    var referenceNumber by remember { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -384,6 +417,11 @@ fun AddTransactionDialog(
                     label = "الوصف"
                 )
                 com.batterysales.ui.components.CustomKeyboardTextField(
+                    value = referenceNumber,
+                    onValueChange = { referenceNumber = it },
+                    label = "رقم المرجع (اختياري)"
+                )
+                com.batterysales.ui.components.CustomKeyboardTextField(
                     value = amount,
                     onValueChange = { amount = it },
                     label = "المبلغ"
@@ -394,7 +432,7 @@ fun AddTransactionDialog(
         confirmButton = {
             Button(onClick = {
                 val amt = amount.toDoubleOrNull() ?: 0.0
-                if (description.isNotEmpty() && amt > 0) onAdd(type, description, amt)
+                if (description.isNotEmpty() && amt > 0) onAdd(type, description, amt, referenceNumber)
             }, colors = ButtonDefaults.buttonColors(
                 containerColor = if (type == TransactionType.INCOME) Color(0xFF4CAF50) else MaterialTheme.colorScheme.error
             )) { Text("تأكيد") }

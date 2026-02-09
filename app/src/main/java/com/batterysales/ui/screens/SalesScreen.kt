@@ -1,5 +1,6 @@
 package com.batterysales.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.*
@@ -15,6 +16,7 @@ import com.batterysales.ui.stockentry.Dropdown
 import com.batterysales.viewmodel.SalesViewModel
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.ui.Alignment
 import com.batterysales.ui.components.CustomKeyboardTextField
@@ -37,28 +39,42 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
     }
 
     if (showScanner) {
-        BarcodeScanner(onBarcodeScanned = { barcode ->
-            viewModel.findProductByBarcode(barcode)
-            showScanner = false
-        })
-    } else {
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = { Text("فاتورة جديدة") },
-                    navigationIcon = {
-                        IconButton(onClick = { navController.popBackStack() }) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "رجوع")
-                        }
-                    }
-                )
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { showScanner = false },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(modifier = Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black)) {
+                BarcodeScanner(onBarcodeScanned = { barcode ->
+                    viewModel.findProductByBarcode(barcode)
+                    showScanner = false
+                })
+                IconButton(
+                    onClick = { showScanner = false },
+                    modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = "إغلاق", tint = androidx.compose.ui.graphics.Color.White)
+                }
             }
-        ) { padding ->
-            LazyColumn(
-                modifier = Modifier.padding(padding).fillMaxSize().imePadding(),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("فاتورة جديدة") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "رجوع")
+                    }
+                }
+            )
+        }
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier.padding(padding).fillMaxSize().imePadding(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
                 item {
                     OutlinedButton(
                         onClick = { showScanner = true },
@@ -229,7 +245,6 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
                         enabled = uiState.selectedVariant != null && uiState.selectedWarehouse != null
                     ) {
                         Text("إنشاء عملية بيع")
-                    }
                 }
             }
         }
