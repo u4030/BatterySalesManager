@@ -420,9 +420,12 @@ fun AddBillDialog(
                 TextButton(onClick = { showDatePicker = false }) {
                     Text("إلغاء")
                 }
-            }
+            },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
         ) {
-            DatePicker(state = datePickerState)
+            Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+                DatePicker(state = datePickerState, modifier = Modifier.fillMaxSize())
+            }
         }
     }
 }
@@ -543,9 +546,12 @@ fun EditBillDialog(
                 TextButton(onClick = { showDatePicker = false }) {
                     Text("إلغاء")
                 }
-            }
+            },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
         ) {
-            DatePicker(state = datePickerState)
+            Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+                DatePicker(state = datePickerState, modifier = Modifier.fillMaxSize())
+            }
         }
     }
 }

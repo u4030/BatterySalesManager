@@ -20,7 +20,9 @@ import javax.inject.Inject
 class OldBatteryViewModel @Inject constructor(
     private val repository: OldBatteryRepository,
     private val accountingRepository: AccountingRepository,
-    private val invoiceRepository: InvoiceRepository
+    private val invoiceRepository: InvoiceRepository,
+    private val userRepository: com.batterysales.data.repositories.UserRepository,
+    private val warehouseRepository: com.batterysales.data.repositories.WarehouseRepository
 ) : ViewModel() {
 
     private val _transactions = MutableStateFlow<List<OldBatteryTransaction>>(emptyList())
@@ -28,6 +30,18 @@ class OldBatteryViewModel @Inject constructor(
 
     private val _summary = MutableStateFlow(Pair(0, 0.0))
     val summary = _summary.asStateFlow()
+
+    private val _warehouseSummary = MutableStateFlow<Map<String, Pair<Int, Double>>>(emptyMap())
+    val warehouseSummary = _warehouseSummary.asStateFlow()
+
+    private val _warehouses = MutableStateFlow<List<com.batterysales.data.models.Warehouse>>(emptyList())
+    val warehouses = _warehouses.asStateFlow()
+
+    private val _isSeller = MutableStateFlow(false)
+    val isSeller = _isSeller.asStateFlow()
+
+    private val _userWarehouseId = MutableStateFlow<String?>(null)
+    val userWarehouseId = _userWarehouseId.asStateFlow()
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading = _isLoading.asStateFlow()
@@ -40,15 +54,49 @@ class OldBatteryViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                repository.getAllTransactionsFlow().collect {
-                    _transactions.value = it.sortedByDescending { t -> t.date }
-                    _summary.value = repository.getStockSummary()
+                val currentUser = userRepository.getCurrentUser()
+                _isSeller.value = currentUser?.role == "seller"
+                _userWarehouseId.value = currentUser?.warehouseId
+                
+                warehouseRepository.getWarehouses().collect { _warehouses.value = it }
+
+                repository.getAllTransactionsFlow().collect { allTransactions ->
+                    val filtered = if (_isSeller.value) {
+                        allTransactions.filter { it.warehouseId == _userWarehouseId.value }
+                    } else {
+                        allTransactions
+                    }
+                    _transactions.value = filtered.sortedByDescending { t -> t.date }
+                    _summary.value = calculateSummary(filtered)
+                    _warehouseSummary.value = allTransactions.groupBy { it.warehouseId }.mapValues { calculateSummary(it.value) }
                     _isLoading.value = false
                 }
             } catch (e: Exception) {
                 _isLoading.value = false
             }
         }
+    }
+
+    private fun calculateSummary(transactions: List<OldBatteryTransaction>): Pair<Int, Double> {
+        var totalQty = 0
+        var totalAmperes = 0.0
+        transactions.forEach {
+            when (it.type) {
+                OldBatteryTransactionType.INTAKE -> {
+                    totalQty += it.quantity
+                    totalAmperes += it.totalAmperes
+                }
+                OldBatteryTransactionType.SALE -> {
+                    totalQty -= it.quantity
+                    totalAmperes -= it.totalAmperes
+                }
+                OldBatteryTransactionType.ADJUSTMENT -> {
+                    totalQty += it.quantity
+                    totalAmperes += it.totalAmperes
+                }
+            }
+        }
+        return Pair(totalQty, totalAmperes)
     }
 
     fun deleteTransaction(id: String) {
@@ -100,11 +148,12 @@ class OldBatteryViewModel @Inject constructor(
         invoiceRepository.updateInvoice(updatedInvoice)
     }
 
-    fun addManualIntake(quantity: Int, totalAmperes: Double, notes: String) {
+    fun addManualIntake(quantity: Int, totalAmperes: Double, notes: String, warehouseId: String) {
         viewModelScope.launch {
             try {
                 val transaction = com.batterysales.data.models.OldBatteryTransaction(
                     quantity = quantity,
+                    warehouseId = warehouseId,
                     totalAmperes = totalAmperes,
                     type = com.batterysales.data.models.OldBatteryTransactionType.INTAKE,
                     date = java.util.Date(),
@@ -115,11 +164,12 @@ class OldBatteryViewModel @Inject constructor(
         }
     }
 
-    fun sellBatteries(quantity: Int, totalAmperes: Double, amount: Double) {
+    fun sellBatteries(quantity: Int, totalAmperes: Double, amount: Double, warehouseId: String) {
         viewModelScope.launch {
             try {
                 val transaction = OldBatteryTransaction(
                     quantity = quantity,
+                    warehouseId = warehouseId,
                     totalAmperes = totalAmperes,
                     amount = amount,
                     type = OldBatteryTransactionType.SALE,

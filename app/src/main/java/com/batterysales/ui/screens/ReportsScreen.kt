@@ -1,5 +1,6 @@
 package com.batterysales.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -11,6 +12,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -62,8 +64,10 @@ fun SearchBar(
 fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hiltViewModel()) {
     val reportItems by viewModel.inventoryReport.collectAsState()
     val supplierItems by viewModel.supplierReport.collectAsState()
-    val warehouses by viewModel.warehouses.collectAsState()
+    val isSeller by viewModel.isSeller.collectAsState()
+    val warehouses by viewModel.filteredWarehouses.collectAsState()
     val oldBatterySummary by viewModel.oldBatterySummary.collectAsState()
+    val oldBatteryWarehouseSummary by viewModel.oldBatteryWarehouseSummary.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val barcodeFilter by viewModel.barcodeFilter.collectAsState()
     var showScanner by remember { mutableStateOf(false) }
@@ -74,80 +78,121 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
     }
 
     if (showScanner) {
-        BarcodeScanner(onBarcodeScanned = { barcode ->
-            viewModel.onBarcodeScanned(barcode)
-            showScanner = false
-        })
-    } else {
-        Scaffold(
-            topBar = {
-                Column {
-                    TopAppBar(title = { Text("التقارير والإحصائيات") })
-                    TabRow(selectedTabIndex = selectedTab) {
-                        Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }) {
-                            Text("مخزون المنتجات", modifier = Modifier.padding(8.dp))
-                        }
-                        Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) {
-                            Text("البطاريات القديمة", modifier = Modifier.padding(8.dp))
-                        }
-                        Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }) {
-                            Text("حالة الموردين", modifier = Modifier.padding(8.dp))
-                        }
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { showScanner = false },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+                BarcodeScanner(onBarcodeScanned = { barcode ->
+                    viewModel.onBarcodeScanned(barcode)
+                    showScanner = false
+                })
+                IconButton(
+                    onClick = { showScanner = false },
+                    modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = "إغلاق", tint = Color.White)
+                }
+            }
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            Column {
+                TopAppBar(title = { Text("التقارير والإحصائيات") })
+                TabRow(selectedTabIndex = selectedTab) {
+                    Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }) {
+                        Text("مخزون المنتجات", modifier = Modifier.padding(8.dp))
+                    }
+                    Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) {
+                        Text("البطاريات القديمة", modifier = Modifier.padding(8.dp))
+                    }
+                    Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }) {
+                        Text("حالة الموردين", modifier = Modifier.padding(8.dp))
                     }
                 }
             }
-        ) { padding ->
-            if (isLoading) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
-                }
-            } else {
-                Column(modifier = Modifier.padding(padding)) {
-                    if (selectedTab == 0) {
-                        SearchBar(
-                            barcodeFilter = barcodeFilter,
-                            onClear = { viewModel.onBarcodeScanned(null) },
-                            onScan = { showScanner = true }
-                        )
+        }
+    ) { padding ->
+        if (isLoading) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        } else {
+            Column(modifier = Modifier.padding(padding)) {
+                if (selectedTab == 0) {
+                    SearchBar(
+                        barcodeFilter = barcodeFilter,
+                        onClear = { viewModel.onBarcodeScanned(null) },
+                        onScan = { showScanner = true }
+                    )
 
-                        // Grand Total Card
-                        if (reportItems.isNotEmpty()) {
-                            GrandTotalCard(totalQuantity = grandTotalQuantity)
+                    // Grand Total Card
+                    if (reportItems.isNotEmpty()) {
+                        GrandTotalCard(totalQuantity = grandTotalQuantity, isSeller = isSeller)
+                    }
+
+                    LazyColumn(
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        items(reportItems) { item ->
+                            ReportItemCard(
+                                item = item,
+                                warehouses = warehouses,
+                                isSeller = isSeller,
+                                onClick = {
+                                    val capacityStr = item.variant.capacity.toString()
+                                    val productName = item.product.name
+                                    val spec = item.variant.specification.ifEmpty { "no_spec" }
+                                    navController.navigate(
+                                        "product_ledger/${item.variant.id}/$productName/$capacityStr/$spec"
+                                    )
+                                }
+                            )
                         }
-
-                        LazyColumn(
-                            contentPadding = PaddingValues(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(16.dp)
-                        ) {
-                            items(reportItems) { item ->
-                                ReportItemCard(
-                                    item = item,
-                                    warehouses = warehouses,
-                                    onClick = {
-                                        val capacityStr = item.variant.capacity.toString()
-                                        val productName = item.product.name
-                                        val spec = item.variant.specification.ifEmpty { "no_spec" }
-                                        navController.navigate(
-                                            "product_ledger/${item.variant.id}/$productName/$capacityStr/$spec"
-                                        )
+                    }
+                } else if (selectedTab == 1) {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        // Actually the user wants a tab for each warehouse in old batteries
+                        var selectedWHIndex by remember { mutableIntStateOf(0) }
+                        val whList = warehouses
+                        
+                        if (whList.isNotEmpty()) {
+                            ScrollableTabRow(selectedTabIndex = selectedWHIndex, edgePadding = 16.dp) {
+                                Tab(selected = selectedWHIndex == 0, onClick = { selectedWHIndex = 0 }) {
+                                    Text("الكل", modifier = Modifier.padding(16.dp))
+                                }
+                                whList.forEachIndexed { index, warehouse ->
+                                    Tab(selected = selectedWHIndex == index + 1, onClick = { selectedWHIndex = index + 1 }) {
+                                        Text(warehouse.name, modifier = Modifier.padding(16.dp))
                                     }
-                                )
+                                }
+                            }
+                            
+                            val currentSummary = if (selectedWHIndex == 0) oldBatterySummary 
+                                                else oldBatteryWarehouseSummary[whList[selectedWHIndex - 1].id] ?: Pair(0, 0.0)
+                            
+                            OldBatteryReportSection(currentSummary) {
+                                navController.navigate("old_battery_ledger")
+                            }
+                        } else {
+                            OldBatteryReportSection(oldBatterySummary) {
+                                navController.navigate("old_battery_ledger")
                             }
                         }
-                    } else if (selectedTab == 1) {
-                        OldBatteryReportSection(oldBatterySummary) {
-                            navController.navigate("old_battery_ledger")
-                        }
-                    } else {
-                        SupplierReportSection(viewModel, supplierItems)
                     }
+                } else {
+                    SupplierReportSection(viewModel, supplierItems)
                 }
             }
         }
     }
 }
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun GrandTotalCard(totalQuantity: Int) {
+fun GrandTotalCard(totalQuantity: Int, isSeller: Boolean) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -181,6 +226,7 @@ fun GrandTotalCard(totalQuantity: Int) {
 fun ReportItemCard(
     item: InventoryReportItem,
     warehouses: List<Warehouse>,
+    isSeller: Boolean,
     onClick: () -> Unit
 ) {
     Card(
@@ -211,8 +257,7 @@ fun ReportItemCard(
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                maxItemsInEachRow = 2
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 InfoColumn(
                     label = "إجمالي الكمية",
@@ -227,16 +272,18 @@ fun ReportItemCard(
                         modifier = Modifier.weight(1f).widthIn(min = 120.dp)
                     )
                 }
-                InfoColumn(
-                    label = "متوسط التكلفة",
-                    value = "JD " + String.format(Locale.US, "%.3f", item.averageCost),
-                    modifier = Modifier.weight(1f).widthIn(min = 120.dp)
-                )
-                InfoColumn(
-                    label = "قيمة المخزون",
-                    value = "JD " + String.format(Locale.US, "%.3f", item.totalCostValue),
-                    modifier = Modifier.weight(1f).widthIn(min = 120.dp)
-                )
+                if (!isSeller) {
+                    InfoColumn(
+                        label = "متوسط التكلفة",
+                        value = "JD " + String.format(Locale.US, "%.3f", item.averageCost),
+                        modifier = Modifier.weight(1f).widthIn(min = 120.dp)
+                    )
+                    InfoColumn(
+                        label = "قيمة المخزون",
+                        value = "JD " + String.format(Locale.US, "%.3f", item.totalCostValue),
+                        modifier = Modifier.weight(1f).widthIn(min = 120.dp)
+                    )
+                }
             }
 
             // Warehouse Breakdown
@@ -283,6 +330,7 @@ fun ReportItemCard(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun OldBatteryReportSection(summary: Pair<Int, Double>, onViewDetails: () -> Unit) {
     Column(modifier = Modifier.padding(16.dp).fillMaxWidth()) {
@@ -293,12 +341,16 @@ fun OldBatteryReportSection(summary: Pair<Int, Double>, onViewDetails: () -> Uni
             Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("إجمالي مخزون السكراب", fontWeight = FontWeight.Bold, color = Color(0xFF5D4037))
                 Spacer(modifier = Modifier.height(16.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceAround,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(8.dp)) {
                         Text("الكمية", fontSize = 14.sp)
                         Text("${summary.first}", fontSize = 24.sp, fontWeight = FontWeight.Bold)
                     }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(8.dp)) {
                         Text("الأمبيرات", fontSize = 14.sp)
                         Text("${String.format("%.1f", summary.second)}", fontSize = 24.sp, fontWeight = FontWeight.Bold)
                     }
@@ -315,17 +367,35 @@ fun OldBatteryReportSection(summary: Pair<Int, Double>, onViewDetails: () -> Uni
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SupplierReportSection(viewModel: ReportsViewModel, items: List<com.batterysales.viewmodel.SupplierReportItem>) {
     val startDate by viewModel.startDate.collectAsState()
     val endDate by viewModel.endDate.collectAsState()
+    val searchQuery by viewModel.supplierSearchQuery.collectAsState()
     var showDatePicker by remember { mutableStateOf(false) }
 
     val dateRangePickerState = rememberDateRangePickerState()
     val dateFormatter = java.text.SimpleDateFormat("yyyy/MM/dd", java.util.Locale.getDefault())
 
     Column(modifier = Modifier.fillMaxSize()) {
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { viewModel.onSupplierSearchQueryChanged(it) },
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            placeholder = { Text("بحث باسم المورد أو رقم الشيك/السند...") },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+            trailingIcon = {
+                if (searchQuery.isNotEmpty()) {
+                    IconButton(onClick = { viewModel.onSupplierSearchQueryChanged("") }) {
+                        Icon(Icons.Default.Clear, contentDescription = "مسح")
+                    }
+                }
+            },
+            shape = RoundedCornerShape(12.dp),
+            singleLine = true
+        )
+
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -353,9 +423,22 @@ fun SupplierReportSection(viewModel: ReportsViewModel, items: List<com.batterysa
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
         ) {
-            Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("إجمالي المبالغ المستحقة للموردين", fontWeight = FontWeight.Bold)
-                Text("JD ${String.format("%.3f", totalSuppliersDebit)}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
+            FlowRow(
+                modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    "إجمالي المبالغ المستحقة للموردين",
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
+                Text(
+                    "JD ${String.format("%.3f", totalSuppliersDebit)}",
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
             }
         }
 
@@ -378,6 +461,7 @@ fun SupplierReportSection(viewModel: ReportsViewModel, items: List<com.batterysa
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SupplierCard(item: com.batterysales.viewmodel.SupplierReportItem) {
     var expanded by remember { mutableStateOf(false) }
@@ -395,10 +479,15 @@ fun SupplierCard(item: com.batterysales.viewmodel.SupplierReportItem) {
             HorizontalDivider()
             Spacer(modifier = Modifier.height(16.dp))
 
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                InfoColumn(label = "مدين (مشتريات)", value = "JD ${String.format("%.3f", item.totalDebit)}", modifier = Modifier.weight(1f))
-                InfoColumn(label = "دائن (دفعات)", value = "JD ${String.format("%.3f", item.totalCredit)}", modifier = Modifier.weight(1f))
-                InfoColumn(label = "الرصيد", value = "JD ${String.format("%.3f", item.balance)}", valueColor = if (item.balance > 0) Color.Red else Color.Unspecified, modifier = Modifier.weight(1f))
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                maxItemsInEachRow = 3
+            ) {
+                InfoColumn(label = "مدين (مشتريات)", value = "JD ${String.format("%.3f", item.totalDebit)}", modifier = Modifier.widthIn(min = 100.dp))
+                InfoColumn(label = "دائن (دفعات)", value = "JD ${String.format("%.3f", item.totalCredit)}", modifier = Modifier.widthIn(min = 100.dp))
+                InfoColumn(label = "الرصيد", value = "JD ${String.format("%.3f", item.balance)}", valueColor = if (item.balance > 0) Color.Red else Color.Unspecified, modifier = Modifier.widthIn(min = 100.dp))
             }
 
             if (expanded && item.purchaseOrders.isNotEmpty()) {
@@ -408,12 +497,15 @@ fun SupplierCard(item: com.batterysales.viewmodel.SupplierReportItem) {
                 val dateFormatter = java.text.SimpleDateFormat("yyyy/MM/dd", java.util.Locale.getDefault())
                 item.purchaseOrders.forEach { po ->
                     Column(modifier = Modifier.padding(start = 8.dp, bottom = 8.dp)) {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("${dateFormatter.format(po.entry.timestamp)}: JD ${String.format("%.3f", po.entry.totalCost)}", fontSize = 14.sp)
-                            Text("رصيد: JD ${String.format("%.3f", po.remainingBalance)}", fontSize = 14.sp, color = if (po.remainingBalance > 0) Color.Red else Color.Gray)
+                        FlowRow(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalArrangement = Arrangement.Center) {
+                            Text("${dateFormatter.format(po.entry.timestamp)}: JD ${String.format("%.3f", po.entry.totalCost)}", style = MaterialTheme.typography.bodyMedium)
+                            Text("رصيد: JD ${String.format("%.3f", po.remainingBalance)}", style = MaterialTheme.typography.bodyMedium, color = if (po.remainingBalance > 0) Color.Red else Color.Gray)
                         }
                         if (po.linkedPaidAmount > 0) {
                             Text("تم دفع: JD ${String.format("%.3f", po.linkedPaidAmount)}", fontSize = 12.sp, color = Color(0xFF4CAF50))
+                        }
+                        if (po.referenceNumbers.isNotEmpty()) {
+                            Text("أرقام المرجع: ${po.referenceNumbers.joinToString(", ")}", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
                         }
                         HorizontalDivider(modifier = Modifier.padding(top = 4.dp), thickness = 0.5.dp, color = Color.LightGray)
                     }
@@ -446,7 +538,10 @@ fun DateRangePickerDialog(
         confirmButton = { TextButton(onClick = onConfirm) { Text("موافق") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
     ) {
-        DateRangePicker(state = state, modifier = Modifier.weight(1f))
+        DateRangePicker(
+            state = state,
+            modifier = Modifier.weight(1f).padding(16.dp)
+        )
     }
 }
 

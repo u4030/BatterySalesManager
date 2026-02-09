@@ -1,11 +1,13 @@
 package com.batterysales.ui.stockentry
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.*
@@ -34,42 +36,55 @@ fun StockEntryScreen(
     }
 
     if (showScanner) {
-        com.batterysales.ui.components.BarcodeScanner(onBarcodeScanned = { barcode ->
-            viewModel.onBarcodeScanned(barcode)
-            showScanner = false
-        })
-    } else {
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = { Text(if (uiState.isEditMode) "تعديل قيد المخزون" else "إدخال مخزون جديد") },
-                    navigationIcon = {
-                        IconButton(onClick = { navController.popBackStack() }) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "رجوع")
-                        }
-                    }
-                )
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { showScanner = false },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(modifier = Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black)) {
+                com.batterysales.ui.components.BarcodeScanner(onBarcodeScanned = { barcode ->
+                    viewModel.onBarcodeScanned(barcode)
+                    showScanner = false
+                })
+                IconButton(
+                    onClick = { showScanner = false },
+                    modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = "إغلاق", tint = androidx.compose.ui.graphics.Color.White)
+                }
             }
-        ) { padding ->
-            if (uiState.isLoading) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
-                }
-            } else {
-                Column(modifier = Modifier.padding(padding).imePadding()) {
-                    OutlinedButton(
-                        onClick = { showScanner = true },
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
-                    ) {
-                        Icon(Icons.Default.PhotoCamera, contentDescription = "مسح الباركود")
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("مسح الباركود")
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(if (uiState.isEditMode) "تعديل قيد المخزون" else "إدخال مخزون جديد") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "رجوع")
                     }
-                    StockEntryContent(
-                        uiState = uiState,
-                        viewModel = viewModel
-                    )
                 }
+            )
+        }
+    ) { padding ->
+        if (uiState.isLoading) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        } else {
+            Column(modifier = Modifier.padding(padding).imePadding()) {
+                OutlinedButton(
+                    onClick = { showScanner = true },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    Icon(Icons.Default.PhotoCamera, contentDescription = "مسح الباركود")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("مسح الباركود")
+                }
+                StockEntryContent(
+                    uiState = uiState,
+                    viewModel = viewModel
+                )
             }
         }
     }

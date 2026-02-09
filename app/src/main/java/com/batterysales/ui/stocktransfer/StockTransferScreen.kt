@@ -1,9 +1,11 @@
 package com.batterysales.ui.stocktransfer
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -33,28 +35,42 @@ fun StockTransferScreen(
     }
 
     if (showScanner) {
-        com.batterysales.ui.components.BarcodeScanner(onBarcodeScanned = { barcode ->
-            viewModel.onBarcodeScanned(barcode)
-            showScanner = false
-        })
-    } else {
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = { Text("ترحيل مخزون") },
-                    navigationIcon = {
-                        IconButton(onClick = { navController.popBackStack() }) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "رجوع")
-                        }
-                    }
-                )
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { showScanner = false },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(modifier = Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black)) {
+                com.batterysales.ui.components.BarcodeScanner(onBarcodeScanned = { barcode ->
+                    viewModel.onBarcodeScanned(barcode)
+                    showScanner = false
+                })
+                IconButton(
+                    onClick = { showScanner = false },
+                    modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = "إغلاق", tint = androidx.compose.ui.graphics.Color.White)
+                }
             }
-        ) { padding ->
-            LazyColumn(
-                modifier = Modifier.padding(padding).fillMaxSize().imePadding(),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("ترحيل مخزون") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "رجوع")
+                    }
+                }
+            )
+        }
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier.padding(padding).fillMaxSize().imePadding(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
                 item {
                     OutlinedButton(
                         onClick = { showScanner = true },
@@ -168,4 +184,4 @@ fun StockTransferScreen(
             }
         }
     }
-}
+

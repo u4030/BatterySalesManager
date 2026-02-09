@@ -149,10 +149,11 @@ class AppNotificationManager @Inject constructor(
                     snapshot?.documentChanges?.forEach { change ->
                         if (change.type == com.google.firebase.firestore.DocumentChange.Type.ADDED) {
                             val entry = change.document.toObject(StockEntry::class.java)
+                            val userSuffix = if (entry.createdByUserName.isNotEmpty()) " بواسطة ${entry.createdByUserName}" else ""
                             NotificationHelper.showNotification(
                                 context,
                                 "طلب موافقة جديد",
-                                "يوجد طلب ${if (entry.supplier == "Transfer") "ترحيل" else "إدخال"} مخزون جديد بانتظار الموافقة"
+                                "يوجد طلب ${if (entry.supplier == "Transfer") "ترحيل" else "إدخال"} مخزون جديد بانتظار الموافقة$userSuffix"
                             )
                         }
                     }

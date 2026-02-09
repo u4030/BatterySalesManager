@@ -230,11 +230,27 @@ fun CreateUserDialog(
         text = {
             LazyColumn(modifier = Modifier.fillMaxWidth()) {
                 item {
-                    OutlinedTextField(value = displayName, onValueChange = { displayName = it }, label = { Text("الاسم الكامل") }, modifier = Modifier.fillMaxWidth())
+                    com.batterysales.ui.components.CustomKeyboardTextField(
+                        value = displayName,
+                        onValueChange = { displayName = it },
+                        label = "الاسم الكامل",
+                        modifier = Modifier.fillMaxWidth()
+                    )
                     Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(value = email, onValueChange = { email = it }, label = { Text("البريد الإلكتروني") }, modifier = Modifier.fillMaxWidth())
+                    com.batterysales.ui.components.CustomKeyboardTextField(
+                        value = email,
+                        onValueChange = { email = it },
+                        label = "البريد الإلكتروني",
+                        modifier = Modifier.fillMaxWidth()
+                    )
                     Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("كلمة المرور") }, modifier = Modifier.fillMaxWidth())
+                    com.batterysales.ui.components.CustomKeyboardTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = "كلمة المرور",
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(com.batterysales.ui.components.LocalCustomKeyboardController.current.keyboardHeight.value))
                     Spacer(modifier = Modifier.height(16.dp))
                     Text("الدور:", fontWeight = FontWeight.Bold)
                     Row(verticalAlignment = Alignment.CenterVertically) {

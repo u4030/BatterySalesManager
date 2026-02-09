@@ -19,6 +19,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import android.media.AudioManager
+import android.media.ToneGenerator
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.unit.dp
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
@@ -56,6 +63,22 @@ fun BarcodeScanner(
         }
     }
 
+    val toneGenerator = remember {
+        try {
+            ToneGenerator(AudioManager.STREAM_NOTIFICATION, 100)
+        } catch (e: Exception) {
+            null
+        }
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            try {
+                toneGenerator?.release()
+            } catch (e: Exception) {
+            }
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         if (hasCameraPermission) {
             AndroidView(
@@ -87,6 +110,10 @@ fun BarcodeScanner(
                                     .addOnSuccessListener { barcodes ->
                                         if (barcodes.isNotEmpty()) {
                                             barcodes.first().rawValue?.let {
+                                                try {
+                                                    toneGenerator?.startTone(ToneGenerator.TONE_PROP_BEEP, 150)
+                                                } catch (e: Exception) {
+                                                }
                                                 onBarcodeScanned(it)
                                             }
                                         }
@@ -117,6 +144,24 @@ fun BarcodeScanner(
                     previewView
                 }
             )
+
+            // Visual Frame
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val strokeWidth = 4.dp.toPx()
+                val frameWidth = size.width * 0.7f
+                val frameHeight = size.height * 0.3f
+                val left = (size.width - frameWidth) / 2
+                val top = (size.height - frameHeight) / 2
+
+                drawRect(
+                    color = Color.White,
+                    topLeft = androidx.compose.ui.geometry.Offset(left, top),
+                    size = androidx.compose.ui.geometry.Size(frameWidth, frameHeight),
+                    style = Stroke(width = strokeWidth)
+                )
+
+                // Scanning line animation could be added here
+            }
         }
     }
 }

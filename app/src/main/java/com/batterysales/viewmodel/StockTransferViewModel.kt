@@ -138,7 +138,8 @@ class StockTransferViewModel @Inject constructor(
                     destinationWarehouseId = dest.id,
                     quantity = qty,
                     status = if (currentUser?.role == "seller") "pending" else "approved",
-                    createdBy = currentUser?.id ?: ""
+                    createdBy = currentUser?.id ?: "",
+                    createdByUserName = currentUser?.displayName ?: ""
                 )
                 _uiState.update { it.copy(isFinished = true) }
             } catch (e: Exception) {

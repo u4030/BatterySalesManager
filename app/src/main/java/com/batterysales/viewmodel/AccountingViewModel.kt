@@ -58,14 +58,15 @@ class AccountingViewModel @Inject constructor(
         }
     }
 
-    fun addManualTransaction(type: com.batterysales.data.models.TransactionType, amount: Double, description: String) {
+    fun addManualTransaction(type: com.batterysales.data.models.TransactionType, amount: Double, description: String, referenceNumber: String = "") {
         viewModelScope.launch {
             _isLoading.value = true
             try {
                 val transaction = Transaction(
                     type = type,
                     amount = amount,
-                    description = description
+                    description = description,
+                    referenceNumber = referenceNumber
                 )
                 repository.addTransaction(transaction)
                 loadData()

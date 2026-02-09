@@ -190,6 +190,7 @@ class SalesViewModel @Inject constructor(
                         OldBatteryTransaction(
                             invoiceId = createdInvoice.id,
                             quantity = newInvoice.oldBatteriesQuantity,
+                            warehouseId = warehouse.id,
                             totalAmperes = newInvoice.oldBatteriesTotalAmperes,
                             type = OldBatteryTransactionType.INTAKE,
                             notes = "مستلم من فاتورة: $customerName"

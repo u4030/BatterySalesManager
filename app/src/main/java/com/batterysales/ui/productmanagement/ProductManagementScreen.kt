@@ -1,11 +1,13 @@
 package com.batterysales.ui.productmanagement
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -90,6 +92,59 @@ fun ProductManagementScreen(viewModel: ProductManagementViewModel = hiltViewMode
     Column(modifier = Modifier.fillMaxSize().imePadding().padding(16.dp)) {
         Text("إدارة المنتجات", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
         Spacer(modifier = Modifier.height(16.dp))
+
+        // Search Bar
+        var searchQuery by remember { mutableStateOf("") }
+        var showSearchScanner by remember { mutableStateOf(false) }
+
+        if (showSearchScanner) {
+            androidx.compose.ui.window.Dialog(
+                onDismissRequest = { showSearchScanner = false },
+                properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+            ) {
+                Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+                    BarcodeScanner(onBarcodeScanned = {
+                        searchQuery = it
+                        viewModel.onBarcodeFilterChanged(it)
+                        showSearchScanner = false
+                    })
+                    IconButton(
+                        onClick = { showSearchScanner = false },
+                        modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = "إغلاق", tint = Color.White)
+                    }
+                }
+            }
+        }
+
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = {
+                searchQuery = it
+                viewModel.onBarcodeFilterChanged(it)
+            },
+            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+            placeholder = { Text("بحث بالاسم أو الباركود...") },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+            trailingIcon = {
+                Row {
+                    IconButton(onClick = { showSearchScanner = true }) {
+                        Icon(Icons.Default.PhotoCamera, contentDescription = "مسح الباركود")
+                    }
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = {
+                            searchQuery = ""
+                            viewModel.onBarcodeFilterChanged("")
+                        }) {
+                            Icon(Icons.Default.Clear, contentDescription = "مسح")
+                        }
+                    }
+                }
+            },
+            shape = RoundedCornerShape(12.dp),
+            singleLine = true
+        )
 
         Button(
             onClick = { showAddProductDialog = true },
@@ -222,9 +277,8 @@ fun VariantItemRow(variant: ProductVariant, onEdit: () -> Unit, onDelete: () -> 
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("السعر: JD ${String.format("%.3f", variant.sellingPrice)}", style = MaterialTheme.typography.bodyMedium)
+                Text("المواصفة: ${variant.specification}", style = MaterialTheme.typography.bodyMedium)
                 Text("الباركود: ${variant.barcode}", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
-                Text("الحد الأدنى: ${variant.minQuantity}", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
             }
         }
     }
@@ -317,14 +371,28 @@ fun AddVariantDialog(
     var showScanner by remember { mutableStateOf(false) }
 
     if (showScanner) {
-        BarcodeScanner(onBarcodeScanned = {
-            barcode = it
-            showScanner = false
-        })
-    } else {
-        AlertDialog(
-            onDismissRequest = onDismiss,
-            title = { Text("إضافة سعة جديدة") },
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { showScanner = false },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+                BarcodeScanner(onBarcodeScanned = {
+                    barcode = it
+                    showScanner = false
+                })
+                IconButton(
+                    onClick = { showScanner = false },
+                    modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = "إغلاق", tint = Color.White)
+                }
+            }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("إضافة سعة جديدة") },
             text = {
                 Column {
                     FlowRow(
@@ -337,15 +405,15 @@ fun AddVariantDialog(
                             value = capacity,
                             onValueChange = { capacity = it },
                             label = "السعة (أمبير)",
-                            modifier = Modifier.weight(1f).widthIn(min = 120.dp)
+                            modifier = Modifier.widthIn(min = 120.dp)
                         )
                         com.batterysales.ui.components.CustomKeyboardTextField(
                             value = sellingPrice,
                             onValueChange = { sellingPrice = it },
                             label = "سعر البيع",
-                            modifier = Modifier.weight(1f).widthIn(min = 120.dp)
+                            modifier = Modifier.widthIn(min = 120.dp)
                         )
-                        Box(modifier = Modifier.weight(1f).widthIn(min = 120.dp)) {
+                        Box(modifier = Modifier.widthIn(min = 120.dp)) {
                             com.batterysales.ui.components.CustomKeyboardTextField(
                                 value = barcode,
                                 onValueChange = { barcode = it },
@@ -363,7 +431,7 @@ fun AddVariantDialog(
                             value = minQuantity,
                             onValueChange = { minQuantity = it },
                             label = "الحد الأدنى العام",
-                            modifier = Modifier.weight(1f).widthIn(min = 120.dp)
+                            modifier = Modifier.widthIn(min = 120.dp)
                         )
 
                         warehouses.forEach { warehouse ->
@@ -375,7 +443,7 @@ fun AddVariantDialog(
                                     minQuantities = newMap
                                 },
                                 label = "الحد الأدنى (${warehouse.name})",
-                                modifier = Modifier.weight(1f).widthIn(min = 120.dp)
+                                modifier = Modifier.widthIn(min = 120.dp)
                             )
                         }
 
@@ -404,9 +472,7 @@ fun AddVariantDialog(
             },
             dismissButton = { Button(onClick = onDismiss) { Text("إلغاء") } }
         )
-    }
 }
-
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun EditVariantDialog(
@@ -424,14 +490,28 @@ fun EditVariantDialog(
     var showScanner by remember { mutableStateOf(false) }
 
     if (showScanner) {
-        BarcodeScanner(onBarcodeScanned = {
-            barcode = it
-            showScanner = false
-        })
-    } else {
-        AlertDialog(
-            onDismissRequest = onDismiss,
-            title = { Text("تعديل السعة") },
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { showScanner = false },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+                BarcodeScanner(onBarcodeScanned = {
+                    barcode = it
+                    showScanner = false
+                })
+                IconButton(
+                    onClick = { showScanner = false },
+                    modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = "إغلاق", tint = Color.White)
+                }
+            }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("تعديل السعة") },
             text = {
                 Column {
                     FlowRow(
@@ -444,15 +524,15 @@ fun EditVariantDialog(
                             value = capacity,
                             onValueChange = { capacity = it },
                             label = "السعة (أمبير)",
-                            modifier = Modifier.weight(1f).widthIn(min = 120.dp)
+                            modifier = Modifier.widthIn(min = 120.dp)
                         )
                         com.batterysales.ui.components.CustomKeyboardTextField(
                             value = sellingPrice,
                             onValueChange = { sellingPrice = it },
                             label = "سعر البيع",
-                            modifier = Modifier.weight(1f).widthIn(min = 120.dp)
+                            modifier = Modifier.widthIn(min = 120.dp)
                         )
-                        Box(modifier = Modifier.weight(1f).widthIn(min = 120.dp)) {
+                        Box(modifier = Modifier.widthIn(min = 120.dp)) {
                             com.batterysales.ui.components.CustomKeyboardTextField(
                                 value = barcode,
                                 onValueChange = { barcode = it },
@@ -470,7 +550,7 @@ fun EditVariantDialog(
                             value = minQuantity,
                             onValueChange = { minQuantity = it },
                             label = "الحد الأدنى العام",
-                            modifier = Modifier.weight(1f).widthIn(min = 120.dp)
+                            modifier = Modifier.widthIn(min = 120.dp)
                         )
 
                         warehouses.forEach { warehouse ->
@@ -482,7 +562,7 @@ fun EditVariantDialog(
                                     minQuantities = newMap
                                 },
                                 label = "الحد الأدنى (${warehouse.name})",
-                                modifier = Modifier.weight(1f).widthIn(min = 120.dp)
+                                modifier = Modifier.widthIn(min = 120.dp)
                             )
                         }
 
@@ -511,7 +591,6 @@ fun EditVariantDialog(
             },
             dismissButton = { Button(onClick = onDismiss) { Text("إلغاء") } }
         )
-    }
 }
 
 @Composable
