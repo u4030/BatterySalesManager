@@ -3,7 +3,8 @@ package com.batterysales.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -138,21 +139,17 @@ fun DashboardScreen(
             }
         }
     ) { paddingValues ->
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            contentPadding = PaddingValues(16.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Header Section
-            item(span = { GridItemSpan(maxLineSpan) }) {
+            item {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = -16.dp, vertical = -16.dp) // Offset content padding
                         .background(
                             brush = headerGradient,
                             shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
@@ -216,9 +213,9 @@ fun DashboardScreen(
 
             // Alerts Section
             if (isAdmin && dashboardState.pendingApprovalsCount > 0) {
-                item(span = { GridItemSpan(maxLineSpan) }) {
+                item {
                     Card(
-                        modifier = Modifier.fillMaxWidth().clickable { navController.navigate("approvals") },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).clickable { navController.navigate("approvals") },
                         colors = CardDefaults.cardColors(containerColor = Color(0xFF3B1F1F)),
                         shape = RoundedCornerShape(12.dp)
                     ) {
@@ -232,9 +229,9 @@ fun DashboardScreen(
             }
 
             if (dashboardState.lowStockVariants.isNotEmpty()) {
-                item(span = { GridItemSpan(maxLineSpan) }) {
+                item {
                     Card(
-                        modifier = Modifier.fillMaxWidth().clickable { navController.navigate("reports") },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).clickable { navController.navigate("reports") },
                         colors = CardDefaults.cardColors(containerColor = Color(0xFF3B1F1F)),
                         shape = RoundedCornerShape(12.dp)
                     ) {
@@ -256,15 +253,30 @@ fun DashboardScreen(
                 }
             }
 
-            // Grid Items
-            items(items) { item ->
-                DashboardCardItem(item) {
-                    navController.navigate(item.route)
+            // Grid Items (Chunked into Rows)
+            items(items.chunked(2)) { rowItems ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    rowItems.forEach { item ->
+                        DashboardCardItem(
+                            item = item,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            navController.navigate(item.route)
+                        }
+                    }
+                    if (rowItems.size == 1) {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
                 }
             }
 
             // Extra spacer at bottom
-            item(span = { GridItemSpan(maxLineSpan) }) {
+            item {
                 Spacer(modifier = Modifier.height(16.dp))
             }
         }
@@ -293,9 +305,9 @@ fun SummaryCard(title: String, value: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun DashboardCardItem(item: DashboardItem, onClick: () -> Unit) {
+fun DashboardCardItem(item: DashboardItem, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Card(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .height(180.dp)
             .clickable { onClick() },
