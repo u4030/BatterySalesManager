@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -12,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -33,6 +35,13 @@ fun InvoiceScreen(
     var showEditDialog by remember { mutableStateOf<Invoice?>(null) }
     var showDateRangePicker by remember { mutableStateOf(false) }
     val dateRangePickerState = rememberDateRangePickerState()
+
+    val bgColor = Color(0xFF0F0F0F)
+    val cardBgColor = Color(0xFF1C1C1C)
+    val accentColor = Color(0xFFFB8C00)
+    val headerGradient = Brush.verticalGradient(
+        colors = listOf(Color(0xFFE53935), Color(0xFFFB8C00))
+    )
 
     if (uiState.invoiceToDelete != null) {
         AlertDialog(
@@ -80,37 +89,65 @@ fun InvoiceScreen(
     }
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("إدارة الفواتير", fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "رجوع")
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { showDateRangePicker = true }) {
-                        Icon(Icons.Default.DateRange, contentDescription = "تحديد الفترة", tint = MaterialTheme.colorScheme.onPrimary)
-                    }
-                    IconButton(onClick = { viewModel.loadInvoices() }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "تحديث", tint = MaterialTheme.colorScheme.onPrimary)
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
-                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary
-                )
-            )
-        },
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = { navController.navigate("sales") },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary
+        containerColor = bgColor,
+        bottomBar = {
+            NavigationBar(
+                containerColor = cardBgColor,
+                contentColor = Color.White,
+                tonalElevation = 0.dp
             ) {
-                Icon(Icons.Default.Add, contentDescription = "إضافة فاتورة")
+                NavigationBarItem(
+                    selected = false,
+                    onClick = { navController.navigate("dashboard") { popUpTo("dashboard") { inclusive = true } } },
+                    icon = { Icon(Icons.Default.Home, contentDescription = null) },
+                    label = { Text("الرئيسية") },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = Color(0xFFFACC15),
+                        selectedTextColor = Color(0xFFFACC15),
+                        unselectedIconColor = Color.Gray,
+                        unselectedTextColor = Color.Gray,
+                        indicatorColor = Color.Transparent
+                    )
+                )
+                NavigationBarItem(
+                    selected = false,
+                    onClick = { navController.navigate("product_management") },
+                    icon = { Icon(Icons.Default.Inventory2, contentDescription = null) },
+                    label = { Text("المنتجات") },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = Color(0xFFFACC15),
+                        selectedTextColor = Color(0xFFFACC15),
+                        unselectedIconColor = Color.Gray,
+                        unselectedTextColor = Color.Gray,
+                        indicatorColor = Color.Transparent
+                    )
+                )
+                NavigationBarItem(
+                    selected = false,
+                    onClick = { navController.navigate("sales") },
+                    icon = { Icon(Icons.Default.ShoppingCart, contentDescription = null) },
+                    label = { Text("المبيعات") },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = Color(0xFFFACC15),
+                        selectedTextColor = Color(0xFFFACC15),
+                        unselectedIconColor = Color.Gray,
+                        unselectedTextColor = Color.Gray,
+                        indicatorColor = Color.Transparent
+                    )
+                )
+                NavigationBarItem(
+                    selected = false,
+                    onClick = { navController.navigate("settings") },
+                    icon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                    label = { Text("الإعدادات") },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = Color(0xFFFACC15),
+                        selectedTextColor = Color(0xFFFACC15),
+                        unselectedIconColor = Color.Gray,
+                        unselectedTextColor = Color.Gray,
+                        indicatorColor = Color.Transparent
+                    )
+                )
             }
         }
     ) { paddingValues ->
@@ -118,31 +155,96 @@ fun InvoiceScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .background(MaterialTheme.colorScheme.background)
         ) {
-            TabRow(selectedTabIndex = uiState.selectedTab) {
-                Tab(selected = uiState.selectedTab == 0, onClick = { viewModel.onTabSelected(0) }) {
-                    Text("الكل", modifier = Modifier.padding(16.dp))
-                }
-                Tab(selected = uiState.selectedTab == 1, onClick = { viewModel.onTabSelected(1) }) {
-                    Text("المعلقة", modifier = Modifier.padding(16.dp))
+            // Gradient Header
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        brush = headerGradient,
+                        shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
+                    )
+                    .padding(bottom = 24.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Spacer(modifier = Modifier.height(32.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        IconButton(
+                            onClick = { navController.popBackStack() },
+                            modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
+                        ) {
+                            Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                        }
+
+                        Text(
+                            text = "إدارة الفواتير",
+                            style = MaterialTheme.typography.headlineSmall,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        Row {
+                            IconButton(
+                                onClick = { showDateRangePicker = true },
+                                modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
+                            ) {
+                                Icon(Icons.Default.CalendarMonth, contentDescription = "Date", tint = Color.White)
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            IconButton(
+                                onClick = { viewModel.loadInvoices() },
+                                modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
+                            ) {
+                                Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color.White)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    // Styled Tabs
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
+                            .padding(4.dp)
+                    ) {
+                        TabItem(
+                            title = "الكل",
+                            isSelected = uiState.selectedTab == 0,
+                            modifier = Modifier.weight(1f),
+                            onClick = { viewModel.onTabSelected(0) }
+                        )
+                        TabItem(
+                            title = "المعلقة",
+                            isSelected = uiState.selectedTab == 1,
+                            modifier = Modifier.weight(1f),
+                            onClick = { viewModel.onTabSelected(1) }
+                        )
+                    }
                 }
             }
 
-            // شريط البحث
+            // Search Bar
             OutlinedTextField(
                 value = uiState.searchQuery,
                 onValueChange = { viewModel.onSearchQueryChanged(it) },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                placeholder = { Text("بحث برقم الفاتورة أو اسم العميل...") },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                shape = RoundedCornerShape(12.dp),
+                    .padding(16.dp),
+                placeholder = { Text("...بحث برقم الفاتورة أو اسم العميل", color = Color.Gray) },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.Gray) },
+                shape = RoundedCornerShape(16.dp),
                 singleLine = true,
-                textStyle = com.batterysales.ui.theme.LocalInputTextStyle.current,
+                textStyle = com.batterysales.ui.theme.LocalInputTextStyle.current.copy(color = Color.White),
                 colors = TextFieldDefaults.outlinedTextFieldColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    containerColor = cardBgColor,
+                    focusedBorderColor = Color.Gray.copy(alpha = 0.5f),
+                    unfocusedBorderColor = Color.Gray.copy(alpha = 0.2f)
                 )
             )
 
@@ -155,30 +257,32 @@ fun InvoiceScreen(
                 ) {
                     Text(
                         "الفترة: ${sdf.format(Date(uiState.startDate!!))} - ${sdf.format(Date(uiState.endDate ?: uiState.startDate!!))}",
-                        style = MaterialTheme.typography.bodySmall
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.7f)
                     )
                     TextButton(onClick = { viewModel.onDateRangeSelected(null, null) }) {
-                        Text("إلغاء الفلترة")
+                        Text("إلغاء الفلترة", color = accentColor)
                     }
                 }
             }
 
             if (uiState.isLoading) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
+                    CircularProgressIndicator(color = accentColor)
                 }
             } else if (uiState.invoices.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.Default.Description, contentDescription = null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f))
+                        Icon(Icons.Default.Description, contentDescription = null, modifier = Modifier.size(64.dp), tint = Color.Gray.copy(alpha = 0.3f))
                         Spacer(modifier = Modifier.height(16.dp))
-                        Text("لا توجد فواتير حالياً", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                        Text("لا توجد فواتير حالياً", color = Color.Gray)
                     }
                 }
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 16.dp, start = 16.dp, end = 16.dp)
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     items(uiState.invoices) { invoice ->
                         InvoiceItemCard(
@@ -191,6 +295,27 @@ fun InvoiceScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+fun TabItem(title: String, isSelected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Box(
+        modifier = modifier
+            .height(48.dp)
+            .background(
+                if (isSelected) Color.White else Color.Transparent,
+                RoundedCornerShape(12.dp)
+            )
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = title,
+            color = if (isSelected) Color(0xFFD84315) else Color.White,
+            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+            fontSize = 16.sp
+        )
     }
 }
 
@@ -231,74 +356,94 @@ fun InvoiceItemCard(invoice: Invoice, onClick: () -> Unit, onDeleteClick: () -> 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp)
             .clickable { onClick() },
-        shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1C1C1C))
     ) {
-        Row(
-            modifier = Modifier.padding(16.dp).fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    StatusBadge(status = invoice.status)
                     Text(
-                        text = "#${invoice.invoiceNumber}",
+                        text = "${String.format("%,.3f", invoice.totalAmount)} ر.س",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 20.sp,
+                        color = Color.White
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Tag, contentDescription = null, tint = Color(0xFFFB8C00), modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = invoice.invoiceNumber,
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp,
-                        color = MaterialTheme.colorScheme.primary
+                        color = Color.White
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    StatusBadge(status = invoice.status)
                 }
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(text = invoice.customerName, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
-                Text(
-                    text = dateFormatter.format(invoice.invoiceDate),
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
 
-            Column(horizontalAlignment = Alignment.End) {
+                Spacer(modifier = Modifier.height(16.dp))
+
                 Text(
-                    text = "JD ${String.format("%.3f", invoice.totalAmount)}",
-                    fontWeight = FontWeight.Bold,
+                    text = invoice.customerName.ifEmpty { "عميل نقدي" },
                     fontSize = 16.sp,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = Color.White.copy(alpha = 0.8f),
+                    modifier = Modifier.align(Alignment.End)
                 )
+
                 if (invoice.remainingAmount > 0) {
                     Text(
-                        text = "المتبقي: JD ${String.format("%.3f", invoice.remainingAmount)}",
+                        text = "المتبقي: ${String.format("%,.3f", invoice.remainingAmount)} ر.س",
                         fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.error
+                        color = Color(0xFFEF5350),
+                        modifier = Modifier.align(Alignment.End)
                     )
                 }
-            }
 
-            Box {
-                IconButton(onClick = { menuExpanded = true }) {
-                    Icon(Icons.Default.MoreVert, contentDescription = "خيارات", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                DropdownMenu(
-                    expanded = menuExpanded,
-                    onDismissRequest = { menuExpanded = false }
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    DropdownMenuItem(
-                        text = { Text("تعديل العميل") },
-                        onClick = {
-                            onEditClick()
-                            menuExpanded = false
+                    Box {
+                        IconButton(onClick = { menuExpanded = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "خيارات", tint = Color.Gray)
                         }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("حذف الفاتورة") },
-                        onClick = {
-                            onDeleteClick()
-                            menuExpanded = false
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false },
+                            modifier = Modifier.background(Color(0xFF1C1C1C))
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("تعديل العميل", color = Color.White) },
+                                onClick = {
+                                    onEditClick()
+                                    menuExpanded = false
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("حذف الفاتورة", color = Color.Red) },
+                                onClick = {
+                                    onDeleteClick()
+                                    menuExpanded = false
+                                }
+                            )
                         }
+                    }
+
+                    Text(
+                        text = dateFormatter.format(invoice.invoiceDate),
+                        fontSize = 14.sp,
+                        color = Color.Gray
                     )
                 }
             }
@@ -308,22 +453,29 @@ fun InvoiceItemCard(invoice: Invoice, onClick: () -> Unit, onDeleteClick: () -> 
 
 @Composable
 fun StatusBadge(status: String) {
-    val (text, color) = when (status) {
-        "paid" -> "مدفوعة" to Color(0xFF4CAF50)
-        "pending" -> "معلقة" to Color(0xFFFF9800)
-        else -> status to Color(0xFF9E9E9E)
+    val (text, color, icon) = when (status) {
+        "paid" -> Triple("مدفوعة", Color(0xFF4CAF50), Icons.Default.CheckCircle)
+        "pending" -> Triple("معلقة", Color(0xFFFF9800), Icons.Default.AccessTime)
+        else -> Triple(status, Color(0xFF9E9E9E), Icons.Default.Info)
     }
 
     Surface(
-        color = color.copy(alpha = 0.1f),
-        shape = RoundedCornerShape(4.dp)
+        color = color.copy(alpha = 0.15f),
+        shape = RoundedCornerShape(12.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, color.copy(alpha = 0.3f))
     ) {
-        Text(
-            text = text,
-            color = color,
-            fontSize = 10.sp,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-            fontWeight = FontWeight.Bold
-        )
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(14.dp))
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = text,
+                color = color,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
     }
 }
