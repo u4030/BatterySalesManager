@@ -1,5 +1,6 @@
 package com.batterysales.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -8,7 +9,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
@@ -23,6 +28,7 @@ import androidx.navigation.NavController
 import com.batterysales.viewmodel.LedgerCategory
 import com.batterysales.viewmodel.LedgerItem
 import com.batterysales.viewmodel.ProductLedgerViewModel
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -35,10 +41,46 @@ fun ProductLedgerScreen(
     val ledgerItems by viewModel.ledgerItems.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val selectedCategory by viewModel.selectedCategory.collectAsState()
+    val searchQuery by viewModel.searchQuery.collectAsState()
     val userRole by viewModel.userRole.collectAsState()
     val isAdmin = userRole == "admin"
     var showDeleteConfirmation by remember { mutableStateOf<String?>(null) }
+    var showScanner by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
 
+
+    if (showScanner) {
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { showScanner = false },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+                com.batterysales.ui.components.BarcodeScanner(onBarcodeScanned = { barcode ->
+                    scope.launch {
+                        val variant = viewModel.findVariantByBarcode(barcode)
+                        if (variant != null) {
+                            val productName = viewModel.getProductName(variant.productId) ?: "سجل المنتج"
+                            val capacityStr = variant.capacity.toString()
+                            val spec = variant.specification.ifEmpty { "no_spec" }
+                            navController.navigate("product_ledger/${variant.id}/$productName/$capacityStr/$spec") {
+                                popUpTo("product_ledger") { inclusive = true }
+                            }
+                        } else {
+                            snackbarHostState.showSnackbar("لم يتم العثور على منتج بهذا الباركود")
+                        }
+                    }
+                    showScanner = false
+                })
+                IconButton(
+                    onClick = { showScanner = false },
+                    modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = "إغلاق", tint = Color.White)
+                }
+            }
+        }
+    }
 
     if (showDeleteConfirmation != null) {
         AlertDialog(
@@ -58,6 +100,7 @@ fun ProductLedgerScreen(
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             Column {
                 TopAppBar(
@@ -72,6 +115,38 @@ fun ProductLedgerScreen(
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary)
+                )
+
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = viewModel::onSearchQueryChanged,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    placeholder = { Text("بحث في السجل (المورد، المستودع...)", color = Color.White.copy(alpha = 0.7f)) },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.White) },
+                    trailingIcon = {
+                        Row {
+                            IconButton(onClick = { showScanner = true }) {
+                                Icon(Icons.Default.PhotoCamera, contentDescription = "مسح باركود", tint = Color.White)
+                            }
+                            if (searchQuery.isNotEmpty()) {
+                                IconButton(onClick = { viewModel.onSearchQueryChanged("") }) {
+                                    Icon(Icons.Default.Clear, contentDescription = "مسح", tint = Color.White)
+                                }
+                            }
+                        }
+                    },
+                    colors = TextFieldDefaults.outlinedTextFieldColors(
+                        focusedBorderColor = Color.White,
+                        unfocusedBorderColor = Color.White.copy(alpha = 0.5f),
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        cursorColor = Color.White,
+                        focusedPlaceholderColor = Color.White.copy(alpha = 0.7f),
+                        unfocusedPlaceholderColor = Color.White.copy(alpha = 0.7f)
+                    ),
+
+                    shape = RoundedCornerShape(12.dp),
+                    singleLine = true
                 )
 
                 ScrollableTabRow(
@@ -278,6 +353,17 @@ fun LedgerItemCard(
                         fontWeight = FontWeight.SemiBold
                     )
                 }
+            }
+            if (entry.returnedQuantity > 0) {
+                val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
+                val returnDateStr = entry.returnDate?.let { dateFormatter.format(it) } ?: "غير معروف"
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "تم إرجاع ${entry.returnedQuantity} حبة بتاريخ: $returnDateStr",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Red,
+                    fontWeight = FontWeight.Bold
+                )
             }
             if (entry.createdByUserName.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(8.dp))

@@ -1,4 +1,4 @@
-package com.batterysales.ui.stockentry
+package com.batterysales.viewmodel
 
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
@@ -23,6 +23,7 @@ data class StockEntryUiState(
     val selectedWarehouse: Warehouse? = null,
     val selectedSupplier: Supplier? = null,
     val quantity: String = "",
+    val returnedQuantity: String = "0",
     val costInputMode: CostInputMode = CostInputMode.BY_AMPERE,
     val costValue: String = "",
     val minQuantity: String = "",
@@ -50,6 +51,11 @@ data class StockEntryItem(
     val totalCost: Double
 )
 
+enum class CostInputMode {
+    BY_AMPERE,
+    BY_ITEM
+}
+
 @HiltViewModel
 class StockEntryViewModel @Inject constructor(
     private val productRepository: ProductRepository,
@@ -65,7 +71,7 @@ class StockEntryViewModel @Inject constructor(
     val uiState: StateFlow<StockEntryUiState> = _uiState.asStateFlow()
 
     private val editingEntryId: String? = savedStateHandle.get<String>("entryId")
-    private var currentUser: com.batterysales.data.models.User? = null
+    private var currentUser: User? = null
 
     init {
         val isEditMode = editingEntryId != null
@@ -132,6 +138,7 @@ class StockEntryViewModel @Inject constructor(
                 selectedWarehouse = warehouse,
                 selectedSupplier = supplier,
                 quantity = entry.quantity.toString(),
+                returnedQuantity = entry.returnedQuantity.toString(),
                 costValue = entry.costPrice.toString(),
                 minQuantity = variant.minQuantity.toString(),
                 costInputMode = CostInputMode.BY_ITEM,
@@ -172,6 +179,7 @@ class StockEntryViewModel @Inject constructor(
     fun onWarehouseSelected(warehouse: Warehouse) { _uiState.update { it.copy(selectedWarehouse = warehouse) } }
     fun onSupplierSelected(supplier: Supplier) { _uiState.update { it.copy(selectedSupplier = supplier, supplierName = supplier.name) } }
     fun onQuantityChanged(quantity: String) { _uiState.update { it.copy(quantity = quantity) } }
+    fun onReturnedQuantityChanged(qty: String) { _uiState.update { it.copy(returnedQuantity = qty) } }
     fun onMinQuantityChanged(minQty: String) { _uiState.update { it.copy(minQuantity = minQty) } }
     fun onCostInputModeChanged(mode: CostInputMode) { _uiState.update { it.copy(costInputMode = mode, costValue = "") } }
     fun onCostValueChanged(cost: String) {
@@ -245,8 +253,12 @@ class StockEntryViewModel @Inject constructor(
                         return@launch
                     }
 
+                    val returnedQty = state.returnedQuantity.toIntOrNull() ?: 0
+
                     val updatedEntry = originalEntry.copy(
                         quantity = updatedItem.quantity,
+                        returnedQuantity = returnedQty,
+                        returnDate = if (returnedQty > 0) (originalEntry.returnDate ?: Date()) else null,
                         costPrice = updatedItem.costPrice,
                         costPerAmpere = updatedItem.costPerAmpere,
                         totalAmperes = updatedItem.totalAmperes,
@@ -301,19 +313,22 @@ class StockEntryViewModel @Inject constructor(
     }
 
     private fun calculateItemFromState(state: StockEntryUiState, variant: ProductVariant): StockEntryItem {
-        val quantity = state.quantity.toIntOrNull() ?: 0
+        val originalQuantity = state.quantity.toIntOrNull() ?: 0
+        val returnedQty = state.returnedQuantity.toIntOrNull() ?: 0
+        val netQuantity = originalQuantity - returnedQty
+
         val minQuantity = state.minQuantity.toIntOrNull() ?: 0
         val cost = parseCurrency(state.costValue)
 
         val costPerItem = if (state.costInputMode == CostInputMode.BY_ITEM) cost else if (variant.capacity > 0) cost * variant.capacity else 0.0
         val costPerAmpere = if (state.costInputMode == CostInputMode.BY_AMPERE) cost else if (variant.capacity > 0) cost / variant.capacity else 0.0
-        val totalAmperes = quantity * variant.capacity
-        val totalCost = quantity * costPerItem
+        val totalAmperes = netQuantity * variant.capacity
+        val totalCost = netQuantity * costPerItem
 
         return StockEntryItem(
             id = if(state.isEditMode) state.stockItems.first().id else UUID.randomUUID().toString(),
             productVariant = variant,
-            quantity = quantity,
+            quantity = originalQuantity,
             minQuantity = minQuantity,
             productName = state.selectedProduct?.name ?: "",
             costPrice = costPerItem,

@@ -265,25 +265,25 @@ fun ReportItemCard(
                     label = "إجمالي الكمية",
                     value = item.totalQuantity.toString(),
                     valueColor = if (isLowStock) Color(0xFFD32F2F) else Color.Unspecified,
-                    modifier = Modifier.weight(1f).widthIn(min = 120.dp)
+                    modifier = Modifier.widthIn(min = 120.dp)
                 )
                 if (item.variant.minQuantity > 0) {
                     InfoColumn(
                         label = "الحد الأدنى",
                         value = item.variant.minQuantity.toString(),
-                        modifier = Modifier.weight(1f).widthIn(min = 120.dp)
+                        modifier = Modifier.widthIn(min = 120.dp)
                     )
                 }
                 if (!isSeller) {
                     InfoColumn(
                         label = "متوسط التكلفة",
                         value = "JD " + String.format(Locale.US, "%.3f", item.averageCost),
-                        modifier = Modifier.weight(1f).widthIn(min = 120.dp)
+                        modifier = Modifier.widthIn(min = 120.dp)
                     )
                     InfoColumn(
                         label = "قيمة المخزون",
                         value = "JD " + String.format(Locale.US, "%.3f", item.totalCostValue),
-                        modifier = Modifier.weight(1f).widthIn(min = 120.dp)
+                        modifier = Modifier.widthIn(min = 120.dp)
                     )
                 }
             }
@@ -499,7 +499,7 @@ fun SupplierCard(item: com.batterysales.viewmodel.SupplierReportItem) {
             ) {
                 InfoColumn(label = "مدين (مشتريات)", value = "JD ${String.format("%.3f", item.totalDebit)}", modifier = Modifier.widthIn(min = 100.dp))
                 InfoColumn(label = "دائن (دفعات)", value = "JD ${String.format("%.3f", item.totalCredit)}", modifier = Modifier.widthIn(min = 100.dp))
-                InfoColumn(label = "الرصيد", value = "JD ${String.format("%.3f", item.balance)}", valueColor = if (item.balance > 0) Color.Red else Color.Unspecified, modifier = Modifier.widthIn(min = 100.dp))
+                InfoColumn(label = "مجموع مدين", value = "JD ${String.format("%.3f", item.balance)}", valueColor = if (item.balance > 0) Color.Red else Color.Unspecified, modifier = Modifier.widthIn(min = 100.dp))
             }
 
             if (expanded && item.purchaseOrders.isNotEmpty()) {
@@ -511,13 +511,17 @@ fun SupplierCard(item: com.batterysales.viewmodel.SupplierReportItem) {
                     Column(modifier = Modifier.padding(start = 8.dp, bottom = 8.dp)) {
                         FlowRow(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalArrangement = Arrangement.Center) {
                             Text("${dateFormatter.format(po.entry.timestamp)}: JD ${String.format("%.3f", po.entry.totalCost)}", style = MaterialTheme.typography.bodyMedium)
-                            Text("رصيد: JD ${String.format("%.3f", po.remainingBalance)}", style = MaterialTheme.typography.bodyMedium, color = if (po.remainingBalance > 0) Color.Red else Color.Gray)
+                            Text("مدين: JD ${String.format("%.3f", po.remainingBalance)}", style = MaterialTheme.typography.bodyMedium, color = if (po.remainingBalance > 0) Color.Red else Color.Gray)
                         }
                         if (po.linkedPaidAmount > 0) {
-                            Text("تم دفع: JD ${String.format("%.3f", po.linkedPaidAmount)}", fontSize = 12.sp, color = Color(0xFF4CAF50))
+                            Text("دائن: JD ${String.format("%.3f", po.linkedPaidAmount)}", fontSize = 12.sp, color = Color(0xFF4CAF50))
                         }
                         if (po.referenceNumbers.isNotEmpty()) {
                             Text("أرقام المرجع: ${po.referenceNumbers.joinToString(", ")}", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                        }
+                        if (po.entry.returnedQuantity > 0) {
+                            val returnDateStr = po.entry.returnDate?.let { dateFormatter.format(it) } ?: "غير معروف"
+                            Text("المرتجعات: ${po.entry.returnedQuantity} حبة بتاريخ $returnDateStr", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Red, modifier = Modifier.padding(top = 4.dp))
                         }
                         HorizontalDivider(modifier = Modifier.padding(top = 4.dp), thickness = 0.5.dp, color = Color.LightGray)
                     }

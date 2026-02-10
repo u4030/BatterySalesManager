@@ -18,6 +18,11 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.batterysales.ui.theme.LocalInputTextStyle
+import com.batterysales.viewmodel.StockEntryViewModel
+import com.batterysales.viewmodel.StockEntryUiState
+import com.batterysales.viewmodel.CostInputMode
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -164,10 +169,28 @@ fun StockEntryContent(
             }
         }
 
+
         // --- Cost Calculation Section (Admin Only) ---
         if (uiState.isAdmin) {
             item {
                 CostCalculationSection(uiState = uiState, viewModel = viewModel)
+            }
+
+            if (uiState.isEditMode) {
+                item {
+                    OutlinedTextField(
+                        value = uiState.returnedQuantity,
+                        onValueChange = viewModel::onReturnedQuantityChanged,
+                        label = { Text("الكمية المرتجعة") },
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                        textStyle = LocalInputTextStyle.current,
+                        colors = TextFieldDefaults.outlinedTextFieldColors(
+                            focusedBorderColor = androidx.compose.ui.graphics.Color.Red,
+                            unfocusedBorderColor = androidx.compose.ui.graphics.Color.Red.copy(alpha = 0.5f)
+                        )
+                    )
+                }
             }
         } else {
             // Seller only sees Quantity field
@@ -267,6 +290,8 @@ fun CostCalculationSection(uiState: StockEntryUiState, viewModel: StockEntryView
         uiState.costValue.toDoubleOrNull() ?: 0.0
     }
     val quantity = uiState.quantity.toIntOrNull() ?: 0
+    val returnedQty = uiState.returnedQuantity.toIntOrNull() ?: 0
+    val netQuantity = quantity - returnedQty
 
     val (costPerAmpere, costPerItem) = when (uiState.costInputMode) {
         CostInputMode.BY_AMPERE -> {
@@ -278,8 +303,8 @@ fun CostCalculationSection(uiState: StockEntryUiState, viewModel: StockEntryView
             Pair(String.format("%.4f", ampereCost), uiState.costValue)
         }
     }
-    val totalAmperes = (quantity * variantCapacity).toString()
-    val totalCost = String.format("%.4f", quantity * (costPerItem.toDoubleOrNull() ?: 0.0))
+    val totalAmperes = (netQuantity * variantCapacity).toString()
+    val totalCost = String.format("%.4f", netQuantity * (costPerItem.toDoubleOrNull() ?: 0.0))
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("طريقة حساب التكلفة:")

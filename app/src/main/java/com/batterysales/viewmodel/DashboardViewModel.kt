@@ -54,7 +54,7 @@ class DashboardViewModel @Inject constructor(
         // Optimize: Group approved entries by Pair(variantId, warehouseId)
         val stockMap = allEntries.filter { it.status == StockEntry.STATUS_APPROVED }
             .groupBy { Pair(it.productVariantId, it.warehouseId) }
-            .mapValues { entry -> entry.value.sumOf { it.quantity } }
+            .mapValues { entry -> entry.value.sumOf { it.quantity - it.returnedQuantity } }
 
         val lowStock = mutableListOf<LowStockItem>()
 

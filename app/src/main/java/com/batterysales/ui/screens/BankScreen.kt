@@ -93,9 +93,10 @@ fun BankScreen(
                     },
                     containerColor = Color(0xFF4CAF50),
                     contentColor = Color.White,
-                    icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                    text = { Text("إيداع شيك") }
-                )
+//                    icon = { Icon(Icons.Default.Add, contentDescription = null) },
+//                    text = { Text("إيداع شيك") }
+                ){
+                    Icon(Icons.Default.Add, contentDescription = "إيداع")}
                 ExtendedFloatingActionButton(
                     onClick = {
                         selectedType = com.batterysales.data.models.BankTransactionType.WITHDRAWAL
@@ -103,9 +104,11 @@ fun BankScreen(
                     },
                     containerColor = Color(0xFFF44336),
                     contentColor = Color.White,
-                    icon = { Icon(Icons.Default.Remove, contentDescription = null) },
-                    text = { Text("سحب شيك") }
-                )
+//                    icon = { Icon(Icons.Default.Remove, contentDescription = null) },
+//                    text = { Text("سحب شيك") }
+                ){
+                    Icon(Icons.Default.Remove, contentDescription = "سحب")
+                }
             }
         }
     ) { paddingValues ->
@@ -296,7 +299,7 @@ fun AddBankTransactionDialog(
 
 @Composable
 fun BankTransactionItemCard(transaction: BankTransaction) {
-    val dateFormatter = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault())
+    val dateFormatter = SimpleDateFormat("yyyy/MM/dd hh:mm a", Locale.getDefault())
     val isDeposit = transaction.type == BankTransactionType.DEPOSIT
     val amountColor = if (isDeposit) Color(0xFF4CAF50) else Color(0xFFF44336)
 

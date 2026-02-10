@@ -4,7 +4,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.batterysales.data.models.*
 import com.batterysales.data.repositories.*
-import com.batterysales.data.repositories.OldBatteryRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -112,7 +111,7 @@ class ReportsViewModel @Inject constructor(
             for (warehouse in warehouseList) {
                 val quantityInWarehouse = variantEntries
                     .filter { it.warehouseId == warehouse.id }
-                    .sumOf { it.quantity }
+                    .sumOf { it.quantity - it.returnedQuantity }
                 warehouseQuantities[warehouse.id] = quantityInWarehouse
                 totalQuantity += quantityInWarehouse
             }
@@ -121,7 +120,7 @@ class ReportsViewModel @Inject constructor(
 
             val positiveEntries = variantEntries.filter { it.quantity > 0 }
             val totalCostOfPurchases = positiveEntries.sumOf { it.totalCost }
-            val totalItemsPurchased = positiveEntries.sumOf { it.quantity }
+            val totalItemsPurchased = positiveEntries.sumOf { it.quantity - it.returnedQuantity }
             val averageCost = if (totalItemsPurchased > 0) totalCostOfPurchases / totalItemsPurchased else 0.0
             val totalCostValue = totalQuantity * averageCost
 
@@ -167,23 +166,23 @@ class ReportsViewModel @Inject constructor(
         combine(_startDate, _endDate, _supplierSearchQuery) { s, e, q -> Triple(s, e, q) }
     ) { suppliers, allEntries, allBills, (start, end, query) ->
         suppliers.map { supplier ->
-            val supplierEntries = allEntries.filter { 
-                it.supplierId == supplier.id && 
-                it.status == "approved" &&
-                (start == null || it.timestamp.time >= start) &&
-                (end == null || it.timestamp.time <= end)
-            }
-            val supplierBills = allBills.filter { 
+            val supplierEntries = allEntries.filter {
                 it.supplierId == supplier.id &&
-                (start == null || it.dueDate.time >= start) &&
-                (end == null || it.dueDate.time <= end)
+                        it.status == "approved" &&
+                        (start == null || it.timestamp.time >= start) &&
+                        (end == null || it.timestamp.time <= end)
+            }
+            val supplierBills = allBills.filter {
+                it.supplierId == supplier.id &&
+                        (start == null || it.dueDate.time >= start) &&
+                        (end == null || it.dueDate.time <= end)
             }
 
             val totalDebit = supplierEntries.sumOf { it.totalCost }
             val totalCredit = supplierBills.sumOf { it.paidAmount }
             val balance = totalDebit - totalCredit
-            
-            val purchaseOrders = supplierEntries.map { entry ->
+
+            val purchaseOrders = supplierEntries.filter { it.quantity > 0 }.map { entry ->
                 val linkedBills = supplierBills.filter { it.relatedEntryId == entry.id }
                 val linkedPaid = linkedBills.sumOf { it.paidAmount }
                 PurchaseOrderItem(
@@ -207,10 +206,10 @@ class ReportsViewModel @Inject constructor(
         }.filter { item ->
             if (query.isBlank()) true
             else {
-                item.supplier.name.contains(query, ignoreCase = true) || 
-                item.purchaseOrders.any { po -> 
-                    po.referenceNumbers.any { ref -> ref.contains(query, ignoreCase = true) }
-                }
+                item.supplier.name.contains(query, ignoreCase = true) ||
+                        item.purchaseOrders.any { po ->
+                            po.referenceNumbers.any { ref -> ref.contains(query, ignoreCase = true) }
+                        }
             }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())

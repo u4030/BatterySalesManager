@@ -11,6 +11,7 @@ import com.batterysales.data.repositories.WarehouseRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.util.Date
 import javax.inject.Inject
 
 data class LedgerItem(
@@ -29,6 +30,8 @@ enum class LedgerCategory(val label: String) {
 @HiltViewModel
 class ProductLedgerViewModel @Inject constructor(
     private val stockEntryRepository: StockEntryRepository,
+    private val productRepository: com.batterysales.data.repositories.ProductRepository,
+    private val productVariantRepository: com.batterysales.data.repositories.ProductVariantRepository,
     private val userRepository: UserRepository,
     warehouseRepository: WarehouseRepository,
     savedStateHandle: SavedStateHandle
@@ -48,6 +51,9 @@ class ProductLedgerViewModel @Inject constructor(
     private val _selectedCategory = MutableStateFlow(LedgerCategory.ALL)
     val selectedCategory = _selectedCategory.asStateFlow()
 
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery = _searchQuery.asStateFlow()
+
     init {
         viewModelScope.launch {
             val user = userRepository.getCurrentUser()
@@ -61,13 +67,22 @@ class ProductLedgerViewModel @Inject constructor(
         combine(
             stockEntryRepository.getEntriesForVariant(productVariantId),
             warehouseRepository.getWarehouses(),
-            _selectedCategory
-        ) { entries, warehouses, category ->
+            _selectedCategory,
+            _searchQuery
+        ) { entries, warehouses, category, query ->
             val warehouseMap = warehouses.associateBy { it.id }
             val items = entries.mapNotNull { entry ->
                 warehouseMap[entry.warehouseId]?.let { warehouse ->
-                    LedgerItem(entry = entry, warehouseName = warehouse.name)
+                    LedgerItem(
+                        entry = entry,
+                        warehouseName = warehouse.name
+                    )
                 }
+            }.filter {
+                if (query.isBlank()) true
+                else it.entry.supplier.contains(query, ignoreCase = true) ||
+                        it.warehouseName.contains(query, ignoreCase = true) ||
+                        it.entry.createdByUserName.contains(query, ignoreCase = true)
             }
 
             when (category) {
@@ -75,7 +90,7 @@ class ProductLedgerViewModel @Inject constructor(
                 LedgerCategory.PURCHASES -> items.filter { it.entry.quantity > 0 && it.entry.supplier != "Sale" && it.entry.costPrice > 0 && !it.entry.supplier.contains("Reversal") }
                 LedgerCategory.SALES -> items.filter { it.entry.supplier == "Sale" }
                 LedgerCategory.TRANSFERS -> items.filter { it.entry.costPrice == 0.0 && !it.entry.supplier.contains("Reversal") }
-                LedgerCategory.RETURNS -> items.filter { it.entry.supplier.contains("Reversal") }
+                LedgerCategory.RETURNS -> items.filter { it.entry.supplier.contains("Reversal") || it.entry.returnedQuantity > 0 }
             }
         }
     }.onStart { _isLoading.value = true }
@@ -84,6 +99,18 @@ class ProductLedgerViewModel @Inject constructor(
 
     fun selectCategory(category: LedgerCategory) {
         _selectedCategory.value = category
+    }
+
+    fun onSearchQueryChanged(query: String) {
+        _searchQuery.value = query
+    }
+
+    suspend fun findVariantByBarcode(barcode: String): com.batterysales.data.models.ProductVariant? {
+        return productVariantRepository.getAllVariants().find { it.barcode == barcode }
+    }
+
+    suspend fun getProductName(productId: String): String? {
+        return productRepository.getProduct(productId)?.name
     }
 
     fun deleteStockEntry(entryId: String) {
