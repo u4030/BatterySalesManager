@@ -4,9 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.batterysales.data.models.*
 import com.batterysales.data.repositories.*
-import com.batterysales.data.repositories.OldBatteryRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class InventoryReportItem(
@@ -31,8 +31,7 @@ data class PurchaseOrderItem(
     val entry: StockEntry,
     val linkedPaidAmount: Double,
     val remainingBalance: Double,
-    val referenceNumbers: List<String> = emptyList(),
-    val returns: List<StockEntry> = emptyList()
+    val referenceNumbers: List<String> = emptyList()
 )
 
 @HiltViewModel
@@ -112,7 +111,7 @@ class ReportsViewModel @Inject constructor(
             for (warehouse in warehouseList) {
                 val quantityInWarehouse = variantEntries
                     .filter { it.warehouseId == warehouse.id }
-                    .sumOf { it.quantity }
+                    .sumOf { it.quantity - it.returnedQuantity }
                 warehouseQuantities[warehouse.id] = quantityInWarehouse
                 totalQuantity += quantityInWarehouse
             }
@@ -121,7 +120,7 @@ class ReportsViewModel @Inject constructor(
 
             val positiveEntries = variantEntries.filter { it.quantity > 0 }
             val totalCostOfPurchases = positiveEntries.sumOf { it.totalCost }
-            val totalItemsPurchased = positiveEntries.sumOf { it.quantity }
+            val totalItemsPurchased = positiveEntries.sumOf { it.quantity - it.returnedQuantity }
             val averageCost = if (totalItemsPurchased > 0) totalCostOfPurchases / totalItemsPurchased else 0.0
             val totalCostValue = totalQuantity * averageCost
 
@@ -186,13 +185,11 @@ class ReportsViewModel @Inject constructor(
             val purchaseOrders = supplierEntries.filter { it.quantity > 0 }.map { entry ->
                 val linkedBills = supplierBills.filter { it.relatedEntryId == entry.id }
                 val linkedPaid = linkedBills.sumOf { it.paidAmount }
-                val returns = supplierEntries.filter { it.originalEntryId == entry.id }
                 PurchaseOrderItem(
                     entry = entry,
                     linkedPaidAmount = linkedPaid,
-                    remainingBalance = entry.totalCost - linkedPaid + returns.sumOf { it.totalCost },
-                    referenceNumbers = linkedBills.map { it.referenceNumber }.filter { it.isNotEmpty() },
-                    returns = returns
+                    remainingBalance = entry.totalCost - linkedPaid,
+                    referenceNumbers = linkedBills.map { it.referenceNumber }.filter { it.isNotEmpty() }
                 )
             }
 

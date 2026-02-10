@@ -517,11 +517,9 @@ fun SupplierCard(item: com.batterysales.viewmodel.SupplierReportItem) {
                         if (po.referenceNumbers.isNotEmpty()) {
                             Text("أرقام المرجع: ${po.referenceNumbers.joinToString(", ")}", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
                         }
-                        if (po.returns.isNotEmpty()) {
-                            Text("المرتجعات:", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Red, modifier = Modifier.padding(top = 4.dp))
-                            po.returns.forEach { ret ->
-                                Text("- ${dateFormatter.format(ret.timestamp)}: ارجاع ${kotlin.math.abs(ret.quantity)} حبة (JD ${String.format("%.3f", kotlin.math.abs(ret.totalCost))})", fontSize = 11.sp, color = Color.Red)
-                            }
+                        if (po.entry.returnedQuantity > 0) {
+                            val returnDateStr = po.entry.returnDate?.let { dateFormatter.format(it) } ?: "غير معروف"
+                            Text("المرتجعات: ${po.entry.returnedQuantity} حبة بتاريخ $returnDateStr", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Red, modifier = Modifier.padding(top = 4.dp))
                         }
                         HorizontalDivider(modifier = Modifier.padding(top = 4.dp), thickness = 0.5.dp, color = Color.LightGray)
                     }

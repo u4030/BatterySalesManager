@@ -46,7 +46,7 @@ class WarehouseViewModel @Inject constructor(
         for (entry in allStockEntries) {
             if (entry.status == "approved") {
                 val key = Pair(entry.productVariantId, entry.warehouseId)
-                stockMap[key] = (stockMap[key] ?: 0) + entry.quantity
+                stockMap[key] = (stockMap[key] ?: 0) + (entry.quantity - entry.returnedQuantity)
             }
         }
 

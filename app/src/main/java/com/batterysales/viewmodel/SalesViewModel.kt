@@ -68,7 +68,7 @@ class SalesViewModel @Inject constructor(
                 val stockMap = mutableMapOf<Pair<String, String>, Int>()
                 for (entry in approvedEntries) {
                     val key = Pair(entry.productVariantId, entry.warehouseId)
-                    stockMap[key] = (stockMap[key] ?: 0) + entry.quantity
+                    stockMap[key] = (stockMap[key] ?: 0) + (entry.quantity - entry.returnedQuantity)
                 }
 
                 val selectedWH = warehouses.find { it.id == user?.warehouseId }
@@ -152,7 +152,7 @@ class SalesViewModel @Inject constructor(
                     it.productVariantId == variant.id && it.warehouseId == warehouse.id && it.quantity > 0
                 }
                 val totalCostOfPurchases = positiveEntries.sumOf { it.totalCost }
-                val totalItemsPurchased = positiveEntries.sumOf { it.quantity }
+                val totalItemsPurchased = positiveEntries.sumOf { it.quantity - it.returnedQuantity }
                 val weightedAverageCost = if (totalItemsPurchased > 0) totalCostOfPurchases / totalItemsPurchased else 0.0
 
                 // First, create the invoice to get an ID

@@ -121,23 +121,6 @@ fun StockEntryContent(
         contentPadding = PaddingValues(vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-            if (!uiState.isEditMode) {
-                item {
-                    TabRow(selectedTabIndex = if (uiState.isReturnMode) 1 else 0) {
-                        Tab(
-                            selected = !uiState.isReturnMode,
-                            onClick = { viewModel.onReturnModeChanged(false) },
-                            text = { Text("إدخال مشتريات") }
-                        )
-                        Tab(
-                            selected = uiState.isReturnMode,
-                            onClick = { viewModel.onReturnModeChanged(true) },
-                            text = { Text("مرتجع مشتريات") }
-                        )
-                    }
-                }
-            }
-
         // Warehouse Dropdown
         item {
             Row {
@@ -184,28 +167,28 @@ fun StockEntryContent(
             }
         }
 
-        if (uiState.isReturnMode && uiState.eligibleEntries.isNotEmpty()) {
-            item {
-                val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
-                Dropdown(
-                    label = "اختر الطلبية السابقة للإرجاع منها",
-                    selectedValue = uiState.selectedOriginalEntry?.let {
-                        "${dateFormatter.format(it.entry.timestamp)} - المتاح: ${it.availableQuantity} - السعر: ${it.entry.costPrice}"
-                    } ?: "",
-                    options = uiState.eligibleEntries.map {
-                        "${dateFormatter.format(it.entry.timestamp)} - المتاح: ${it.availableQuantity} - السعر: ${it.entry.costPrice}"
-                    },
-                    onOptionSelected = { index -> viewModel.onOriginalEntrySelected(uiState.eligibleEntries[index]) },
-                    enabled = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        }
 
         // --- Cost Calculation Section (Admin Only) ---
         if (uiState.isAdmin) {
             item {
                 CostCalculationSection(uiState = uiState, viewModel = viewModel)
+            }
+
+            if (uiState.isEditMode) {
+                item {
+                    OutlinedTextField(
+                        value = uiState.returnedQuantity,
+                        onValueChange = viewModel::onReturnedQuantityChanged,
+                        label = { Text("الكمية المرتجعة") },
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                        textStyle = LocalInputTextStyle.current,
+                        colors = TextFieldDefaults.outlinedTextFieldColors(
+                            focusedBorderColor = androidx.compose.ui.graphics.Color.Red,
+                            unfocusedBorderColor = androidx.compose.ui.graphics.Color.Red.copy(alpha = 0.5f)
+                        )
+                    )
+                }
             }
         } else {
             // Seller only sees Quantity field
@@ -305,6 +288,8 @@ fun CostCalculationSection(uiState: StockEntryUiState, viewModel: StockEntryView
         uiState.costValue.toDoubleOrNull() ?: 0.0
     }
     val quantity = uiState.quantity.toIntOrNull() ?: 0
+    val returnedQty = uiState.returnedQuantity.toIntOrNull() ?: 0
+    val netQuantity = quantity - returnedQty
 
     val (costPerAmpere, costPerItem) = when (uiState.costInputMode) {
         CostInputMode.BY_AMPERE -> {
@@ -316,8 +301,8 @@ fun CostCalculationSection(uiState: StockEntryUiState, viewModel: StockEntryView
             Pair(String.format("%.4f", ampereCost), uiState.costValue)
         }
     }
-    val totalAmperes = (quantity * variantCapacity).toString()
-    val totalCost = String.format("%.4f", quantity * (costPerItem.toDoubleOrNull() ?: 0.0))
+    val totalAmperes = (netQuantity * variantCapacity).toString()
+    val totalCost = String.format("%.4f", netQuantity * (costPerItem.toDoubleOrNull() ?: 0.0))
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("طريقة حساب التكلفة:")

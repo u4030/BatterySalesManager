@@ -22,7 +22,8 @@ data class StockEntry(
     val status: String = "approved", // approved, pending
     val createdBy: String = "",
     val createdByUserName: String = "",
-    val originalEntryId: String? = null // Link to original purchase for returns
+    val returnedQuantity: Int = 0,
+    val returnDate: Date? = null
 ) {
     companion object {
         const val COLLECTION_NAME = "stock_entries"
