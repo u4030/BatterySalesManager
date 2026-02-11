@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -28,7 +30,7 @@ import com.batterysales.ui.components.CustomKeyboardTextField
 import com.batterysales.ui.components.KeyboardLanguage
 import com.batterysales.ui.theme.LocalInputTextStyle
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltViewModel()) {
     val uiState by viewModel.uiState.collectAsState()
@@ -201,22 +203,37 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
                         )
 
                         // Total Box
-                        val qty = uiState.quantity.toDoubleOrNull() ?: 0.0
-                        val price = uiState.sellingPrice.toDoubleOrNull() ?: 0.0
-                        val total = qty * price
+                        val qtyVal = uiState.quantity.toDoubleOrNull() ?: 0.0
+                        val priceVal = uiState.sellingPrice.toDoubleOrNull() ?: 0.0
+                        val totalVal = qtyVal * priceVal
 
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(80.dp)
+                                .heightIn(min = 80.dp)
                                 .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), RoundedCornerShape(16.dp))
                                 .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
-                                .padding(horizontal = 20.dp),
+                                .padding(20.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Text("الإجمالي", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                                Text("${String.format("%,.3f", total)} JD", color = accentColor, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                            FlowRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Text(
+                                    text = "الإجمالي",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                    modifier = Modifier.padding(vertical = 4.dp)
+                                )
+                                Text(
+                                    text = "${String.format("%,.3f", totalVal)} JD",
+                                    color = accentColor,
+                                    style = MaterialTheme.typography.headlineMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(vertical = 4.dp)
+                                )
                             }
                         }
                     }
@@ -249,12 +266,17 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
                             }
                         }
 
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            maxItemsInEachRow = 2
+                        ) {
                             SalesTextField(
                                 value = uiState.oldBatteriesQuantity,
                                 onValueChange = viewModel::onOldBatteriesQuantityChanged,
                                 label = "الكمية",
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier.widthIn(min = 120.dp).weight(1f),
                                 keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
                                 textAlign = TextAlign.Center
                             )
@@ -262,7 +284,7 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
                                 value = uiState.oldBatteriesTotalAmps,
                                 onValueChange = viewModel::onOldBatteriesTotalAmpsChanged,
                                 label = "إجمالي الأمبيرات",
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier.widthIn(min = 120.dp).weight(1f),
                                 keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal,
                                 textAlign = TextAlign.Center
                             )

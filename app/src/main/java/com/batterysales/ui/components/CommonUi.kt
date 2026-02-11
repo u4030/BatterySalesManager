@@ -2,7 +2,9 @@ package com.batterysales.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DateRange
@@ -10,6 +12,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -62,26 +65,63 @@ fun AppDateRangePickerDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit
 ) {
-    DatePickerDialog(
+    androidx.compose.ui.window.Dialog(
         onDismissRequest = onDismiss,
-        confirmButton = {
-            TextButton(onClick = onConfirm) {
-                Text("موافق")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("إلغاء")
-            }
-        },
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
     ) {
-        Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-            DateRangePicker(
-                state = state,
-                modifier = Modifier.fillMaxSize(),
-                title = { Text("اختر الفترة الزمنية", modifier = Modifier.padding(16.dp)) }
-            )
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.surface
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                // Top Action Bar
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                        .statusBarsPadding(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text("إلغاء", style = MaterialTheme.typography.bodyLarge)
+                    }
+                    Text(
+                        "اختيار الفترة",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    TextButton(onClick = onConfirm) {
+                        Text("موافق", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge)
+                    }
+                }
+
+                HorizontalDivider(modifier = Modifier.alpha(0.1f))
+
+                DateRangePicker(
+                    state = state,
+                    modifier = Modifier.weight(1f),
+                    title = null,
+                    headline = {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp)
+                                .horizontalScroll(rememberScrollState()),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            DateRangePickerDefaults.DateRangePickerHeadline(
+                                selectedStartDateMillis = state.selectedStartDateMillis,
+                                selectedEndDateMillis = state.selectedEndDateMillis,
+                                displayMode = state.displayMode,
+                                dateFormatter = DatePickerDefaults.dateFormatter(),
+                                modifier = Modifier.wrapContentWidth()
+                            )
+                        }
+                    },
+                    showModeToggle = true
+                )
+            }
         }
     }
 }
