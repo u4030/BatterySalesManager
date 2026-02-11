@@ -293,19 +293,11 @@ fun AccountingScreen(
     }
 
     if (showDateRangePicker) {
-        DatePickerDialog(
-            onDismissRequest = { showDateRangePicker = false },
-            confirmButton = {
-                TextButton(onClick = { showDateRangePicker = false }) {
-                    Text("موافق")
-                }
-            }
-        ) {
-            DateRangePicker(
-                state = dateRangePickerState,
-                modifier = Modifier.weight(1f).padding(16.dp)
-            )
-        }
+        com.batterysales.ui.components.AppDateRangePickerDialog(
+            state = dateRangePickerState,
+            onDismiss = { showDateRangePicker = false },
+            onConfirm = { showDateRangePicker = false }
+        )
     }
 
     if (showDeleteConfirm != null) {

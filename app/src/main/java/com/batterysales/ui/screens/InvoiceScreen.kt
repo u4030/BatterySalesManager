@@ -58,30 +58,17 @@ fun InvoiceScreen(
     }
 
     if (showDateRangePicker) {
-        DatePickerDialog(
-            onDismissRequest = { showDateRangePicker = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    viewModel.onDateRangeSelected(
-                        dateRangePickerState.selectedStartDateMillis,
-                        dateRangePickerState.selectedEndDateMillis
-                    )
-                    showDateRangePicker = false
-                }) {
-                    Text("موافق")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDateRangePicker = false }) {
-                    Text("إلغاء")
-                }
+        com.batterysales.ui.components.AppDateRangePickerDialog(
+            state = dateRangePickerState,
+            onDismiss = { showDateRangePicker = false },
+            onConfirm = {
+                viewModel.onDateRangeSelected(
+                    dateRangePickerState.selectedStartDateMillis,
+                    dateRangePickerState.selectedEndDateMillis
+                )
+                showDateRangePicker = false
             }
-        ) {
-            DateRangePicker(
-                state = dateRangePickerState,
-                modifier = Modifier.weight(1f).padding(16.dp)
-            )
-        }
+        )
     }
 
     if (showEditDialog != null) {
@@ -93,67 +80,7 @@ fun InvoiceScreen(
     }
 
     Scaffold(
-        containerColor = bgColor,
-        bottomBar = {
-            NavigationBar(
-                containerColor = cardBgColor,
-                contentColor = Color.White,
-                tonalElevation = 0.dp
-            ) {
-                NavigationBarItem(
-                    selected = false,
-                    onClick = { navController.navigate("dashboard") { popUpTo("dashboard") { inclusive = true } } },
-                    icon = { Icon(Icons.Default.Home, contentDescription = null) },
-                    label = { Text("الرئيسية") },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = Color(0xFFFACC15),
-                        selectedTextColor = Color(0xFFFACC15),
-                        unselectedIconColor = Color.Gray,
-                        unselectedTextColor = Color.Gray,
-                        indicatorColor = Color.Transparent
-                    )
-                )
-                NavigationBarItem(
-                    selected = false,
-                    onClick = { navController.navigate("product_management") },
-                    icon = { Icon(Icons.Default.Inventory2, contentDescription = null) },
-                    label = { Text("المنتجات") },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = Color(0xFFFACC15),
-                        selectedTextColor = Color(0xFFFACC15),
-                        unselectedIconColor = Color.Gray,
-                        unselectedTextColor = Color.Gray,
-                        indicatorColor = Color.Transparent
-                    )
-                )
-                NavigationBarItem(
-                    selected = false,
-                    onClick = { navController.navigate("sales") },
-                    icon = { Icon(Icons.Default.ShoppingCart, contentDescription = null) },
-                    label = { Text("المبيعات") },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = Color(0xFFFACC15),
-                        selectedTextColor = Color(0xFFFACC15),
-                        unselectedIconColor = Color.Gray,
-                        unselectedTextColor = Color.Gray,
-                        indicatorColor = Color.Transparent
-                    )
-                )
-                NavigationBarItem(
-                    selected = false,
-                    onClick = { navController.navigate("settings") },
-                    icon = { Icon(Icons.Default.Settings, contentDescription = null) },
-                    label = { Text("الإعدادات") },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = Color(0xFFFACC15),
-                        selectedTextColor = Color(0xFFFACC15),
-                        unselectedIconColor = Color.Gray,
-                        unselectedTextColor = Color.Gray,
-                        indicatorColor = Color.Transparent
-                    )
-                )
-            }
-        }
+        containerColor = bgColor
     ) { paddingValues ->
         LazyColumn(
             modifier = Modifier

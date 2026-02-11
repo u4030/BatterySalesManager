@@ -55,6 +55,37 @@ fun InfoBadge(label: String, value: String, color: Color) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AppDateRangePickerDialog(
+    state: DateRangePickerState,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text("موافق")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("إلغاء")
+            }
+        },
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+            DateRangePicker(
+                state = state,
+                modifier = Modifier.fillMaxSize(),
+                title = { Text("اختر الفترة الزمنية", modifier = Modifier.padding(16.dp)) }
+            )
+        }
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun DateRangeInfo(

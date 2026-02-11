@@ -227,24 +227,6 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun DateRangePickerDialog(
-    state: DateRangePickerState,
-    onDismiss: () -> Unit,
-    onConfirm: () -> Unit
-) {
-    DatePickerDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = { TextButton(onClick = onConfirm) { Text("موافق") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
-    ) {
-        DateRangePicker(
-            state = state,
-            modifier = Modifier.weight(1f).padding(16.dp)
-        )
-    }
-}
 
 @Composable
 fun SearchBarRedesigned(
@@ -621,7 +603,7 @@ fun SupplierReportControls(viewModel: ReportsViewModel) {
     }
 
     if (showDatePicker) {
-        DateRangePickerDialog(
+        com.batterysales.ui.components.AppDateRangePickerDialog(
             state = dateRangePickerState,
             onDismiss = { showDatePicker = false },
             onConfirm = {

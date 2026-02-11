@@ -97,66 +97,6 @@ fun OldBatteryLedgerScreen(
 
     Scaffold(
         containerColor = bgColor,
-        bottomBar = {
-            NavigationBar(
-                containerColor = cardBgColor,
-                contentColor = Color.White,
-                tonalElevation = 0.dp
-            ) {
-                NavigationBarItem(
-                    selected = false,
-                    onClick = { navController.navigate("dashboard") { popUpTo("dashboard") { inclusive = true } } },
-                    icon = { Icon(Icons.Default.Home, contentDescription = null) },
-                    label = { Text("الرئيسية") },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = Color(0xFFFACC15),
-                        selectedTextColor = Color(0xFFFACC15),
-                        unselectedIconColor = Color.Gray,
-                        unselectedTextColor = Color.Gray,
-                        indicatorColor = Color.Transparent
-                    )
-                )
-                NavigationBarItem(
-                    selected = false,
-                    onClick = { navController.navigate("product_management") },
-                    icon = { Icon(Icons.Default.Inventory2, contentDescription = null) },
-                    label = { Text("المنتجات") },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = Color(0xFFFACC15),
-                        selectedTextColor = Color(0xFFFACC15),
-                        unselectedIconColor = Color.Gray,
-                        unselectedTextColor = Color.Gray,
-                        indicatorColor = Color.Transparent
-                    )
-                )
-                NavigationBarItem(
-                    selected = false,
-                    onClick = { navController.navigate("sales") },
-                    icon = { Icon(Icons.Default.ShoppingCart, contentDescription = null) },
-                    label = { Text("المبيعات") },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = Color(0xFFFACC15),
-                        selectedTextColor = Color(0xFFFACC15),
-                        unselectedIconColor = Color.Gray,
-                        unselectedTextColor = Color.Gray,
-                        indicatorColor = Color.Transparent
-                    )
-                )
-                NavigationBarItem(
-                    selected = false,
-                    onClick = { navController.navigate("settings") },
-                    icon = { Icon(Icons.Default.Settings, contentDescription = null) },
-                    label = { Text("الإعدادات") },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = Color(0xFFFACC15),
-                        selectedTextColor = Color(0xFFFACC15),
-                        unselectedIconColor = Color.Gray,
-                        unselectedTextColor = Color.Gray,
-                        indicatorColor = Color.Transparent
-                    )
-                )
-            }
-        },
         floatingActionButton = {
             FloatingActionButton(
                 onClick = { showAddDialog = true },
@@ -379,21 +319,11 @@ fun OldBatteryLedgerScreen(
     }
 
     if (showDateRangePicker) {
-        DatePickerDialog(
-            onDismissRequest = { showDateRangePicker = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    showDateRangePicker = false
-                }) {
-                    Text("موافق")
-                }
-            }
-        ) {
-            DateRangePicker(
-                state = dateRangePickerState,
-                modifier = Modifier.weight(1f).padding(16.dp)
-            )
-        }
+        com.batterysales.ui.components.AppDateRangePickerDialog(
+            state = dateRangePickerState,
+            onDismiss = { showDateRangePicker = false },
+            onConfirm = { showDateRangePicker = false }
+        )
     }
 }
 

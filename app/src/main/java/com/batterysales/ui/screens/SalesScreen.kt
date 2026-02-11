@@ -71,67 +71,7 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
     )
 
     Scaffold(
-        containerColor = bgColor,
-        bottomBar = {
-            NavigationBar(
-                containerColor = cardBgColor,
-                contentColor = Color.White,
-                tonalElevation = 0.dp
-            ) {
-                NavigationBarItem(
-                    selected = false,
-                    onClick = { navController.navigate("dashboard") { popUpTo("dashboard") { inclusive = true } } },
-                    icon = { Icon(Icons.Default.Home, contentDescription = null) },
-                    label = { Text("الرئيسية") },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = Color(0xFFFACC15),
-                        selectedTextColor = Color(0xFFFACC15),
-                        unselectedIconColor = Color.Gray,
-                        unselectedTextColor = Color.Gray,
-                        indicatorColor = Color.Transparent
-                    )
-                )
-                NavigationBarItem(
-                    selected = false,
-                    onClick = { navController.navigate("product_management") },
-                    icon = { Icon(Icons.Default.Inventory2, contentDescription = null) },
-                    label = { Text("المنتجات") },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = Color(0xFFFACC15),
-                        selectedTextColor = Color(0xFFFACC15),
-                        unselectedIconColor = Color.Gray,
-                        unselectedTextColor = Color.Gray,
-                        indicatorColor = Color.Transparent
-                    )
-                )
-                NavigationBarItem(
-                    selected = true,
-                    onClick = { },
-                    icon = { Icon(Icons.Default.ShoppingCart, contentDescription = null) },
-                    label = { Text("المبيعات") },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = Color(0xFFFACC15),
-                        selectedTextColor = Color(0xFFFACC15),
-                        unselectedIconColor = Color.Gray,
-                        unselectedTextColor = Color.Gray,
-                        indicatorColor = Color.Transparent
-                    )
-                )
-                NavigationBarItem(
-                    selected = false,
-                    onClick = { navController.navigate("settings") },
-                    icon = { Icon(Icons.Default.Settings, contentDescription = null) },
-                    label = { Text("الإعدادات") },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = Color(0xFFFACC15),
-                        selectedTextColor = Color(0xFFFACC15),
-                        unselectedIconColor = Color.Gray,
-                        unselectedTextColor = Color.Gray,
-                        indicatorColor = Color.Transparent
-                    )
-                )
-            }
-        }
+        containerColor = bgColor
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
             // Gradient Header

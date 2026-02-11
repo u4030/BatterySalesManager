@@ -230,24 +230,11 @@ fun BillsScreen(
     }
 
     if (showDateRangePicker) {
-        DatePickerDialog(
-            onDismissRequest = { showDateRangePicker = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    // Logic to filter bills by date range if needed,
-                    // or just show the selected range if the ViewModel supports it.
-                    // For now, just dismiss.
-                    showDateRangePicker = false
-                }) {
-                    Text("موافق")
-                }
-            }
-        ) {
-            DateRangePicker(
-                state = dateRangePickerState,
-                modifier = Modifier.weight(1f).padding(16.dp)
-            )
-        }
+        com.batterysales.ui.components.AppDateRangePickerDialog(
+            state = dateRangePickerState,
+            onDismiss = { showDateRangePicker = false },
+            onConfirm = { showDateRangePicker = false }
+        )
     }
 }
 
