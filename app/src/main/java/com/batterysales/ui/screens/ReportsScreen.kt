@@ -2,6 +2,7 @@ package com.batterysales.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -137,24 +138,25 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                                 .fillMaxWidth()
                                 .background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
                                 .padding(4.dp)
+                                .horizontalScroll(rememberScrollState())
                         ) {
                             TabItem(
                                 title = "المخزون",
                                 isSelected = selectedTab == 0,
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier.padding(horizontal = 4.dp),
                                 onClick = { selectedTab = 0 }
                             )
                             TabItem(
                                 title = "السكراب",
                                 isSelected = selectedTab == 1,
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier.padding(horizontal = 4.dp),
                                 onClick = { selectedTab = 1 }
                             )
                             if (!isSeller) {
                                 TabItem(
                                     title = "الموردين",
                                     isSelected = selectedTab == 2,
-                                    modifier = Modifier.weight(1f),
+                                    modifier = Modifier.padding(horizontal = 4.dp),
                                     onClick = { selectedTab = 2 }
                                 )
                             }

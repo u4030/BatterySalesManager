@@ -269,7 +269,7 @@ fun ProductLedgerScreen(
                                 TabItem(
                                     title = category.label,
                                     isSelected = selectedCategory == category,
-                                    modifier = Modifier.weight(1f),
+                                    modifier = Modifier.padding(horizontal = 4.dp),
                                     onClick = { viewModel.selectCategory(category) }
                                 )
                             }

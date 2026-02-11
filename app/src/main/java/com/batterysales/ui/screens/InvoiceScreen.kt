@@ -260,20 +260,12 @@ fun InvoiceScreen(
 
             if (uiState.startDate != null) {
                 item {
-                    val sdf = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            "الفترة: ${sdf.format(Date(uiState.startDate!!))} - ${sdf.format(Date(uiState.endDate ?: uiState.startDate!!))}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                        com.batterysales.ui.components.DateRangeInfo(
+                            startDate = uiState.startDate,
+                            endDate = uiState.endDate,
+                            onClear = { viewModel.onDateRangeSelected(null, null) }
                         )
-                        TextButton(onClick = { viewModel.onDateRangeSelected(null, null) }) {
-                            Text("إلغاء الفلترة", color = accentColor)
-                        }
                     }
                 }
             }

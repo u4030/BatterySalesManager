@@ -230,21 +230,12 @@ fun AccountingScreen(
                     )
 
                     if (dateRangePickerState.selectedStartDateMillis != null) {
-                        val sdf = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                "الفترة: ${sdf.format(Date(dateRangePickerState.selectedStartDateMillis!!))} - ${sdf.format(Date(dateRangePickerState.selectedEndDateMillis ?: dateRangePickerState.selectedStartDateMillis!!))}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                            )
-                            TextButton(onClick = { dateRangePickerState.setSelection(null, null) }) {
-                                Text("إلغاء الفلترة", color = accentColor)
-                            }
-                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        com.batterysales.ui.components.DateRangeInfo(
+                            startDate = dateRangePickerState.selectedStartDateMillis,
+                            endDate = dateRangePickerState.selectedEndDateMillis,
+                            onClear = { dateRangePickerState.setSelection(null, null) }
+                        )
                     }
                 }
             }

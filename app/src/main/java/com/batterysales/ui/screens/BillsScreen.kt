@@ -32,7 +32,7 @@ import com.batterysales.viewmodel.BillViewModel
 import java.text.SimpleDateFormat
 import java.util.*
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun BillsScreen(
     navController: NavHostController,
@@ -45,6 +45,16 @@ fun BillsScreen(
     var showAddBillDialog by remember { mutableStateOf(false) }
     var showDateRangePicker by remember { mutableStateOf(false) }
     val dateRangePickerState = rememberDateRangePickerState()
+
+    val filteredBills = remember(bills, dateRangePickerState.selectedStartDateMillis, dateRangePickerState.selectedEndDateMillis) {
+        bills.filter { bill ->
+            val matchesDateRange = if (dateRangePickerState.selectedStartDateMillis != null && dateRangePickerState.selectedEndDateMillis != null) {
+                bill.dueDate.time >= dateRangePickerState.selectedStartDateMillis!! &&
+                        bill.dueDate.time <= dateRangePickerState.selectedEndDateMillis!! + 86400000 // End of day
+            } else true
+            matchesDateRange
+        }.sortedByDescending { it.dueDate }
+    }
 
     val bgColor = MaterialTheme.colorScheme.background
     val cardBgColor = MaterialTheme.colorScheme.surface
@@ -111,10 +121,10 @@ fun BillsScreen(
                             )
 
                             IconButton(
-                                onClick = { viewModel.loadBills() },
+                                onClick = { showDateRangePicker = true },
                                 modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
                             ) {
-                                Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color.White)
+                                Icon(Icons.Default.CalendarMonth, contentDescription = "Date Range", tint = Color.White)
                             }
                         }
                     }
@@ -135,8 +145,20 @@ fun BillsScreen(
                     }
                 }
             }
-            if (!isLoading && bills.isNotEmpty()) {
-                items(bills) { bill ->
+            if (dateRangePickerState.selectedStartDateMillis != null) {
+                item {
+                    Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                        com.batterysales.ui.components.DateRangeInfo(
+                            startDate = dateRangePickerState.selectedStartDateMillis,
+                            endDate = dateRangePickerState.selectedEndDateMillis,
+                            onClear = { dateRangePickerState.setSelection(null, null) }
+                        )
+                    }
+                }
+            }
+
+            if (!isLoading && filteredBills.isNotEmpty()) {
+                items(filteredBills) { bill ->
                     val supplier = suppliers.find { it.id == bill.supplierId }
                     Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                         BillItemCard(
@@ -229,6 +251,7 @@ fun BillsScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun BillItemCard(bill: Bill, supplierName: String, onPayClick: () -> Unit, onDeleteClick: () -> Unit, onEditClick: () -> Unit) {
     val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
@@ -327,7 +350,11 @@ fun BillItemCard(bill: Bill, supplierName: String, onPayClick: () -> Unit, onDel
                     }
                 }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                androidx.compose.foundation.layout.FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(top = 8.dp)
+                ) {
                     if (!isPaid) {
                         IconButton(
                             onClick = onPayClick,
