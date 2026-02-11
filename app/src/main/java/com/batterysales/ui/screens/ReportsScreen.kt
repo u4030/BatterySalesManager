@@ -2,6 +2,7 @@ package com.batterysales.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -11,7 +12,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.text.font.FontWeight
@@ -21,44 +24,17 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.batterysales.data.models.Warehouse
 import com.batterysales.ui.components.BarcodeScanner
+import com.batterysales.ui.components.InfoBadge
 import com.batterysales.viewmodel.InventoryReportItem
 import com.batterysales.viewmodel.ReportsViewModel
 import java.util.Locale
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
-
-@Composable
-fun SearchBar(
-    barcodeFilter: String?,
-    onClear: () -> Unit,
-    onScan: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        OutlinedTextField(
-            value = barcodeFilter ?: "",
-            onValueChange = { },
-            readOnly = true,
-            label = { Text("فلترة بالباركود") },
-            modifier = Modifier.weight(1f)
-        )
-        IconButton(onClick = onScan) {
-            Icon(Icons.Default.PhotoCamera, contentDescription = "مسح الباركود")
-        }
-        if (!barcodeFilter.isNullOrBlank()) {
-            IconButton(onClick = onClear) {
-                Icon(Icons.Default.Clear, contentDescription = "مسح الفلتر")
-            }
-        }
-    }
-}
+import com.batterysales.ui.components.TabItem
 
 @Composable
 fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hiltViewModel()) {
@@ -72,6 +48,12 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
     val barcodeFilter by viewModel.barcodeFilter.collectAsState()
     var showScanner by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableIntStateOf(0) }
+
+    val bgColor = MaterialTheme.colorScheme.background
+    val accentColor = Color(0xFFFB8C00)
+    val headerGradient = androidx.compose.ui.graphics.Brush.verticalGradient(
+        colors = listOf(Color(0xFF1E293B), Color(0xFF0F172A))
+    )
 
     val grandTotalQuantity = remember(reportItems) {
         reportItems.sumOf { it.totalQuantity }
@@ -98,126 +80,243 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
     }
 
     Scaffold(
-        topBar = {
-            Column {
-                TopAppBar(title = { Text("التقارير والإحصائيات") })
-                TabRow(selectedTabIndex = selectedTab) {
-                    Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }) {
-                        Text("مخزون المنتجات", modifier = Modifier.padding(8.dp))
-                    }
-                    Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) {
-                        Text("البطاريات القديمة", modifier = Modifier.padding(8.dp))
-                    }
-                    if (!isSeller) {
-                        Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }) {
-                            Text("حالة الموردين", modifier = Modifier.padding(8.dp))
+        containerColor = bgColor
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .imePadding(),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(bottom = 32.dp)
+        ) {
+            // Gradient Header
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            brush = headerGradient,
+                            shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
+                        )
+                        .padding(bottom = 24.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Spacer(modifier = Modifier.height(32.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            IconButton(
+                                onClick = { navController.popBackStack() },
+                                modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                            }
+
+                            Text(
+                                text = "التقارير والإحصائيات",
+                                style = MaterialTheme.typography.headlineSmall,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
+                            )
+
+                            IconButton(
+                                onClick = { /* Reload logic */ },
+                                modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
+                            ) {
+                                Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color.White)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(24.dp))
+
+                        // Styled Tabs
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
+                                .padding(4.dp)
+                                .horizontalScroll(rememberScrollState())
+                        ) {
+                            TabItem(
+                                title = "المخزون",
+                                isSelected = selectedTab == 0,
+                                modifier = Modifier.padding(horizontal = 4.dp),
+                                onClick = { selectedTab = 0 }
+                            )
+                            TabItem(
+                                title = "السكراب",
+                                isSelected = selectedTab == 1,
+                                modifier = Modifier.padding(horizontal = 4.dp),
+                                onClick = { selectedTab = 1 }
+                            )
+                            if (!isSeller) {
+                                TabItem(
+                                    title = "الموردين",
+                                    isSelected = selectedTab == 2,
+                                    modifier = Modifier.padding(horizontal = 4.dp),
+                                    onClick = { selectedTab = 2 }
+                                )
+                            }
                         }
                     }
                 }
             }
-        }
-    ) { padding ->
-        if (isLoading) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
-        } else {
-            Column(modifier = Modifier.padding(padding)) {
-                if (selectedTab == 0) {
-                    SearchBar(
-                        barcodeFilter = barcodeFilter,
-                        onClear = { viewModel.onBarcodeScanned(null) },
-                        onScan = { showScanner = true }
-                    )
 
-                    // Grand Total Card
-                    if (reportItems.isNotEmpty()) {
-                        GrandTotalCard(totalQuantity = grandTotalQuantity, isSeller = isSeller)
+            if (isLoading) {
+                item {
+                    Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = accentColor)
                     }
+                }
+            } else {
+                when (selectedTab) {
+                    0 -> {
+                        item {
+                            SearchBarRedesigned(
+                                barcodeFilter = barcodeFilter,
+                                onClear = { viewModel.onBarcodeScanned(null) },
+                                onScan = { showScanner = true }
+                            )
+                        }
 
-                    LazyColumn(
-                        contentPadding = PaddingValues(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
+                        if (reportItems.isNotEmpty()) {
+                            item {
+                                GrandTotalCard(totalQuantity = grandTotalQuantity, isSeller = isSeller)
+                            }
+                        }
+
                         items(reportItems) { item ->
-                            ReportItemCard(
-                                item = item,
+                            Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                                ReportItemCard(
+                                    item = item,
+                                    warehouses = warehouses,
+                                    isSeller = isSeller,
+                                    onClick = {
+                                        val capacityStr = item.variant.capacity.toString()
+                                        val productName = item.product.name
+                                        val spec = item.variant.specification.ifEmpty { "no_spec" }
+                                        navController.navigate(
+                                            "product_ledger/${item.variant.id}/$productName/$capacityStr/$spec"
+                                        )
+                                    }
+                                )
+                            }
+                        }
+                    }
+                    1 -> {
+                        item {
+                            OldBatteryReportSectionRedesigned(
                                 warehouses = warehouses,
-                                isSeller = isSeller,
-                                onClick = {
-                                    val capacityStr = item.variant.capacity.toString()
-                                    val productName = item.product.name
-                                    val spec = item.variant.specification.ifEmpty { "no_spec" }
-                                    navController.navigate(
-                                        "product_ledger/${item.variant.id}/$productName/$capacityStr/$spec"
-                                    )
-                                }
+                                oldBatterySummary = oldBatterySummary,
+                                oldBatteryWarehouseSummary = oldBatteryWarehouseSummary,
+                                onNavigate = { navController.navigate("old_battery_ledger") }
                             )
                         }
                     }
-                } else if (selectedTab == 1) {
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        // Actually the user wants a tab for each warehouse in old batteries
-                        var selectedWHIndex by remember { mutableIntStateOf(0) }
-                        val whList = warehouses
-
-                        if (whList.isNotEmpty()) {
-                            ScrollableTabRow(selectedTabIndex = selectedWHIndex, edgePadding = 16.dp) {
-                                Tab(selected = selectedWHIndex == 0, onClick = { selectedWHIndex = 0 }) {
-                                    Text("الكل", modifier = Modifier.padding(16.dp))
-                                }
-                                whList.forEachIndexed { index, warehouse ->
-                                    Tab(selected = selectedWHIndex == index + 1, onClick = { selectedWHIndex = index + 1 }) {
-                                        Text(warehouse.name, modifier = Modifier.padding(16.dp))
-                                    }
-                                }
-                            }
-
-                            val currentSummary = if (selectedWHIndex == 0) oldBatterySummary
-                            else oldBatteryWarehouseSummary[whList[selectedWHIndex - 1].id] ?: Pair(0, 0.0)
-
-                            OldBatteryReportSection(currentSummary) {
-                                navController.navigate("old_battery_ledger")
-                            }
-                        } else {
-                            OldBatteryReportSection(oldBatterySummary) {
-                                navController.navigate("old_battery_ledger")
-                            }
+                    2 -> {
+                        if (!isSeller) {
+                            supplierReportSectionRedesigned(this, viewModel, supplierItems)
                         }
                     }
-                } else if (!isSeller) {
-                    SupplierReportSection(viewModel, supplierItems)
                 }
             }
         }
     }
 }
+
+
+@Composable
+fun SearchBarRedesigned(
+    barcodeFilter: String?,
+    onClear: () -> Unit,
+    onScan: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Surface(
+            modifier = Modifier.weight(1f),
+            color = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(16.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = barcodeFilter ?: "تصفية حسب الباركود...",
+                    color = if (barcodeFilter == null) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f)
+                )
+                if (!barcodeFilter.isNullOrBlank()) {
+                    IconButton(onClick = onClear, modifier = Modifier.size(24.dp)) {
+                        Icon(Icons.Default.Clear, contentDescription = "مسح الفلتر", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
+        
+        IconButton(
+            onClick = onScan,
+            modifier = Modifier
+                .size(48.dp)
+                .background(Color(0xFFFB8C00), RoundedCornerShape(16.dp))
+        ) {
+            Icon(Icons.Default.PhotoCamera, contentDescription = "مسح الباركود", tint = Color.White)
+        }
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun GrandTotalCard(totalQuantity: Int, isSeller: Boolean) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+            .padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f))
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
+        FlowRow(
+            modifier = Modifier.padding(20.dp).fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalArrangement = Arrangement.Center
         ) {
-            Text(
-                text = "المجموع الكلي للكمية",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primary,
+                    shape = CircleShape,
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Default.Inventory, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                    }
+                }
+                Spacer(modifier = Modifier.width(16.dp))
+                Text(
+                    text = "إجمالي كمية المخزون",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
             Text(
                 text = totalQuantity.toString(),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(vertical = 4.dp)
             )
         }
     }
@@ -231,64 +330,66 @@ fun ReportItemCard(
     isSeller: Boolean,
     onClick: () -> Unit
 ) {
+    val anyWarehouseLowStock = item.warehouseQuantities.any { (whId, qty) ->
+        val threshold = item.variant.minQuantities[whId] ?: item.variant.minQuantity
+        threshold > 0 && qty <= threshold
+    }
+    val isLowStock = anyWarehouseLowStock || (item.variant.minQuantity > 0 && item.totalQuantity <= item.variant.minQuantity)
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            // Card Header: Product Name
-            Text(
-                text = "${item.product.name} - ${item.variant.capacity} أمبير" +
-                        if (item.variant.specification.isNotEmpty()) " (${item.variant.specification})" else "",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            HorizontalDivider()
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Main Info: Totals
-            val anyWarehouseLowStock = item.warehouseQuantities.any { (whId, qty) ->
-                val threshold = item.variant.minQuantities[whId] ?: item.variant.minQuantity
-                threshold > 0 && qty <= threshold
+        Column(modifier = Modifier.padding(20.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = item.product.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "${item.variant.capacity} أمبير" + if (item.variant.specification.isNotEmpty()) " | ${item.variant.specification}" else "",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                
+                if (isLowStock) {
+                    Surface(
+                        color = Color(0xFFEF4444).copy(alpha = 0.1f),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(
+                            text = "مخزون منخفض",
+                            color = Color(0xFFEF4444),
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
             }
-            val isLowStock = anyWarehouseLowStock || (item.variant.minQuantity > 0 && item.totalQuantity <= item.variant.minQuantity)
 
+            Spacer(modifier = Modifier.height(20.dp))
+            
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                InfoColumn(
-                    label = "إجمالي الكمية",
-                    value = item.totalQuantity.toString(),
-                    valueColor = if (isLowStock) Color(0xFFD32F2F) else Color.Unspecified,
-                    modifier = Modifier.widthIn(min = 120.dp)
-                )
-                if (item.variant.minQuantity > 0) {
-                    InfoColumn(
-                        label = "الحد الأدنى",
-                        value = item.variant.minQuantity.toString(),
-                        modifier = Modifier.widthIn(min = 120.dp)
-                    )
-                }
+                InfoBadge(label = "إجمالي الكمية", value = item.totalQuantity.toString(), color = if (isLowStock) Color(0xFFEF4444) else Color(0xFF10B981))
                 if (!isSeller) {
-                    InfoColumn(
-                        label = "متوسط التكلفة",
-                        value = "JD " + String.format(Locale.US, "%.3f", item.averageCost),
-                        modifier = Modifier.widthIn(min = 120.dp)
-                    )
-                    InfoColumn(
-                        label = "قيمة المخزون",
-                        value = "JD " + String.format(Locale.US, "%.3f", item.totalCostValue),
-                        modifier = Modifier.widthIn(min = 120.dp)
-                    )
+                    InfoBadge(label = "متوسط التكلفة", value = "JD ${String.format("%.3f", item.averageCost)}", color = Color(0xFFFB8C00))
+                    InfoBadge(label = "قيمة المخزون", value = "JD ${String.format("%.3f", item.totalCostValue)}", color = Color(0xFF3B82F6))
                 }
             }
 
-            // Warehouse Breakdown
             val quantitiesInWarehouses = warehouses.mapNotNull { warehouse ->
                 val quantity = item.warehouseQuantities[warehouse.id]
                 if (quantity != null && quantity != 0) {
@@ -299,30 +400,25 @@ fun ReportItemCard(
             }
 
             if (quantitiesInWarehouses.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(20.dp))
+                HorizontalDivider(modifier = Modifier.alpha(0.05f))
                 Spacer(modifier = Modifier.height(16.dp))
-                HorizontalDivider()
+                Text("توزيع المستودعات:", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(modifier = Modifier.height(8.dp))
-                Text("الكمية بالمستودعات:", style = MaterialTheme.typography.titleMedium)
-                Spacer(modifier = Modifier.height(8.dp))
-                Column(
-                    modifier = Modifier.padding(start = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    quantitiesInWarehouses.forEach { (warehouseName, quantity, isWHLow) ->
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "$warehouseName: ",
-                                fontWeight = FontWeight.SemiBold,
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                            Text(
-                                text = quantity.toString(),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = if (isWHLow) Color(0xFFD32F2F) else Color.Unspecified
-                            )
-                            if (isWHLow) {
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("(منخفض)", style = MaterialTheme.typography.labelSmall, color = Color(0xFFD32F2F))
+                    quantitiesInWarehouses.forEach { (name, qty, isLow) ->
+                        Surface(
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.03f),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Row(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(text = "$name: ", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(text = qty.toString(), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = if (isLow) Color(0xFFEF4444) else MaterialTheme.colorScheme.onSurface)
                             }
                         }
                     }
@@ -332,137 +428,182 @@ fun ReportItemCard(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun OldBatteryReportSection(summary: Pair<Int, Double>, onViewDetails: () -> Unit) {
-    Column(modifier = Modifier.padding(16.dp).fillMaxWidth()) {
+fun OldBatteryReportSectionRedesigned(
+    warehouses: List<Warehouse>,
+    oldBatterySummary: Pair<Int, Double>,
+    oldBatteryWarehouseSummary: Map<String, Pair<Int, Double>>,
+    onNavigate: () -> Unit
+) {
+    var selectedWHIndex by remember { mutableIntStateOf(0) }
+    val currentSummary = if (selectedWHIndex == 0) oldBatterySummary
+                        else oldBatteryWarehouseSummary[warehouses[selectedWHIndex - 1].id] ?: Pair(0, 0.0)
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        if (warehouses.isNotEmpty()) {
+            androidx.compose.foundation.lazy.LazyRow(
+                modifier = Modifier.fillMaxWidth(),
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                item {
+                    FilterChip(
+                        selected = selectedWHIndex == 0,
+                        onClick = { selectedWHIndex = 0 },
+                        label = { Text("الكل") }
+                    )
+                }
+                items(warehouses.size) { index ->
+                    FilterChip(
+                        selected = selectedWHIndex == index + 1,
+                        onClick = { selectedWHIndex = index + 1 },
+                        label = { Text(warehouses[index].name) }
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
         Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFFD7CCC8))
+            modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF5D4037).copy(alpha = 0.1f))
         ) {
             Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("إجمالي مخزون السكراب", fontWeight = FontWeight.Bold, color = Color(0xFF5D4037))
-                Spacer(modifier = Modifier.height(16.dp))
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceAround,
-                    verticalArrangement = Arrangement.Center
+                Surface(
+                    color = Color(0xFF5D4037).copy(alpha = 0.2f),
+                    shape = CircleShape,
+                    modifier = Modifier.size(56.dp)
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(8.dp)) {
-                        Text("الكمية", fontSize = 14.sp)
-                        Text("${summary.first}", fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                    }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(8.dp)) {
-                        Text("الأمبيرات", fontSize = 14.sp)
-                        Text("${String.format("%.1f", summary.second)}", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Default.BatteryChargingFull, contentDescription = null, tint = Color(0xFFD7CCC8), modifier = Modifier.size(24.dp))
                     }
                 }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("إجمالي مخزون السكراب", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                
                 Spacer(modifier = Modifier.height(24.dp))
+                
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("الكمية", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("${currentSummary.first}", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("الأمبيرات", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("${String.format("%.1f", currentSummary.second)} A", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Color(0xFFFB8C00))
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(32.dp))
+                
                 Button(
-                    onClick = onViewDetails,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5D4037))
+                    onClick = onNavigate,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5D4037)),
+                    shape = RoundedCornerShape(16.dp)
                 ) {
-                    Text("إدارة وسجل البطاريات القديمة")
+                    Text("إدارة وسجل البطاريات القديمة", fontWeight = FontWeight.Bold)
                 }
             }
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class)
+private fun supplierReportSectionRedesigned(
+    scope: androidx.compose.foundation.lazy.LazyListScope,
+    viewModel: ReportsViewModel,
+    items: List<com.batterysales.viewmodel.SupplierReportItem>
+) {
+    scope.item {
+        SupplierReportControls(viewModel)
+    }
+
+    val totalSuppliersDebit = items.sumOf { it.balance }
+    scope.item {
+        Card(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f))
+        ) {
+            FlowRow(
+                modifier = Modifier.padding(20.dp).fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    "إجمالي مستحقات الموردين", 
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
+                Text(
+                    "JD ${String.format("%.3f", totalSuppliersDebit)}", 
+                    fontWeight = FontWeight.Bold, 
+                    color = Color(0xFFEF4444), 
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
+            }
+        }
+    }
+
+    scope.items(items) { item ->
+        Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+            SupplierCardRedesigned(item)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SupplierReportSection(viewModel: ReportsViewModel, items: List<com.batterysales.viewmodel.SupplierReportItem>) {
+fun SupplierReportControls(viewModel: ReportsViewModel) {
     val startDate by viewModel.startDate.collectAsState()
     val endDate by viewModel.endDate.collectAsState()
     val searchQuery by viewModel.supplierSearchQuery.collectAsState()
     var showDatePicker by remember { mutableStateOf(false) }
-
     val dateRangePickerState = rememberDateRangePickerState()
     val dateFormatter = java.text.SimpleDateFormat("yyyy/MM/dd", java.util.Locale.getDefault())
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        item {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { viewModel.onSupplierSearchQueryChanged(it) },
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                placeholder = { Text("بحث باسم المورد أو رقم الشيك/السند...") },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { viewModel.onSupplierSearchQueryChanged("") }) {
-                            Icon(Icons.Default.Clear, contentDescription = "مسح")
-                        }
-                    }
-                },
-                shape = RoundedCornerShape(12.dp),
-                singleLine = true
+    Column(modifier = Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { viewModel.onSupplierSearchQueryChanged(it) },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("بحث باسم المورد أو رقم المرجع...") },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+            shape = RoundedCornerShape(16.dp),
+            colors = TextFieldDefaults.outlinedTextFieldColors(
+                containerColor = MaterialTheme.colorScheme.surface,
+                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
             )
-        }
+        )
 
-        item {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                onClick = { showDatePicker = true },
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column {
-                        Text("الفترة الزمنية", style = MaterialTheme.typography.labelMedium)
-                        val startStr = startDate?.let { dateFormatter.format(java.util.Date(it)) } ?: "البداية"
-                        val endStr = endDate?.let { dateFormatter.format(java.util.Date(it)) } ?: "النهاية"
-                        Text("$startStr - $endStr", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
-                    }
-                    Icon(Icons.Default.DateRange, contentDescription = null)
+        Card(
+            onClick = { showDatePicker = true },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+        ) {
+            Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.DateRange, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(modifier = Modifier.width(16.dp))
+                Column {
+                    Text("الفترة الزمنية", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    val startStr = startDate?.let { dateFormatter.format(java.util.Date(it)) } ?: "البداية"
+                    val endStr = endDate?.let { dateFormatter.format(java.util.Date(it)) } ?: "النهاية"
+                    Text("$startStr - $endStr", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
                 }
-            }
-        }
-
-        item {
-            val totalSuppliersDebit = items.sumOf { it.balance }
-            Card(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
-            ) {
-                FlowRow(
-                    modifier = Modifier.padding(16.dp).fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Text(
-                        "إجمالي المبالغ المستحقة للموردين",
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(vertical = 4.dp)
-                    )
-                    Text(
-                        "JD ${String.format("%.3f", totalSuppliersDebit)}",
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(vertical = 4.dp)
-                    )
-                }
-            }
-        }
-
-        items(items) { item ->
-            Box(modifier = Modifier.padding(horizontal = 16.dp)) {
-                SupplierCard(item)
             }
         }
     }
 
     if (showDatePicker) {
-        DateRangePickerDialog(
+        com.batterysales.ui.components.AppDateRangePickerDialog(
             state = dateRangePickerState,
             onDismiss = { showDatePicker = false },
             onConfirm = {
@@ -475,109 +616,82 @@ fun SupplierReportSection(viewModel: ReportsViewModel, items: List<com.batterysa
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun SupplierCard(item: com.batterysales.viewmodel.SupplierReportItem) {
+fun SupplierCardRedesigned(item: com.batterysales.viewmodel.SupplierReportItem) {
     var expanded by remember { mutableStateOf(false) }
 
     Card(
         modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(20.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text(item.supplier.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, contentDescription = null)
+                Text(item.supplier.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                IconButton(onClick = { expanded = !expanded }, modifier = Modifier.size(24.dp)) {
+                    Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, contentDescription = null)
+                }
             }
-            Spacer(modifier = Modifier.height(8.dp))
-            HorizontalDivider()
-            Spacer(modifier = Modifier.height(16.dp))
-
+            
+            Spacer(modifier = Modifier.height(20.dp))
+            
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                maxItemsInEachRow = 3
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                InfoColumn(label = "مدين (مشتريات)", value = "JD ${String.format("%.3f", item.totalDebit)}", modifier = Modifier.widthIn(min = 100.dp))
-                InfoColumn(label = "دائن (دفعات)", value = "JD ${String.format("%.3f", item.totalCredit)}", modifier = Modifier.widthIn(min = 100.dp))
-                InfoColumn(label = "مجموع مدين", value = "JD ${String.format("%.3f", item.balance)}", valueColor = if (item.balance > 0) Color.Red else Color.Unspecified, modifier = Modifier.widthIn(min = 100.dp))
+                InfoBadge(label = "مشتريات", value = "JD ${String.format("%.3f", item.totalDebit)}", color = Color(0xFFFB8C00))
+                InfoBadge(label = "دفعات", value = "JD ${String.format("%.3f", item.totalCredit)}", color = Color(0xFF10B981))
+                InfoBadge(label = "الرصيد", value = "JD ${String.format("%.3f", item.balance)}", color = if (item.balance > 0) Color(0xFFEF4444) else Color(0xFF10B981))
             }
 
             if (expanded && item.purchaseOrders.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(20.dp))
+                HorizontalDivider(modifier = Modifier.alpha(0.05f))
                 Spacer(modifier = Modifier.height(16.dp))
-                Text("تفاصيل طلبيات الشراء:", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(8.dp))
+                Text("تفاصيل طلبيات الشراء:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(12.dp))
+                
                 val dateFormatter = java.text.SimpleDateFormat("yyyy/MM/dd", java.util.Locale.getDefault())
                 item.purchaseOrders.forEach { po ->
-                    Column(modifier = Modifier.padding(start = 8.dp, bottom = 8.dp)) {
-                        FlowRow(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalArrangement = Arrangement.Center) {
-                            Text("${dateFormatter.format(po.entry.timestamp)}: JD ${String.format("%.3f", po.entry.totalCost)}", style = MaterialTheme.typography.bodyMedium)
-                            Text("مدين: JD ${String.format("%.3f", po.remainingBalance)}", style = MaterialTheme.typography.bodyMedium, color = if (po.remainingBalance > 0) Color.Red else Color.Gray)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp)
+                            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.02f), RoundedCornerShape(12.dp))
+                            .padding(12.dp)
+                    ) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(dateFormatter.format(po.entry.timestamp), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                            Text("JD ${String.format("%.3f", po.entry.totalCost)}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
                         }
-                        if (po.linkedPaidAmount > 0) {
-                            Text("دائن: JD ${String.format("%.3f", po.linkedPaidAmount)}", fontSize = 12.sp, color = Color(0xFF4CAF50))
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("المتبقي:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("JD ${String.format("%.3f", po.remainingBalance)}", style = MaterialTheme.typography.labelSmall, color = if (po.remainingBalance > 0) Color(0xFFEF4444) else Color.Gray)
                         }
                         if (po.referenceNumbers.isNotEmpty()) {
-                            Text("أرقام المرجع: ${po.referenceNumbers.joinToString(", ")}", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                            Text("مراجع: ${po.referenceNumbers.joinToString(", ")}", fontSize = 10.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
                         }
-                        if (po.entry.returnedQuantity > 0) {
-                            val returnDateStr = po.entry.returnDate?.let { dateFormatter.format(it) } ?: "غير معروف"
-                            Text("المرتجعات: ${po.entry.returnedQuantity} حبة بتاريخ $returnDateStr", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Red, modifier = Modifier.padding(top = 4.dp))
-                        }
-                        HorizontalDivider(modifier = Modifier.padding(top = 4.dp), thickness = 0.5.dp, color = Color.LightGray)
                     }
                 }
             }
 
             if (item.supplier.yearlyTarget > 0) {
-                Spacer(modifier = Modifier.height(16.dp))
-                Text("الهدف السنوي: JD ${String.format("%.3f", item.supplier.yearlyTarget)}", style = MaterialTheme.typography.labelMedium)
+                Spacer(modifier = Modifier.height(20.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
+                    Text("الهدف السنوي: JD ${String.format("%.3f", item.supplier.yearlyTarget)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("${(item.targetProgress * 100).toInt()}%", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                }
+                Spacer(modifier = Modifier.height(8.dp))
                 LinearProgressIndicator(
                     progress = item.targetProgress.toFloat().coerceIn(0f, 1f),
-                    modifier = Modifier.fillMaxWidth().height(8.dp),
-                    color = if (item.targetProgress >= 1.0) Color(0xFF4CAF50) else MaterialTheme.colorScheme.primary
+                    modifier = Modifier.fillMaxWidth().height(6.dp),
+                    color = if (item.targetProgress >= 1.0) Color(0xFF10B981) else MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f),
+                    strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
                 )
-                Text("${(item.targetProgress * 100).toInt()}% محقق", style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.End))
             }
         }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun DateRangePickerDialog(
-    state: DateRangePickerState,
-    onDismiss: () -> Unit,
-    onConfirm: () -> Unit
-) {
-    DatePickerDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = { TextButton(onClick = onConfirm) { Text("موافق") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
-    ) {
-        DateRangePicker(
-            state = state,
-            modifier = Modifier.weight(1f).padding(16.dp)
-        )
-    }
-}
-
-@Composable
-fun InfoColumn(label: String, value: String, valueColor: Color = Color.Unspecified, modifier: Modifier = Modifier) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = modifier
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodyLarge,
-            fontWeight = FontWeight.Bold,
-            color = valueColor
-        )
     }
 }

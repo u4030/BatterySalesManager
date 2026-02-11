@@ -33,6 +33,10 @@ class BillViewModel @Inject constructor(
     val isLoading = _isLoading.asStateFlow()
 
     init {
+        loadData()
+    }
+
+    fun loadData() {
         loadBills()
         loadSuppliers()
         loadPendingPurchases()

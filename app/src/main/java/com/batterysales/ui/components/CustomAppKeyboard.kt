@@ -3,11 +3,15 @@ package com.batterysales.ui.components
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Backspace
@@ -28,11 +32,17 @@ import androidx.compose.ui.window.Popup
 import android.view.Gravity
 import android.graphics.drawable.ColorDrawable
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 
 enum class KeyboardLanguage {
     ARABIC, ENGLISH_UPPER, ENGLISH_LOWER, NUMERIC
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun CustomAppKeyboard(
     onValueChange: (String) -> Unit,
@@ -56,10 +66,12 @@ fun CustomAppKeyboard(
             it.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
         }
 
+        // <<<=== 1. تم تعديل الصفوف لتقليل عدد الأزرار في كل صف
         val arabicRows = listOf(
-            listOf("ض", "ص", "ث", "ق", "ف", "غ", "ع", "ه", "خ", "ح", "ج", "د"),
-            listOf("ش", "س", "ي", "ب", "ل", "ا", "ت", "ن", "م", "ك", "ط"),
-            listOf("ئ", "ء", "ؤ", "ر", "لا", "ى", "ة", "و", "ز", "ظ")
+            listOf("ض", "ص", "ث", "ق", "ف", "غ", "ع", "ه", "خ", "ح"),
+            listOf("ج", "د", "ش", "س", "ي", "ب", "ل", "ا", "ت"),
+            listOf("ن", "م", "ك", "ط", "ئ", "ء", "ؤ", "ر"),
+            listOf("لا", "ى", "ة", "و", "ز", "ظ")
         )
 
         val englishUpperRows = listOf(
@@ -99,7 +111,9 @@ fun CustomAppKeyboard(
             Column(modifier = Modifier.padding(4.dp)) {
                 // Top Bar
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -152,14 +166,34 @@ fun CustomAppKeyboard(
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Language toggle or special key can go here
-                        Surface(
-                            onClick = {
-                                if (currentValue.isNotEmpty()) {
+                        val interactionSource = remember { MutableInteractionSource() }
+                        val isPressed by interactionSource.collectIsPressedAsState()
+
+                        // Continuous delete on long press
+                        LaunchedEffect(isPressed) {
+                            if (isPressed) {
+                                while (currentValue.isNotEmpty()) {
                                     onValueChange(currentValue.dropLast(1))
+                                    delay(100) // Adjust delay for deletion speed
                                 }
-                            },
-                            modifier = Modifier.height(50.dp).weight(1.5f),
+                            }
+                        }
+
+                        // Backspace Button
+                        Surface(
+                            modifier = Modifier
+                                .height(55.dp)
+                                .weight(1.5f)
+                                .combinedClickable(
+                                    interactionSource = interactionSource,
+                                    indication = null, // Disable ripple for custom feedback
+                                    onClick = {
+                                        if (currentValue.isNotEmpty()) {
+                                            onValueChange(currentValue.dropLast(1))
+                                        }
+                                    },
+                                    onLongClick = {} // Handled by LaunchedEffect
+                                ),
                             shape = RoundedCornerShape(8.dp),
                             color = MaterialTheme.colorScheme.errorContainer
                         ) {
@@ -171,7 +205,9 @@ fun CustomAppKeyboard(
                         // SPACE BAR (Centered and Longer)
                         Surface(
                             onClick = { onValueChange(currentValue + " ") },
-                            modifier = Modifier.height(50.dp).weight(4f),
+                            modifier = Modifier
+                                .height(55.dp)
+                                .weight(4f),
                             shape = RoundedCornerShape(8.dp),
                             color = MaterialTheme.colorScheme.surface
                         ) {
@@ -182,7 +218,9 @@ fun CustomAppKeyboard(
 
                         Surface(
                             onClick = onDone,
-                            modifier = Modifier.height(50.dp).weight(1.5f),
+                            modifier = Modifier
+                                .height(55.dp)
+                                .weight(1.5f),
                             shape = RoundedCornerShape(8.dp),
                             color = MaterialTheme.colorScheme.primary
                         ) {
@@ -207,7 +245,7 @@ fun KeyboardKey(
 ) {
     var showAlternatives by remember { mutableStateOf(false) }
     val alternatives = when (text) {
-        "ا" -> listOf("أ", "إ", "آ", "آ")
+        "ا" -> listOf("أ", "إ", "آ")
         "و" -> listOf("ؤ")
         "ي" -> listOf("ئ", "ى")
         "ه" -> listOf("ة")
@@ -248,7 +286,7 @@ fun KeyboardKey(
     Box(modifier = modifier) {
         Surface(
             modifier = Modifier
-                .height(50.dp)
+                .height(55.dp)
                 .fillMaxWidth()
                 .then(
                     if (alternatives.isEmpty()) {
@@ -267,7 +305,7 @@ fun KeyboardKey(
             Box(contentAlignment = Alignment.Center) {
                 Text(
                     text = text,
-                    fontSize = 22.sp,
+                    fontSize = 28.sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
@@ -280,7 +318,7 @@ fun KeyboardKey(
                 alignment = Alignment.TopCenter
             ) {
                 Card(
-                    modifier = Modifier.width(50.dp).wrapContentHeight(),
+                    modifier = Modifier.wrapContentHeight(),
                     elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     shape = RoundedCornerShape(8.dp)
@@ -292,12 +330,12 @@ fun KeyboardKey(
                                     onAltClick(alt)
                                     showAlternatives = false
                                 },
-                                modifier = Modifier.fillMaxWidth().height(50.dp),
+                                modifier = Modifier.size(55.dp),
                                 shape = RoundedCornerShape(4.dp),
                                 color = MaterialTheme.colorScheme.surfaceVariant
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
-                                    Text(alt, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                                    Text(alt, fontSize = 26.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }

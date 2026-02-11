@@ -1,21 +1,18 @@
 package com.batterysales.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.PhotoCamera
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -24,7 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.navigation.NavController
+import com.batterysales.ui.components.InfoBadge
 import com.batterysales.viewmodel.LedgerCategory
 import com.batterysales.viewmodel.LedgerItem
 import com.batterysales.viewmodel.ProductLedgerViewModel
@@ -32,10 +29,15 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.Brush
+import androidx.navigation.NavHostController
+import com.batterysales.ui.components.TabItem
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProductLedgerScreen(
-    navController: NavController,
+    navController: NavHostController,
     viewModel: ProductLedgerViewModel = hiltViewModel()
 ) {
     val ledgerItems by viewModel.ledgerItems.collectAsState()
@@ -94,113 +96,155 @@ fun ProductLedgerScreen(
                 }) { Text("حذف") }
             },
             dismissButton = {
-                Button(onClick = { showDeleteConfirmation = null }) { Text("إلغاء") }
+                TextButton(onClick = { showDeleteConfirmation = null }) { Text("إلغاء") }
             }
         )
     }
 
+    val bgColor = MaterialTheme.colorScheme.background
+    val cardBgColor = MaterialTheme.colorScheme.surface
+    val accentColor = Color(0xFFFB8C00)
+    val headerGradient = Brush.verticalGradient(
+        colors = listOf(Color(0xFF1E293B), Color(0xFF0F172A))
+    )
+
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        topBar = {
-            Column {
-                TopAppBar(
-                    title = { Text(
-                        "${viewModel.productName} - ${viewModel.variantCapacity} أمبير" +
-                                if (viewModel.variantSpecification.isNotEmpty()) " (${viewModel.variantSpecification})" else "",
-                        color = Color.White
-                    ) },
-                    navigationIcon = {
-                        IconButton(onClick = { navController.navigateUp() }) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "رجوع", tint = Color.White)
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary)
-                )
-
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = viewModel::onSearchQueryChanged,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                    placeholder = { Text("بحث في السجل (المورد، المستودع...)", color = Color.White.copy(alpha = 0.7f)) },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.White) },
-                    trailingIcon = {
-                        Row {
-                            IconButton(onClick = { showScanner = true }) {
-                                Icon(Icons.Default.PhotoCamera, contentDescription = "مسح باركود", tint = Color.White)
-                            }
-                            if (searchQuery.isNotEmpty()) {
-                                IconButton(onClick = { viewModel.onSearchQueryChanged("") }) {
-                                    Icon(Icons.Default.Clear, contentDescription = "مسح", tint = Color.White)
-                                }
-                            }
-                        }
-                    },
-                    colors = TextFieldDefaults.outlinedTextFieldColors(
-                        focusedBorderColor = Color.White,
-                        unfocusedBorderColor = Color.White.copy(alpha = 0.5f),
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        cursorColor = Color.White,
-                        focusedPlaceholderColor = Color.White.copy(alpha = 0.7f),
-                        unfocusedPlaceholderColor = Color.White.copy(alpha = 0.7f)
-                    ),
-
-                    shape = RoundedCornerShape(12.dp),
-                    singleLine = true
-                )
-
-                ScrollableTabRow(
-                    selectedTabIndex = selectedCategory.ordinal,
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = Color.White,
-                    edgePadding = 16.dp,
-                    indicator = { tabPositions ->
-                        TabRowDefaults.Indicator(
-                            Modifier.tabIndicatorOffset(tabPositions[selectedCategory.ordinal]),
-                            color = Color.White
+        containerColor = bgColor,
+        snackbarHost = { SnackbarHost(snackbarHostState) }
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier.padding(padding).fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(bottom = 32.dp)
+        ) {
+            // Header Section
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            brush = headerGradient,
+                            shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
                         )
-                    }
+                        .padding(bottom = 24.dp)
                 ) {
-                    LedgerCategory.values().forEach { category ->
-                        Tab(
-                            selected = selectedCategory == category,
-                            onClick = { viewModel.selectCategory(category) },
-                            text = { Text(category.label, color = Color.White) }
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Spacer(modifier = Modifier.height(32.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            IconButton(
+                                onClick = { navController.popBackStack() },
+                                modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                            }
+
+                            Text(
+                                text = "سجل حركة المنتج",
+                                style = MaterialTheme.typography.headlineSmall,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
+                            )
+
+                            IconButton(
+                                onClick = { showScanner = true },
+                                modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
+                            ) {
+                                Icon(Icons.Default.PhotoCamera, contentDescription = "Scan", tint = Color.White)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "${viewModel.productName} - ${viewModel.variantCapacity}A" +
+                                    if (viewModel.variantSpecification.isNotEmpty()) " (${viewModel.variantSpecification})" else "",
+                            color = Color.White.copy(alpha = 0.9f),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
                         )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // Search Bar
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = viewModel::onSearchQueryChanged,
+                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = { Text("بحث في السجل...", color = Color.White.copy(alpha = 0.5f)) },
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.White.copy(alpha = 0.7f)) },
+                            trailingIcon = {
+                                if (searchQuery.isNotEmpty()) {
+                                    IconButton(onClick = { viewModel.onSearchQueryChanged("") }) {
+                                        Icon(Icons.Default.Clear, contentDescription = "مسح", tint = Color.White)
+                                    }
+                                }
+                            },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedContainerColor = Color.Black.copy(alpha = 0.2f),
+                                unfocusedContainerColor = Color.Black.copy(alpha = 0.2f),
+                                focusedBorderColor = Color.Transparent,
+                                unfocusedBorderColor = Color.Transparent,
+                                cursorColor = Color.White,
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(16.dp),
+                            singleLine = true
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // Styled Tabs
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
+                                .padding(4.dp)
+                                .horizontalScroll(rememberScrollState())
+                        ) {
+                            LedgerCategory.values().forEach { category ->
+                                TabItem(
+                                    title = category.label,
+                                    isSelected = selectedCategory == category,
+                                    modifier = Modifier.padding(horizontal = 4.dp),
+                                    onClick = { viewModel.selectCategory(category) }
+                                )
+                            }
+                        }
                     }
                 }
             }
-        }
-    ) { padding ->
-        if (isLoading) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.padding(padding),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
+
+            if (isLoading) {
+                item {
+                    Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = accentColor)
+                    }
+                }
+            } else {
                 items(ledgerItems) { item ->
-                    LedgerItemCard(
-                        item = item,
-                        isAdmin = isAdmin,
-                        productName = viewModel.productName,
-                        variantCapacity = viewModel.variantCapacity,
-                        variantSpecification = viewModel.variantSpecification,
-                        onEdit = { entryId ->
-                            // A sales entry is not a real stock entry, cannot be edited.
-                            if (item.entry.supplier != "Sale") {
-                                navController.navigate("stock_entry?entryId=$entryId")
+                    Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                        LedgerItemCard(
+                            item = item,
+                            isAdmin = isAdmin,
+                            productName = viewModel.productName,
+                            variantCapacity = viewModel.variantCapacity,
+                            variantSpecification = viewModel.variantSpecification,
+                            onEdit = { entryId ->
+                                if (item.entry.supplier != "Sale") {
+                                    navController.navigate("stock_entry?entryId=$entryId")
+                                }
+                            },
+                            onDelete = { entryId ->
+                                if (item.entry.supplier != "Sale") {
+                                    showDeleteConfirmation = entryId
+                                }
                             }
-                        },
-                        onDelete = { entryId ->
-                            if (item.entry.supplier != "Sale") {
-                                showDeleteConfirmation = entryId
-                            }
-                        }
-                    )
+                        )
+                    }
                 }
             }
         }
@@ -224,75 +268,77 @@ fun LedgerItemCard(
     val isTransfer = entry.costPrice == 0.0
 
     val quantityColor = when {
-        entry.quantity > 0 -> Color(0xFF0A842D)
-        else -> Color(0xFFD32F2F)
+        entry.quantity > 0 -> Color(0xFF10B981)
+        else -> Color(0xFFEF4444)
     }
     val typeText = when {
-        isSale -> "بيع"
-        isTransfer && entry.quantity < 0 -> "نقل مخزون (إخراج)"
-        isTransfer && entry.quantity > 0 -> "نقل مخزون (إدخال)"
-        else -> "شراء"
+        isSale -> "عملية بيع"
+        isTransfer && entry.quantity < 0 -> "ترحيل مخزون (إخراج)"
+        isTransfer && entry.quantity > 0 -> "ترحيل مخزون (إدخال)"
+        else -> "عملية شراء"
     }
+    val accentColor = Color(0xFFFB8C00)
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = typeText,
                         style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
+                    Text(
+                        text = entry.timestamp.toFormattedString("yyyy-MM-dd HH:mm"),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     if (entry.status == "pending") {
-                        Spacer(modifier = Modifier.width(8.dp))
                         Surface(
-                            color = Color(0xFFFF9800).copy(alpha = 0.1f),
-                            shape = RoundedCornerShape(4.dp)
+                            color = Color(0xFF2E1505),
+                            shape = RoundedCornerShape(12.dp)
                         ) {
                             Text(
                                 text = "معلق",
-                                color = Color(0xFFFF9800),
-                                fontSize = 10.sp,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                color = accentColor,
+                                fontSize = 11.sp,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                                 fontWeight = FontWeight.Bold
                             )
                         }
+                        Spacer(modifier = Modifier.width(8.dp))
                     }
-                }
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = entry.timestamp.toFormattedString("yyyy-MM-dd HH:mm"),
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    // Show menu only for editable/deletable entries (Admin only)
                     if (!isSale && !isTransfer && isAdmin) {
                         Box {
-                            IconButton(onClick = { menuExpanded = true }) {
-                                Icon(Icons.Default.MoreVert, contentDescription = "خيارات")
+                            IconButton(
+                                onClick = { menuExpanded = true },
+                                modifier = Modifier.size(36.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f), CircleShape)
+                            ) {
+                                Icon(Icons.Default.MoreVert, contentDescription = "خيارات", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
                             }
                             DropdownMenu(
                                 expanded = menuExpanded,
-                                onDismissRequest = { menuExpanded = false }
+                                onDismissRequest = { menuExpanded = false },
+                                modifier = Modifier.background(MaterialTheme.colorScheme.surface)
                             ) {
                                 DropdownMenuItem(
-                                    text = { Text("تعديل") },
+                                    text = { Text("تعديل", color = MaterialTheme.colorScheme.onSurface) },
                                     onClick = {
                                         onEdit(entry.id)
                                         menuExpanded = false
                                     }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("حذف") },
+                                    text = { Text("حذف", color = Color.Red) },
                                     onClick = {
                                         onDelete(entry.id)
                                         menuExpanded = false
@@ -303,54 +349,29 @@ fun LedgerItemCard(
                     }
                 }
             }
-            HorizontalDivider()
-            Spacer(modifier = Modifier.height(16.dp))
+
+            Spacer(modifier = Modifier.height(20.dp))
+
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                maxItemsInEachRow = 2
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                InfoColumnLedger(
+                InfoBadge(
                     label = "الكمية",
                     value = entry.quantity.toString(),
-                    valueColor = quantityColor,
-                    modifier = Modifier.weight(1f).widthIn(min = 100.dp)
+                    color = quantityColor
                 )
-                InfoColumnLedger(
-                    label = "اسم المنتج",
-                    value = productName,
-                    modifier = Modifier.weight(1f).widthIn(min = 100.dp)
-                )
-                InfoColumnLedger(
-                    label = "السعة",
-                    value = "$variantCapacity أمبير",
-                    modifier = Modifier.weight(1f).widthIn(min = 100.dp)
-                )
-                if (variantSpecification.isNotEmpty()) {
-                    InfoColumnLedger(
-                        label = "المواصفة",
-                        value = variantSpecification,
-                        modifier = Modifier.weight(1f).widthIn(min = 100.dp)
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "المستودع: ${item.warehouseName}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold
+                InfoBadge(
+                    label = "المستودع",
+                    value = item.warehouseName,
+                    color = accentColor
                 )
                 if (entry.supplier.isNotEmpty() && !isSale) {
-                    Text(
-                        text = "المورد: ${entry.supplier}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold
+                     InfoBadge(
+                        label = "المورد",
+                        value = entry.supplier,
+                        color = Color(0xFF3B82F6)
                     )
                 }
             }
@@ -386,11 +407,11 @@ fun InfoColumnLedger(label: String, value: String, valueColor: Color = Color.Uns
     }
 }
 
-private fun formatPrice(price: Double): String {
+fun formatPrice(price: Double): String {
     return if (price != 0.0) "JD " + String.format(Locale.US, "%.4f", price) else "-"
 }
 
-private fun Date.toFormattedString(format: String): String {
+fun Date.toFormattedString(format: String): String {
     val sdf = SimpleDateFormat(format, Locale.getDefault())
     return sdf.format(this)
 }

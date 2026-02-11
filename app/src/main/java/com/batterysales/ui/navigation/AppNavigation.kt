@@ -32,7 +32,7 @@ fun AppNavigation(navController: NavHostController) {
         }
 
         composable("warehouse") { WarehouseScreen(navController = navController) }
-        composable("product_management") { ProductManagementScreen() }
+        composable("product_management") { ProductManagementScreen(navController) }
         composable("settings") { SettingsScreen(navController = navController) }
         composable(
             route = "stock_entry?entryId={entryId}",

@@ -28,7 +28,7 @@ class SupplierViewModel @Inject constructor(
         loadSuppliers()
     }
 
-    private fun loadSuppliers() {
+    fun loadSuppliers() {
         viewModelScope.launch {
             _isLoading.value = true
             try {

@@ -5,10 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.batterysales.data.models.BillStatus
 import com.batterysales.data.models.ProductVariant
 import com.batterysales.data.models.StockEntry
-import com.batterysales.data.repositories.BillRepository
-import com.batterysales.data.repositories.ProductVariantRepository
-import com.batterysales.data.repositories.StockEntryRepository
-import com.batterysales.data.repositories.WarehouseRepository
+import com.batterysales.data.repositories.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import java.util.*
@@ -18,6 +15,8 @@ data class DashboardUiState(
     val pendingApprovalsCount: Int = 0,
     val lowStockVariants: List<LowStockItem> = emptyList(),
     val upcomingBills: List<com.batterysales.data.models.Bill> = emptyList(),
+    val todaySales: Double = 0.0,
+    val todayInvoicesCount: Int = 0,
     val isLoading: Boolean = true
 )
 
@@ -34,9 +33,10 @@ data class LowStockItem(
 class DashboardViewModel @Inject constructor(
     private val stockEntryRepository: StockEntryRepository,
     private val productVariantRepository: ProductVariantRepository,
-    private val productRepository: com.batterysales.data.repositories.ProductRepository,
+    private val productRepository: ProductRepository,
     private val billRepository: BillRepository,
-    private val warehouseRepository: WarehouseRepository
+    private val warehouseRepository: WarehouseRepository,
+    private val invoiceRepository: InvoiceRepository
 ) : ViewModel() {
 
     val uiState: StateFlow<DashboardUiState> = combine(
@@ -44,8 +44,10 @@ class DashboardViewModel @Inject constructor(
         productVariantRepository.getAllVariantsFlow(),
         productRepository.getProducts(),
         billRepository.getAllBillsFlow(),
-        warehouseRepository.getWarehouses()
-    ) { allEntries, allVariants, allProducts, allBills, allWarehouses ->
+        combine(warehouseRepository.getWarehouses(), invoiceRepository.getAllInvoices()) { w, i -> Pair(w, i) }
+    ) { allEntries, allVariants, allProducts, allBills, lastPair ->
+        val allWarehouses = lastPair.first
+        val allInvoices = lastPair.second
 
         val pendingCount = allEntries.count { it.status == StockEntry.STATUS_PENDING }
 
@@ -100,10 +102,27 @@ class DashboardViewModel @Inject constructor(
                     !it.dueDate.after(nextWeek.time)
         }.sortedBy { it.dueDate }
 
+        // Calculate Today's Sales and Invoices
+        val startOfToday = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.time
+
+        val todayInvoices = allInvoices.filter {
+            !it.createdAt.before(startOfToday)
+        }
+
+        val todaySalesSum = todayInvoices.sumOf { it.finalAmount }
+        val todayCount = todayInvoices.size
+
         DashboardUiState(
             pendingApprovalsCount = pendingCount,
             lowStockVariants = lowStock,
             upcomingBills = upcoming,
+            todaySales = todaySalesSum,
+            todayInvoicesCount = todayCount,
             isLoading = false
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DashboardUiState())

@@ -3,15 +3,20 @@ package com.batterysales.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -20,6 +25,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.batterysales.data.models.Invoice
 import com.batterysales.viewmodel.InvoiceViewModel
+import com.batterysales.ui.components.TabItem
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -34,6 +40,13 @@ fun InvoiceScreen(
     var showDateRangePicker by remember { mutableStateOf(false) }
     val dateRangePickerState = rememberDateRangePickerState()
 
+    val bgColor = MaterialTheme.colorScheme.background
+    val cardBgColor = MaterialTheme.colorScheme.surface
+    val accentColor = Color(0xFFFB8C00)
+    val headerGradient = Brush.verticalGradient(
+        colors = listOf(Color(0xFF1E293B), Color(0xFF0F172A))
+    )
+
     if (uiState.invoiceToDelete != null) {
         AlertDialog(
             onDismissRequest = { viewModel.onDismissDeleteDialog() },
@@ -45,30 +58,17 @@ fun InvoiceScreen(
     }
 
     if (showDateRangePicker) {
-        DatePickerDialog(
-            onDismissRequest = { showDateRangePicker = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    viewModel.onDateRangeSelected(
-                        dateRangePickerState.selectedStartDateMillis,
-                        dateRangePickerState.selectedEndDateMillis
-                    )
-                    showDateRangePicker = false
-                }) {
-                    Text("موافق")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDateRangePicker = false }) {
-                    Text("إلغاء")
-                }
+        com.batterysales.ui.components.AppDateRangePickerDialog(
+            state = dateRangePickerState,
+            onDismiss = { showDateRangePicker = false },
+            onConfirm = {
+                viewModel.onDateRangeSelected(
+                    dateRangePickerState.selectedStartDateMillis,
+                    dateRangePickerState.selectedEndDateMillis
+                )
+                showDateRangePicker = false
             }
-        ) {
-            DateRangePicker(
-                state = dateRangePickerState,
-                modifier = Modifier.weight(1f).padding(16.dp)
-            )
-        }
+        )
     }
 
     if (showEditDialog != null) {
@@ -80,107 +80,142 @@ fun InvoiceScreen(
     }
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("إدارة الفواتير", fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "رجوع")
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { showDateRangePicker = true }) {
-                        Icon(Icons.Default.DateRange, contentDescription = "تحديد الفترة", tint = MaterialTheme.colorScheme.onPrimary)
-                    }
-                    IconButton(onClick = { viewModel.loadInvoices() }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "تحديث", tint = MaterialTheme.colorScheme.onPrimary)
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
-                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary
-                )
-            )
-        },
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = { navController.navigate("sales") },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "إضافة فاتورة")
-            }
-        }
+        containerColor = bgColor
     ) { paddingValues ->
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
-                .background(MaterialTheme.colorScheme.background)
+                .padding(paddingValues),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            TabRow(selectedTabIndex = uiState.selectedTab) {
-                Tab(selected = uiState.selectedTab == 0, onClick = { viewModel.onTabSelected(0) }) {
-                    Text("الكل", modifier = Modifier.padding(16.dp))
-                }
-                Tab(selected = uiState.selectedTab == 1, onClick = { viewModel.onTabSelected(1) }) {
-                    Text("المعلقة", modifier = Modifier.padding(16.dp))
+            // Gradient Header
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            brush = headerGradient,
+                            shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
+                        )
+                        .padding(bottom = 24.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Spacer(modifier = Modifier.height(32.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            IconButton(
+                                onClick = { navController.popBackStack() },
+                                modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                            }
+
+                            Text(
+                                text = "إدارة الفواتير",
+                                style = MaterialTheme.typography.headlineSmall,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
+                            )
+
+                            Row {
+                                IconButton(
+                                    onClick = { showDateRangePicker = true },
+                                    modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
+                                ) {
+                                    Icon(Icons.Default.CalendarMonth, contentDescription = "Date", tint = Color.White)
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                IconButton(
+                                    onClick = { viewModel.loadInvoices() },
+                                    modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
+                                ) {
+                                    Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color.White)
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(24.dp))
+
+                        // Styled Tabs
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
+                                .padding(4.dp)
+                        ) {
+                            TabItem(
+                                title = "الكل",
+                                isSelected = uiState.selectedTab == 0,
+                                modifier = Modifier.weight(1f),
+                                onClick = { viewModel.onTabSelected(0) }
+                            )
+                            TabItem(
+                                title = "المعلقة",
+                                isSelected = uiState.selectedTab == 1,
+                                modifier = Modifier.weight(1f),
+                                onClick = { viewModel.onTabSelected(1) }
+                            )
+                        }
+                    }
                 }
             }
 
-            // شريط البحث
-            OutlinedTextField(
-                value = uiState.searchQuery,
-                onValueChange = { viewModel.onSearchQueryChanged(it) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                placeholder = { Text("بحث برقم الفاتورة أو اسم العميل...") },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                shape = RoundedCornerShape(12.dp),
-                singleLine = true,
-                textStyle = com.batterysales.ui.theme.LocalInputTextStyle.current,
-                colors = TextFieldDefaults.outlinedTextFieldColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+            // Search Bar
+            item {
+                OutlinedTextField(
+                    value = uiState.searchQuery,
+                    onValueChange = { viewModel.onSearchQueryChanged(it) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    placeholder = { Text("...بحث برقم الفاتورة أو اسم العميل", color = Color.Gray) },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.Gray) },
+                    shape = RoundedCornerShape(16.dp),
+                    singleLine = true,
+                    textStyle = com.batterysales.ui.theme.LocalInputTextStyle.current.copy(color = MaterialTheme.colorScheme.onSurface),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = cardBgColor,
+                        unfocusedContainerColor = cardBgColor,
+                        focusedBorderColor = MaterialTheme.colorScheme.outline,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                    )
                 )
-            )
+            }
 
             if (uiState.startDate != null) {
-                val sdf = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        "الفترة: ${sdf.format(Date(uiState.startDate!!))} - ${sdf.format(Date(uiState.endDate ?: uiState.startDate!!))}",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    TextButton(onClick = { viewModel.onDateRangeSelected(null, null) }) {
-                        Text("إلغاء الفلترة")
+                item {
+                    Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                        com.batterysales.ui.components.DateRangeInfo(
+                            startDate = uiState.startDate,
+                            endDate = uiState.endDate,
+                            onClear = { viewModel.onDateRangeSelected(null, null) }
+                        )
                     }
                 }
             }
 
             if (uiState.isLoading) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
+                item {
+                    Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = accentColor)
+                    }
                 }
             } else if (uiState.invoices.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.Default.Description, contentDescription = null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f))
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text("لا توجد فواتير حالياً", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                item {
+                    Box(modifier = Modifier.fillMaxWidth().height(300.dp), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.Description, contentDescription = null, modifier = Modifier.size(64.dp), tint = Color.Gray.copy(alpha = 0.3f))
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text("لا توجد فواتير حالياً", color = Color.Gray)
+                        }
                     }
                 }
             } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 16.dp, start = 16.dp, end = 16.dp)
-                ) {
-                    items(uiState.invoices) { invoice ->
+                items(uiState.invoices) { invoice ->
+                    Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                         InvoiceItemCard(
                             invoice = invoice,
                             onClick = { navController.navigate("invoice_detail/${invoice.id}") },
@@ -189,6 +224,10 @@ fun InvoiceScreen(
                         )
                     }
                 }
+            }
+
+            item {
+                Spacer(modifier = Modifier.height(16.dp))
             }
         }
     }
@@ -203,13 +242,15 @@ fun EditCustomerDialog(invoice: Invoice, onDismiss: () -> Unit, onConfirm: (Invo
         onDismissRequest = onDismiss,
         title = { Text("تعديل معلومات العميل") },
         text = {
-            Column {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 com.batterysales.ui.components.CustomKeyboardTextField(
                     value = customerName,
                     onValueChange = { customerName = it },
                     label = "اسم العميل"
                 )
-                Spacer(modifier = Modifier.height(8.dp))
                 com.batterysales.ui.components.CustomKeyboardTextField(
                     value = customerPhone,
                     onValueChange = { customerPhone = it },
@@ -219,7 +260,7 @@ fun EditCustomerDialog(invoice: Invoice, onDismiss: () -> Unit, onConfirm: (Invo
             }
         },
         confirmButton = { Button(onClick = { onConfirm(invoice, customerName, customerPhone); onDismiss() }) { Text("حفظ") } },
-        dismissButton = { Button(onClick = onDismiss) { Text("إلغاء") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
     )
 }
 
@@ -231,74 +272,95 @@ fun InvoiceItemCard(invoice: Invoice, onClick: () -> Unit, onDeleteClick: () -> 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp)
             .clickable { onClick() },
-        shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
-        Row(
-            modifier = Modifier.padding(16.dp).fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "#${invoice.invoiceNumber}",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
+        Box(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     StatusBadge(status = invoice.status)
+                    Text(
+                    text = "${String.format("%,.3f", invoice.totalAmount)} JD",
+                    style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
                 }
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(text = invoice.customerName, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
-                Text(
-                    text = dateFormatter.format(invoice.invoiceDate),
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
 
-            Column(horizontalAlignment = Alignment.End) {
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Tag, contentDescription = null, tint = Color(0xFFFB8C00), modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = invoice.invoiceNumber,
+                    style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
                 Text(
-                    text = "JD ${String.format("%.3f", invoice.totalAmount)}",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    color = MaterialTheme.colorScheme.onSurface
+                    text = invoice.customerName.ifEmpty { "عميل نقدي" },
+                style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                    modifier = Modifier.align(Alignment.End)
                 )
+
                 if (invoice.remainingAmount > 0) {
                     Text(
-                        text = "المتبقي: JD ${String.format("%.3f", invoice.remainingAmount)}",
-                        fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.error
+                    text = "المتبقي: ${String.format("%,.3f", invoice.remainingAmount)} JD",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                        color = Color(0xFFEF5350),
+                        modifier = Modifier.align(Alignment.End)
                     )
                 }
-            }
 
-            Box {
-                IconButton(onClick = { menuExpanded = true }) {
-                    Icon(Icons.Default.MoreVert, contentDescription = "خيارات", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                DropdownMenu(
-                    expanded = menuExpanded,
-                    onDismissRequest = { menuExpanded = false }
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    DropdownMenuItem(
-                        text = { Text("تعديل العميل") },
-                        onClick = {
-                            onEditClick()
-                            menuExpanded = false
+                    Box {
+                        IconButton(onClick = { menuExpanded = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "خيارات", tint = Color.Gray)
                         }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("حذف الفاتورة") },
-                        onClick = {
-                            onDeleteClick()
-                            menuExpanded = false
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false },
+                            modifier = Modifier.background(MaterialTheme.colorScheme.surface)
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("تعديل العميل", color = MaterialTheme.colorScheme.onSurface) },
+                                onClick = {
+                                    onEditClick()
+                                    menuExpanded = false
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("حذف الفاتورة", color = Color.Red) },
+                                onClick = {
+                                    onDeleteClick()
+                                    menuExpanded = false
+                                }
+                            )
                         }
+                    }
+                    
+                    Text(
+                        text = dateFormatter.format(invoice.invoiceDate),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Gray
                     )
                 }
             }
@@ -308,22 +370,29 @@ fun InvoiceItemCard(invoice: Invoice, onClick: () -> Unit, onDeleteClick: () -> 
 
 @Composable
 fun StatusBadge(status: String) {
-    val (text, color) = when (status) {
-        "paid" -> "مدفوعة" to Color(0xFF4CAF50)
-        "pending" -> "معلقة" to Color(0xFFFF9800)
-        else -> status to Color(0xFF9E9E9E)
+    val (text, color, icon) = when (status) {
+        "paid" -> Triple("مدفوعة", Color(0xFF4CAF50), Icons.Default.CheckCircle)
+        "pending" -> Triple("معلقة", Color(0xFFFF9800), Icons.Default.AccessTime)
+        else -> Triple(status, Color(0xFF9E9E9E), Icons.Default.Info)
     }
 
     Surface(
-        color = color.copy(alpha = 0.1f),
-        shape = RoundedCornerShape(4.dp)
+        color = color.copy(alpha = 0.15f),
+        shape = RoundedCornerShape(12.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, color.copy(alpha = 0.3f))
     ) {
-        Text(
-            text = text,
-            color = color,
-            fontSize = 10.sp,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-            fontWeight = FontWeight.Bold
-        )
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(14.dp))
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = text,
+                color = color,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold
+            )
+        }
     }
 }

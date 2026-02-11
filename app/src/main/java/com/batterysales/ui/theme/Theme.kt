@@ -13,36 +13,36 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
 private val LightColorScheme = lightColorScheme(
-    primary = Color(0xFF2563EB),
+    primary = Color(0xFFD84315), // Deep Orange for primary actions
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFDEE9FF),
-    onPrimaryContainer = Color(0xFF001A41),
+    primaryContainer = Color(0xFFFFE0B2),
+    onPrimaryContainer = Color(0xFF3E2723),
 
-    secondary = Color(0xFF10B981),
-    onSecondary = Color.White,
-    secondaryContainer = Color(0xFFC8F7DC),
-    onSecondaryContainer = Color(0xFF003D25),
+    secondary = Color(0xFFFBC02D), // Golden Yellow
+    onSecondary = Color.Black,
+    secondaryContainer = Color(0xFFFFF9C4),
+    onSecondaryContainer = Color(0xFF33691E),
 
-    tertiary = Color(0xFFF59E0B),
+    tertiary = Color(0xFF2E7D32), // Green
     onTertiary = Color.White,
-    tertiaryContainer = Color(0xFFFFDDB3),
-    onTertiaryContainer = Color(0xFF3E2200),
+    tertiaryContainer = Color(0xFFC8E6C9),
+    onTertiaryContainer = Color(0xFF1B5E20),
 
-    error = Color(0xFFEF4444),
+    error = Color(0xFFC62828),
     onError = Color.White,
-    errorContainer = Color(0xFFFCDEDE),
-    onErrorContainer = Color(0xFF410E0B),
+    errorContainer = Color(0xFFFFEBEE),
+    onErrorContainer = Color(0xFFB71C1C),
 
-    background = Color(0xFFFAFAFA),
-    onBackground = Color(0xFF1F2937),
+    background = Color(0xFFF5F5F5), // Light gray background for contrast
+    onBackground = Color(0xFF121212), // High contrast text
 
     surface = Color.White,
-    onSurface = Color(0xFF1F2937),
-    surfaceVariant = Color(0xFFF3F4F6),
-    onSurfaceVariant = Color(0xFF4B5563),
+    onSurface = Color(0xFF121212), // High contrast text on surface
+    surfaceVariant = Color(0xFFEEEEEE),
+    onSurfaceVariant = Color(0xFF424242),
 
-    outline = Color(0xFFD1D5DB),
-    outlineVariant = Color(0xFFE5E7EB),
+    outline = Color(0xFFBDBDBD),
+    outlineVariant = Color(0xFFE0E0E0),
     scrim = Color.Black
 )
 

@@ -1,18 +1,22 @@
 package com.batterysales.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.automirrored.filled.*
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -32,6 +36,12 @@ fun UserManagementScreen(
     var showCreateDialog by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
 
+    val bgColor = MaterialTheme.colorScheme.background
+    val accentColor = Color(0xFFFB8C00)
+    val headerGradient = androidx.compose.ui.graphics.Brush.verticalGradient(
+        colors = listOf(Color(0xFF1E293B), Color(0xFF0F172A))
+    )
+
     LaunchedEffect(uiState.successMessage, uiState.errorMessage) {
         uiState.successMessage?.let {
             snackbarHostState.showSnackbar(it)
@@ -40,6 +50,98 @@ fun UserManagementScreen(
         uiState.errorMessage?.let {
             snackbarHostState.showSnackbar(it)
             viewModel.dismissMessages()
+        }
+    }
+
+    Scaffold(
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+        containerColor = bgColor,
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = { showCreateDialog = true },
+                containerColor = accentColor,
+                contentColor = Color.White,
+                shape = CircleShape
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "إضافة مستخدم")
+            }
+        }
+    ) { paddingValues ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .imePadding(),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(bottom = 80.dp)
+        ) {
+            // Gradient Header
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            brush = headerGradient,
+                            shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
+                        )
+                        .padding(bottom = 24.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Spacer(modifier = Modifier.height(32.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            IconButton(
+                                onClick = { navController.popBackStack() },
+                                modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                            }
+
+                            Text(
+                                text = "إدارة المستخدمين",
+                                style = MaterialTheme.typography.headlineSmall,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
+                            )
+
+                            IconButton(
+                                onClick = { /* Reload logic if available */ },
+                                modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
+                            ) {
+                                Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color.White)
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (uiState.isLoading) {
+                item {
+                    Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = accentColor)
+                    }
+                }
+            } else if (uiState.users.isEmpty()) {
+                item {
+                    Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                        Text("لا يوجد مستخدمين مضافين", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                    }
+                }
+            } else {
+                items(uiState.users) { user ->
+                    Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                        UserCard(
+                            user = user,
+                            warehouses = uiState.warehouses,
+                            onRoleChange = { role -> viewModel.updateUserRole(user, role) },
+                            onWarehouseChange = { warehouseId -> viewModel.linkUserToWarehouse(user, warehouseId) }
+                        )
+                    }
+                }
+            }
         }
     }
 
@@ -52,54 +154,6 @@ fun UserManagementScreen(
                 showCreateDialog = false
             }
         )
-    }
-
-    Scaffold(
-        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
-        topBar = {
-            TopAppBar(
-                title = { Text("إدارة المستخدمين", fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "رجوع")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = Color.White,
-                    navigationIconContentColor = Color.White
-                )
-            )
-        },
-        floatingActionButton = {
-            FloatingActionButton(onClick = { showCreateDialog = true }) {
-                Icon(Icons.Default.Add, contentDescription = "إضافة مستخدم")
-            }
-        }
-    ) { paddingValues ->
-        if (uiState.isLoading) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-                    .imePadding()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                items(uiState.users) { user ->
-                    UserCard(
-                        user = user,
-                        warehouses = uiState.warehouses,
-                        onRoleChange = { role -> viewModel.updateUserRole(user, role) },
-                        onWarehouseChange = { warehouseId -> viewModel.linkUserToWarehouse(user, warehouseId) }
-                    )
-                }
-            }
-        }
     }
 }
 
@@ -116,48 +170,89 @@ fun UserCard(
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Person, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(text = user.displayName, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Surface(
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                    shape = CircleShape,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Default.Person, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    }
+                }
+                Spacer(modifier = Modifier.width(16.dp))
+                Column {
+                    Text(
+                        text = user.displayName,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = user.email,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
-            Text(text = user.email, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
 
-            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+            Spacer(modifier = Modifier.height(20.dp))
+            HorizontalDivider(modifier = Modifier.alpha(0.1f))
+            Spacer(modifier = Modifier.height(20.dp))
 
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                maxItemsInEachRow = 2
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Column(modifier = Modifier.weight(1f).widthIn(min = 140.dp)) {
-                    Text("الدور:", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(text = if (user.role == "admin") "مدير" else "بائع", fontWeight = FontWeight.Medium)
-                        Spacer(modifier = Modifier.weight(1f))
-                        TextButton(onClick = { showRoleDialog = true }) {
-                            Text("تغيير")
+                // Role Info
+                Surface(
+                    modifier = Modifier.weight(1f).widthIn(min = 140.dp),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.03f),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text("الدور", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                text = if (user.role == "admin") "مدير" else "بائع",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            TextButton(onClick = { showRoleDialog = true }, contentPadding = PaddingValues(0.dp)) {
+                                Text("تغيير", fontSize = 12.sp)
+                            }
                         }
                     }
                 }
 
-                Column(modifier = Modifier.weight(1f).widthIn(min = 140.dp)) {
-                    Text("المستودع المرتبط:", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    val warehouseName = warehouses.find { it.id == user.warehouseId }?.name ?: "غير مرتبط"
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(text = warehouseName, fontWeight = FontWeight.Medium)
-                        Spacer(modifier = Modifier.weight(1f))
-                        TextButton(
-                            onClick = { showWarehouseDialog = true },
-                            enabled = user.role == "seller"
-                        ) {
-                            Text("ربط")
+                // Warehouse Info
+                Surface(
+                    modifier = Modifier.weight(1f).widthIn(min = 140.dp),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.03f),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text("المستودع", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        val warehouseName = warehouses.find { it.id == user.warehouseId }?.name ?: "غير مرتبط"
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                text = warehouseName,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            TextButton(
+                                onClick = { showWarehouseDialog = true },
+                                enabled = user.role == "seller",
+                                contentPadding = PaddingValues(0.dp)
+                            ) {
+                                Text("ربط", fontSize = 12.sp)
+                            }
                         }
                     }
                 }
@@ -228,49 +323,53 @@ fun CreateUserDialog(
         onDismissRequest = onDismiss,
         title = { Text("إنشاء مستخدم جديد") },
         text = {
-            LazyColumn(modifier = Modifier.fillMaxWidth()) {
-                item {
-                    com.batterysales.ui.components.CustomKeyboardTextField(
-                        value = displayName,
-                        onValueChange = { displayName = it },
-                        label = "الاسم الكامل",
-                        modifier = Modifier.fillMaxWidth()
-                    )
+            Column(
+                modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                com.batterysales.ui.components.CustomKeyboardTextField(
+                    value = displayName,
+                    onValueChange = { displayName = it },
+                    label = "الاسم الكامل",
+                    modifier = Modifier.fillMaxWidth()
+                )
+                com.batterysales.ui.components.CustomKeyboardTextField(
+                    value = email,
+                    onValueChange = { email = it },
+                    label = "البريد الإلكتروني",
+                    modifier = Modifier.fillMaxWidth()
+                )
+                com.batterysales.ui.components.CustomKeyboardTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = "كلمة المرور",
+                    modifier = Modifier.fillMaxWidth()
+                )
+                
+                Text("الدور:", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(selected = role == "admin", onClick = { role = "admin" })
+                    Text("مدير")
+                    Spacer(modifier = Modifier.width(16.dp))
+                    RadioButton(selected = role == "seller", onClick = { role = "seller" })
+                    Text("بائع")
+                }
+                
+                if (role == "seller") {
                     Spacer(modifier = Modifier.height(8.dp))
-                    com.batterysales.ui.components.CustomKeyboardTextField(
-                        value = email,
-                        onValueChange = { email = it },
-                        label = "البريد الإلكتروني",
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    com.batterysales.ui.components.CustomKeyboardTextField(
-                        value = password,
-                        onValueChange = { password = it },
-                        label = "كلمة المرور",
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(modifier = Modifier.height(com.batterysales.ui.components.LocalCustomKeyboardController.current.keyboardHeight.value))
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text("الدور:", fontWeight = FontWeight.Bold)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(selected = role == "admin", onClick = { role = "admin" })
-                        Text("مدير")
-                        Spacer(modifier = Modifier.width(16.dp))
-                        RadioButton(selected = role == "seller", onClick = { role = "seller" })
-                        Text("بائع")
-                    }
-                    if (role == "seller") {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text("المستودع المرتبط:", fontWeight = FontWeight.Bold)
-                        warehouses.forEach { warehouse ->
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { selectedWarehouseId = warehouse.id }) {
-                                RadioButton(selected = selectedWarehouseId == warehouse.id, onClick = { selectedWarehouseId = warehouse.id })
-                                Text(warehouse.name)
-                            }
+                    Text("المستودع المرتبط:", style = MaterialTheme.typography.titleSmall)
+                    warehouses.forEach { warehouse ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth().clickable { selectedWarehouseId = warehouse.id }
+                        ) {
+                            RadioButton(selected = selectedWarehouseId == warehouse.id, onClick = { selectedWarehouseId = warehouse.id })
+                            Text(warehouse.name)
                         }
                     }
                 }
+                
+                Spacer(modifier = Modifier.height(com.batterysales.ui.components.LocalCustomKeyboardController.current.keyboardHeight.value))
             }
         },
         confirmButton = {
