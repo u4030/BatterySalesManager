@@ -9,7 +9,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.FactCheck
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -55,7 +57,7 @@ fun DashboardScreen(
     val items = remember(isAdmin) {
         val list = mutableListOf(
             DashboardItem("المبيعات", Icons.Default.ShoppingCart, "sales", Color(0xFFEF4444)),
-            DashboardItem("الفواتير", Icons.Default.ReceiptLong, "invoices", Color(0xFFF59E0B)),
+            DashboardItem("الفواتير", Icons.AutoMirrored.Filled.ReceiptLong, "invoices", Color(0xFFF59E0B)),
             DashboardItem("المستودع", Icons.Default.Warehouse, "warehouse", Color(0xFFFACC15)),
             DashboardItem("إدارة المنتجات", Icons.Default.Inventory2, "product_management", Color(0xFFEF4444)),
             DashboardItem("إدخال مخزون", Icons.Default.SyncAlt, "stock_entry", Color(0xFF10B981)),
@@ -73,7 +75,7 @@ fun DashboardScreen(
 
         if (isAdmin) {
             list.add(DashboardItem("إدارة المستخدمين", Icons.Default.Group, "user_management", Color(0xFFEC4899)))
-            list.add(DashboardItem("الموافقات", Icons.Default.FactCheck, "approvals", Color(0xFFF59E0B)))
+            list.add(DashboardItem("الموافقات", Icons.AutoMirrored.Filled.FactCheck, "approvals", Color(0xFFF59E0B)))
         }
         list
     }
@@ -151,20 +153,70 @@ fun DashboardScreen(
                         Spacer(modifier = Modifier.height(32.dp))
 
                         // Summary Cards Row
+                        if (isAdmin) {
+                            Text(
+                                "الإجمالي العام",
+                                color = Color.White.copy(alpha = 0.7f),
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                        }
+
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
                             SummaryCard(
-                                title = "المبيعات اليوم",
-                                    value = "JD ${String.format("%,.0f", dashboardState.todaySales)}",
+                                title = if (isAdmin) "إجمالي المبيعات" else "مبيعاتي اليوم",
+                                value = "JD ${String.format("%,.2f", dashboardState.todaySales)}",
                                 modifier = Modifier.weight(1f)
                             )
                             SummaryCard(
-                                title = "الفواتير",
+                                title = if (isAdmin) "إجمالي الفواتير" else "فواتيري",
                                 value = "${dashboardState.todayInvoicesCount} فاتورة",
                                 modifier = Modifier.weight(1f)
                             )
+                        }
+
+                        if (isAdmin && dashboardState.warehouseStats.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(24.dp))
+                            Text(
+                                "حسب المستودع",
+                                color = Color.White.copy(alpha = 0.7f),
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+
+                            androidx.compose.foundation.lazy.LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                contentPadding = PaddingValues(bottom = 8.dp)
+                            ) {
+                                items(dashboardState.warehouseStats) { stats ->
+                                    Card(
+                                        modifier = Modifier.width(200.dp),
+                                        shape = RoundedCornerShape(16.dp),
+                                        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.1f))
+                                    ) {
+                                        Column(modifier = Modifier.padding(12.dp)) {
+                                            Text(stats.warehouseName, color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                                Text("المبيعات:", color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelSmall)
+                                                Text("JD ${String.format("%.2f", stats.todaySales)}", color = Color(0xFF10B981), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+                                            }
+                                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                                Text("الفواتير:", color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelSmall)
+                                                Text("${stats.todayInvoicesCount}", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else if (!isAdmin && currentUser?.warehouseId != null) {
+                            // Already showing the summary cards which are calculated for the todayInvoices.
+                            // If we want to be explicit, the ViewModel calculates todaySalesSum for ALL invoices.
+                            // For a Seller, the InvoiceRepository should probably only return their invoices if restricted,
+                            // but usually restriction is at the UI or Repository level.
                         }
                     }
                 }

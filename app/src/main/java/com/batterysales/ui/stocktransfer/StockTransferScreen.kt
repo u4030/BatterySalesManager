@@ -4,7 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.*
@@ -54,24 +54,62 @@ fun StockTransferScreen(
         }
     }
 
+    val headerGradient = androidx.compose.ui.graphics.Brush.verticalGradient(
+        colors = listOf(androidx.compose.ui.graphics.Color(0xFF1E293B), androidx.compose.ui.graphics.Color(0xFF0F172A))
+    )
+
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("ترحيل مخزون") },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "رجوع")
-                    }
-                }
-            )
-        }
+        containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
         LazyColumn(
             modifier = Modifier.padding(padding).fillMaxSize().imePadding(),
-            contentPadding = PaddingValues(16.dp),
+            contentPadding = PaddingValues(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-                item {
+            // Gradient Header
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            brush = headerGradient,
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
+                        )
+                        .padding(bottom = 24.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Spacer(modifier = Modifier.height(32.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            IconButton(
+                                onClick = { navController.popBackStack() },
+                                modifier = Modifier.background(androidx.compose.ui.graphics.Color.White.copy(alpha = 0.1f), androidx.compose.foundation.shape.CircleShape)
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = androidx.compose.ui.graphics.Color.White)
+                            }
+
+                            Text(
+                                text = "ترحيل مخزون",
+                                style = MaterialTheme.typography.headlineSmall,
+                                color = androidx.compose.ui.graphics.Color.White,
+                                fontWeight = FontWeight.Bold
+                            )
+
+                            // Placeholder for alignment
+                            Box(modifier = Modifier.size(48.dp))
+                        }
+                    }
+                }
+            }
+
+            item {
+                Column(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
                     OutlinedButton(
                         onClick = { showScanner = true },
                         modifier = Modifier.fillMaxWidth()
@@ -80,23 +118,17 @@ fun StockTransferScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("مسح الباركود")
                     }
-                }
 
-                item {
                     if (uiState.errorMessage != null) {
                         Text(text = uiState.errorMessage!!, color = MaterialTheme.colorScheme.error)
                     }
-                }
 
-                item {
                     if (uiState.isLoading) {
                         Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator()
                         }
                     }
-                }
 
-                item {
                     Dropdown(
                         label = "المنتج",
                         selectedValue = uiState.selectedProduct?.name ?: "",
@@ -105,9 +137,7 @@ fun StockTransferScreen(
                         enabled = true,
                         modifier = Modifier.fillMaxWidth()
                     )
-                }
 
-                item {
                     Dropdown(
                         label = "الصنف (السعة)",
                         selectedValue = uiState.selectedVariant?.let { v ->
@@ -120,9 +150,7 @@ fun StockTransferScreen(
                         enabled = uiState.selectedProduct != null,
                         modifier = Modifier.fillMaxWidth()
                     )
-                }
 
-                item {
                     Dropdown(
                         label = "من المستودع",
                         selectedValue = uiState.sourceWarehouse?.name ?: "",
@@ -131,9 +159,7 @@ fun StockTransferScreen(
                         enabled = !uiState.isSourceWarehouseFixed,
                         modifier = Modifier.fillMaxWidth()
                     )
-                }
 
-                item {
                     Dropdown(
                         label = "إلى المستودع",
                         selectedValue = uiState.destinationWarehouse?.name ?: "",
@@ -142,9 +168,7 @@ fun StockTransferScreen(
                         enabled = true,
                         modifier = Modifier.fillMaxWidth()
                     )
-                }
 
-                item {
                     val availableQty = uiState.selectedVariant?.let { uiState.stockLevels[Pair(it.id, uiState.sourceWarehouse?.id ?: "")] ?: 0 } ?: 0
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -159,9 +183,7 @@ fun StockTransferScreen(
                             Text("$availableQty", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
                         }
                     }
-                }
 
-                item {
                     OutlinedTextField(
                         value = uiState.quantity,
                         onValueChange = viewModel::onQuantityChanged,
@@ -170,18 +192,19 @@ fun StockTransferScreen(
                         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
                         textStyle = LocalInputTextStyle.current
                     )
-                }
 
-                item {
                     Button(
                         onClick = viewModel::onTransferStock,
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = androidx.compose.ui.graphics.Color(0xFFEF4444)),
                         enabled = uiState.selectedVariant != null && uiState.sourceWarehouse != null && uiState.destinationWarehouse != null && uiState.quantity.isNotBlank()
                     ) {
-                        Text("ترحيل المخزون")
+                        Text("ترحيل المخزون", fontWeight = FontWeight.Bold)
                     }
                 }
             }
         }
     }
 
+}

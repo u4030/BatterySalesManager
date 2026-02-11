@@ -180,7 +180,8 @@ class SalesViewModel @Inject constructor(
                     finalAmount = finalTotal,
                     paidAmount = paidAmount,
                     remainingAmount = finalTotal - paidAmount,
-                    status = if (paidAmount >= finalTotal) "paid" else "pending"
+                    status = if (paidAmount >= finalTotal) "paid" else "pending",
+                    warehouseId = warehouse.id
                 )
                 val createdInvoice = invoiceRepository.createInvoice(newInvoice)
 
