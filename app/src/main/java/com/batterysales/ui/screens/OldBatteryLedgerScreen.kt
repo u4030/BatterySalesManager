@@ -439,9 +439,9 @@ fun OldBatteryTransactionCard(
                     }
                     IconButton(
                         onClick = onEdit,
-                        modifier = Modifier.size(36.dp).background(Color.White.copy(alpha = 0.05f), CircleShape)
+                        modifier = Modifier.size(36.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), CircleShape)
                     ) {
-                        Icon(Icons.Default.Edit, contentDescription = "Edit", tint = Color.Gray, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.Edit, contentDescription = "Edit", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                     }
                     IconButton(
                         onClick = onDelete,

@@ -294,6 +294,7 @@ fun SearchBarRedesigned(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun GrandTotalCard(totalQuantity: Int, isSeller: Boolean) {
     Card(
@@ -303,12 +304,12 @@ fun GrandTotalCard(totalQuantity: Int, isSeller: Boolean) {
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f))
     ) {
-        Row(
-            modifier = Modifier.padding(20.dp),
+        FlowRow(
+            modifier = Modifier.padding(20.dp).fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalArrangement = Arrangement.Center
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
                 Surface(
                     color = MaterialTheme.colorScheme.primary,
                     shape = CircleShape,
@@ -330,7 +331,8 @@ fun GrandTotalCard(totalQuantity: Int, isSeller: Boolean) {
                 text = totalQuantity.toString(),
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(vertical = 4.dp)
             )
         }
     }
@@ -526,6 +528,7 @@ fun OldBatteryReportSectionRedesigned(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 private fun supplierReportSectionRedesigned(
     scope: androidx.compose.foundation.lazy.LazyListScope,
     viewModel: ReportsViewModel,
@@ -542,13 +545,23 @@ private fun supplierReportSectionRedesigned(
             shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f))
         ) {
-            Row(
-                modifier = Modifier.padding(20.dp),
+            FlowRow(
+                modifier = Modifier.padding(20.dp).fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalArrangement = Arrangement.Center
             ) {
-                Text("إجمالي مستحقات الموردين", fontWeight = FontWeight.Bold)
-                Text("JD ${String.format("%.3f", totalSuppliersDebit)}", fontWeight = FontWeight.Bold, color = Color(0xFFEF4444), style = MaterialTheme.typography.titleLarge)
+                Text(
+                    "إجمالي مستحقات الموردين",
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
+                Text(
+                    "JD ${String.format("%.3f", totalSuppliersDebit)}",
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFFEF4444),
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
             }
         }
     }

@@ -3,6 +3,8 @@ package com.batterysales.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -321,13 +323,15 @@ fun EditCustomerDialog(invoice: Invoice, onDismiss: () -> Unit, onConfirm: (Invo
         onDismissRequest = onDismiss,
         title = { Text("تعديل معلومات العميل") },
         text = {
-            Column {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 com.batterysales.ui.components.CustomKeyboardTextField(
                     value = customerName,
                     onValueChange = { customerName = it },
                     label = "اسم العميل"
                 )
-                Spacer(modifier = Modifier.height(8.dp))
                 com.batterysales.ui.components.CustomKeyboardTextField(
                     value = customerPhone,
                     onValueChange = { customerPhone = it },
@@ -337,7 +341,7 @@ fun EditCustomerDialog(invoice: Invoice, onDismiss: () -> Unit, onConfirm: (Invo
             }
         },
         confirmButton = { Button(onClick = { onConfirm(invoice, customerName, customerPhone); onDismiss() }) { Text("حفظ") } },
-        dismissButton = { Button(onClick = onDismiss) { Text("إلغاء") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
     )
 }
 

@@ -34,10 +34,12 @@ fun CustomKeyboardTextField(
             shape = RoundedCornerShape(12.dp),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = Color(0xFFFB8C00),
-                unfocusedBorderColor = Color.White.copy(alpha = 0.1f),
+                unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
                 focusedLabelColor = Color(0xFFFB8C00),
-                unfocusedLabelColor = Color.White.copy(alpha = 0.4f),
-                disabledBorderColor = Color.White.copy(alpha = 0.05f)
+                unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                disabledBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f),
+                focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                unfocusedTextColor = MaterialTheme.colorScheme.onSurface
             )
         )
         // Transparent overlay to capture clicks

@@ -19,19 +19,22 @@ import androidx.compose.ui.unit.sp
 fun TabItem(title: String, isSelected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Box(
         modifier = modifier
-            .height(48.dp)
+            .heightIn(min = 40.dp)
             .background(
                 if (isSelected) Color.White else Color.Transparent,
                 RoundedCornerShape(12.dp)
             )
-            .clickable { onClick() },
+            .clickable { onClick() }
+            .padding(horizontal = 8.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center
     ) {
         val accentColor = Color(0xFF1E293B)
         Text(
             text = title,
             color = if (isSelected) accentColor else Color.White,
-            style = if (isSelected) MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold) else MaterialTheme.typography.bodyMedium
+            style = if (isSelected) MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold) else MaterialTheme.typography.bodyMedium,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            maxLines = 1
         )
     }
 }

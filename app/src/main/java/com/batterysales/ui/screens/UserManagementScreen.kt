@@ -346,8 +346,7 @@ fun CreateUserDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("الدور:", style = MaterialTheme.typography.titleSmall)
+                Text("الدور:", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     RadioButton(selected = role == "admin", onClick = { role = "admin" })
                     Text("مدير")

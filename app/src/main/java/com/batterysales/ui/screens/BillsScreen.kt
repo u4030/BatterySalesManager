@@ -43,6 +43,8 @@ fun BillsScreen(
     val pendingPurchases by viewModel.pendingPurchases.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     var showAddBillDialog by remember { mutableStateOf(false) }
+    var showDateRangePicker by remember { mutableStateOf(false) }
+    val dateRangePickerState = rememberDateRangePickerState()
 
     val bgColor = MaterialTheme.colorScheme.background
     val cardBgColor = MaterialTheme.colorScheme.surface
@@ -204,6 +206,27 @@ fun BillsScreen(
             }
         )
     }
+
+    if (showDateRangePicker) {
+        DatePickerDialog(
+            onDismissRequest = { showDateRangePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    // Logic to filter bills by date range if needed,
+                    // or just show the selected range if the ViewModel supports it.
+                    // For now, just dismiss.
+                    showDateRangePicker = false
+                }) {
+                    Text("موافق")
+                }
+            }
+        ) {
+            DateRangePicker(
+                state = dateRangePickerState,
+                modifier = Modifier.weight(1f).padding(16.dp)
+            )
+        }
+    }
 }
 
 @Composable
@@ -315,9 +338,9 @@ fun BillItemCard(bill: Bill, supplierName: String, onPayClick: () -> Unit, onDel
                     }
                     IconButton(
                         onClick = onEditClick,
-                        modifier = Modifier.size(36.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f), CircleShape)
+                        modifier = Modifier.size(36.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), CircleShape)
                     ) {
-                        Icon(Icons.Default.Edit, contentDescription = "Edit", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.Edit, contentDescription = "Edit", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                     }
                     IconButton(
                         onClick = onDeleteClick,
@@ -468,9 +491,12 @@ fun AddBillDialog(
                     }
                 }
 
-                OutlinedCard(
+                Surface(
                     onClick = { showDatePicker = true },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f))
                 ) {
                     Row(
                         modifier = Modifier
@@ -479,8 +505,12 @@ fun AddBillDialog(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("تاريخ الاستحقاق: ${dateFormatter.format(selectedDate)}")
-                        Icon(Icons.Default.DateRange, contentDescription = null)
+                        Text(
+                            text = "تاريخ الاستحقاق: ${dateFormatter.format(selectedDate)}",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Icon(Icons.Default.DateRange, contentDescription = null, tint = Color(0xFFFB8C00))
                     }
                 }
                 Spacer(modifier = Modifier.height(com.batterysales.ui.components.LocalCustomKeyboardController.current.keyboardHeight.value))
@@ -597,9 +627,12 @@ fun EditBillDialog(
                     }
                 }
 
-                OutlinedCard(
+                Surface(
                     onClick = { showDatePicker = true },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f))
                 ) {
                     Row(
                         modifier = Modifier
@@ -608,8 +641,12 @@ fun EditBillDialog(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("تاريخ الاستحقاق: ${dateFormatter.format(selectedDate)}")
-                        Icon(Icons.Default.DateRange, contentDescription = null)
+                        Text(
+                            text = "تاريخ الاستحقاق: ${dateFormatter.format(selectedDate)}",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Icon(Icons.Default.DateRange, contentDescription = null, tint = Color(0xFFFB8C00))
                     }
                 }
                 Spacer(modifier = Modifier.height(com.batterysales.ui.components.LocalCustomKeyboardController.current.keyboardHeight.value))
