@@ -3,6 +3,7 @@ package com.batterysales.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.batterysales.data.models.BillStatus
+import com.batterysales.data.models.Invoice
 import com.batterysales.data.models.ProductVariant
 import com.batterysales.data.models.StockEntry
 import com.batterysales.data.repositories.*
