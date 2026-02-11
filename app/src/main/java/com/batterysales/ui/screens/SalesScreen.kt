@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -19,6 +20,7 @@ import androidx.navigation.NavController
 import com.batterysales.ui.components.BarcodeScanner
 import com.batterysales.viewmodel.SalesViewModel
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.style.TextAlign
@@ -61,10 +63,12 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
         }
     }
 
-    val bgColor = Color(0xFF0F0F0F)
-    val cardBgColor = Color(0xFF1C1C1C)
+    val bgColor = MaterialTheme.colorScheme.background
+    val cardBgColor = MaterialTheme.colorScheme.surface
     val accentColor = Color(0xFFFB8C00)
-    val fieldBorderColor = Color(0xFF3E2723)
+    val headerGradient = Brush.verticalGradient(
+        colors = listOf(Color(0xFF1E293B), Color(0xFF0F172A))
+    )
 
     Scaffold(
         containerColor = bgColor,
@@ -129,43 +133,67 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
             }
         }
     ) { padding ->
-        LazyColumn(
-            modifier = Modifier.padding(padding).fillMaxSize().imePadding(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(
-                        onClick = { showScanner = true },
-                        modifier = Modifier.background(accentColor.copy(alpha = 0.1f), CircleShape)
+        Column(modifier = Modifier.padding(padding).fillMaxSize()) {
+            // Gradient Header
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        brush = headerGradient,
+                        shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
+                    )
+                    .padding(bottom = 24.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Spacer(modifier = Modifier.height(32.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Icon(Icons.Default.PhotoCamera, contentDescription = "Scan", tint = accentColor)
-                    }
-                    Text("فاتورة جديدة", style = MaterialTheme.typography.titleLarge, color = Color.White, fontWeight = FontWeight.Bold)
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                        IconButton(
+                            onClick = { navController.popBackStack() },
+                            modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                        }
+
+                        Text(
+                            text = "فاتورة مبيعات جديدة",
+                            style = MaterialTheme.typography.headlineSmall,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        IconButton(
+                            onClick = { showScanner = true },
+                            modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
+                        ) {
+                            Icon(Icons.Default.PhotoCamera, contentDescription = "Scan", tint = Color.White)
+                        }
                     }
                 }
             }
 
+            LazyColumn(
+                modifier = Modifier.fillMaxSize().imePadding(),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
             if (uiState.errorMessage != null) {
                 item {
                     Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF3B1F1F)),
-                        modifier = Modifier.fillMaxWidth()
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp)
                     ) {
                         Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Error, contentDescription = null, tint = Color.Red)
+                            Icon(Icons.Default.Error, contentDescription = null, tint = MaterialTheme.colorScheme.error)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text(text = uiState.errorMessage!!, color = Color.White, fontSize = 14.sp)
+                            Text(text = uiState.errorMessage!!, color = MaterialTheme.colorScheme.onErrorContainer, style = MaterialTheme.typography.bodyMedium)
                             Spacer(modifier = Modifier.weight(1f))
                             IconButton(onClick = viewModel::onDismissError) {
-                                Icon(Icons.Default.Close, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                Icon(Icons.Default.Close, contentDescription = null, tint = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.size(16.dp))
                             }
                         }
                     }
@@ -211,8 +239,8 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
 
                         val availableQty = uiState.selectedVariant?.let { uiState.stockLevels[Pair(it.id, uiState.selectedWarehouse?.id ?: "")] ?: 0 } ?: 0
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                            Text("الكمية المتاحة: ", color = Color.White.copy(alpha = 0.7f), fontSize = 14.sp)
-                            Text("$availableQty", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                            Text("الكمية المتاحة: ", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f), fontSize = 14.sp)
+                            Text("$availableQty", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 18.sp)
                         }
 
                         SalesTextField(
@@ -228,7 +256,7 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
                             onValueChange = viewModel::onSellingPriceChanged,
                             label = "سعر البيع",
                             keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal,
-                            suffix = "ر.س",
+                            suffix = "JD",
                             textAlign = TextAlign.Center
                         )
 
@@ -241,14 +269,14 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(80.dp)
-                                .background(Color(0xFF2E1505), RoundedCornerShape(16.dp))
-                                .border(1.dp, Color(0xFF5D4037), RoundedCornerShape(16.dp))
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), RoundedCornerShape(16.dp))
+                                .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
                                 .padding(horizontal = 20.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Text("الإجمالي", color = Color.White.copy(alpha = 0.6f), fontSize = 14.sp)
-                                Text("${String.format("%,.2f", total)} ر.س", color = accentColor, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                                Text("الإجمالي", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                                Text("${String.format("%,.3f", total)} JD", color = accentColor, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -272,10 +300,10 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
                             }
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
-                                Text("البطاريات القديمة (سكراب)", color = Color.White, fontWeight = FontWeight.Bold)
+                                Text("البطاريات القديمة (سكراب)", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
                                 Text(
                                     "سيتم إضافة البطاريات المستهلكة إلى المستودع",
-                                    color = Color.White.copy(alpha = 0.5f),
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                                     fontSize = 11.sp
                                 )
                             }
@@ -305,7 +333,7 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
                             onValueChange = viewModel::onOldBatteriesValueChanged,
                             label = "قيمة الخصم",
                             keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal,
-                            suffix = "ر.س",
+                            suffix = "JD",
                             textAlign = TextAlign.Center
                         )
                     }
@@ -339,7 +367,7 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
                             onValueChange = { paidAmount = it },
                             label = "المبلغ المدفوع",
                             keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal,
-                            suffix = "ر.س",
+                            suffix = "JD",
                             textAlign = TextAlign.Center
                         )
                     }
@@ -374,6 +402,7 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
         }
     }
 }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -387,11 +416,10 @@ fun SalesDropdown(
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val fieldBorderColor = Color(0xFF3E2723)
     val accentColor = Color(0xFFFB8C00)
 
     Column(modifier = modifier.fillMaxWidth()) {
-        Text(label, color = Color.White.copy(alpha = 0.7f), fontSize = 14.sp, modifier = Modifier.padding(bottom = 8.dp))
+        Text(label, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f), modifier = Modifier.padding(bottom = 8.dp))
         Box {
             OutlinedTextField(
                 value = selectedValue,
@@ -399,16 +427,15 @@ fun SalesDropdown(
                 readOnly = true,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
-                colors = TextFieldDefaults.outlinedTextFieldColors(
-                    containerColor = Color.Transparent,
+                colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = accentColor,
-                    unfocusedBorderColor = fieldBorderColor,
-                    disabledBorderColor = fieldBorderColor.copy(alpha = 0.5f)
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                    disabledBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
                 ),
                 leadingIcon = { Icon(icon, contentDescription = null, tint = accentColor, modifier = Modifier.size(20.dp)) },
                 trailingIcon = { Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = accentColor) },
                 enabled = enabled,
-                textStyle = LocalInputTextStyle.current.copy(color = Color.White)
+                textStyle = LocalInputTextStyle.current.copy(color = MaterialTheme.colorScheme.onSurface)
             )
             Box(
                 modifier = Modifier
@@ -420,11 +447,11 @@ fun SalesDropdown(
                 onDismissRequest = { expanded = false },
                 modifier = Modifier
                     .fillMaxWidth(0.9f)
-                    .background(Color(0xFF1C1C1C))
+                    .background(MaterialTheme.colorScheme.surface)
             ) {
                 options.forEachIndexed { index, text ->
                     DropdownMenuItem(
-                        text = { Text(text, color = Color.White) },
+                        text = { Text(text, color = MaterialTheme.colorScheme.onSurface) },
                         onClick = {
                             onOptionSelected(index)
                             expanded = false
@@ -447,25 +474,23 @@ fun SalesTextField(
     suffix: String? = null,
     textAlign: TextAlign = TextAlign.Start
 ) {
-    val fieldBorderColor = Color(0xFF3E2723)
     val accentColor = Color(0xFFFB8C00)
 
     Column(modifier = modifier.fillMaxWidth()) {
-        Text(label, color = Color.White.copy(alpha = 0.7f), fontSize = 14.sp, modifier = Modifier.padding(bottom = 8.dp))
+        Text(label, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f), modifier = Modifier.padding(bottom = 8.dp))
         OutlinedTextField(
             value = value,
             onValueChange = onValueChange,
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
-            colors = TextFieldDefaults.outlinedTextFieldColors(
-                containerColor = Color.Transparent,
+            colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = accentColor,
-                unfocusedBorderColor = fieldBorderColor
+                unfocusedBorderColor = MaterialTheme.colorScheme.outline
             ),
             keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = keyboardType),
-            textStyle = LocalInputTextStyle.current.copy(color = Color.White, textAlign = textAlign),
+            textStyle = LocalInputTextStyle.current.copy(color = MaterialTheme.colorScheme.onSurface, textAlign = textAlign),
             trailingIcon = if (suffix != null) {
-                { Text(suffix, color = Color.White.copy(alpha = 0.5f), modifier = Modifier.padding(end = 12.dp)) }
+                { Text(suffix, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f), modifier = Modifier.padding(end = 12.dp)) }
             } else null
         )
     }

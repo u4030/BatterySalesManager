@@ -5,15 +5,19 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.automirrored.filled.*
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
@@ -60,41 +64,78 @@ fun StockEntryScreen(
         }
     }
 
+    val headerGradient = androidx.compose.ui.graphics.Brush.verticalGradient(
+        colors = listOf(androidx.compose.ui.graphics.Color(0xFF1E293B), androidx.compose.ui.graphics.Color(0xFF0F172A))
+    )
+
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(if (uiState.isEditMode) "تعديل قيد المخزون" else "إدخال مخزون جديد") },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "رجوع")
-                    }
-                }
-            )
-        }
+        containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
         if (uiState.isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
+                CircularProgressIndicator(color = Color(0xFFFB8C00))
             }
         } else {
-            Column(modifier = Modifier.padding(padding).imePadding()) {
-                OutlinedButton(
-                    onClick = { showScanner = true },
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
-                ) {
-                    Icon(Icons.Default.PhotoCamera, contentDescription = "مسح الباركود")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("مسح الباركود")
+            LazyColumn(
+                modifier = Modifier.padding(padding).fillMaxSize().imePadding(),
+                contentPadding = PaddingValues(bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Gradient Header
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                brush = headerGradient,
+                                shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
+                            )
+                            .padding(bottom = 24.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Spacer(modifier = Modifier.height(32.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                IconButton(
+                                    onClick = { navController.popBackStack() },
+                                    modifier = Modifier.background(Color.White.copy(alpha = 0.1f), CircleShape)
+                                ) {
+                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                                }
+
+                                Text(
+                                    text = if (uiState.isEditMode) "تعديل قيد المخزون" else "إدخال مخزون جديد",
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    color = androidx.compose.ui.graphics.Color.White,
+                                    fontWeight = FontWeight.Bold
+                                )
+
+                                IconButton(
+                                    onClick = { showScanner = true },
+                                    modifier = Modifier.background(androidx.compose.ui.graphics.Color.White.copy(alpha = 0.1f), CircleShape)
+                                ) {
+                                    Icon(Icons.Default.PhotoCamera, contentDescription = "Scan", tint = androidx.compose.ui.graphics.Color.White)
+                                }
+                            }
+                        }
+                    }
                 }
-                StockEntryContent(
-                    uiState = uiState,
-                    viewModel = viewModel
-                )
+
+                item {
+                    StockEntryContent(
+                        uiState = uiState,
+                        viewModel = viewModel
+                    )
+                }
             }
         }
     }
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun StockEntryContent(
     modifier: Modifier = Modifier,
@@ -118,167 +159,194 @@ fun StockEntryContent(
         )
     }
 
-    LazyColumn(
+    Column(
         modifier = modifier.padding(horizontal = 16.dp),
-        contentPadding = PaddingValues(vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // Warehouse Dropdown
-        item {
-            Row {
-                Dropdown(
-                    label = "المستودع",
-                    selectedValue = uiState.selectedWarehouse?.name ?: "",
-                    options = uiState.warehouses.map { it.name },
-                    onOptionSelected = { index -> viewModel.onWarehouseSelected(uiState.warehouses[index]) },
-                    enabled = !uiState.isEditMode && uiState.isAdmin,
-                    modifier = Modifier.weight(1f)
-                )
-                if (uiState.isAdmin) {
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(onClick = { showAddWarehouseDialog = true }, enabled = !uiState.isEditMode) {
-                        Text("إضافة مستودع")
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("المستودع والمورد", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Dropdown(
+                        label = "المستودع",
+                        selectedValue = uiState.selectedWarehouse?.name ?: "",
+                        options = uiState.warehouses.map { it.name },
+                        onOptionSelected = { index -> viewModel.onWarehouseSelected(uiState.warehouses[index]) },
+                        enabled = !uiState.isEditMode && uiState.isAdmin,
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (uiState.isAdmin && !uiState.isEditMode) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        IconButton(onClick = { showAddWarehouseDialog = true }) {
+                            Icon(Icons.Default.AddCircle, contentDescription = "Add", tint = Color(0xFFFB8C00))
+                        }
+                    }
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Dropdown(
+                        label = "المورد",
+                        selectedValue = uiState.selectedSupplier?.name ?: uiState.supplierName,
+                        options = uiState.suppliers.map { it.name },
+                        onOptionSelected = { index -> viewModel.onSupplierSelected(uiState.suppliers[index]) },
+                        enabled = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (uiState.isAdmin) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        IconButton(onClick = { showAddSupplierDialog = true }) {
+                            Icon(Icons.Default.AddCircle, contentDescription = "Add", tint = Color(0xFFFB8C00))
+                        }
                     }
                 }
             }
         }
 
         // Product and Variant Selection
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Dropdown(
-                    label = "المنتج",
-                    selectedValue = uiState.selectedProduct?.name ?: "",
-                    options = uiState.products.map { it.name },
-                    onOptionSelected = { index -> viewModel.onProductSelected(uiState.products[index]) },
-                    enabled = !uiState.isEditMode,
-                    modifier = Modifier.weight(1f)
-                )
-                Dropdown(
-                    label = "السعة",
-                    selectedValue = uiState.selectedVariant?.let { v ->
-                        "${v.capacity} أمبير" + if (v.specification.isNotEmpty()) " (${v.specification})" else ""
-                    } ?: "",
-                    options = uiState.variants.map { v ->
-                        "${v.capacity} أمبير" + if (v.specification.isNotEmpty()) " (${v.specification})" else ""
-                    },
-                    onOptionSelected = { index -> viewModel.onVariantSelected(uiState.variants[index]) },
-                    enabled = !uiState.isEditMode && uiState.selectedProduct != null,
-                    modifier = Modifier.weight(1f)
-                )
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("تفاصيل المنتج", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    maxItemsInEachRow = 2
+                ) {
+                    Dropdown(
+                        label = "المنتج",
+                        selectedValue = uiState.selectedProduct?.name ?: "",
+                        options = uiState.products.map { it.name },
+                        onOptionSelected = { index -> viewModel.onProductSelected(uiState.products[index]) },
+                        enabled = !uiState.isEditMode,
+                        modifier = Modifier.weight(1f).widthIn(min = 150.dp)
+                    )
+                    Dropdown(
+                        label = "السعة",
+                        selectedValue = uiState.selectedVariant?.let { v ->
+                            "${v.capacity}A" + if (v.specification.isNotEmpty()) " (${v.specification})" else ""
+                        } ?: "",
+                        options = uiState.variants.map { v ->
+                            "${v.capacity}A" + if (v.specification.isNotEmpty()) " (${v.specification})" else ""
+                        },
+                        onOptionSelected = { index -> viewModel.onVariantSelected(uiState.variants[index]) },
+                        enabled = !uiState.isEditMode && uiState.selectedProduct != null,
+                        modifier = Modifier.weight(1f).widthIn(min = 150.dp)
+                    )
+                }
             }
         }
 
 
         // --- Cost Calculation Section (Admin Only) ---
         if (uiState.isAdmin) {
-            item {
-                CostCalculationSection(uiState = uiState, viewModel = viewModel)
-            }
+            CostCalculationSection(uiState = uiState, viewModel = viewModel)
 
             if (uiState.isEditMode) {
-                item {
-                    OutlinedTextField(
-                        value = uiState.returnedQuantity,
-                        onValueChange = viewModel::onReturnedQuantityChanged,
-                        label = { Text("الكمية المرتجعة") },
-                        modifier = Modifier.fillMaxWidth(),
-                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
-                        textStyle = LocalInputTextStyle.current,
-                        colors = TextFieldDefaults.outlinedTextFieldColors(
-                            focusedBorderColor = androidx.compose.ui.graphics.Color.Red,
-                            unfocusedBorderColor = androidx.compose.ui.graphics.Color.Red.copy(alpha = 0.5f)
-                        )
+                OutlinedTextField(
+                    value = uiState.returnedQuantity,
+                    onValueChange = viewModel::onReturnedQuantityChanged,
+                    label = { Text("الكمية المرتجعة") },
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                    textStyle = LocalInputTextStyle.current,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = androidx.compose.ui.graphics.Color.Red,
+                        unfocusedBorderColor = androidx.compose.ui.graphics.Color.Red.copy(alpha = 0.5f)
                     )
-                }
+                )
             }
         } else {
             // Seller only sees Quantity field
-            item {
-                OutlinedTextField(
-                    value = uiState.quantity,
-                    onValueChange = viewModel::onQuantityChanged,
-                    label = { Text("الكمية") },
-                    modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
-                    textStyle = LocalInputTextStyle.current
-                )
-            }
+            OutlinedTextField(
+                value = uiState.quantity,
+                onValueChange = viewModel::onQuantityChanged,
+                label = { Text("الكمية") },
+                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                textStyle = LocalInputTextStyle.current,
+                shape = RoundedCornerShape(12.dp)
+            )
         }
 
         if (!uiState.isEditMode) {
-            item {
-                Button(
-                    onClick = viewModel::onAddItemClicked,
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = uiState.selectedVariant != null
-                ) { Text("إضافة") }
+            Button(
+                onClick = viewModel::onAddItemClicked,
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                shape = RoundedCornerShape(12.dp),
+                enabled = uiState.selectedVariant != null,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFB8C00))
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("إضافة إلى القائمة")
             }
         }
 
         // --- Items List ---
-        items(uiState.stockItems, key = { it.id }) { item ->
-            ListItem(
-                headlineContent = {
-                    Text(
-                        "${item.productName} - ${item.productVariant.capacity} أمبير" +
-                                if (item.productVariant.specification.isNotEmpty()) " (${item.productVariant.specification})" else ""
-                    )
-                },
-                supportingContent = {
-                    if (uiState.isAdmin) {
-                        Text("الكمية: ${item.quantity}, إجمالي التكلفة: JD ${String.format("%.4f", item.totalCost)}")
-                    } else {
-                        Text("الكمية: ${item.quantity}")
+        uiState.stockItems.forEach { item ->
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "${item.productName} - ${item.productVariant.capacity}A",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (uiState.isAdmin) {
+                            Text("الكمية: ${item.quantity} | التكلفة: JD ${String.format("%.3f", item.totalCost)}", style = MaterialTheme.typography.bodySmall)
+                        } else {
+                            Text("الكمية: ${item.quantity}", style = MaterialTheme.typography.bodySmall)
+                        }
                     }
-                },
-                trailingContent = {
                     if (!uiState.isEditMode) {
                         IconButton(onClick = { viewModel.onRemoveItemClicked(item) }) {
-                            Icon(Icons.Default.Delete, contentDescription = "إزالة")
+                            Icon(Icons.Default.Delete, contentDescription = "إزالة", tint = Color.Red)
                         }
                     }
                 }
-            )
+            }
         }
 
         if (uiState.isAdmin) {
-            item {
-                GrandTotalsSection(uiState = uiState)
-            }
-        }
-        item {
-            Row {
-                Dropdown(
-                    label = "المورد",
-                    selectedValue = uiState.selectedSupplier?.name ?: uiState.supplierName,
-                    options = uiState.suppliers.map { it.name },
-                    onOptionSelected = { index -> viewModel.onSupplierSelected(uiState.suppliers[index]) },
-                    enabled = true,
-                    modifier = Modifier.weight(1f)
-                )
-                if (uiState.isAdmin) {
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(onClick = { showAddSupplierDialog = true }) {
-                        Text("إضافة مورد")
-                    }
-                }
-            }
+            GrandTotalsSection(uiState = uiState)
         }
 
-        item {
-            Button(
-                onClick = viewModel::onSaveClicked,
-                modifier = Modifier.fillMaxWidth(),
-                enabled = uiState.stockItems.isNotEmpty() && uiState.selectedWarehouse != null && (uiState.isAdmin || !uiState.isEditMode)
-            ) { Text(if (uiState.isEditMode) "تحديث القيد" else "حفظ إدخال المخزون") }
+        Button(
+            onClick = viewModel::onSaveClicked,
+            modifier = Modifier.fillMaxWidth().height(56.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+            enabled = uiState.stockItems.isNotEmpty() && uiState.selectedWarehouse != null && (uiState.isAdmin || !uiState.isEditMode)
+        ) {
+            Icon(Icons.Default.Save, contentDescription = null)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(if (uiState.isEditMode) "تحديث القيد" else "حفظ إدخال المخزون", fontWeight = FontWeight.Bold)
         }
     }
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun CostCalculationSection(uiState: StockEntryUiState, viewModel: StockEntryViewModel) {
-    // Derived values for display
     val variantCapacity = uiState.selectedVariant?.capacity ?: 0
     val cost = if (uiState.costValue.count { it == '.' } > 1) {
         val parts = uiState.costValue.split(".")
@@ -306,82 +374,88 @@ fun CostCalculationSection(uiState: StockEntryUiState, viewModel: StockEntryView
     val totalAmperes = (netQuantity * variantCapacity).toString()
     val totalCost = String.format("%.4f", netQuantity * (costPerItem.toDoubleOrNull() ?: 0.0))
 
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("طريقة حساب التكلفة:")
-        Column {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { viewModel.onCostInputModeChanged(CostInputMode.BY_AMPERE) }
-                    .padding(vertical = 2.dp)
-            ) {
-                RadioButton(
-                    selected = uiState.costInputMode == CostInputMode.BY_AMPERE,
-                    onClick = { viewModel.onCostInputModeChanged(CostInputMode.BY_AMPERE) }
-                )
-                Spacer(Modifier.width(8.dp))
-                Text("بسعر الأمبير")
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("حساب التكلفة والكمية", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { viewModel.onCostInputModeChanged(CostInputMode.BY_AMPERE) }) {
+                    RadioButton(selected = uiState.costInputMode == CostInputMode.BY_AMPERE, onClick = { viewModel.onCostInputModeChanged(CostInputMode.BY_AMPERE) })
+                    Text("سعر الأمبير", style = MaterialTheme.typography.bodySmall)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { viewModel.onCostInputModeChanged(CostInputMode.BY_ITEM) }) {
+                    RadioButton(selected = uiState.costInputMode == CostInputMode.BY_ITEM, onClick = { viewModel.onCostInputModeChanged(CostInputMode.BY_ITEM) })
+                    Text("سعر القطعة", style = MaterialTheme.typography.bodySmall)
+                }
             }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { viewModel.onCostInputModeChanged(CostInputMode.BY_ITEM) }
-                    .padding(vertical = 2.dp)
+
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                maxItemsInEachRow = 2
             ) {
-                RadioButton(
-                    selected = uiState.costInputMode == CostInputMode.BY_ITEM,
-                    onClick = { viewModel.onCostInputModeChanged(CostInputMode.BY_ITEM) }
+                OutlinedTextField(
+                    value = if (uiState.costInputMode == CostInputMode.BY_AMPERE) uiState.costValue else costPerAmpere,
+                    onValueChange = viewModel::onCostValueChanged,
+                    label = { Text("سعر الأمبير") },
+                    modifier = Modifier.weight(1f).widthIn(min = 140.dp),
+                    readOnly = uiState.costInputMode != CostInputMode.BY_AMPERE,
+                    enabled = uiState.selectedVariant != null,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
+                    textStyle = LocalInputTextStyle.current,
+                    shape = RoundedCornerShape(12.dp)
                 )
-                Spacer(Modifier.width(8.dp))
-                Text("بسعر القطعة")
+                OutlinedTextField(
+                    value = if (uiState.costInputMode == CostInputMode.BY_ITEM) uiState.costValue else costPerItem,
+                    onValueChange = viewModel::onCostValueChanged,
+                    label = { Text("تكلفة القطعة") },
+                    modifier = Modifier.weight(1f).widthIn(min = 140.dp),
+                    readOnly = uiState.costInputMode != CostInputMode.BY_ITEM,
+                    enabled = uiState.selectedVariant != null,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
+                    textStyle = LocalInputTextStyle.current,
+                    shape = RoundedCornerShape(12.dp)
+                )
+                OutlinedTextField(
+                    value = uiState.quantity,
+                    onValueChange = viewModel::onQuantityChanged,
+                    label = { Text("الكمية") },
+                    modifier = Modifier.weight(1f).widthIn(min = 140.dp),
+                    enabled = uiState.selectedVariant != null,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                    textStyle = LocalInputTextStyle.current,
+                    shape = RoundedCornerShape(12.dp)
+                )
+                OutlinedTextField(
+                    value = uiState.minQuantity,
+                    onValueChange = viewModel::onMinQuantityChanged,
+                    label = { Text("الحد الأدنى") },
+                    modifier = Modifier.weight(1f).widthIn(min = 140.dp),
+                    enabled = uiState.selectedVariant != null,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                    textStyle = LocalInputTextStyle.current,
+                    shape = RoundedCornerShape(12.dp)
+                )
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Column {
+                    Text("إجمالي الأمبيرات", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(totalAmperes, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text("إجمالي التكلفة", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("JD $totalCost", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFF10B981))
+                }
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = if (uiState.costInputMode == CostInputMode.BY_AMPERE) uiState.costValue else costPerAmpere,
-                onValueChange = viewModel::onCostValueChanged,
-                label = { Text("سعر الأمبير") },
-                modifier = Modifier.weight(1f),
-                readOnly = uiState.costInputMode != CostInputMode.BY_AMPERE,
-                enabled = uiState.selectedVariant != null,
-                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
-                textStyle = LocalInputTextStyle.current
-            )
-            OutlinedTextField(
-                value = if (uiState.costInputMode == CostInputMode.BY_ITEM) uiState.costValue else costPerItem,
-                onValueChange = viewModel::onCostValueChanged,
-                label = { Text("تكلفة القطعة") },
-                modifier = Modifier.weight(1f),
-                readOnly = uiState.costInputMode != CostInputMode.BY_ITEM,
-                enabled = uiState.selectedVariant != null,
-                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
-                textStyle = LocalInputTextStyle.current
-            )
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = uiState.quantity,
-                onValueChange = viewModel::onQuantityChanged,
-                label = { Text("الكمية") },
-                modifier = Modifier.weight(1f),
-                enabled = uiState.selectedVariant != null,
-                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
-                textStyle = LocalInputTextStyle.current
-            )
-            OutlinedTextField(
-                value = uiState.minQuantity,
-                onValueChange = viewModel::onMinQuantityChanged,
-                label = { Text("الحد الأدنى") },
-                modifier = Modifier.weight(1f),
-                enabled = uiState.selectedVariant != null,
-                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
-                textStyle = LocalInputTextStyle.current
-            )
-        }
-        OutlinedTextField(value = totalAmperes, onValueChange = {}, label = { Text("إجمالي الأمبيرات") }, modifier = Modifier.fillMaxWidth(), readOnly = true, textStyle = LocalInputTextStyle.current)
-        OutlinedTextField(value = totalCost, onValueChange = {}, label = { Text("إجمالي التكلفة") }, modifier = Modifier.fillMaxWidth(), readOnly = true, textStyle = LocalInputTextStyle.current)
     }
 }
 
@@ -389,9 +463,24 @@ fun CostCalculationSection(uiState: StockEntryUiState, viewModel: StockEntryView
 fun GrandTotalsSection(uiState: StockEntryUiState) {
     val grandTotalAmperes = uiState.stockItems.sumOf { it.totalAmperes }
     val grandTotalCost = uiState.stockItems.sumOf { it.totalCost }
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedTextField(value = grandTotalAmperes.toString(), onValueChange = {}, label = { Text("المجموع الكلي للأمبيرات") }, modifier = Modifier.weight(1f), readOnly = true, textStyle = LocalInputTextStyle.current)
-        OutlinedTextField(value = String.format("%.4f", grandTotalCost), onValueChange = {}, label = { Text("المجموع الكلي للتكلفة (JD)") }, modifier = Modifier.weight(1f), readOnly = true, textStyle = LocalInputTextStyle.current)
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("المجموع الكلي للقيد", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Column {
+                    Text("إجمالي الأمبيرات", style = MaterialTheme.typography.labelSmall)
+                    Text("$grandTotalAmperes A", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text("إجمالي التكلفة", style = MaterialTheme.typography.labelSmall)
+                    Text("JD ${String.format("%.3f", grandTotalCost)}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                }
+            }
+        }
     }
 }
 
@@ -411,15 +500,20 @@ fun Dropdown(
         onExpandedChange = { if (enabled) expanded = !expanded },
         modifier = modifier
     ) {
-        TextField(
-            modifier = Modifier.menuAnchor(),
+        OutlinedTextField(
+            modifier = Modifier.menuAnchor().fillMaxWidth(),
             readOnly = true,
             value = selectedValue,
             onValueChange = { },
             label = { Text(label) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
             enabled = enabled,
-            textStyle = LocalInputTextStyle.current
+            textStyle = LocalInputTextStyle.current,
+            shape = RoundedCornerShape(12.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = Color(0xFFFB8C00),
+                unfocusedBorderColor = MaterialTheme.colorScheme.outline
+            )
         )
         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             options.forEachIndexed { index, text ->
@@ -435,7 +529,21 @@ fun Dropdown(
 @Composable
 fun AddWarehouseDialog(onDismiss: () -> Unit, onAddWarehouse: (String) -> Unit) {
     var name by remember { mutableStateOf("") }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("إضافة مستودع جديد") }, text = { OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("اسم المستودع") }, textStyle = LocalInputTextStyle.current) }, confirmButton = { Button(onClick = { if (name.isNotBlank()) { onAddWarehouse(name); onDismiss() } }) { Text("إضافة") } }, dismissButton = { Button(onClick = onDismiss) { Text("إلغاء") } })
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("إضافة مستودع جديد") },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("اسم المستودع") },
+                textStyle = LocalInputTextStyle.current,
+                shape = RoundedCornerShape(12.dp)
+            )
+        },
+        confirmButton = { Button(onClick = { if (name.isNotBlank()) { onAddWarehouse(name); onDismiss() } }) { Text("إضافة") } },
+        dismissButton = { Button(onClick = onDismiss) { Text("إلغاء") } }
+    )
 }
 
 @Composable
@@ -447,8 +555,21 @@ fun AddSupplierDialog(onDismiss: () -> Unit, onAddSupplier: (String, Double) -> 
         title = { Text("إضافة مورد جديد") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("اسم المورد") }, textStyle = LocalInputTextStyle.current)
-                OutlinedTextField(value = target, onValueChange = { target = it }, label = { Text("الهدف السنوي (Target)") }, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal), textStyle = LocalInputTextStyle.current)
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("اسم المورد") },
+                    textStyle = LocalInputTextStyle.current,
+                    shape = RoundedCornerShape(12.dp)
+                )
+                OutlinedTextField(
+                    value = target,
+                    onValueChange = { target = it },
+                    label = { Text("الهدف السنوي (Target)") },
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
+                    textStyle = LocalInputTextStyle.current,
+                    shape = RoundedCornerShape(12.dp)
+                )
             }
         },
         confirmButton = {

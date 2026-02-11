@@ -5,11 +5,14 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -41,62 +44,99 @@ fun BillsScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     var showAddBillDialog by remember { mutableStateOf(false) }
 
+    val bgColor = MaterialTheme.colorScheme.background
+    val cardBgColor = MaterialTheme.colorScheme.surface
+    val accentColor = Color(0xFFFB8C00)
+    val headerGradient = androidx.compose.ui.graphics.Brush.verticalGradient(
+        colors = listOf(Color(0xFF1E293B), Color(0xFF0F172A))
+    )
+
+    var selectedBillForPayment by remember { mutableStateOf<Bill?>(null) }
+    var billToDelete by remember { mutableStateOf<Bill?>(null) }
+    var billToEdit by remember { mutableStateOf<Bill?>(null) }
+
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("الكمبيالات والشيكات", fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "رجوع")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
-                )
-            )
-        },
+        containerColor = bgColor,
         floatingActionButton = {
             FloatingActionButton(
                 onClick = { showAddBillDialog = true },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary
+                containerColor = accentColor,
+                contentColor = Color.White,
+                shape = CircleShape
             ) {
                 Icon(Icons.Default.Add, contentDescription = "إضافة كمبيالة")
             }
         }
     ) { paddingValues ->
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .imePadding()
-                .background(MaterialTheme.colorScheme.background)
-                .padding(16.dp)
+                .imePadding(),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(bottom = 80.dp)
         ) {
-            if (isLoading) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
-                }
-            } else if (bills.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(
-                        "لا توجد كمبيالات أو شيكات مسجلة",
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                    )
-                }
-            } else {
-                var selectedBillForPayment by remember { mutableStateOf<Bill?>(null) }
-                var billToDelete by remember { mutableStateOf<Bill?>(null) }
-                var billToEdit by remember { mutableStateOf<Bill?>(null) }
-
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.fillMaxSize()
+            // Gradient Header
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            brush = headerGradient,
+                            shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
+                        )
+                        .padding(bottom = 24.dp)
                 ) {
-                    items(bills) { bill ->
-                        val supplier = suppliers.find { it.id == bill.supplierId }
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Spacer(modifier = Modifier.height(32.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            IconButton(
+                                onClick = { navController.popBackStack() },
+                                modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                            }
+
+                            Text(
+                                text = "الكمبيالات والشيكات",
+                                style = MaterialTheme.typography.headlineSmall,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
+                            )
+
+                            IconButton(
+                                onClick = { viewModel.loadBills() },
+                                modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
+                            ) {
+                                Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color.White)
+                            }
+                        }
+                    }
+                }
+            }
+
+            item {
+                if (isLoading) {
+                    Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = accentColor)
+                    }
+                } else if (bills.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                        Text(
+                            "لا توجد كمبيالات أو شيكات مسجلة",
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+            }
+            if (!isLoading && bills.isNotEmpty()) {
+                items(bills) { bill ->
+                    val supplier = suppliers.find { it.id == bill.supplierId }
+                    Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                         BillItemCard(
                             bill = bill,
                             supplierName = supplier?.name ?: "",
@@ -106,51 +146,51 @@ fun BillsScreen(
                         )
                     }
                 }
-
-                if (billToDelete != null) {
-                    AlertDialog(
-                        onDismissRequest = { billToDelete = null },
-                        title = { Text("تأكيد الحذف") },
-                        text = { Text("هل أنت متأكد من حذف هذه الكمبيالة؟ سيتم أيضاً حذف جميع العمليات المالية المتعلقة بها من الخزينة.") },
-                        confirmButton = {
-                            Button(
-                                onClick = {
-                                    viewModel.deleteBill(billToDelete!!.id)
-                                    billToDelete = null
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                            ) { Text("حذف") }
-                        },
-                        dismissButton = {
-                            TextButton(onClick = { billToDelete = null }) { Text("إلغاء") }
-                        }
-                    )
-                }
-
-                if (billToEdit != null) {
-                    EditBillDialog(
-                        bill = billToEdit!!,
-                        suppliers = suppliers,
-                        onDismiss = { billToEdit = null },
-                        onConfirm = { updatedBill ->
-                            viewModel.updateBill(updatedBill)
-                            billToEdit = null
-                        }
-                    )
-                }
-
-                if (selectedBillForPayment != null) {
-                    PaymentDialog(
-                        bill = selectedBillForPayment!!,
-                        onDismiss = { selectedBillForPayment = null },
-                        onConfirm = { amount ->
-                            viewModel.recordPayment(selectedBillForPayment!!.id, amount)
-                            selectedBillForPayment = null
-                        }
-                    )
-                }
             }
         }
+    }
+
+    if (billToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { billToDelete = null },
+            title = { Text("تأكيد الحذف") },
+            text = { Text("هل أنت متأكد من حذف هذه الكمبيالة؟ سيتم أيضاً حذف جميع العمليات المالية المتعلقة بها من الخزينة.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.deleteBill(billToDelete!!.id)
+                        billToDelete = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("حذف") }
+            },
+            dismissButton = {
+                TextButton(onClick = { billToDelete = null }) { Text("إلغاء") }
+            }
+        )
+    }
+
+    if (billToEdit != null) {
+        EditBillDialog(
+            bill = billToEdit!!,
+            suppliers = suppliers,
+            onDismiss = { billToEdit = null },
+            onConfirm = { updatedBill ->
+                viewModel.updateBill(updatedBill)
+                billToEdit = null
+            }
+        )
+    }
+
+    if (selectedBillForPayment != null) {
+        PaymentDialog(
+            bill = selectedBillForPayment!!,
+            onDismiss = { selectedBillForPayment = null },
+            onConfirm = { amount ->
+                viewModel.recordPayment(selectedBillForPayment!!.id, amount)
+                selectedBillForPayment = null
+            }
+        )
     }
 
     if (showAddBillDialog) {
@@ -173,74 +213,117 @@ fun BillItemCard(bill: Bill, supplierName: String, onPayClick: () -> Unit, onDel
     val isPartial = bill.status == BillStatus.PARTIAL
 
     val statusColor = when {
-        isPaid -> Color(0xFF4CAF50)
-        isPartial -> Color(0xFFFF9800)
-        else -> MaterialTheme.colorScheme.tertiary
+        isPaid -> Color(0xFF10B981)
+        isPartial -> Color(0xFFFACC15)
+        else -> Color(0xFFEF4444)
     }
-    val statusContainerColor = statusColor.copy(alpha = 0.1f)
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(20.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.Top
             ) {
-                Text(bill.description, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = bill.description,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    if (supplierName.isNotEmpty()) {
+                        Text(
+                            text = "المورد: $supplierName",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
                 Surface(
-                    color = statusContainerColor,
-                    shape = RoundedCornerShape(4.dp)
+                    color = statusColor.copy(alpha = 0.1f),
+                    shape = RoundedCornerShape(12.dp)
                 ) {
                     Text(
                         text = when {
                             isPaid -> "مسددة"
-                            isPartial -> "مسددة جزئياً"
-                            else -> "غير مسددة"
+                            isPartial -> "جزئية"
+                            else -> "مستحقة"
                         },
                         color = statusColor,
-                        fontSize = 10.sp,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                         fontWeight = FontWeight.Bold
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
                 Column {
-                    if (supplierName.isNotEmpty()) {
-                        Text("المورد: $supplierName", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary, fontSize = 14.sp)
-                    }
-                    if (bill.referenceNumber.isNotEmpty()) {
-                        Text("رقم السند: ${bill.referenceNumber}", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary, fontSize = 14.sp)
-                    }
-                    Text("المبلغ الإجمالي: JD ${String.format("%.3f", bill.amount)}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+                    Text(
+                        text = "JD ${String.format("%,.3f", bill.amount)}",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
                     if (bill.paidAmount > 0) {
-                        Text("المدفوع: JD ${String.format("%.3f", bill.paidAmount)}", color = Color(0xFF4CAF50), fontWeight = FontWeight.Medium)
-                        Text("المتبقي: JD ${String.format("%.3f", bill.amount - bill.paidAmount)}", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Medium)
-                    } else {
-                        Text("المبلغ: JD ${String.format("%.3f", bill.amount)}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
+                        Text(
+                            text = "المدفوع: JD ${String.format("%,.3f", bill.paidAmount)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFF10B981)
+                        )
+                        Text(
+                            text = "المتبقي: JD ${String.format("%,.3f", bill.amount - bill.paidAmount)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFFEF4444),
+                            fontWeight = FontWeight.Bold
+                        )
                     }
-                    Text("تاريخ الاستحقاق: ${dateFormatter.format(bill.dueDate)}", fontSize = 16.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Text(
+                        text = "تاريخ الاستحقاق: ${dateFormatter.format(bill.dueDate)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    if (bill.referenceNumber.isNotEmpty()) {
+                        Text(
+                            text = "رقم السند: ${bill.referenceNumber}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFFFB8C00)
+                        )
+                    }
                 }
 
-                Row {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (!isPaid) {
-                        IconButton(onClick = onPayClick) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = "تسديد", tint = Color(0xFF4CAF50))
+                        IconButton(
+                            onClick = onPayClick,
+                            modifier = Modifier.size(36.dp).background(Color(0xFF10B981).copy(alpha = 0.1f), CircleShape)
+                        ) {
+                            Icon(Icons.Default.Payments, contentDescription = "Pay", tint = Color(0xFF10B981), modifier = Modifier.size(18.dp))
                         }
                     }
-                    IconButton(onClick = onEditClick) {
-                        Icon(Icons.Default.Edit, contentDescription = "تعديل", tint = MaterialTheme.colorScheme.primary)
+                    IconButton(
+                        onClick = onEditClick,
+                        modifier = Modifier.size(36.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f), CircleShape)
+                    ) {
+                        Icon(Icons.Default.Edit, contentDescription = "Edit", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                     }
-                    IconButton(onClick = onDeleteClick) {
-                        Icon(Icons.Default.Delete, contentDescription = "حذف", tint = MaterialTheme.colorScheme.error)
+                    IconButton(
+                        onClick = onDeleteClick,
+                        modifier = Modifier.size(36.dp).background(Color(0xFF3B1F1F), CircleShape)
+                    ) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color(0xFFEF4444), modifier = Modifier.size(18.dp))
                     }
                 }
             }
@@ -260,7 +343,10 @@ fun PaymentDialog(
         onDismissRequest = onDismiss,
         title = { Text("تسديد مبلغ") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 Text("المبلغ المتبقي: JD ${String.format("%.3f", bill.amount - bill.paidAmount)}")
                 com.batterysales.ui.components.CustomKeyboardTextField(
                     value = amount,
@@ -307,7 +393,10 @@ fun AddBillDialog(
         onDismissRequest = onDismiss,
         title = { Text("إضافة كمبيالة/شيك جديد") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 com.batterysales.ui.components.CustomKeyboardTextField(
                     value = description,
                     onValueChange = { description = it },
@@ -454,8 +543,11 @@ fun EditBillDialog(
         onDismissRequest = onDismiss,
         title = { Text("تعديل كمبيالة/شيك") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("تنبيه: تعديل الوصف سيقوم بتعديل وصف العمليات المتعلقة في الخزينة.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("تنبيه: تعديل الوصف سيقوم بتعديل وصف العمليات المتعلقة في الخزينة.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 com.batterysales.ui.components.CustomKeyboardTextField(
                     value = description,
                     onValueChange = { description = it },

@@ -9,7 +9,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -27,6 +27,10 @@ import com.batterysales.data.models.OldBatteryTransactionType
 import com.batterysales.viewmodel.OldBatteryViewModel
 import java.text.SimpleDateFormat
 import java.util.*
+
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.blur
+import androidx.compose.foundation.shape.CircleShape
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -75,109 +79,191 @@ fun OldBatteryLedgerScreen(
     var showAddDialog by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf<OldBatteryTransaction?>(null) }
 
+    val bgColor = MaterialTheme.colorScheme.background
+    val cardBgColor = MaterialTheme.colorScheme.surface
+    val accentColor = Color(0xFFFB8C00)
+    val headerGradient = Brush.verticalGradient(
+        colors = listOf(Color(0xFF1E293B), Color(0xFF0F172A))
+    )
+
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("سجل البطاريات القديمة (سكراب)", fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "رجوع")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFF5D4037),
-                    titleContentColor = Color.White,
-                    navigationIconContentColor = Color.White
+        containerColor = bgColor,
+        bottomBar = {
+            NavigationBar(
+                containerColor = cardBgColor,
+                contentColor = Color.White,
+                tonalElevation = 0.dp
+            ) {
+                NavigationBarItem(
+                    selected = false,
+                    onClick = { navController.navigate("dashboard") { popUpTo("dashboard") { inclusive = true } } },
+                    icon = { Icon(Icons.Default.Home, contentDescription = null) },
+                    label = { Text("الرئيسية") },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = Color(0xFFFACC15),
+                        selectedTextColor = Color(0xFFFACC15),
+                        unselectedIconColor = Color.Gray,
+                        unselectedTextColor = Color.Gray,
+                        indicatorColor = Color.Transparent
+                    )
                 )
-            )
+                NavigationBarItem(
+                    selected = false,
+                    onClick = { navController.navigate("product_management") },
+                    icon = { Icon(Icons.Default.Inventory2, contentDescription = null) },
+                    label = { Text("المنتجات") },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = Color(0xFFFACC15),
+                        selectedTextColor = Color(0xFFFACC15),
+                        unselectedIconColor = Color.Gray,
+                        unselectedTextColor = Color.Gray,
+                        indicatorColor = Color.Transparent
+                    )
+                )
+                NavigationBarItem(
+                    selected = false,
+                    onClick = { navController.navigate("sales") },
+                    icon = { Icon(Icons.Default.ShoppingCart, contentDescription = null) },
+                    label = { Text("المبيعات") },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = Color(0xFFFACC15),
+                        selectedTextColor = Color(0xFFFACC15),
+                        unselectedIconColor = Color.Gray,
+                        unselectedTextColor = Color.Gray,
+                        indicatorColor = Color.Transparent
+                    )
+                )
+                NavigationBarItem(
+                    selected = false,
+                    onClick = { navController.navigate("settings") },
+                    icon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                    label = { Text("الإعدادات") },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = Color(0xFFFACC15),
+                        selectedTextColor = Color(0xFFFACC15),
+                        unselectedIconColor = Color.Gray,
+                        unselectedTextColor = Color.Gray,
+                        indicatorColor = Color.Transparent
+                    )
+                )
+            }
         },
         floatingActionButton = {
             FloatingActionButton(
                 onClick = { showAddDialog = true },
-                containerColor = Color(0xFF5D4037),
-                contentColor = Color.White
+                containerColor = accentColor,
+                contentColor = Color.White,
+                shape = CircleShape
             ) {
                 Icon(Icons.Default.Add, contentDescription = "إضافة")
             }
         }
     ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .imePadding()
-                .background(MaterialTheme.colorScheme.background)
-                .padding(16.dp)
-        ) {
+        Column(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
+            // Header Section
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        brush = headerGradient,
+                        shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
+                    )
+                    .padding(bottom = 24.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Spacer(modifier = Modifier.height(32.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        IconButton(
+                            onClick = { navController.popBackStack() },
+                            modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                        }
+
+                        Text(
+                            text = "سجل السكراب",
+                            style = MaterialTheme.typography.headlineSmall,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        IconButton(
+                            onClick = { viewModel.loadData() },
+                            modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color.White)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    // Summary Card
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.15f))
+                    ) {
+                        Column(modifier = Modifier.padding(20.dp), horizontalAlignment = Alignment.End) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("إجمالي الكمية", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
+                                    Text("${summary.first}", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                                }
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("إجمالي الأمبيرات", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
+                                    Text("${String.format("%.1f", summary.second)} A", color = accentColor, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            Button(
+                                onClick = {
+                                    showSaleDialog = com.batterysales.data.models.OldBatteryTransaction(
+                                        quantity = summary.first,
+                                        totalAmperes = summary.second
+                                    )
+                                },
+                                modifier = Modifier.fillMaxWidth().height(48.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = accentColor),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text("بيع سكراب بالجملة", fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
             if (!isSeller && warehouses.isNotEmpty()) {
-                Text("تصفية حسب المستودع:", style = MaterialTheme.typography.titleSmall)
                 androidx.compose.foundation.lazy.LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp),
                     modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
                 ) {
                     item {
                         FilterChip(
                             selected = selectedFilterWH == null,
                             onClick = { selectedFilterWH = null },
-                            label = { Text("الكل") }
+                            label = { Text("الكل") },
+                            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = accentColor, selectedLabelColor = Color.White)
                         )
                     }
                     items(warehouses) { warehouse ->
                         FilterChip(
                             selected = selectedFilterWH == warehouse.id,
                             onClick = { selectedFilterWH = warehouse.id },
-                            label = { Text(warehouse.name) }
+                            label = { Text(warehouse.name) },
+                            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = accentColor, selectedLabelColor = Color.White)
                         )
                     }
                 }
-                
-                // We should probably filter transactions and summary based on this selection locally
-                // but let's just show it for now. Actually, let's make it work.
             }
-
-            // Summary Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFD7CCC8))
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    FlowRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceAround,
-                        verticalArrangement = Arrangement.spacedBy(16.dp),
-                        maxItemsInEachRow = 2
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.widthIn(min = 120.dp)) {
-                            Text("إجمالي الكمية", style = MaterialTheme.typography.bodyMedium, color = Color(0xFF5D4037), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                            Text("${summary.first}", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Color(0xFF5D4037), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                        }
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.widthIn(min = 120.dp)) {
-                            Text("إجمالي الأمبيرات", style = MaterialTheme.typography.bodyMedium, color = Color(0xFF5D4037), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                            Text("${String.format("%.1f", summary.second)}", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Color(0xFF5D4037), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Button(
-                        onClick = {
-                            showSaleDialog = com.batterysales.data.models.OldBatteryTransaction(
-                                quantity = summary.first,
-                                totalAmperes = summary.second
-                            )
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5D4037))
-                    ) {
-                        Text("بيع بالجملة (سكراب)")
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            Text("سجل العمليات", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-
-            Spacer(modifier = Modifier.height(8.dp))
 
             if (isLoading) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -271,58 +357,115 @@ fun OldBatteryTransactionCard(
 ) {
     val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
     val isIntake = transaction.type == OldBatteryTransactionType.INTAKE
-    val typeColor = if (isIntake) Color(0xFF4CAF50) else Color(0xFFF44336)
+    val typeColor = if (isIntake) Color(0xFF10B981) else Color(0xFFEF4444)
+    val accentColor = Color(0xFFFB8C00)
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = if (isIntake) Icons.Default.CallReceived else Icons.Default.CallMade,
-                    contentDescription = null,
-                    tint = typeColor
-                )
-                Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.padding(20.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        if (isIntake) "استلام بطاريات قديمة" else "بيع سكراب",
-                        fontWeight = FontWeight.Bold
+                        if (isIntake) "استلام سكراب" else "عملية بيع سكراب",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "المستودع: $warehouseName",
-                        fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.primary
+                        text = "مستودع: $warehouseName",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+
+                Surface(
+                    color = typeColor.copy(alpha = 0.1f),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Row(modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = if (isIntake) Icons.AutoMirrored.Filled.CallReceived else Icons.AutoMirrored.Filled.CallMade,
+                            contentDescription = null,
+                            tint = typeColor,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = if (isIntake) "استلام" else "بيع",
+                            color = typeColor,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
+                Column {
+                    Text(
+                        text = "${transaction.quantity} حبة | ${transaction.totalAmperes}A",
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 16.sp
+                    )
+                    if (!isIntake) {
+                        Text(
+                            text = "JD ${String.format("%,.3f", transaction.amount)}",
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF10B981),
+                            fontSize = 14.sp
+                        )
+                    }
                     Text(
                         text = dateFormatter.format(transaction.date),
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
+                        fontSize = 12.sp,
                         color = Color.Gray
                     )
                 }
-                Column(horizontalAlignment = Alignment.End) {
-                    Text("الكمية: ${transaction.quantity}", fontWeight = FontWeight.Bold)
-                    Text("${transaction.totalAmperes} أمبير", fontSize = 14.sp)
-                }
-            }
-            if (transaction.notes.isNotEmpty()) {
-                Text(transaction.notes, fontSize = 14.sp, modifier = Modifier.padding(top = 8.dp))
-            }
-            if (!isIntake) {
-                Text("المبلغ: JD ${String.format("%.3f", transaction.amount)}", fontWeight = FontWeight.Bold, color = Color(0xFF4CAF50), modifier = Modifier.padding(top = 4.dp))
-            }
-            Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                if (isIntake && transaction.quantity > 0) {
-                    TextButton(onClick = onSell, modifier = Modifier.padding(end = 8.dp)) {
-                        Text("بيع خردة", fontWeight = FontWeight.Bold)
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (isIntake && transaction.quantity > 0) {
+                        IconButton(
+                            onClick = onSell,
+                            modifier = Modifier.size(36.dp).background(accentColor.copy(alpha = 0.1f), CircleShape)
+                        ) {
+                            Icon(Icons.Default.Sell, contentDescription = "Sell", tint = accentColor, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                    IconButton(
+                        onClick = onEdit,
+                        modifier = Modifier.size(36.dp).background(Color.White.copy(alpha = 0.05f), CircleShape)
+                    ) {
+                        Icon(Icons.Default.Edit, contentDescription = "Edit", tint = Color.Gray, modifier = Modifier.size(18.dp))
+                    }
+                    IconButton(
+                        onClick = onDelete,
+                        modifier = Modifier.size(36.dp).background(Color(0xFF3B1F1F), CircleShape)
+                    ) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color(0xFFEF4444), modifier = Modifier.size(18.dp))
                     }
                 }
-                IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, contentDescription = "تعديل", tint = MaterialTheme.colorScheme.primary) }
-                IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, contentDescription = "حذف", tint = MaterialTheme.colorScheme.error) }
+            }
+
+            if (transaction.notes.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Surface(
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = transaction.notes,
+                        modifier = Modifier.padding(12.dp),
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }

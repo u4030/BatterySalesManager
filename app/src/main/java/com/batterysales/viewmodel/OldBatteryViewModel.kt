@@ -50,7 +50,7 @@ class OldBatteryViewModel @Inject constructor(
         loadData()
     }
 
-    private fun loadData() {
+    fun loadData() {
         viewModelScope.launch {
             _isLoading.value = true
             try {

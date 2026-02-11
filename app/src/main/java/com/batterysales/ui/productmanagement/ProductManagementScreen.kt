@@ -5,11 +5,14 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -93,11 +96,11 @@ fun ProductManagementScreen(navController: NavHostController, viewModel: Product
         )
     }
 
-    val bgColor = Color(0xFF0F0F0F)
-    val cardBgColor = Color(0xFF1C1C1C)
+    val bgColor = MaterialTheme.colorScheme.background
+    val cardBgColor = MaterialTheme.colorScheme.surface
     val accentColor = Color(0xFFFB8C00)
     val headerGradient = Brush.verticalGradient(
-        colors = listOf(Color(0xFFE53935), Color(0xFFFB8C00))
+        colors = listOf(Color(0xFF1E293B), Color(0xFF0F172A))
     )
 
     Scaffold(
@@ -163,128 +166,134 @@ fun ProductManagementScreen(navController: NavHostController, viewModel: Product
             }
         }
     ) { paddingValues ->
-        Column(modifier = Modifier.fillMaxSize().padding(paddingValues).imePadding()) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(paddingValues).imePadding(),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(bottom = 16.dp)
+        ) {
             // Gradient Header
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        brush = headerGradient,
-                        shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
-                    )
-                    .padding(bottom = 24.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Spacer(modifier = Modifier.height(32.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Surface(
-                            onClick = { /* Settings action */ },
-                            color = Color.White.copy(alpha = 0.2f),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.size(40.dp)
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            brush = headerGradient,
+                            shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
+                        )
+                        .padding(bottom = 24.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Spacer(modifier = Modifier.height(32.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(Icons.Default.Inventory2, contentDescription = "Products", tint = Color.White, modifier = Modifier.size(20.dp))
+                            IconButton(
+                                onClick = { navController.popBackStack() },
+                                modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                            }
+
+                            Text(
+                                text = "إدارة المنتجات",
+                                style = MaterialTheme.typography.headlineSmall,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
+                            )
+
+                            IconButton(
+                                onClick = { /* Refresh handled by flow */ },
+                                modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
+                            ) {
+                                Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color.White)
                             }
                         }
 
-                        Text(
-                            text = "إدارة المنتجات",
-                            style = MaterialTheme.typography.headlineSmall,
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Spacer(modifier = Modifier.height(24.dp))
 
-                        Icon(
-                            Icons.Default.LightMode,
-                            contentDescription = "Mode",
-                            tint = Color.White,
-                            modifier = Modifier.size(28.dp)
-                        )
-                    }
+                        // Search Bar
+                        var searchQuery by remember { mutableStateOf("") }
+                        var showSearchScanner by remember { mutableStateOf(false) }
 
-                    Spacer(modifier = Modifier.height(24.dp))
-
-                    // Search Bar
-                    var searchQuery by remember { mutableStateOf("") }
-                    var showSearchScanner by remember { mutableStateOf(false) }
-
-                    if (showSearchScanner) {
-                        androidx.compose.ui.window.Dialog(
-                            onDismissRequest = { showSearchScanner = false },
-                            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
-                        ) {
-                            Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-                                BarcodeScanner(onBarcodeScanned = {
-                                    searchQuery = it
-                                    viewModel.onBarcodeFilterChanged(it)
-                                    showSearchScanner = false
-                                })
-                                IconButton(
-                                    onClick = { showSearchScanner = false },
-                                    modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)
-                                ) {
-                                    Icon(Icons.Default.Close, contentDescription = "إغلاق", tint = Color.White)
+                        if (showSearchScanner) {
+                            androidx.compose.ui.window.Dialog(
+                                onDismissRequest = { showSearchScanner = false },
+                                properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+                            ) {
+                                Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+                                    BarcodeScanner(onBarcodeScanned = {
+                                        searchQuery = it
+                                        viewModel.onBarcodeFilterChanged(it)
+                                        showSearchScanner = false
+                                    })
+                                    IconButton(
+                                        onClick = { showSearchScanner = false },
+                                        modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)
+                                    ) {
+                                        Icon(Icons.Default.Close, contentDescription = "إغلاق", tint = Color.White)
+                                    }
                                 }
                             }
                         }
-                    }
 
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = {
-                            searchQuery = it
-                            viewModel.onBarcodeFilterChanged(it)
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("...بحث بالاسم أو الباركود", color = Color.White.copy(alpha = 0.6f)) },
-                        leadingIcon = {
-                            IconButton(onClick = { showSearchScanner = true }) {
-                                Icon(Icons.Default.PhotoCamera, contentDescription = "Scan", tint = Color.White.copy(alpha = 0.7f))
-                            }
-                        },
-                        trailingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.White.copy(alpha = 0.7f)) },
-                        shape = RoundedCornerShape(16.dp),
-                        singleLine = true,
-                        colors = TextFieldDefaults.outlinedTextFieldColors(
-                            containerColor = Color.Black.copy(alpha = 0.2f),
-                            focusedBorderColor = Color.Transparent,
-                            unfocusedBorderColor = Color.Transparent,
-                            cursorColor = Color.White,
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = {
+                                searchQuery = it
+                                viewModel.onBarcodeFilterChanged(it)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = { Text("...بحث بالاسم أو الباركود", color = Color.White.copy(alpha = 0.6f)) },
+                            leadingIcon = {
+                                IconButton(onClick = { showSearchScanner = true }) {
+                                    Icon(Icons.Default.PhotoCamera, contentDescription = "Scan", tint = Color.White.copy(alpha = 0.7f))
+                                }
+                            },
+                            trailingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.White.copy(alpha = 0.7f)) },
+                            shape = RoundedCornerShape(16.dp),
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedContainerColor = Color.Black.copy(alpha = 0.2f),
+                                unfocusedContainerColor = Color.Black.copy(alpha = 0.2f),
+                                focusedBorderColor = Color.Transparent,
+                                unfocusedBorderColor = Color.Transparent,
+                                cursorColor = Color.White,
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White
+                            )
                         )
-                    )
+                    }
                 }
             }
 
-            Column(modifier = Modifier.padding(16.dp)) {
-                // Add Product Button
-                Button(
-                    onClick = { showAddProductDialog = true },
-                    modifier = Modifier.fillMaxWidth().height(56.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = null, tint = Color.White)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("إضافة منتج جديد", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            item {
+                Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                    // Add Product Button
+                    Button(
+                        onClick = { showAddProductDialog = true },
+                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null, tint = Color.White)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("إضافة منتج جديد", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge)
+                    }
                 }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-        if (uiState.isLoading) {
-            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
             }
-        }
 
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.weight(1f)) {
-                    items(uiState.products) { product ->
+            if (uiState.isLoading) {
+                item {
+                    Box(modifier = Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = accentColor)
+                    }
+                }
+            }
+
+            items(uiState.products) { product ->
+                Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                         ProductCard(
                             product = product,
                             isSelected = uiState.selectedProduct?.id == product.id,
@@ -301,7 +310,6 @@ fun ProductManagementScreen(navController: NavHostController, viewModel: Product
             }
         }
     }
-}
 
 @Composable
 fun ProductCard(
@@ -315,7 +323,7 @@ fun ProductCard(
     onVariantEdit: (ProductVariant) -> Unit,
     onVariantDelete: (ProductVariant) -> Unit
 ) {
-    val cardBgColor = Color(0xFF1C1C1C)
+    val cardBgColor = MaterialTheme.colorScheme.surface
     val accentColor = Color(0xFFFB8C00)
     val topBorderColor = when (product.name.length % 3) {
         0 -> Color(0xFFEF4444)
@@ -343,46 +351,48 @@ fun ProductCard(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         IconButton(
                             onClick = onProductDelete,
-                            modifier = Modifier.size(36.dp).background(Color(0xFF3B1F1F), CircleShape)
+                            modifier = Modifier.size(36.dp).background(Color(0xFFEF4444).copy(alpha = 0.1f), CircleShape)
                         ) {
                             Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color(0xFFEF4444), modifier = Modifier.size(18.dp))
                         }
                         Spacer(modifier = Modifier.width(12.dp))
                         IconButton(
                             onClick = onProductEdit,
-                            modifier = Modifier.size(36.dp).background(Color(0xFF2E1505), CircleShape)
+                            modifier = Modifier.size(36.dp).background(accentColor.copy(alpha = 0.1f), CircleShape)
                         ) {
                             Icon(Icons.Default.Edit, contentDescription = "Edit", tint = accentColor, modifier = Modifier.size(18.dp))
                         }
                     }
 
-                    Column(horizontalAlignment = Alignment.End) {
+                    Column(horizontalAlignment = Alignment.End, modifier = Modifier.weight(1f).padding(horizontal = 8.dp)) {
                         Text(
                             text = product.name,
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
                             text = product.specification.ifEmpty { "بدون مواصفات" },
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.6f)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
 
-                    if (isSelected) {
-                        IconButton(
-                            onClick = onProductClick,
-                            modifier = Modifier.background(Color.White.copy(alpha = 0.1f), CircleShape)
-                        ) {
-                            Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Collapse", tint = Color(0xFFFACC15))
-                        }
+                    IconButton(
+                        onClick = onProductClick,
+                        modifier = Modifier.background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = if (isSelected) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                            contentDescription = if (isSelected) "Collapse" else "Expand",
+                            tint = accentColor
+                        )
                     }
                 }
 
                 if (isSelected) {
                     Spacer(modifier = Modifier.height(16.dp))
-                    HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
                     Spacer(modifier = Modifier.height(12.dp))
 
                     Row(
@@ -393,19 +403,19 @@ fun ProductCard(
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { onAddVariant() }) {
                             Icon(Icons.Default.AddCircle, contentDescription = null, tint = accentColor, modifier = Modifier.size(24.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("إضافة صنف", color = accentColor, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text("إضافة صنف", color = accentColor, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
                         }
                         Text(
                             "الأصناف المتوفرة (${variants.size}):",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.6f)
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
 
                     if (variants.isEmpty()) {
-                        Text("لا توجد سعات مضافة لهذا المنتج.", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                        Text("لا توجد سعات مضافة لهذا المنتج.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     } else {
                         variants.forEach { variant ->
                             VariantItemRow(
@@ -430,8 +440,8 @@ fun VariantItemRow(variant: ProductVariant, onEdit: () -> Unit, onDelete: () -> 
             .fillMaxWidth()
             .padding(vertical = 4.dp),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.3f)),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.03f)),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
     ) {
         Row(
             modifier = Modifier.padding(12.dp).fillMaxWidth(),
@@ -441,37 +451,35 @@ fun VariantItemRow(variant: ProductVariant, onEdit: () -> Unit, onDelete: () -> 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(
                     onClick = onDelete,
-                    modifier = Modifier.size(32.dp).background(Color(0xFF3B1F1F), CircleShape)
+                    modifier = Modifier.size(32.dp).background(Color(0xFFEF4444).copy(alpha = 0.1f), CircleShape)
                 ) {
                     Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFFEF4444))
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 IconButton(
                     onClick = onEdit,
-                    modifier = Modifier.size(32.dp).background(Color(0xFF2E1505), CircleShape)
+                    modifier = Modifier.size(32.dp).background(accentColor.copy(alpha = 0.1f), CircleShape)
                 ) {
                     Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp), tint = accentColor)
                 }
             }
 
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+            Column(horizontalAlignment = Alignment.End, modifier = Modifier.weight(1f).padding(horizontal = 12.dp)) {
                 Text(
-                    text = "أمبير ${variant.capacity}",
+                    text = "${variant.capacity} Amp",
+                    style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    fontSize = 16.sp
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "المواصفات: ${variant.specification.ifEmpty { "عادي" }} | الباركود:",
+                    text = "المواصفة: ${variant.specification.ifEmpty { "عادية" }}",
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.5f),
-                    fontSize = 11.sp
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    text = variant.barcode.ifEmpty { "---" },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.5f),
-                    fontSize = 11.sp
+                    text = "الباركود: ${variant.barcode.ifEmpty { "---" }}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
 
@@ -502,7 +510,10 @@ fun AddProductDialog(
         onDismissRequest = onDismiss,
         title = { Text("إضافة منتج جديد") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 com.batterysales.ui.components.CustomKeyboardTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -534,7 +545,10 @@ fun EditProductDialog(
         onDismissRequest = onDismiss,
         title = { Text("تعديل المنتج") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 com.batterysales.ui.components.CustomKeyboardTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -597,7 +611,7 @@ fun AddVariantDialog(
         onDismissRequest = onDismiss,
         title = { Text("إضافة سعة جديدة") },
             text = {
-                Column {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                     FlowRow(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -716,7 +730,7 @@ fun EditVariantDialog(
         onDismissRequest = onDismiss,
         title = { Text("تعديل السعة") },
             text = {
-                Column {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                     FlowRow(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),

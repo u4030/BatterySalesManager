@@ -2,12 +2,14 @@ package com.batterysales.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -44,10 +46,10 @@ fun DashboardScreen(
     val userRole = currentUser?.role ?: "seller"
     val isAdmin = userRole == "admin"
 
-    val dashboardBgColor = Color(0xFF0F0F0F)
-    val cardBgColor = Color(0xFF1C1C1C)
+    val dashboardBgColor = MaterialTheme.colorScheme.background
+    val cardBgColor = MaterialTheme.colorScheme.surface
     val headerGradient = Brush.verticalGradient(
-        colors = listOf(Color(0xFFE53935), Color(0xFFFB8C00))
+        colors = listOf(Color(0xFF1E293B), Color(0xFF0F172A))
     )
 
     val items = remember(isAdmin) {
@@ -163,14 +165,31 @@ fun DashboardScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Surface(
-                                onClick = { navController.navigate("settings") },
-                                color = Color.White.copy(alpha = 0.2f),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.size(40.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White, modifier = Modifier.size(20.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Surface(
+                                    onClick = { navController.navigate("settings") },
+                                    color = Color.White.copy(alpha = 0.2f),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.size(40.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White, modifier = Modifier.size(20.dp))
+                                    }
+                                }
+                                Surface(
+                                    onClick = {
+                                        authViewModel.logout()
+                                        navController.navigate("login") {
+                                            popUpTo(0) { inclusive = true }
+                                        }
+                                    },
+                                    color = Color.White.copy(alpha = 0.2f),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.size(40.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = "Logout", tint = Color.White, modifier = Modifier.size(20.dp))
+                                    }
                                 }
                             }
 
@@ -182,7 +201,7 @@ fun DashboardScreen(
                             )
 
                             Icon(
-                                Icons.Default.LightMode,
+                                if (isSystemInDarkTheme()) Icons.Default.DarkMode else Icons.Default.LightMode,
                                 contentDescription = "Mode",
                                 tint = Color.White,
                                 modifier = Modifier.size(28.dp)
@@ -198,7 +217,7 @@ fun DashboardScreen(
                         ) {
                             SummaryCard(
                                 title = "المبيعات اليوم",
-                                value = "${String.format("%,.0f", dashboardState.todaySales)} ر.س",
+                                    value = "JD ${String.format("%,.0f", dashboardState.todaySales)}",
                                 modifier = Modifier.weight(1f)
                             )
                             SummaryCard(
@@ -244,7 +263,7 @@ fun DashboardScreen(
                             dashboardState.lowStockVariants.take(3).forEach { lowStockItem ->
                                 Text(
                                     "${lowStockItem.productName} (${lowStockItem.capacity} أمبير) في ${lowStockItem.warehouseName}: الكمية ${lowStockItem.currentQuantity}",
-                                    fontSize = 14.sp,
+                                    style = MaterialTheme.typography.bodySmall,
                                     color = Color.White.copy(alpha = 0.8f)
                                 )
                             }
@@ -286,7 +305,7 @@ fun DashboardScreen(
 @Composable
 fun SummaryCard(title: String, value: String, modifier: Modifier = Modifier) {
     Card(
-        modifier = modifier.height(100.dp),
+        modifier = modifier.heightIn(min = 100.dp),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.15f))
     ) {
@@ -309,10 +328,10 @@ fun DashboardCardItem(item: DashboardItem, modifier: Modifier = Modifier, onClic
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .height(180.dp)
+            .heightIn(min = 160.dp)
             .clickable { onClick() },
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF1C1C1C))
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             // Top colored border
@@ -354,7 +373,7 @@ fun DashboardCardItem(item: DashboardItem, modifier: Modifier = Modifier, onClic
 
                 Text(
                     item.title,
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,

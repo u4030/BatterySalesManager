@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -22,6 +23,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.batterysales.data.models.Invoice
 import com.batterysales.viewmodel.InvoiceViewModel
+import com.batterysales.ui.components.TabItem
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -36,11 +38,11 @@ fun InvoiceScreen(
     var showDateRangePicker by remember { mutableStateOf(false) }
     val dateRangePickerState = rememberDateRangePickerState()
 
-    val bgColor = Color(0xFF0F0F0F)
-    val cardBgColor = Color(0xFF1C1C1C)
+    val bgColor = MaterialTheme.colorScheme.background
+    val cardBgColor = MaterialTheme.colorScheme.surface
     val accentColor = Color(0xFFFB8C00)
     val headerGradient = Brush.verticalGradient(
-        colors = listOf(Color(0xFFE53935), Color(0xFFFB8C00))
+        colors = listOf(Color(0xFF1E293B), Color(0xFF0F172A))
     )
 
     if (uiState.invoiceToDelete != null) {
@@ -151,140 +153,148 @@ fun InvoiceScreen(
             }
         }
     ) { paddingValues ->
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
+                .padding(paddingValues),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Gradient Header
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        brush = headerGradient,
-                        shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
-                    )
-                    .padding(bottom = 24.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Spacer(modifier = Modifier.height(32.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        IconButton(
-                            onClick = { navController.popBackStack() },
-                            modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            brush = headerGradient,
+                            shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
+                        )
+                        .padding(bottom = 24.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Spacer(modifier = Modifier.height(32.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
-                        }
-
-                        Text(
-                            text = "إدارة الفواتير",
-                            style = MaterialTheme.typography.headlineSmall,
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold
-                        )
-
-                        Row {
                             IconButton(
-                                onClick = { showDateRangePicker = true },
+                                onClick = { navController.popBackStack() },
                                 modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
                             ) {
-                                Icon(Icons.Default.CalendarMonth, contentDescription = "Date", tint = Color.White)
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
                             }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            IconButton(
-                                onClick = { viewModel.loadInvoices() },
-                                modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
-                            ) {
-                                Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color.White)
+
+                            Text(
+                                text = "إدارة الفواتير",
+                                style = MaterialTheme.typography.headlineSmall,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
+                            )
+
+                            Row {
+                                IconButton(
+                                    onClick = { showDateRangePicker = true },
+                                    modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
+                                ) {
+                                    Icon(Icons.Default.CalendarMonth, contentDescription = "Date", tint = Color.White)
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                IconButton(
+                                    onClick = { viewModel.loadInvoices() },
+                                    modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
+                                ) {
+                                    Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color.White)
+                                }
                             }
                         }
-                    }
 
-                    Spacer(modifier = Modifier.height(24.dp))
+                        Spacer(modifier = Modifier.height(24.dp))
 
-                    // Styled Tabs
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
-                            .padding(4.dp)
-                    ) {
-                        TabItem(
-                            title = "الكل",
-                            isSelected = uiState.selectedTab == 0,
-                            modifier = Modifier.weight(1f),
-                            onClick = { viewModel.onTabSelected(0) }
-                        )
-                        TabItem(
-                            title = "المعلقة",
-                            isSelected = uiState.selectedTab == 1,
-                            modifier = Modifier.weight(1f),
-                            onClick = { viewModel.onTabSelected(1) }
-                        )
+                        // Styled Tabs
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
+                                .padding(4.dp)
+                        ) {
+                            TabItem(
+                                title = "الكل",
+                                isSelected = uiState.selectedTab == 0,
+                                modifier = Modifier.weight(1f),
+                                onClick = { viewModel.onTabSelected(0) }
+                            )
+                            TabItem(
+                                title = "المعلقة",
+                                isSelected = uiState.selectedTab == 1,
+                                modifier = Modifier.weight(1f),
+                                onClick = { viewModel.onTabSelected(1) }
+                            )
+                        }
                     }
                 }
             }
 
             // Search Bar
-            OutlinedTextField(
-                value = uiState.searchQuery,
-                onValueChange = { viewModel.onSearchQueryChanged(it) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                placeholder = { Text("...بحث برقم الفاتورة أو اسم العميل", color = Color.Gray) },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.Gray) },
-                shape = RoundedCornerShape(16.dp),
-                singleLine = true,
-                textStyle = com.batterysales.ui.theme.LocalInputTextStyle.current.copy(color = Color.White),
-                colors = TextFieldDefaults.outlinedTextFieldColors(
-                    containerColor = cardBgColor,
-                    focusedBorderColor = Color.Gray.copy(alpha = 0.5f),
-                    unfocusedBorderColor = Color.Gray.copy(alpha = 0.2f)
+            item {
+                OutlinedTextField(
+                    value = uiState.searchQuery,
+                    onValueChange = { viewModel.onSearchQueryChanged(it) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    placeholder = { Text("...بحث برقم الفاتورة أو اسم العميل", color = Color.Gray) },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.Gray) },
+                    shape = RoundedCornerShape(16.dp),
+                    singleLine = true,
+                    textStyle = com.batterysales.ui.theme.LocalInputTextStyle.current.copy(color = MaterialTheme.colorScheme.onSurface),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = cardBgColor,
+                        unfocusedContainerColor = cardBgColor,
+                        focusedBorderColor = MaterialTheme.colorScheme.outline,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                    )
                 )
-            )
+            }
 
             if (uiState.startDate != null) {
-                val sdf = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        "الفترة: ${sdf.format(Date(uiState.startDate!!))} - ${sdf.format(Date(uiState.endDate ?: uiState.startDate!!))}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.7f)
-                    )
-                    TextButton(onClick = { viewModel.onDateRangeSelected(null, null) }) {
-                        Text("إلغاء الفلترة", color = accentColor)
+                item {
+                    val sdf = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "الفترة: ${sdf.format(Date(uiState.startDate!!))} - ${sdf.format(Date(uiState.endDate ?: uiState.startDate!!))}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        )
+                        TextButton(onClick = { viewModel.onDateRangeSelected(null, null) }) {
+                            Text("إلغاء الفلترة", color = accentColor)
+                        }
                     }
                 }
             }
 
             if (uiState.isLoading) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = accentColor)
+                item {
+                    Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = accentColor)
+                    }
                 }
             } else if (uiState.invoices.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.Default.Description, contentDescription = null, modifier = Modifier.size(64.dp), tint = Color.Gray.copy(alpha = 0.3f))
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text("لا توجد فواتير حالياً", color = Color.Gray)
+                item {
+                    Box(modifier = Modifier.fillMaxWidth().height(300.dp), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.Description, contentDescription = null, modifier = Modifier.size(64.dp), tint = Color.Gray.copy(alpha = 0.3f))
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text("لا توجد فواتير حالياً", color = Color.Gray)
+                        }
                     }
                 }
             } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    items(uiState.invoices) { invoice ->
+                items(uiState.invoices) { invoice ->
+                    Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                         InvoiceItemCard(
                             invoice = invoice,
                             onClick = { navController.navigate("invoice_detail/${invoice.id}") },
@@ -294,28 +304,11 @@ fun InvoiceScreen(
                     }
                 }
             }
-        }
-    }
-}
 
-@Composable
-fun TabItem(title: String, isSelected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Box(
-        modifier = modifier
-            .height(48.dp)
-            .background(
-                if (isSelected) Color.White else Color.Transparent,
-                RoundedCornerShape(12.dp)
-            )
-            .clickable { onClick() },
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = title,
-            color = if (isSelected) Color(0xFFD84315) else Color.White,
-            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-            fontSize = 16.sp
-        )
+            item {
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+        }
     }
 }
 
@@ -358,7 +351,7 @@ fun InvoiceItemCard(invoice: Invoice, onClick: () -> Unit, onDeleteClick: () -> 
             .fillMaxWidth()
             .clickable { onClick() },
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF1C1C1C))
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Box(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
             Column(modifier = Modifier.fillMaxWidth()) {
@@ -369,10 +362,10 @@ fun InvoiceItemCard(invoice: Invoice, onClick: () -> Unit, onDeleteClick: () -> 
                 ) {
                     StatusBadge(status = invoice.status)
                     Text(
-                        text = "${String.format("%,.3f", invoice.totalAmount)} ر.س",
+                    text = "${String.format("%,.3f", invoice.totalAmount)} JD",
+                    style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 20.sp,
-                        color = Color.White
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
 
@@ -383,9 +376,9 @@ fun InvoiceItemCard(invoice: Invoice, onClick: () -> Unit, onDeleteClick: () -> 
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
                         text = invoice.invoiceNumber,
+                    style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
-                        color = Color.White
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
 
@@ -393,15 +386,16 @@ fun InvoiceItemCard(invoice: Invoice, onClick: () -> Unit, onDeleteClick: () -> 
 
                 Text(
                     text = invoice.customerName.ifEmpty { "عميل نقدي" },
-                    fontSize = 16.sp,
-                    color = Color.White.copy(alpha = 0.8f),
+                style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
                     modifier = Modifier.align(Alignment.End)
                 )
 
                 if (invoice.remainingAmount > 0) {
                     Text(
-                        text = "المتبقي: ${String.format("%,.3f", invoice.remainingAmount)} ر.س",
-                        fontSize = 14.sp,
+                    text = "المتبقي: ${String.format("%,.3f", invoice.remainingAmount)} JD",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
                         color = Color(0xFFEF5350),
                         modifier = Modifier.align(Alignment.End)
                     )
@@ -421,10 +415,10 @@ fun InvoiceItemCard(invoice: Invoice, onClick: () -> Unit, onDeleteClick: () -> 
                         DropdownMenu(
                             expanded = menuExpanded,
                             onDismissRequest = { menuExpanded = false },
-                            modifier = Modifier.background(Color(0xFF1C1C1C))
+                            modifier = Modifier.background(MaterialTheme.colorScheme.surface)
                         ) {
                             DropdownMenuItem(
-                                text = { Text("تعديل العميل", color = Color.White) },
+                                text = { Text("تعديل العميل", color = MaterialTheme.colorScheme.onSurface) },
                                 onClick = {
                                     onEditClick()
                                     menuExpanded = false
@@ -442,7 +436,7 @@ fun InvoiceItemCard(invoice: Invoice, onClick: () -> Unit, onDeleteClick: () -> 
 
                     Text(
                         text = dateFormatter.format(invoice.invoiceDate),
-                        fontSize = 14.sp,
+                        style = MaterialTheme.typography.bodySmall,
                         color = Color.Gray
                     )
                 }
@@ -473,7 +467,7 @@ fun StatusBadge(status: String) {
             Text(
                 text = text,
                 color = color,
-                fontSize = 12.sp,
+                style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold
             )
         }
