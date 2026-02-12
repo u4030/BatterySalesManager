@@ -33,6 +33,8 @@ import com.batterysales.data.models.BillType
 import com.batterysales.viewmodel.BillViewModel
 import java.text.SimpleDateFormat
 import java.util.*
+import com.batterysales.ui.components.SharedHeader
+import com.batterysales.ui.components.HeaderIconButton
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -92,45 +94,17 @@ fun BillsScreen(
         ) {
             // Gradient Header
             item {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            brush = headerGradient,
-                            shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
+                SharedHeader(
+                    title = "الكمبيالات والشيكات",
+                    onBackClick = { navController.popBackStack() },
+                    actions = {
+                        HeaderIconButton(
+                            icon = Icons.Default.CalendarMonth,
+                            onClick = { showDateRangePicker = true },
+                            contentDescription = "Date Range"
                         )
-                        .padding(bottom = 24.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Spacer(modifier = Modifier.height(32.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            IconButton(
-                                onClick = { navController.popBackStack() },
-                                modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
-                            ) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
-                            }
-
-                            Text(
-                                text = "الكمبيالات والشيكات",
-                                style = MaterialTheme.typography.headlineSmall,
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold
-                            )
-
-                            IconButton(
-                                onClick = { showDateRangePicker = true },
-                                modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
-                            ) {
-                                Icon(Icons.Default.CalendarMonth, contentDescription = "Date Range", tint = Color.White)
-                            }
-                        }
                     }
-                }
+                )
             }
 
             item {
@@ -464,7 +438,9 @@ fun AddBillDialog(
                     label = "رقم السند / الشيك"
                 )
 
-                val supplierPurchases = pendingPurchases.filter { it.supplierId == selectedSupplier?.id }
+                val supplierPurchases = pendingPurchases
+                    .filter { it.supplierId == selectedSupplier?.id }
+                    .sortedByDescending { it.timestamp }
                 if (supplierPurchases.isNotEmpty()) {
                     val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
                     com.batterysales.ui.stockentry.Dropdown(
@@ -568,9 +544,7 @@ fun AddBillDialog(
             },
             properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
         ) {
-            Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-                DatePicker(state = datePickerState, modifier = Modifier.fillMaxSize())
-            }
+            DatePicker(state = datePickerState)
         }
     }
 }
@@ -704,9 +678,7 @@ fun EditBillDialog(
             },
             properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
         ) {
-            Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-                DatePicker(state = datePickerState, modifier = Modifier.fillMaxSize())
-            }
+            DatePicker(state = datePickerState)
         }
     }
 }

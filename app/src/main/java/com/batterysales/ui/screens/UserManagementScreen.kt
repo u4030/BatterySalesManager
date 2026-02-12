@@ -25,6 +25,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.batterysales.data.models.User
 import com.batterysales.viewmodel.UserManagementViewModel
+import com.batterysales.ui.components.SharedHeader
+import com.batterysales.ui.components.HeaderIconButton
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -34,6 +36,7 @@ fun UserManagementScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showCreateDialog by remember { mutableStateOf(false) }
+    var userToDelete by remember { mutableStateOf<User?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
 
     val bgColor = MaterialTheme.colorScheme.background
@@ -77,45 +80,17 @@ fun UserManagementScreen(
         ) {
             // Gradient Header
             item {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            brush = headerGradient,
-                            shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
+                SharedHeader(
+                    title = "إدارة المستخدمين",
+                    onBackClick = { navController.popBackStack() },
+                    actions = {
+                        HeaderIconButton(
+                            icon = Icons.Default.Refresh,
+                            onClick = { /* Reload logic if available */ },
+                            contentDescription = "Refresh"
                         )
-                        .padding(bottom = 24.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Spacer(modifier = Modifier.height(32.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            IconButton(
-                                onClick = { navController.popBackStack() },
-                                modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
-                            ) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
-                            }
-
-                            Text(
-                                text = "إدارة المستخدمين",
-                                style = MaterialTheme.typography.headlineSmall,
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold
-                            )
-
-                            IconButton(
-                                onClick = { /* Reload logic if available */ },
-                                modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
-                            ) {
-                                Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color.White)
-                            }
-                        }
                     }
-                }
+                )
             }
 
             if (uiState.isLoading) {
@@ -137,12 +112,33 @@ fun UserManagementScreen(
                             user = user,
                             warehouses = uiState.warehouses,
                             onRoleChange = { role -> viewModel.updateUserRole(user, role) },
-                            onWarehouseChange = { warehouseId -> viewModel.linkUserToWarehouse(user, warehouseId) }
+                            onWarehouseChange = { warehouseId -> viewModel.linkUserToWarehouse(user, warehouseId) },
+                            onDelete = { userToDelete = user }
                         )
                     }
                 }
             }
         }
+    }
+
+    if (userToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { userToDelete = null },
+            title = { Text("حذف المستخدم") },
+            text = { Text("هل أنت متأكد من حذف المستخدم '${userToDelete?.displayName}'؟ لن يتمكن من تسجيل الدخول وسيمسح ملفه الشخصي.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        userToDelete?.id?.let { viewModel.deleteUser(it) }
+                        userToDelete = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("حذف") }
+            },
+            dismissButton = {
+                TextButton(onClick = { userToDelete = null }) { Text("إلغاء") }
+            }
+        )
     }
 
     if (showCreateDialog) {
@@ -163,7 +159,8 @@ fun UserCard(
     user: User,
     warehouses: List<com.batterysales.data.models.Warehouse>,
     onRoleChange: (String) -> Unit,
-    onWarehouseChange: (String?) -> Unit
+    onWarehouseChange: (String?) -> Unit,
+    onDelete: () -> Unit
 ) {
     var showRoleDialog by remember { mutableStateOf(false) }
     var showWarehouseDialog by remember { mutableStateOf(false) }
@@ -175,7 +172,7 @@ fun UserCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Surface(
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
                     shape = CircleShape,
@@ -186,7 +183,7 @@ fun UserCard(
                     }
                 }
                 Spacer(modifier = Modifier.width(16.dp))
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = user.displayName,
                         style = MaterialTheme.typography.titleMedium,
@@ -198,6 +195,9 @@ fun UserCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+                IconButton(onClick = onDelete) {
+                    Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
                 }
             }
 

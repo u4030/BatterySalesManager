@@ -55,6 +55,17 @@ class UserManagementViewModel @Inject constructor(
         }
     }
 
+    fun deleteUser(userId: String) {
+        viewModelScope.launch {
+            try {
+                userRepository.deleteUser(userId)
+                _uiState.update { it.copy(successMessage = "تم حذف المستخدم بنجاح") }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "فشل حذف المستخدم: ${e.message}") }
+            }
+        }
+    }
+
     fun linkUserToWarehouse(user: User, warehouseId: String?) {
         viewModelScope.launch {
             try {

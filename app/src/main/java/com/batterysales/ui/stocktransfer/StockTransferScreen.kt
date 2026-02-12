@@ -16,6 +16,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.batterysales.ui.stockentry.Dropdown
 import com.batterysales.viewmodel.StockTransferViewModel
+import com.batterysales.ui.components.SharedHeader
+import com.batterysales.ui.components.HeaderIconButton
 
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
@@ -132,45 +134,17 @@ fun StockTransferScreen(
     { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize().imePadding()) {
             // Header Section
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        brush = headerGradient,
-                        shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
+            SharedHeader(
+                title = "ترحيل مخزون",
+                onBackClick = { navController.popBackStack() },
+                actions = {
+                    HeaderIconButton(
+                        icon = Icons.Default.PhotoCamera,
+                        onClick = { showScanner = true },
+                        contentDescription = "Scan"
                     )
-                    .padding(bottom = 24.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Spacer(modifier = Modifier.height(32.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        IconButton(
-                            onClick = { navController.popBackStack() },
-                            modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
-                        ) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
-                        }
-
-                        Text(
-                            text = "ترحيل مخزون",
-                            style = MaterialTheme.typography.headlineSmall,
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold
-                        )
-
-                        IconButton(
-                            onClick = { showScanner = true },
-                            modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
-                        ) {
-                            Icon(Icons.Default.PhotoCamera, contentDescription = "Scan", tint = Color.White)
-                        }
-                    }
                 }
-            }
+            )
 
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),

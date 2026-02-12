@@ -45,7 +45,8 @@ class DashboardViewModel @Inject constructor(
     private val productRepository: ProductRepository,
     private val billRepository: BillRepository,
     private val warehouseRepository: WarehouseRepository,
-    private val invoiceRepository: InvoiceRepository
+    private val invoiceRepository: InvoiceRepository,
+    private val userRepository: UserRepository
 ) : ViewModel() {
 
     val uiState: StateFlow<DashboardUiState> = combine(
@@ -53,10 +54,17 @@ class DashboardViewModel @Inject constructor(
         productVariantRepository.getAllVariantsFlow(),
         productRepository.getProducts(),
         billRepository.getAllBillsFlow(),
-        combine(warehouseRepository.getWarehouses(), invoiceRepository.getAllInvoices()) { w, i -> Pair(w, i) }
-    ) { allEntries, allVariants, allProducts, allBills, lastPair ->
-        val allWarehouses = lastPair.first
-        val allInvoices = lastPair.second
+        combine(
+            warehouseRepository.getWarehouses(),
+            invoiceRepository.getAllInvoices(),
+            userRepository.getCurrentUserFlow()
+        ) { w, i, u -> Triple(w, i, u) }
+    ) { allEntries, allVariants, allProducts, allBills, triple ->
+        val allWarehouses = triple.first
+        val allInvoices = triple.second
+        val currentUser = triple.third
+        val isAdmin = currentUser?.role == "admin"
+        val userWarehouseId = currentUser?.warehouseId
 
         val pendingCount = allEntries.count { it.status == StockEntry.STATUS_PENDING }
 
@@ -123,8 +131,11 @@ class DashboardViewModel @Inject constructor(
             !it.createdAt.before(startOfToday)
         }
 
-        val todaySalesSum = todayInvoices.sumOf { it.finalAmount }
-        val todayCount = todayInvoices.size
+        val filteredTodayInvoices = if (isAdmin) todayInvoices
+                                   else todayInvoices.filter { it.warehouseId == userWarehouseId }
+
+        val todaySalesSum = filteredTodayInvoices.sumOf { it.finalAmount }
+        val todayCount = filteredTodayInvoices.size
 
         val warehouseStatsList = allWarehouses.map { warehouse ->
             val invoices = todayInvoices.filter { it.warehouseId == warehouse.id }

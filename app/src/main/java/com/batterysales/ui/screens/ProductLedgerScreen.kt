@@ -25,6 +25,8 @@ import com.batterysales.ui.components.InfoBadge
 import com.batterysales.viewmodel.LedgerCategory
 import com.batterysales.viewmodel.LedgerItem
 import com.batterysales.viewmodel.ProductLedgerViewModel
+import com.batterysales.ui.components.SharedHeader
+import com.batterysales.ui.components.HeaderIconButton
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -119,100 +121,70 @@ fun ProductLedgerScreen(
         ) {
             // Header Section
             item {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            brush = headerGradient,
-                            shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
+                SharedHeader(
+                    title = "سجل حركة المنتج",
+                    onBackClick = { navController.popBackStack() },
+                    actions = {
+                        HeaderIconButton(
+                            icon = Icons.Default.PhotoCamera,
+                            onClick = { showScanner = true },
+                            contentDescription = "Scan"
                         )
-                        .padding(bottom = 24.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Spacer(modifier = Modifier.height(32.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            IconButton(
-                                onClick = { navController.popBackStack() },
-                                modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
-                            ) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
-                            }
+                    }
+                )
 
-                            Text(
-                                text = "سجل حركة المنتج",
-                                style = MaterialTheme.typography.headlineSmall,
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold
-                            )
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "${viewModel.productName} - ${viewModel.variantCapacity}A" +
+                                if (viewModel.variantSpecification.isNotEmpty()) " (${viewModel.variantSpecification})" else "",
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
 
-                            IconButton(
-                                onClick = { showScanner = true },
-                                modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
-                            ) {
-                                Icon(Icons.Default.PhotoCamera, contentDescription = "Scan", tint = Color.White)
-                            }
-                        }
+                    Spacer(modifier = Modifier.height(16.dp))
 
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = "${viewModel.productName} - ${viewModel.variantCapacity}A" +
-                                    if (viewModel.variantSpecification.isNotEmpty()) " (${viewModel.variantSpecification})" else "",
-                            color = Color.White.copy(alpha = 0.9f),
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Medium
-                        )
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        // Search Bar
-                        OutlinedTextField(
-                            value = searchQuery,
-                            onValueChange = viewModel::onSearchQueryChanged,
-                            modifier = Modifier.fillMaxWidth(),
-                            placeholder = { Text("بحث في السجل...", color = Color.White.copy(alpha = 0.5f)) },
-                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.White.copy(alpha = 0.7f)) },
-                            trailingIcon = {
-                                if (searchQuery.isNotEmpty()) {
-                                    IconButton(onClick = { viewModel.onSearchQueryChanged("") }) {
-                                        Icon(Icons.Default.Clear, contentDescription = "مسح", tint = Color.White)
-                                    }
+                    // Search Bar
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = viewModel::onSearchQueryChanged,
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("بحث في السجل...", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)) },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)) },
+                        trailingIcon = {
+                            if (searchQuery.isNotEmpty()) {
+                                IconButton(onClick = { viewModel.onSearchQueryChanged("") }) {
+                                    Icon(Icons.Default.Clear, contentDescription = "مسح", tint = MaterialTheme.colorScheme.onSurface)
                                 }
-                            },
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedContainerColor = Color.Black.copy(alpha = 0.2f),
-                                unfocusedContainerColor = Color.Black.copy(alpha = 0.2f),
-                                focusedBorderColor = Color.Transparent,
-                                unfocusedBorderColor = Color.Transparent,
-                                cursorColor = Color.White,
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White
-                            ),
-                            shape = RoundedCornerShape(16.dp),
-                            singleLine = true
-                        )
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        // Styled Tabs
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
-                                .padding(4.dp)
-                                .horizontalScroll(rememberScrollState())
-                        ) {
-                            LedgerCategory.values().forEach { category ->
-                                TabItem(
-                                    title = category.label,
-                                    isSelected = selectedCategory == category,
-                                    modifier = Modifier.padding(horizontal = 4.dp),
-                                    onClick = { viewModel.selectCategory(category) }
-                                )
                             }
+                        },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = Color.Transparent
+                        ),
+                        shape = RoundedCornerShape(16.dp),
+                        singleLine = true
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Styled Tabs
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+                            .padding(4.dp)
+                            .horizontalScroll(rememberScrollState())
+                    ) {
+                        LedgerCategory.values().forEach { category ->
+                            TabItem(
+                                title = category.label,
+                                isSelected = selectedCategory == category,
+                                modifier = Modifier.padding(horizontal = 4.dp),
+                                onClick = { viewModel.selectCategory(category) }
+                            )
                         }
                     }
                 }

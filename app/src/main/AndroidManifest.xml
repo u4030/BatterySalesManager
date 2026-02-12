@@ -47,6 +47,11 @@
             </intent-filter>
         </service>
 
+        <service
+            android:name=".services.NotificationService"
+            android:enabled="true"
+            android:exported="false" />
+
     </application>
 
 </manifest>

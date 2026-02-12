@@ -29,6 +29,8 @@ import com.batterysales.data.models.OldBatteryTransactionType
 import com.batterysales.viewmodel.OldBatteryViewModel
 import java.text.SimpleDateFormat
 import java.util.*
+import com.batterysales.ui.components.SharedHeader
+import com.batterysales.ui.components.HeaderIconButton
 
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.draw.blur
@@ -115,47 +117,20 @@ fun OldBatteryLedgerScreen(
         ) {
             // Header Section
             item {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            brush = headerGradient,
-                            shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
+                SharedHeader(
+                    title = "سجل السكراب",
+                    onBackClick = { navController.popBackStack() },
+                    actions = {
+                        HeaderIconButton(
+                            icon = Icons.Default.CalendarMonth,
+                            onClick = { showDateRangePicker = true },
+                            contentDescription = "Date Range"
                         )
-                        .padding(bottom = 24.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Spacer(modifier = Modifier.height(32.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            IconButton(
-                                onClick = { navController.popBackStack() },
-                                modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
-                            ) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
-                            }
+                    }
+                )
 
-                            Text(
-                                text = "سجل السكراب",
-                                style = MaterialTheme.typography.headlineSmall,
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold
-                            )
-
-                            IconButton(
-                                onClick = { showDateRangePicker = true },
-                                modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
-                            ) {
-                                Icon(Icons.Default.CalendarMonth, contentDescription = "Date Range", tint = Color.White)
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(24.dp))
-                        
-                        // Summary Card
+                Column(modifier = Modifier.padding(16.dp)) {
+                    // Summary Card
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(20.dp),
@@ -193,7 +168,6 @@ fun OldBatteryLedgerScreen(
                         }
                     }
                 }
-            }
 
             if (dateRangePickerState.selectedStartDateMillis != null) {
                 item {
@@ -394,6 +368,14 @@ fun OldBatteryTransactionCard(
                         color = MaterialTheme.colorScheme.onSurface,
                         style = MaterialTheme.typography.bodyLarge
                     )
+                    if (transaction.createdByUserName.isNotEmpty()) {
+                        Text(
+                            text = "بواسطة: ${transaction.createdByUserName}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                     if (!isIntake) {
                         Text(
                             text = "JD ${String.format("%,.3f", transaction.amount)}",

@@ -30,6 +30,8 @@ import com.batterysales.data.models.TransactionType
 import com.batterysales.viewmodel.AccountingViewModel
 import java.text.SimpleDateFormat
 import java.util.*
+import com.batterysales.ui.components.SharedHeader
+import com.batterysales.ui.components.HeaderIconButton
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -112,56 +114,20 @@ fun AccountingScreen(
         ) {
             // Gradient Header
             item {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            brush = headerGradient,
-                            shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
+                SharedHeader(
+                    title = "الخزينة والمحاسبة",
+                    onBackClick = { navController.popBackStack() },
+                    actions = {
+                        HeaderIconButton(
+                            icon = Icons.Default.CalendarMonth,
+                            onClick = { showDateRangePicker = true },
+                            contentDescription = "Date Range"
                         )
-                        .padding(bottom = 24.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Spacer(modifier = Modifier.height(32.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            IconButton(
-                                onClick = { navController.popBackStack() },
-                                modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
-                            ) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
-                            }
+                    }
+                )
 
-                            Text(
-                                text = "الخزينة والمحاسبة",
-                                style = MaterialTheme.typography.headlineSmall,
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold
-                            )
-
-                            Row {
-                                IconButton(
-                                    onClick = { showDateRangePicker = true },
-                                    modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
-                                ) {
-                                    Icon(Icons.Default.CalendarMonth, contentDescription = "Date", tint = Color.White)
-                                }
-                                Spacer(modifier = Modifier.width(8.dp))
-//                                IconButton(
-//                                    onClick = { viewModel.loadData() },
-//                                    modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
-//                                ) {
-//                                    Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color.White)
-//                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(24.dp))
-
-                        // بطاقة الرصيد الحالي داخل الهيدر
+                Column(modifier = Modifier.padding(16.dp)) {
+                    // بطاقة الرصيد الحالي داخل الهيدر
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(20.dp),
@@ -187,7 +153,6 @@ fun AccountingScreen(
                         }
                     }
                 }
-            }
 
             item {
                 Column(modifier = Modifier.padding(horizontal = 16.dp)) {
@@ -401,7 +366,7 @@ fun TransactionItemCard(
             if (transaction.referenceNumber.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "رقم المرجع: ${transaction.referenceNumber}",
+                    text = "رقم الشيك/السند/المرجع: ${transaction.referenceNumber}",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color(0xFFFB8C00),
                     fontWeight = FontWeight.Medium

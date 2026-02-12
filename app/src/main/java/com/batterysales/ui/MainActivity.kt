@@ -3,6 +3,7 @@ package com.batterysales
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -21,6 +22,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import com.batterysales.services.AppNotificationManager
+import com.batterysales.services.NotificationService
 import com.batterysales.ui.components.*
 import com.batterysales.ui.navigation.AppNavigation
 import com.batterysales.ui.theme.BatterySalesManagerTheme
@@ -49,8 +51,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
-        // Start listening for notifications
-        notificationManager.startListening()
+        // Start background notification service
+        val serviceIntent = Intent(this, NotificationService::class.java)
+        startService(serviceIntent)
 
         // Request notification permission for Android 13+
         askNotificationPermission()
