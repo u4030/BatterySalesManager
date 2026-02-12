@@ -7,6 +7,8 @@ data class StockEntry(
 //    @DocumentId
     val id: String = "",
     val productVariantId: String = "",
+    val productName: String = "", // Denormalized product name
+    val capacity: Int = 0, // Denormalized capacity
     val warehouseId: String = "",
     val quantity: Int = 0,
     val costPrice: Double = 0.0, // Cost per item

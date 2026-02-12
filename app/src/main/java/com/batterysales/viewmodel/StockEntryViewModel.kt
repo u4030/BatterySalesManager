@@ -257,6 +257,8 @@ class StockEntryViewModel @Inject constructor(
 
                     val updatedEntry = originalEntry.copy(
                         quantity = updatedItem.quantity,
+                        productName = updatedItem.productName,
+                        capacity = state.selectedVariant!!.capacity,
                         returnedQuantity = returnedQty,
                         returnDate = if (returnedQty > 0) (originalEntry.returnDate ?: Date()) else null,
                         costPrice = updatedItem.costPrice,
@@ -279,6 +281,8 @@ class StockEntryViewModel @Inject constructor(
                     val entries = state.stockItems.map { item ->
                         StockEntry(
                             productVariantId = item.productVariant.id,
+                            productName = item.productName,
+                            capacity = item.productVariant.capacity,
                             warehouseId = state.selectedWarehouse.id,
                             quantity = item.quantity,
                             costPrice = item.costPrice,
