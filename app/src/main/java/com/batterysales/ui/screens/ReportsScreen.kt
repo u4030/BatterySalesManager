@@ -27,6 +27,8 @@ import com.batterysales.ui.components.BarcodeScanner
 import com.batterysales.ui.components.InfoBadge
 import com.batterysales.viewmodel.InventoryReportItem
 import com.batterysales.viewmodel.ReportsViewModel
+import com.batterysales.ui.components.SharedHeader
+import com.batterysales.ui.components.HeaderIconButton
 import java.util.Locale
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -92,74 +94,46 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
         ) {
             // Gradient Header
             item {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            brush = headerGradient,
-                            shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
+                SharedHeader(
+                    title = "التقارير والإحصائيات",
+                    onBackClick = { navController.popBackStack() },
+                    actions = {
+                        HeaderIconButton(
+                            icon = Icons.Default.Refresh,
+                            onClick = { /* Reload logic */ },
+                            contentDescription = "Refresh"
                         )
-                        .padding(bottom = 24.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Spacer(modifier = Modifier.height(32.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            IconButton(
-                                onClick = { navController.popBackStack() },
-                                modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
-                            ) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
-                            }
+                    }
+                )
 
-                            Text(
-                                text = "التقارير والإحصائيات",
-                                style = MaterialTheme.typography.headlineSmall,
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold
-                            )
-
-                            IconButton(
-                                onClick = { /* Reload logic */ },
-                                modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
-                            ) {
-                                Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color.White)
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(24.dp))
-
-                        // Styled Tabs
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
-                                .padding(4.dp)
-                                .horizontalScroll(rememberScrollState())
-                        ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    // Styled Tabs
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
+                            .padding(4.dp)
+                            .horizontalScroll(rememberScrollState())
+                    ) {
+                        TabItem(
+                            title = "المخزون",
+                            isSelected = selectedTab == 0,
+                            modifier = Modifier.padding(horizontal = 4.dp),
+                            onClick = { selectedTab = 0 }
+                        )
+                        TabItem(
+                            title = "السكراب",
+                            isSelected = selectedTab == 1,
+                            modifier = Modifier.padding(horizontal = 4.dp),
+                            onClick = { selectedTab = 1 }
+                        )
+                        if (!isSeller) {
                             TabItem(
-                                title = "المخزون",
-                                isSelected = selectedTab == 0,
+                                title = "الموردين",
+                                isSelected = selectedTab == 2,
                                 modifier = Modifier.padding(horizontal = 4.dp),
-                                onClick = { selectedTab = 0 }
+                                onClick = { selectedTab = 2 }
                             )
-                            TabItem(
-                                title = "السكراب",
-                                isSelected = selectedTab == 1,
-                                modifier = Modifier.padding(horizontal = 4.dp),
-                                onClick = { selectedTab = 1 }
-                            )
-                            if (!isSeller) {
-                                TabItem(
-                                    title = "الموردين",
-                                    isSelected = selectedTab == 2,
-                                    modifier = Modifier.padding(horizontal = 4.dp),
-                                    onClick = { selectedTab = 2 }
-                                )
-                            }
                         }
                     }
                 }
@@ -671,7 +645,7 @@ fun SupplierCardRedesigned(item: com.batterysales.viewmodel.SupplierReportItem) 
                             Text("JD ${String.format("%.3f", po.remainingBalance)}", style = MaterialTheme.typography.labelSmall, color = if (po.remainingBalance > 0) Color(0xFFEF4444) else Color.Gray)
                         }
                         if (po.referenceNumbers.isNotEmpty()) {
-                            Text("مراجع: ${po.referenceNumbers.joinToString(", ")}", fontSize = 10.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
+                            Text(po.referenceNumbers.joinToString(", "), fontSize = 10.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
                         }
                     }
                 }

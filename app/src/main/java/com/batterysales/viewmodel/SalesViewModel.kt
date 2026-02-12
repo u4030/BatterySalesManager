@@ -193,7 +193,8 @@ class SalesViewModel @Inject constructor(
                             warehouseId = warehouse.id,
                             totalAmperes = newInvoice.oldBatteriesTotalAmperes,
                             type = OldBatteryTransactionType.INTAKE,
-                            notes = "مستلم من فاتورة: $customerName"
+                            notes = "مستلم من فاتورة: $customerName",
+                            createdByUserName = currentUser?.displayName ?: ""
                         )
                     )
                 }

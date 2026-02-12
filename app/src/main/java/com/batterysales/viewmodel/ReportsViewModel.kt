@@ -169,11 +169,13 @@ class ReportsViewModel @Inject constructor(
             val supplierEntries = allEntries.filter {
                 it.supplierId == supplier.id &&
                         it.status == "approved" &&
+                        (supplier.resetDate == null || it.timestamp.after(supplier.resetDate)) &&
                         (start == null || it.timestamp.time >= start) &&
                         (end == null || it.timestamp.time <= end)
             }
             val supplierBills = allBills.filter {
                 it.supplierId == supplier.id &&
+                        (supplier.resetDate == null || it.createdAt.after(supplier.resetDate)) &&
                         (start == null || it.dueDate.time >= start) &&
                         (end == null || it.dueDate.time <= end)
             }
@@ -189,7 +191,15 @@ class ReportsViewModel @Inject constructor(
                     entry = entry,
                     linkedPaidAmount = linkedPaid,
                     remainingBalance = entry.totalCost - linkedPaid,
-                    referenceNumbers = linkedBills.map { it.referenceNumber }.filter { it.isNotEmpty() }
+                    referenceNumbers = linkedBills.filter { it.referenceNumber.isNotEmpty() }.map { bill ->
+                        val typeStr = when (bill.billType) {
+                            BillType.CHECK -> "شيك"
+                            BillType.BILL -> "كمبيالة"
+                            BillType.TRANSFER -> "تحويل"
+                            BillType.OTHER -> "أخرى"
+                        }
+                        "$typeStr: ${bill.referenceNumber}"
+                    }
                 )
             }
 

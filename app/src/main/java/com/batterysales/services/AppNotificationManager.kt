@@ -72,35 +72,43 @@ class AppNotificationManager @Inject constructor(
                     set(java.util.Calendar.HOUR_OF_DAY, 23)
                 }
 
-                val upcomingBills = snapshot.documents.mapNotNull {
+                val allRelevantBills = snapshot.documents.mapNotNull {
                     it.toObject(Bill::class.java)?.copy(id = it.id)
                 }.filter { bill ->
                     bill.status != BillStatus.PAID &&
-                            !bill.dueDate.before(now.time) &&
                             !bill.dueDate.after(nextWeek.time)
                 }
 
+                val overdueCount = allRelevantBills.count { it.dueDate.before(now.time) }
+                val upcomingBills = allRelevantBills.filter { !it.dueDate.before(now.time) }
+
                 if (!hasEmittedData) {
                     hasEmittedData = true
-                    if (upcomingBills.isNotEmpty()) {
-                        val minDaysRemaining = upcomingBills.minOf { bill ->
-                            val diff = bill.dueDate.time - now.time.time
-                            (diff / (1000 * 60 * 60 * 24)).toInt()
+                    if (allRelevantBills.isNotEmpty()) {
+                        val message = StringBuilder()
+                        if (overdueCount > 0) {
+                            message.append("يوجد عدد $overdueCount كمبيالات متأخرة! ")
                         }
 
-                        val message = when (minDaysRemaining) {
-                            0 -> "يوجد كمبيالات تستحق اليوم"
-                            1 -> "يوجد كمبيالات تستحق غداً"
-                            else -> "يوجد كمبيالات تستحق خلال $minDaysRemaining أيام"
-                        } + " (إجمالي: ${upcomingBills.size})"
+                        if (upcomingBills.isNotEmpty()) {
+                            val minDaysRemaining = upcomingBills.minOf { bill ->
+                                val diff = bill.dueDate.time - now.time.time
+                                (diff / (1000 * 60 * 60 * 24)).toInt()
+                            }
+                            message.append(when (minDaysRemaining) {
+                                0 -> "يوجد كمبيالات تستحق اليوم"
+                                1 -> "يوجد كمبيالات تستحق غداً"
+                                else -> "يوجد كمبيالات تستحق خلال $minDaysRemaining أيام"
+                            })
+                        }
 
                         NotificationHelper.showNotification(
                             context,
-                            "تنبيه الاستحقاق",
-                            message
+                            "تنبيه الالتزامات المالية",
+                            message.toString()
                         )
                         // Add to notified list to avoid individual notifications immediately
-                        upcomingBills.forEach { notifiedBillIds.add(it.id) }
+                        allRelevantBills.forEach { notifiedBillIds.add(it.id) }
                     }
                     return@addSnapshotListener
                 }
@@ -111,16 +119,15 @@ class AppNotificationManager @Inject constructor(
 
                         val bill = change.document.toObject(Bill::class.java).copy(id = change.document.id)
 
-                        if (bill.status != BillStatus.PAID &&
-                            !bill.dueDate.before(now.time) &&
-                            !bill.dueDate.after(nextWeek.time)) {
-
+                        if (bill.status != BillStatus.PAID && !bill.dueDate.after(nextWeek.time)) {
                             if (!notifiedBillIds.contains(bill.id)) {
+                                val isOverdue = bill.dueDate.before(now.time)
+                                val title = if (isOverdue) "كمبيالة متأخرة!" else "موعد استحقاق قريب"
                                 val dateFormatter = java.text.SimpleDateFormat("yyyy/MM/dd", java.util.Locale.getDefault())
                                 NotificationHelper.showNotification(
                                     context,
-                                    "موعد استحقاق قريب",
-                                    "الكمبيالة: ${bill.description} تستحق بتاريخ ${dateFormatter.format(bill.dueDate)}"
+                                    title,
+                                    "الكمبيالة: ${bill.description} ${if (isOverdue) "كانت تستحق" else "تستحق"} بتاريخ ${dateFormatter.format(bill.dueDate)}"
                                 )
                                 notifiedBillIds.add(bill.id)
                             }

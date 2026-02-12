@@ -16,6 +16,8 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.batterysales.viewmodel.SettingsViewModel
+import com.batterysales.ui.components.SharedHeader
+import com.batterysales.ui.components.HeaderIconButton
 
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.shape.CircleShape
@@ -51,39 +53,10 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
         ) {
             // Modern Header
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        brush = headerGradient,
-                        shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
-                    )
-                    .padding(bottom = 32.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Spacer(modifier = Modifier.height(32.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(
-                            onClick = { navController.popBackStack() },
-                            modifier = Modifier.background(Color.White.copy(alpha = 0.1f), CircleShape)
-                        ) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
-                        }
-                        
-                        Spacer(modifier = Modifier.width(16.dp))
-
-                        Text(
-                            text = "إعدادات التطبيق",
-                            style = MaterialTheme.typography.headlineSmall,
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-            }
+            SharedHeader(
+                title = "إعدادات التطبيق",
+                onBackClick = { navController.popBackStack() }
+            )
 
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
                 // Font Settings Group

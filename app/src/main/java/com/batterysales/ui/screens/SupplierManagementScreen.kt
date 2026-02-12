@@ -25,6 +25,8 @@ import androidx.navigation.NavController
 import com.batterysales.data.models.Supplier
 import com.batterysales.viewmodel.SupplierViewModel
 import com.batterysales.ui.components.CustomKeyboardTextField
+import com.batterysales.ui.components.SharedHeader
+import com.batterysales.ui.components.HeaderIconButton
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,6 +41,7 @@ fun SupplierManagementScreen(
     var showAddDialog by remember { mutableStateOf(false) }
     var supplierToEdit by remember { mutableStateOf<Supplier?>(null) }
     var supplierToDelete by remember { mutableStateOf<Supplier?>(null) }
+    var supplierToReset by remember { mutableStateOf<Supplier?>(null) }
 
     val bgColor = MaterialTheme.colorScheme.background
     val accentColor = Color(0xFFFB8C00)
@@ -69,45 +72,17 @@ fun SupplierManagementScreen(
         ) {
             // Gradient Header
             item {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            brush = headerGradient,
-                            shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
+                SharedHeader(
+                    title = "إدارة الموردين",
+                    onBackClick = { navController.popBackStack() },
+                    actions = {
+                        HeaderIconButton(
+                            icon = Icons.Default.Refresh,
+                            onClick = { viewModel.loadSuppliers() },
+                            contentDescription = "Refresh"
                         )
-                        .padding(bottom = 24.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Spacer(modifier = Modifier.height(32.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            IconButton(
-                                onClick = { navController.popBackStack() },
-                                modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
-                            ) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
-                            }
-
-                            Text(
-                                text = "إدارة الموردين",
-                                style = MaterialTheme.typography.headlineSmall,
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold
-                            )
-
-                            IconButton(
-                                onClick = { viewModel.loadSuppliers() },
-                                modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
-                            ) {
-                                Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color.White)
-                            }
-                        }
                     }
-                }
+                )
             }
 
             if (isLoading && suppliers.isEmpty()) {
@@ -128,7 +103,8 @@ fun SupplierManagementScreen(
                         SupplierItemCard(
                             supplier = supplier,
                             onEdit = { supplierToEdit = supplier },
-                            onDelete = { supplierToDelete = supplier }
+                            onDelete = { supplierToDelete = supplier },
+                            onReset = { supplierToReset = supplier }
                         )
                     }
                 }
@@ -189,13 +165,34 @@ fun SupplierManagementScreen(
             }
         )
     }
+
+    supplierToReset?.let { supplier ->
+        AlertDialog(
+            onDismissRequest = { supplierToReset = null },
+            title = { Text("إعادة ضبط المورد") },
+            text = { Text("هل أنت متأكد من إعادة ضبط المورد '${supplier.name}'؟ سيتم تجاهل كافة المشتريات والدفعات السابقة لهذا المورد في التقارير (تصفير الحساب السنوي).") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.resetSupplier(supplier)
+                        supplierToReset = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFB8C00))
+                ) { Text("إعادة ضبط") }
+            },
+            dismissButton = {
+                TextButton(onClick = { supplierToReset = null }) { Text("إلغاء") }
+            }
+        )
+    }
 }
 
 @Composable
 fun SupplierItemCard(
     supplier: Supplier,
     onEdit: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onReset: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -230,6 +227,13 @@ fun SupplierItemCard(
                 }
                 
                 Row {
+                    IconButton(
+                        onClick = onReset,
+                        modifier = Modifier.size(36.dp).background(Color(0xFFFB8C00).copy(alpha = 0.1f), CircleShape)
+                    ) {
+                        Icon(Icons.Default.RestartAlt, contentDescription = "Reset", tint = Color(0xFFFB8C00), modifier = Modifier.size(18.dp))
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
                     IconButton(
                         onClick = onEdit,
                         modifier = Modifier.size(36.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), CircleShape)

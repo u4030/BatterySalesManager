@@ -26,6 +26,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.batterysales.viewmodel.AuthViewModel
 import com.batterysales.viewmodel.DashboardViewModel
+import com.batterysales.ui.components.SharedHeader
+import com.batterysales.ui.components.HeaderIconButton
 
 data class DashboardItem(
     val title: String,
@@ -89,68 +91,36 @@ fun DashboardScreen(
         ) {
             // Header Section
             item {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            brush = headerGradient,
-                            shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
+                SharedHeader(
+                    title = "لوحة التحكم",
+                    actions = {
+                        HeaderIconButton(
+                            icon = Icons.Default.Settings,
+                            onClick = { navController.navigate("settings") },
+                            contentDescription = "Settings"
                         )
-                        .padding(bottom = 24.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Spacer(modifier = Modifier.height(32.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Surface(
-                                    onClick = { navController.navigate("settings") },
-                                    color = Color.White.copy(alpha = 0.2f),
-                                    shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.size(40.dp)
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White, modifier = Modifier.size(20.dp))
-                                    }
+                        HeaderIconButton(
+                            icon = Icons.AutoMirrored.Filled.Logout,
+                            onClick = {
+                                authViewModel.logout()
+                                navController.navigate("login") {
+                                    popUpTo(0) { inclusive = true }
                                 }
-                                Surface(
-                                    onClick = {
-                                        authViewModel.logout()
-                                        navController.navigate("login") {
-                                            popUpTo(0) { inclusive = true }
-                                        }
-                                    },
-                                    color = Color.White.copy(alpha = 0.2f),
-                                    shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.size(40.dp)
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = "Logout", tint = Color.White, modifier = Modifier.size(20.dp))
-                                    }
-                                }
-                            }
+                            },
+                            contentDescription = "Logout"
+                        )
+                        Icon(
+                            if (isSystemInDarkTheme()) Icons.Default.DarkMode else Icons.Default.LightMode,
+                            contentDescription = "Mode",
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                )
 
-                            Text(
-                                text = "لوحة التحكم",
-                                style = MaterialTheme.typography.headlineMedium,
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold
-                            )
-
-                            Icon(
-                                if (isSystemInDarkTheme()) Icons.Default.DarkMode else Icons.Default.LightMode,
-                                contentDescription = "Mode",
-                                tint = Color.White,
-                                modifier = Modifier.size(28.dp)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(32.dp))
-
-                        // Summary Cards Row
+                // Summary content below header
+                Column(modifier = Modifier.padding(16.dp)) {
+                    // Summary Cards Row
                         if (isAdmin) {
                             Text(
                                 "الإجمالي العام",
@@ -218,7 +188,6 @@ fun DashboardScreen(
                         }
                     }
                 }
-            }
 
             // Alerts Section
             if (isAdmin && dashboardState.pendingApprovalsCount > 0) {

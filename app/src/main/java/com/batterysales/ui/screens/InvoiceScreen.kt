@@ -28,6 +28,8 @@ import com.batterysales.viewmodel.InvoiceViewModel
 import com.batterysales.ui.components.TabItem
 import java.text.SimpleDateFormat
 import java.util.*
+import com.batterysales.ui.components.SharedHeader
+import com.batterysales.ui.components.HeaderIconButton
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -90,75 +92,38 @@ fun InvoiceScreen(
         ) {
             // Gradient Header
             item {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            brush = headerGradient,
-                            shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
+                SharedHeader(
+                    title = "إدارة الفواتير",
+                    onBackClick = { navController.popBackStack() },
+                    actions = {
+                        HeaderIconButton(
+                            icon = Icons.Default.CalendarMonth,
+                            onClick = { showDateRangePicker = true },
+                            contentDescription = "Date Range"
                         )
-                        .padding(bottom = 24.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Spacer(modifier = Modifier.height(32.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            IconButton(
-                                onClick = { navController.popBackStack() },
-                                modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
-                            ) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
-                            }
+                    }
+                )
 
-                            Text(
-                                text = "إدارة الفواتير",
-                                style = MaterialTheme.typography.headlineSmall,
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold
-                            )
-
-                            Row {
-                                IconButton(
-                                    onClick = { showDateRangePicker = true },
-                                    modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
-                                ) {
-                                    Icon(Icons.Default.CalendarMonth, contentDescription = "Date", tint = Color.White)
-                                }
-                                Spacer(modifier = Modifier.width(8.dp))
-//                                IconButton(
-//                                    onClick = { viewModel.loadInvoices() },
-//                                    modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
-//                                ) {
-//                                    Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color.White)
-//                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(24.dp))
-
-                        // Styled Tabs
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
-                                .padding(4.dp)
-                        ) {
-                            TabItem(
-                                title = "الكل",
-                                isSelected = uiState.selectedTab == 0,
-                                modifier = Modifier.weight(1f),
-                                onClick = { viewModel.onTabSelected(0) }
-                            )
-                            TabItem(
-                                title = "المعلقة",
-                                isSelected = uiState.selectedTab == 1,
-                                modifier = Modifier.weight(1f),
-                                onClick = { viewModel.onTabSelected(1) }
-                            )
-                        }
+                Column(modifier = Modifier.padding(16.dp)) {
+                    // Styled Tabs
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
+                            .padding(4.dp)
+                    ) {
+                        TabItem(
+                            title = "الكل",
+                            isSelected = uiState.selectedTab == 0,
+                            modifier = Modifier.weight(1f),
+                            onClick = { viewModel.onTabSelected(0) }
+                        )
+                        TabItem(
+                            title = "المعلقة",
+                            isSelected = uiState.selectedTab == 1,
+                            modifier = Modifier.weight(1f),
+                            onClick = { viewModel.onTabSelected(1) }
+                        )
                     }
                 }
             }

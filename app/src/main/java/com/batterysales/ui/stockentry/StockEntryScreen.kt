@@ -25,6 +25,8 @@ import com.batterysales.ui.theme.LocalInputTextStyle
 import com.batterysales.viewmodel.StockEntryViewModel
 import com.batterysales.viewmodel.StockEntryUiState
 import com.batterysales.viewmodel.CostInputMode
+import com.batterysales.ui.components.SharedHeader
+import com.batterysales.ui.components.HeaderIconButton
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -83,45 +85,17 @@ fun StockEntryScreen(
             ) {
                 // Gradient Header
                 item {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(
-                                brush = headerGradient,
-                                shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
+                    SharedHeader(
+                        title = if (uiState.isEditMode) "تعديل قيد المخزون" else "إدخال مخزون جديد",
+                        onBackClick = { navController.popBackStack() },
+                        actions = {
+                            HeaderIconButton(
+                                icon = Icons.Default.PhotoCamera,
+                                onClick = { showScanner = true },
+                                contentDescription = "Scan"
                             )
-                            .padding(bottom = 24.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Spacer(modifier = Modifier.height(32.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                IconButton(
-                                    onClick = { navController.popBackStack() },
-                                    modifier = Modifier.background(Color.White.copy(alpha = 0.1f), CircleShape)
-                                ) {
-                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
-                                }
-
-                                Text(
-                                    text = if (uiState.isEditMode) "تعديل قيد المخزون" else "إدخال مخزون جديد",
-                                    style = MaterialTheme.typography.headlineSmall,
-                                    color = androidx.compose.ui.graphics.Color.White,
-                                    fontWeight = FontWeight.Bold
-                                )
-
-                                IconButton(
-                                    onClick = { showScanner = true },
-                                    modifier = Modifier.background(androidx.compose.ui.graphics.Color.White.copy(alpha = 0.1f), CircleShape)
-                                ) {
-                                    Icon(Icons.Default.PhotoCamera, contentDescription = "Scan", tint = androidx.compose.ui.graphics.Color.White)
-                                }
-                            }
                         }
-                    }
+                    )
                 }
 
                 item {
