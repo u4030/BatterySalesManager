@@ -148,9 +148,19 @@ fun DashboardScreen(
                                         )
                                         Spacer(modifier = Modifier.height(12.dp))
 
-                                        Column {
-                                            Text("المحصلة اليوم", color = Color.White.copy(alpha = 0.6f), style = MaterialTheme.typography.labelSmall)
-                                            Text("JD ${String.format("%,.2f", stats.todayCollection)}", color = Color(0xFF10B981), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge)
+                                        androidx.compose.foundation.layout.FlowRow(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Column {
+                                                Text("المحصلة اليوم", color = Color.White.copy(alpha = 0.6f), style = MaterialTheme.typography.labelSmall)
+                                                Text("JD ${String.format("%,.2f", stats.todayCollection)}", color = Color(0xFF10B981), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge)
+                                            }
+                                            Column(horizontalAlignment = Alignment.End) {
+                                                Text("فواتير التحصيل", color = Color.White.copy(alpha = 0.6f), style = MaterialTheme.typography.labelSmall)
+                                                Text("${stats.todayCollectionCount}", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge)
+                                            }
                                         }
                                     }
                                 }

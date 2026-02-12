@@ -418,7 +418,7 @@ fun EditTransactionDialog(
             Button(onClick = {
                 val amt = amount.toDoubleOrNull() ?: transaction.amount
                 onConfirm(transaction.copy(description = description, amount = amt))
-            }) { Text("تأكيد") }
+            }) { Text("موافق") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("إلغاء") }
@@ -468,7 +468,7 @@ fun AddTransactionDialog(
                 if (description.isNotEmpty() && amt > 0) onAdd(type, description, amt, referenceNumber)
             }, colors = ButtonDefaults.buttonColors(
                 containerColor = if (type == TransactionType.INCOME) Color(0xFF4CAF50) else MaterialTheme.colorScheme.error
-            )) { Text("تأكيد") }
+            )) { Text("موافق") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("إلغاء") }

@@ -15,7 +15,8 @@ import javax.inject.Inject
 data class WarehouseStats(
     val warehouseId: String,
     val warehouseName: String,
-    val todayCollection: Double // Payments received today
+    val todayCollection: Double, // Payments received today
+    val todayCollectionCount: Int // Number of unique invoices collected today
 )
 
 data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
@@ -141,10 +142,13 @@ class DashboardViewModel @Inject constructor(
                 invoice != null && !payment.timestamp.before(startOfToday)
             }
 
+            val uniqueInvoicesCollected = paymentsToday.map { it.invoiceId }.distinct().size
+
             WarehouseStats(
                 warehouseId = warehouse.id,
                 warehouseName = warehouse.name,
-                todayCollection = paymentsToday.sumOf { it.amount }
+                todayCollection = paymentsToday.sumOf { it.amount },
+                todayCollectionCount = uniqueInvoicesCollected
             )
         }.filter { if (isAdmin) it.todayCollection > 0 else true }
 

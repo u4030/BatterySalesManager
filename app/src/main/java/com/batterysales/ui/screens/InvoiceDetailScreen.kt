@@ -288,7 +288,7 @@ fun InvoiceDetailScreen(
                         showPaymentDialog = false
                         paymentAmount = ""
                     }
-                }) { Text("تأكيد") }
+                }) { Text("موافق") }
             },
             dismissButton = { TextButton(onClick = { showPaymentDialog = false }) { Text("إلغاء") } }
         )

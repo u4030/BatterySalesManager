@@ -23,6 +23,8 @@ data class InvoiceUiState(
     val invoiceToDelete: Invoice? = null,
     val deletionWarningMessage: String = "",
     val selectedWarehouseId: String = "",
+    val selectedTab: Int = 0, // 0: All, 1: Pending
+    val totalDebt: Double = 0.0,
     val startDate: Long? = null,
     val endDate: Long? = null,
     val searchQuery: String = "",
@@ -76,10 +78,13 @@ class InvoiceViewModel @Inject constructor(
                 invoiceRepository.getAllInvoices(),
                 _uiState
             ) { invoices, state ->
-                invoices
+                val filtered = invoices
                     .filter { invoice ->
                         // Filter by warehouse
                         val matchesWarehouse = invoice.warehouseId == state.selectedWarehouseId
+
+                        // Filter by tab (All or Pending)
+                        val matchesTab = if (state.selectedTab == 1) invoice.status == "pending" else true
 
                         // Search filter
                         val matchesSearch = invoice.invoiceNumber.contains(state.searchQuery, ignoreCase = true) ||
@@ -90,20 +95,31 @@ class InvoiceViewModel @Inject constructor(
                             invoice.invoiceDate.time >= state.startDate && invoice.invoiceDate.time <= state.endDate + 86400000
                         } else true
 
-                        matchesWarehouse && matchesSearch && matchesDate
+                        matchesWarehouse && matchesTab && matchesSearch && matchesDate
                     }
                     .sortedByDescending { it.updatedAt } // Sort by updatedAt to show recent activity first
+
+                // Calculate total debt for the selected warehouse's pending invoices
+                val totalDebt = invoices
+                    .filter { it.warehouseId == state.selectedWarehouseId && it.status == "pending" }
+                    .sumOf { it.remainingAmount }
+
+                Pair(filtered, totalDebt)
             }
                 .onStart { _uiState.update { it.copy(isLoading = true) } }
                 .catch { e -> _uiState.update { it.copy(isLoading = false, errorMessage = "Failed to load invoices") } }
-                .collect { filteredInvoices ->
-                    _uiState.update { it.copy(invoices = filteredInvoices, isLoading = false) }
+                .collect { (filteredInvoices, debt) ->
+                    _uiState.update { it.copy(invoices = filteredInvoices, totalDebt = debt, isLoading = false) }
                 }
         }
     }
 
     fun onWarehouseSelected(warehouseId: String) {
         _uiState.update { it.copy(selectedWarehouseId = warehouseId) }
+    }
+
+    fun onTabSelected(tabIndex: Int) {
+        _uiState.update { it.copy(selectedTab = tabIndex) }
     }
 
     fun onSearchQueryChanged(query: String) {

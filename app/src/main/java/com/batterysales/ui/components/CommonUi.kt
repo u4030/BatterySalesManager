@@ -109,16 +109,20 @@ fun AppDateRangePickerDialog(
     DatePickerDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
-            Button(onClick = onConfirm) { Text("موافق") }
+            TextButton(onClick = onConfirm) {
+                Text("موافق", fontWeight = FontWeight.Bold)
+            }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("إلغاء") }
+            TextButton(onClick = onDismiss) {
+                Text("إلغاء")
+            }
         },
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
     ) {
         DateRangePicker(
             state = state,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.weight(1f).padding(bottom = 8.dp),
             title = {
                 Text(
                     "اختر الفترة الزمنية",

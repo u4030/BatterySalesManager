@@ -292,7 +292,7 @@ fun AddBankTransactionDialog(
                 if (description.isNotEmpty() && amt > 0) onAdd(type, description, amt, referenceNumber)
             }, colors = ButtonDefaults.buttonColors(
                 containerColor = if (type == com.batterysales.data.models.BankTransactionType.DEPOSIT) Color(0xFF4CAF50) else Color(0xFFF44336)
-            )) { Text("تأكيد") }
+            )) { Text("موافق") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("إلغاء") }

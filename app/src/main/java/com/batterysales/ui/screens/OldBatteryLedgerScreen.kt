@@ -503,7 +503,7 @@ fun AddEditOldBatteryDialog(
                 val q = qty.toIntOrNull() ?: 0
                 val a = amps.toDoubleOrNull() ?: 0.0
                 if (q > 0 && selectedWarehouseId.isNotEmpty()) onConfirm(q, a, notes, selectedWarehouseId)
-            }) { Text("تأكيد") }
+            }) { Text("موافق") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
     )
@@ -577,7 +577,7 @@ fun SellOldBatteryDialog(
                 val a = amps.toDoubleOrNull() ?: 0.0
                 val p = price.toDoubleOrNull() ?: 0.0
                 if (q > 0 && p > 0) onConfirm(q, a, p)
-            }) { Text("تأكيد البيع") }
+            }) { Text("موافق") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
     )
