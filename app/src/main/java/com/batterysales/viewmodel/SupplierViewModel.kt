@@ -80,6 +80,17 @@ class SupplierViewModel @Inject constructor(
         }
     }
 
+    fun resetSupplier(supplier: Supplier) {
+        viewModelScope.launch {
+            try {
+                val updated = supplier.copy(resetDate = java.util.Date())
+                supplierRepository.updateSupplier(updated)
+            } catch (e: Exception) {
+                _error.value = "فشل إعادة ضبط المورد: ${e.message}"
+            }
+        }
+    }
+
     fun clearError() {
         _error.value = null
     }

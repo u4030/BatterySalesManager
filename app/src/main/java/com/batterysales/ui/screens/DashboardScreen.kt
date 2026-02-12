@@ -22,10 +22,13 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.batterysales.viewmodel.AuthViewModel
 import com.batterysales.viewmodel.DashboardViewModel
+import com.batterysales.ui.components.SharedHeader
+import com.batterysales.ui.components.HeaderIconButton
 
 data class DashboardItem(
     val title: String,
@@ -34,7 +37,7 @@ data class DashboardItem(
     val color: Color = Color.Gray
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun DashboardScreen(
     navController: NavHostController,
@@ -89,133 +92,121 @@ fun DashboardScreen(
         ) {
             // Header Section
             item {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            brush = headerGradient,
-                            shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
+                SharedHeader(
+                    title = "لوحة التحكم",
+                    actions = {
+                        HeaderIconButton(
+                            icon = Icons.Default.Settings,
+                            onClick = { navController.navigate("settings") },
+                            contentDescription = "Settings"
                         )
-                        .padding(bottom = 24.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Spacer(modifier = Modifier.height(32.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Surface(
-                                    onClick = { navController.navigate("settings") },
-                                    color = Color.White.copy(alpha = 0.2f),
-                                    shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.size(40.dp)
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White, modifier = Modifier.size(20.dp))
-                                    }
+                        HeaderIconButton(
+                            icon = Icons.AutoMirrored.Filled.Logout,
+                            onClick = {
+                                authViewModel.logout()
+                                navController.navigate("login") {
+                                    popUpTo(0) { inclusive = true }
                                 }
-                                Surface(
-                                    onClick = {
-                                        authViewModel.logout()
-                                        navController.navigate("login") {
-                                            popUpTo(0) { inclusive = true }
-                                        }
-                                    },
-                                    color = Color.White.copy(alpha = 0.2f),
-                                    shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.size(40.dp)
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = "Logout", tint = Color.White, modifier = Modifier.size(20.dp))
-                                    }
-                                }
-                            }
+                            },
+                            contentDescription = "Logout"
+                        )
+                        Icon(
+                            if (isSystemInDarkTheme()) Icons.Default.DarkMode else Icons.Default.LightMode,
+                            contentDescription = "Mode",
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                )
 
-                            Text(
-                                text = "لوحة التحكم",
-                                style = MaterialTheme.typography.headlineMedium,
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold
-                            )
+                // Summary content below header
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        if (isAdmin) "إحصائيات المبيعات اليومية حسب المستودع" else "إحصائيات مبيعاتك اليوم",
+                        color = Color.White.copy(alpha = 0.7f),
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
 
-                            Icon(
-                                if (isSystemInDarkTheme()) Icons.Default.DarkMode else Icons.Default.LightMode,
-                                contentDescription = "Mode",
-                                tint = Color.White,
-                                modifier = Modifier.size(28.dp)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(32.dp))
-
-                        // Summary Cards Row
-                        if (isAdmin) {
-                            Text(
-                                "الإجمالي العام",
-                                color = Color.White.copy(alpha = 0.7f),
-                                style = MaterialTheme.typography.labelSmall,
-                                modifier = Modifier.padding(bottom = 8.dp)
-                            )
-                        }
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    if (dashboardState.warehouseStats.isNotEmpty()) {
+                        androidx.compose.foundation.lazy.LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            contentPadding = PaddingValues(bottom = 8.dp)
                         ) {
-                            SummaryCard(
-                                title = if (isAdmin) "إجمالي المبيعات" else "مبيعاتي اليوم",
-                                value = "JD ${String.format("%,.2f", dashboardState.todaySales)}",
-                                modifier = Modifier.weight(1f)
-                            )
-                            SummaryCard(
-                                title = if (isAdmin) "إجمالي الفواتير" else "فواتيري",
-                                value = "${dashboardState.todayInvoicesCount} فاتورة",
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-
-                        if (isAdmin && dashboardState.warehouseStats.isNotEmpty()) {
-                            Spacer(modifier = Modifier.height(24.dp))
-                            Text(
-                                "حسب المستودع",
-                                color = Color.White.copy(alpha = 0.7f),
-                                style = MaterialTheme.typography.labelSmall,
-                                modifier = Modifier.padding(bottom = 8.dp)
-                            )
-
-                            androidx.compose.foundation.lazy.LazyRow(
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                contentPadding = PaddingValues(bottom = 8.dp)
-                            ) {
-                                items(dashboardState.warehouseStats) { stats ->
-                                    Card(
-                                        modifier = Modifier.width(200.dp),
-                                        shape = RoundedCornerShape(16.dp),
-                                        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.1f))
+                            items(dashboardState.warehouseStats) { stats ->
+                                Card(
+                                    modifier = Modifier.widthIn(min = if (isAdmin) 220.dp else 280.dp),
+                                    shape = RoundedCornerShape(20.dp),
+                                    colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+                                ) {
+                                    Box(
+                                        modifier = Modifier.background(
+                                            brush = Brush.horizontalGradient(
+                                                colors = listOf(
+                                                    Color(0xFFFB8C00), // برتقالي أفتح
+                                                    Color(0xFFE53935)  // أحمر/برتقالي أغمق
+                                                )
+                                            )
+                                        )
                                     ) {
-                                        Column(modifier = Modifier.padding(12.dp)) {
-                                            Text(stats.warehouseName, color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
-                                            Spacer(modifier = Modifier.height(4.dp))
-                                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                                Text("المبيعات:", color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelSmall)
-                                                Text("JD ${String.format("%.2f", stats.todaySales)}", color = Color(0xFF10B981), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+                                    Column(modifier = Modifier.padding(16.dp)) {
+                                        Text(
+                                            stats.warehouseName,
+                                            color = Color.White,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            style = MaterialTheme.typography.titleMedium
+                                        )
+                                        Spacer(modifier = Modifier.height(12.dp))
+
+                                        androidx.compose.foundation.layout.FlowRow(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Column {
+                                                Text(
+                                                    "المحصلة اليوم",
+                                                    color = Color.White.copy(alpha = 0.6f),
+                                                    style = MaterialTheme.typography.labelSmall
+                                                )
+                                                Text(
+                                                    "JD ${
+                                                        String.format(
+                                                            "%,.2f",
+                                                            stats.todayCollection
+                                                        )
+                                                    }",
+                                                    color = Color(0xFF10B981),
+                                                    fontWeight = FontWeight.Bold,
+                                                    style = MaterialTheme.typography.bodyLarge
+                                                )
                                             }
-                                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                                Text("الفواتير:", color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelSmall)
-                                                Text("${stats.todayInvoicesCount}", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+                                            Column(horizontalAlignment = Alignment.End) {
+                                                Text(
+                                                    "فواتير التحصيل",
+                                                    color = Color.White.copy(alpha = 0.6f),
+                                                    style = MaterialTheme.typography.labelSmall
+                                                )
+                                                Text(
+                                                    "${stats.todayCollectionCount}",
+                                                    color = Color.White,
+                                                    fontWeight = FontWeight.Bold,
+                                                    style = MaterialTheme.typography.bodyLarge
+                                                )
                                             }
                                         }
                                     }
+                                    }
                                 }
                             }
-                        } else if (!isAdmin && currentUser?.warehouseId != null) {
-                            // Already showing the summary cards which are calculated for the todayInvoices.
-                            // If we want to be explicit, the ViewModel calculates todaySalesSum for ALL invoices.
-                            // For a Seller, the InvoiceRepository should probably only return their invoices if restricted,
-                            // but usually restriction is at the UI or Repository level.
                         }
+                    } else {
+                        Text(
+                            "لا توجد مبيعات مسجلة لهذا اليوم حتى الآن",
+                            color = Color.White.copy(alpha = 0.5f),
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
                     }
                 }
             }
@@ -365,7 +356,7 @@ fun DashboardCardItem(item: DashboardItem, modifier: Modifier = Modifier, onClic
                     item.title,
                     color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
+                    style = MaterialTheme.typography.titleMedium,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     modifier = Modifier.padding(horizontal = 8.dp)
                 )

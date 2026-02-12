@@ -168,12 +168,13 @@ fun CustomAppKeyboard(
                     ) {
                         val interactionSource = remember { MutableInteractionSource() }
                         val isPressed by interactionSource.collectIsPressedAsState()
+                        val currentTextState = rememberUpdatedState(currentValue)
 
                         // Continuous delete on long press
                         LaunchedEffect(isPressed) {
                             if (isPressed) {
-                                while (currentValue.isNotEmpty()) {
-                                    onValueChange(currentValue.dropLast(1))
+                                while (currentTextState.value.isNotEmpty()) {
+                                    onValueChange(currentTextState.value.dropLast(1))
                                     delay(100) // Adjust delay for deletion speed
                                 }
                             }

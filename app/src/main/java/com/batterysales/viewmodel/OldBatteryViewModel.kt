@@ -43,6 +43,8 @@ class OldBatteryViewModel @Inject constructor(
     private val _userWarehouseId = MutableStateFlow<String?>(null)
     val userWarehouseId = _userWarehouseId.asStateFlow()
 
+    private var currentUser: com.batterysales.data.models.User? = null
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading = _isLoading.asStateFlow()
 
@@ -54,7 +56,7 @@ class OldBatteryViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                val currentUser = userRepository.getCurrentUser()
+                currentUser = userRepository.getCurrentUser()
                 _isSeller.value = currentUser?.role == "seller"
                 _userWarehouseId.value = currentUser?.warehouseId
 
@@ -161,7 +163,8 @@ class OldBatteryViewModel @Inject constructor(
                     totalAmperes = totalAmperes,
                     type = com.batterysales.data.models.OldBatteryTransactionType.INTAKE,
                     date = java.util.Date(),
-                    notes = notes
+                    notes = notes,
+                    createdByUserName = currentUser?.displayName ?: ""
                 )
                 repository.addTransaction(transaction)
             } catch (e: Exception) {}
@@ -178,7 +181,8 @@ class OldBatteryViewModel @Inject constructor(
                     amount = amount,
                     type = OldBatteryTransactionType.SALE,
                     date = Date(),
-                    notes = "بيع بطاريات قديمة"
+                    notes = "بيع بطاريات قديمة",
+                    createdByUserName = currentUser?.displayName ?: ""
                 )
                 repository.addTransaction(transaction)
 

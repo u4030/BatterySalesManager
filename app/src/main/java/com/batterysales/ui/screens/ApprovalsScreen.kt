@@ -22,6 +22,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.batterysales.viewmodel.ApprovalItem
 import com.batterysales.viewmodel.ApprovalsViewModel
+import com.batterysales.ui.components.SharedHeader
+import com.batterysales.ui.components.HeaderIconButton
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -53,45 +55,17 @@ fun ApprovalsScreen(
         ) {
             // Gradient Header
             item {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            brush = headerGradient,
-                            shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
+                SharedHeader(
+                    title = "الموافقات المعلقة",
+                    onBackClick = { navController.popBackStack() },
+                    actions = {
+                        HeaderIconButton(
+                            icon = Icons.Default.Refresh,
+                            onClick = { /* Reload logic if available */ },
+                            contentDescription = "Refresh"
                         )
-                        .padding(bottom = 24.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Spacer(modifier = Modifier.height(32.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            IconButton(
-                                onClick = { navController.popBackStack() },
-                                modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
-                            ) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
-                            }
-
-                            Text(
-                                text = "الموافقات المعلقة",
-                                style = MaterialTheme.typography.headlineSmall,
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold
-                            )
-
-                            IconButton(
-                                onClick = { /* Reload logic if available */ },
-                                modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
-                            ) {
-                                Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color.White)
-                            }
-                        }
                     }
-                }
+                )
             }
 
             if (isLoading) {

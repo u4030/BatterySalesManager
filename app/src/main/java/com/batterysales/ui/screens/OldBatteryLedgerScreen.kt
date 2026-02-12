@@ -29,6 +29,8 @@ import com.batterysales.data.models.OldBatteryTransactionType
 import com.batterysales.viewmodel.OldBatteryViewModel
 import java.text.SimpleDateFormat
 import java.util.*
+import com.batterysales.ui.components.SharedHeader
+import com.batterysales.ui.components.HeaderIconButton
 
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.draw.blur
@@ -115,51 +117,24 @@ fun OldBatteryLedgerScreen(
         ) {
             // Header Section
             item {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            brush = headerGradient,
-                            shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
+                SharedHeader(
+                    title = "سجل السكراب",
+                    onBackClick = { navController.popBackStack() },
+                    actions = {
+                        HeaderIconButton(
+                            icon = Icons.Default.CalendarMonth,
+                            onClick = { showDateRangePicker = true },
+                            contentDescription = "Date Range"
                         )
-                        .padding(bottom = 24.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Spacer(modifier = Modifier.height(32.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            IconButton(
-                                onClick = { navController.popBackStack() },
-                                modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
-                            ) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
-                            }
+                    }
+                )
 
-                            Text(
-                                text = "سجل السكراب",
-                                style = MaterialTheme.typography.headlineSmall,
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold
-                            )
-
-                            IconButton(
-                                onClick = { showDateRangePicker = true },
-                                modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
-                            ) {
-                                Icon(Icons.Default.CalendarMonth, contentDescription = "Date Range", tint = Color.White)
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(24.dp))
-                        
-                        // Summary Card
+                Column(modifier = Modifier.padding(16.dp)) {
+                    // Summary Card
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(20.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.15f))
+                            colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.15f))
                         ) {
                             Column(modifier = Modifier.padding(20.dp), horizontalAlignment = Alignment.End) {
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
@@ -193,7 +168,6 @@ fun OldBatteryLedgerScreen(
                         }
                     }
                 }
-            }
 
             if (dateRangePickerState.selectedStartDateMillis != null) {
                 item {
@@ -394,6 +368,14 @@ fun OldBatteryTransactionCard(
                         color = MaterialTheme.colorScheme.onSurface,
                         style = MaterialTheme.typography.bodyLarge
                     )
+                    if (transaction.createdByUserName.isNotEmpty()) {
+                        Text(
+                            text = "بواسطة: ${transaction.createdByUserName}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                     if (!isIntake) {
                         Text(
                             text = "JD ${String.format("%,.3f", transaction.amount)}",
@@ -521,7 +503,7 @@ fun AddEditOldBatteryDialog(
                 val q = qty.toIntOrNull() ?: 0
                 val a = amps.toDoubleOrNull() ?: 0.0
                 if (q > 0 && selectedWarehouseId.isNotEmpty()) onConfirm(q, a, notes, selectedWarehouseId)
-            }) { Text("تأكيد") }
+            }) { Text("موافق") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
     )
@@ -535,7 +517,28 @@ fun SellOldBatteryDialog(
 ) {
     var qty by remember { mutableStateOf(transaction.quantity.toString()) }
     var amps by remember { mutableStateOf(transaction.totalAmperes.toString()) }
+    var pricePerAmp by remember { mutableStateOf("") }
     var price by remember { mutableStateOf("") }
+
+    // Automatic price calculation with 3-decimal precision
+    LaunchedEffect(amps, pricePerAmp) {
+        val a = amps.toDoubleOrNull() ?: 0.0
+        
+        // Use parsing logic that supports multi-dot if needed, but primarily 3-decimal precision
+        val ppa = if (pricePerAmp.count { it == '.' } > 1) {
+            val parts = pricePerAmp.split(".")
+            val jd = parts.getOrNull(0) ?: "0"
+            val qirsh = (parts.getOrNull(1) ?: "00").padStart(2, '0')
+            val fils = (parts.getOrNull(2) ?: "00").padStart(2, '0')
+            "$jd.${qirsh}${fils}".toDoubleOrNull() ?: 0.0
+        } else {
+            pricePerAmp.toDoubleOrNull() ?: 0.0
+        }
+
+        if (a > 0 && ppa > 0) {
+            price = String.format("%.3f", a * ppa)
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -556,6 +559,11 @@ fun SellOldBatteryDialog(
                     label = "إجمالي الأمبيرات"
                 )
                 com.batterysales.ui.components.CustomKeyboardTextField(
+                    value = pricePerAmp,
+                    onValueChange = { pricePerAmp = it },
+                    label = "سعر الأمبير الواحد"
+                )
+                com.batterysales.ui.components.CustomKeyboardTextField(
                     value = price,
                     onValueChange = { price = it },
                     label = "سعر البيع الإجمالي"
@@ -569,7 +577,7 @@ fun SellOldBatteryDialog(
                 val a = amps.toDoubleOrNull() ?: 0.0
                 val p = price.toDoubleOrNull() ?: 0.0
                 if (q > 0 && p > 0) onConfirm(q, a, p)
-            }) { Text("تأكيد البيع") }
+            }) { Text("موافق") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
     )

@@ -108,4 +108,8 @@ class UserRepository @Inject constructor(
     suspend fun updateUser(user: User) {
         firestore.collection(User.COLLECTION_NAME).document(user.id).set(user).await()
     }
+
+    suspend fun deleteUser(userId: String) {
+        firestore.collection(User.COLLECTION_NAME).document(userId).delete().await()
+    }
 }

@@ -180,7 +180,9 @@ class SalesViewModel @Inject constructor(
                     finalAmount = finalTotal,
                     paidAmount = paidAmount,
                     remainingAmount = finalTotal - paidAmount,
-                    status = if (paidAmount >= finalTotal) "paid" else "pending"
+                    status = if (paidAmount >= finalTotal) "paid" else "pending",
+                    warehouseId = warehouse.id,
+                    invoiceDate = Date()
                 )
                 val createdInvoice = invoiceRepository.createInvoice(newInvoice)
 
@@ -193,7 +195,8 @@ class SalesViewModel @Inject constructor(
                             warehouseId = warehouse.id,
                             totalAmperes = newInvoice.oldBatteriesTotalAmperes,
                             type = OldBatteryTransactionType.INTAKE,
-                            notes = "مستلم من فاتورة: $customerName"
+                            notes = "مستلم من فاتورة: $customerName",
+                            createdByUserName = currentUser?.displayName ?: ""
                         )
                     )
                 }

@@ -31,6 +31,8 @@ import com.batterysales.data.models.ProductVariant
 import com.batterysales.data.models.Warehouse
 import com.batterysales.ui.components.BarcodeScanner
 import com.batterysales.viewmodel.ProductManagementViewModel
+import com.batterysales.ui.components.SharedHeader
+import com.batterysales.ui.components.HeaderIconButton
 
 @Composable
 fun ProductManagementScreen(navController: NavHostController, viewModel: ProductManagementViewModel = hiltViewModel()) {
@@ -113,48 +115,21 @@ fun ProductManagementScreen(navController: NavHostController, viewModel: Product
         ) {
             // Gradient Header
             item {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            brush = headerGradient,
-                            shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
+                SharedHeader(
+                    title = "إدارة المنتجات",
+                    onBackClick = { navController.popBackStack() },
+                    actions = {
+                        HeaderIconButton(
+                            icon = Icons.Default.Refresh,
+                            onClick = { /* Refresh handled by flow */ },
+                            contentDescription = "Refresh"
                         )
-                        .padding(bottom = 24.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Spacer(modifier = Modifier.height(32.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            IconButton(
-                                onClick = { navController.popBackStack() },
-                                modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
-                            ) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
-                            }
+                    }
+                )
 
-                            Text(
-                                text = "إدارة المنتجات",
-                                style = MaterialTheme.typography.headlineSmall,
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold
-                            )
-
-                            IconButton(
-                                onClick = { /* Refresh handled by flow */ },
-                                modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
-                            ) {
-                                Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color.White)
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(24.dp))
-
-                        // Search Bar
-                        var searchQuery by remember { mutableStateOf("") }
+                Column(modifier = Modifier.padding(16.dp)) {
+                    // Search Bar
+                    var searchQuery by remember { mutableStateOf("") }
                         var showSearchScanner by remember { mutableStateOf(false) }
 
                         if (showSearchScanner) {
@@ -206,7 +181,6 @@ fun ProductManagementScreen(navController: NavHostController, viewModel: Product
                         )
                     }
                 }
-            }
 
             item {
                 Column(modifier = Modifier.padding(horizontal = 16.dp)) {

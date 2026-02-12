@@ -15,16 +15,16 @@ import javax.inject.Inject
 data class WarehouseStats(
     val warehouseId: String,
     val warehouseName: String,
-    val todaySales: Double,
-    val todayInvoicesCount: Int
+    val todayCollection: Double, // Payments received today
+    val todayCollectionCount: Int // Number of unique invoices collected today
 )
+
+data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 
 data class DashboardUiState(
     val pendingApprovalsCount: Int = 0,
     val lowStockVariants: List<LowStockItem> = emptyList(),
     val upcomingBills: List<com.batterysales.data.models.Bill> = emptyList(),
-    val todaySales: Double = 0.0,
-    val todayInvoicesCount: Int = 0,
     val warehouseStats: List<WarehouseStats> = emptyList(),
     val isLoading: Boolean = true
 )
@@ -45,7 +45,9 @@ class DashboardViewModel @Inject constructor(
     private val productRepository: ProductRepository,
     private val billRepository: BillRepository,
     private val warehouseRepository: WarehouseRepository,
-    private val invoiceRepository: InvoiceRepository
+    private val invoiceRepository: InvoiceRepository,
+    private val userRepository: UserRepository,
+    private val paymentRepository: PaymentRepository
 ) : ViewModel() {
 
     val uiState: StateFlow<DashboardUiState> = combine(
@@ -53,10 +55,19 @@ class DashboardViewModel @Inject constructor(
         productVariantRepository.getAllVariantsFlow(),
         productRepository.getProducts(),
         billRepository.getAllBillsFlow(),
-        combine(warehouseRepository.getWarehouses(), invoiceRepository.getAllInvoices()) { w, i -> Pair(w, i) }
-    ) { allEntries, allVariants, allProducts, allBills, lastPair ->
-        val allWarehouses = lastPair.first
-        val allInvoices = lastPair.second
+        combine(
+            warehouseRepository.getWarehouses(),
+            invoiceRepository.getAllInvoices(),
+            userRepository.getCurrentUserFlow(),
+            paymentRepository.getAllPayments()
+        ) { w, i, u, p -> Quadruple(w, i, u, p) }
+    ) { allEntries, allVariants, allProducts, allBills, quad ->
+        val allWarehouses = quad.first
+        val allInvoices = quad.second
+        val currentUser = quad.third
+        val allPayments = quad.fourth
+        val isAdmin = currentUser?.role == "admin"
+        val userWarehouseId = currentUser?.warehouseId
 
         val pendingCount = allEntries.count { it.status == StockEntry.STATUS_PENDING }
 
@@ -111,7 +122,7 @@ class DashboardViewModel @Inject constructor(
                     !it.dueDate.after(nextWeek.time)
         }.sortedBy { it.dueDate }
 
-        // Calculate Today's Sales and Invoices
+        // Calculate Today's Collection
         val startOfToday = Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, 0)
             set(Calendar.MINUTE, 0)
@@ -119,29 +130,32 @@ class DashboardViewModel @Inject constructor(
             set(Calendar.MILLISECOND, 0)
         }.time
 
-        val todayInvoices = allInvoices.filter {
-            !it.createdAt.before(startOfToday)
-        }
+        val relevantWarehouses = if (isAdmin) allWarehouses 
+                                else allWarehouses.filter { it.id == userWarehouseId }
 
-        val todaySalesSum = todayInvoices.sumOf { it.finalAmount }
-        val todayCount = todayInvoices.size
+        val warehouseStatsList = relevantWarehouses.map { warehouse ->
+            val allWhInvoices = allInvoices.filter { it.warehouseId == warehouse.id }
+            val invoiceMap = allWhInvoices.associateBy { it.id }
+            
+            val paymentsToday = allPayments.filter { payment ->
+                val invoice = invoiceMap[payment.invoiceId]
+                invoice != null && !payment.timestamp.before(startOfToday)
+            }
 
-        val warehouseStatsList = allWarehouses.map { warehouse ->
-            val invoices = todayInvoices.filter { it.warehouseId == warehouse.id }
+            val uniqueInvoicesCollected = paymentsToday.map { it.invoiceId }.distinct().size
+
             WarehouseStats(
                 warehouseId = warehouse.id,
                 warehouseName = warehouse.name,
-                todaySales = invoices.sumOf { it.finalAmount },
-                todayInvoicesCount = invoices.size
+                todayCollection = paymentsToday.sumOf { it.amount },
+                todayCollectionCount = uniqueInvoicesCollected
             )
-        }.filter { it.todayInvoicesCount > 0 || it.todaySales > 0 }
+        }.filter { if (isAdmin) it.todayCollection > 0 else true }
 
         DashboardUiState(
             pendingApprovalsCount = pendingCount,
             lowStockVariants = lowStock,
             upcomingBills = upcoming,
-            todaySales = todaySalesSum,
-            todayInvoicesCount = todayCount,
             warehouseStats = warehouseStatsList,
             isLoading = false
         )

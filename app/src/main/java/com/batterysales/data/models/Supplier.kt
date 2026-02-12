@@ -9,6 +9,7 @@ data class Supplier(
     val email: String = "",
     val address: String = "",
     val yearlyTarget: Double = 0.0,
+    val resetDate: Date? = null,
     val createdAt: Date = Date(),
     val updatedAt: Date = Date()
 ) {

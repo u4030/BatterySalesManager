@@ -29,6 +29,8 @@ import androidx.compose.ui.text.style.TextAlign
 import com.batterysales.ui.components.CustomKeyboardTextField
 import com.batterysales.ui.components.KeyboardLanguage
 import com.batterysales.ui.theme.LocalInputTextStyle
+import com.batterysales.ui.components.SharedHeader
+import com.batterysales.ui.components.HeaderIconButton
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -77,45 +79,17 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
             // Gradient Header
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        brush = headerGradient,
-                        shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
+            SharedHeader(
+                title = "فاتورة مبيعات جديدة",
+                onBackClick = { navController.popBackStack() },
+                actions = {
+                    HeaderIconButton(
+                        icon = Icons.Default.PhotoCamera,
+                        onClick = { showScanner = true },
+                        contentDescription = "Scan"
                     )
-                    .padding(bottom = 24.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Spacer(modifier = Modifier.height(32.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        IconButton(
-                            onClick = { navController.popBackStack() },
-                            modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
-                        ) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
-                        }
-
-                        Text(
-                            text = "فاتورة مبيعات جديدة",
-                            style = MaterialTheme.typography.headlineSmall,
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold
-                        )
-
-                        IconButton(
-                            onClick = { showScanner = true },
-                            modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
-                        ) {
-                            Icon(Icons.Default.PhotoCamera, contentDescription = "Scan", tint = Color.White)
-                        }
-                    }
                 }
-            }
+            )
 
             LazyColumn(
                 modifier = Modifier.fillMaxSize().imePadding(),

@@ -26,6 +26,8 @@ import com.batterysales.data.models.Invoice
 import com.batterysales.data.models.InvoiceItem
 import com.batterysales.data.models.Payment
 import com.batterysales.viewmodel.InvoiceDetailViewModel
+import com.batterysales.ui.components.SharedHeader
+import com.batterysales.ui.components.HeaderIconButton
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -79,68 +81,40 @@ fun InvoiceDetailScreen(
                     .verticalScroll(rememberScrollState())
             ) {
                 // Modern Header with Gradient
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            brush = headerGradient,
-                            shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
+                SharedHeader(
+                    title = "تفاصيل الفاتورة",
+                    onBackClick = { navController.popBackStack() },
+                    actions = {
+                        HeaderIconButton(
+                            icon = Icons.Default.Print,
+                            onClick = { /* Print logic */ },
+                            contentDescription = "Print"
                         )
-                        .padding(bottom = 32.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Spacer(modifier = Modifier.height(32.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            IconButton(
-                                onClick = { navController.popBackStack() },
-                                modifier = Modifier.background(Color.White.copy(alpha = 0.1f), CircleShape)
-                            ) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
-                            }
+                    }
+                )
 
+                Column(modifier = Modifier.padding(16.dp)) {
+                    // Quick Summary Row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
                             Text(
-                                text = "تفاصيل الفاتورة",
-                                style = MaterialTheme.typography.headlineSmall,
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold
+                                text = "رقم الفاتورة",
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                fontSize = 12.sp
                             )
-
-                            IconButton(
-                                onClick = { /* Print logic */ },
-                                modifier = Modifier.background(Color.White.copy(alpha = 0.1f), CircleShape)
-                            ) {
-                                Icon(Icons.Default.Print, contentDescription = "Print", tint = Color.White)
-                            }
+                            Text(
+                                text = "#${invoice.invoiceNumber}",
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 20.sp
+                            )
                         }
-
-                        Spacer(modifier = Modifier.height(24.dp))
-
-                        // Quick Summary Row
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column {
-                                Text(
-                                    text = "رقم الفاتورة",
-                                    color = Color.White.copy(alpha = 0.6f),
-                                    fontSize = 12.sp
-                                )
-                                Text(
-                                    text = "#${invoice.invoiceNumber}",
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 20.sp
-                                )
-                            }
-                            
-                            StatusBadge(status = invoice.status)
-                        }
+                        
+                        StatusBadge(status = invoice.status)
                     }
                 }
 
@@ -314,7 +288,7 @@ fun InvoiceDetailScreen(
                         showPaymentDialog = false
                         paymentAmount = ""
                     }
-                }) { Text("تأكيد") }
+                }) { Text("موافق") }
             },
             dismissButton = { TextButton(onClick = { showPaymentDialog = false }) { Text("إلغاء") } }
         )

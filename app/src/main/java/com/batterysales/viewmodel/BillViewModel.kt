@@ -94,14 +94,18 @@ class BillViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val bill = _bills.value.find { it.id == billId } ?: return@launch
+                val supplier = _suppliers.value.find { it.id == bill.supplierId }
+                val supplierName = supplier?.name ?: ""
+                
                 repository.recordPayment(billId, amount)
 
                 // Record in treasury (always)
                 val transaction = Transaction(
                     type = com.batterysales.data.models.TransactionType.EXPENSE,
                     amount = amount,
-                    description = "تسديد ${if (amount >= (bill.amount - bill.paidAmount)) "كلي" else "جزئي"} ${if (bill.billType == BillType.CHECK) "لشيك" else "لكمبيالة"}: ${bill.description}",
-                    relatedId = billId
+                    description = "تسديد ${if (amount >= (bill.amount - bill.paidAmount)) "كلي" else "جزئي"} ${if (bill.billType == BillType.CHECK) "لشيك" else "لكمبيالة"}: ${bill.description} (المورد: $supplierName)",
+                    relatedId = billId,
+                    referenceNumber = bill.referenceNumber
                 )
                 accountingRepository.addTransaction(transaction)
 
@@ -110,8 +114,9 @@ class BillViewModel @Inject constructor(
                     val bankTransaction = com.batterysales.data.models.BankTransaction(
                         type = com.batterysales.data.models.BankTransactionType.WITHDRAWAL,
                         amount = amount,
-                        description = "تسديد لشيك: ${bill.description}",
-                        billId = billId
+                        description = "تسديد لشيك: ${bill.description} (المورد: $supplierName)",
+                        billId = billId,
+                        referenceNumber = bill.referenceNumber
                     )
                     bankRepository.addTransaction(bankTransaction)
                 }

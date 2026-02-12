@@ -30,6 +30,21 @@ class PaymentRepository @Inject constructor(
         awaitClose { listenerRegistration.remove() }
     }
 
+    fun getAllPayments(): Flow<List<Payment>> = callbackFlow {
+        val listenerRegistration = firestore.collection(Payment.COLLECTION_NAME)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    val payments = snapshot.toObjects(Payment::class.java)
+                    trySend(payments).isSuccess
+                }
+            }
+        awaitClose { listenerRegistration.remove() }
+    }
+
     suspend fun addPayment(payment: Payment): String {
         val docRef = firestore.collection(Payment.COLLECTION_NAME).document()
         val finalPayment = payment.copy(id = docRef.id)

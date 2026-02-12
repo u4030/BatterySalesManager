@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -28,6 +29,8 @@ import com.batterysales.viewmodel.InvoiceViewModel
 import com.batterysales.ui.components.TabItem
 import java.text.SimpleDateFormat
 import java.util.*
+import com.batterysales.ui.components.SharedHeader
+import com.batterysales.ui.components.HeaderIconButton
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -90,74 +93,94 @@ fun InvoiceScreen(
         ) {
             // Gradient Header
             item {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            brush = headerGradient,
-                            shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
+                SharedHeader(
+                    title = "إدارة الفواتير",
+                    onBackClick = { navController.popBackStack() },
+                    actions = {
+                        HeaderIconButton(
+                            icon = Icons.Default.CalendarMonth,
+                            onClick = { showDateRangePicker = true },
+                            contentDescription = "Date Range"
                         )
-                        .padding(bottom = 24.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Spacer(modifier = Modifier.height(32.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            IconButton(
-                                onClick = { navController.popBackStack() },
-                                modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
+                    }
+                )
+
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (uiState.isAdmin && uiState.warehouses.isNotEmpty()) {
+                            ScrollableTabRow(
+                                selectedTabIndex = uiState.warehouses.indexOfFirst { it.id == uiState.selectedWarehouseId }.coerceAtLeast(0),
+                                containerColor = Color.Black.copy(alpha = 0.2f),
+                                contentColor = Color.White,
+                                edgePadding = 16.dp,
+                                divider = {},
+                                indicator = { tabPositions ->
+                                    if (tabPositions.isNotEmpty()) {
+                                        val index = uiState.warehouses.indexOfFirst { it.id == uiState.selectedWarehouseId }.coerceAtLeast(0)
+                                        Box(
+                                            Modifier
+                                                .tabIndicatorOffset(tabPositions[index])
+                                                .height(4.dp)
+                                                .padding(horizontal = 16.dp)
+                                                .background(Color.White, RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
+                                        )
+                                    }
+                                },
+                                modifier = Modifier.background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
                             ) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
-                            }
-
-                            Text(
-                                text = "إدارة الفواتير",
-                                style = MaterialTheme.typography.headlineSmall,
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold
-                            )
-
-                            Row {
-                                IconButton(
-                                    onClick = { showDateRangePicker = true },
-                                    modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
-                                ) {
-                                    Icon(Icons.Default.CalendarMonth, contentDescription = "Date", tint = Color.White)
+                                uiState.warehouses.forEach { warehouse ->
+                                    Tab(
+                                        selected = uiState.selectedWarehouseId == warehouse.id,
+                                        onClick = { viewModel.onWarehouseSelected(warehouse.id) },
+                                        text = {
+                                            Text(
+                                                warehouse.name,
+                                                style = MaterialTheme.typography.labelLarge,
+                                                fontWeight = if (uiState.selectedWarehouseId == warehouse.id) FontWeight.Bold else FontWeight.Medium
+                                            )
+                                        },
+                                        selectedContentColor = Color.White,
+                                        unselectedContentColor = Color.White.copy(alpha = 0.6f)
+                                    )
                                 }
-                                Spacer(modifier = Modifier.width(8.dp))
-//                                IconButton(
-//                                    onClick = { viewModel.loadInvoices() },
-//                                    modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
-//                                ) {
-//                                    Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color.White)
-//                                }
                             }
-                        }
+                    }
 
-                        Spacer(modifier = Modifier.height(24.dp))
+                    // All / Pending Tabs
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
+                            .padding(4.dp)
+                    ) {
+                        TabItem(
+                            title = "الكل",
+                            isSelected = uiState.selectedTab == 0,
+                            modifier = Modifier.weight(1f),
+                            onClick = { viewModel.onTabSelected(0) }
+                        )
+                        TabItem(
+                            title = "المعلقة",
+                            isSelected = uiState.selectedTab == 1,
+                            modifier = Modifier.weight(1f),
+                            onClick = { viewModel.onTabSelected(1) }
+                        )
+                    }
 
-                        // Styled Tabs
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
-                                .padding(4.dp)
+                    // Total Debt Card for Admin
+                    if (uiState.isAdmin) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color.Red.copy(alpha = 0.1f))
                         ) {
-                            TabItem(
-                                title = "الكل",
-                                isSelected = uiState.selectedTab == 0,
-                                modifier = Modifier.weight(1f),
-                                onClick = { viewModel.onTabSelected(0) }
-                            )
-                            TabItem(
-                                title = "المعلقة",
-                                isSelected = uiState.selectedTab == 1,
-                                modifier = Modifier.weight(1f),
-                                onClick = { viewModel.onTabSelected(1) }
-                            )
+                            Row(
+                                modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("إجمالي الذمم", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.Red)
+                                Text("JD ${String.format("%,.3f", uiState.totalDebt)}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold, color = Color.Red)
+                            }
                         }
                     }
                 }
