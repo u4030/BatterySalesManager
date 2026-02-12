@@ -137,7 +137,10 @@ class DashboardViewModel @Inject constructor(
         val todaySalesSum = filteredTodayInvoices.sumOf { it.finalAmount }
         val todayCount = filteredTodayInvoices.size
 
-        val warehouseStatsList = allWarehouses.map { warehouse ->
+        val relevantWarehouses = if (isAdmin) allWarehouses
+                                else allWarehouses.filter { it.id == userWarehouseId }
+
+        val warehouseStatsList = relevantWarehouses.map { warehouse ->
             val invoices = todayInvoices.filter { it.warehouseId == warehouse.id }
             WarehouseStats(
                 warehouseId = warehouse.id,
@@ -145,7 +148,7 @@ class DashboardViewModel @Inject constructor(
                 todaySales = invoices.sumOf { it.finalAmount },
                 todayInvoicesCount = invoices.size
             )
-        }.filter { it.todayInvoicesCount > 0 || it.todaySales > 0 }
+        }.filter { if (isAdmin) (it.todayInvoicesCount > 0 || it.todaySales > 0) else true }
 
         DashboardUiState(
             pendingApprovalsCount = pendingCount,

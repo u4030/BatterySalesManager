@@ -520,10 +520,21 @@ fun SellOldBatteryDialog(
     var pricePerAmp by remember { mutableStateOf("") }
     var price by remember { mutableStateOf("") }
 
-    // Automatic price calculation
+    // Automatic price calculation with 3-decimal precision
     LaunchedEffect(amps, pricePerAmp) {
         val a = amps.toDoubleOrNull() ?: 0.0
-        val ppa = pricePerAmp.toDoubleOrNull() ?: 0.0
+
+        // Use parsing logic that supports multi-dot if needed, but primarily 3-decimal precision
+        val ppa = if (pricePerAmp.count { it == '.' } > 1) {
+            val parts = pricePerAmp.split(".")
+            val jd = parts.getOrNull(0) ?: "0"
+            val qirsh = (parts.getOrNull(1) ?: "00").padStart(2, '0')
+            val fils = (parts.getOrNull(2) ?: "00").padStart(2, '0')
+            "$jd.${qirsh}${fils}".toDoubleOrNull() ?: 0.0
+        } else {
+            pricePerAmp.toDoubleOrNull() ?: 0.0
+        }
+
         if (a > 0 && ppa > 0) {
             price = String.format("%.3f", a * ppa)
         }
