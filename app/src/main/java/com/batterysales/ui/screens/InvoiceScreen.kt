@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -104,26 +105,44 @@ fun InvoiceScreen(
                     }
                 )
 
-                Column(modifier = Modifier.padding(16.dp)) {
-                    // Styled Tabs
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
-                            .padding(4.dp)
-                    ) {
-                        TabItem(
-                            title = "الكل",
-                            isSelected = uiState.selectedTab == 0,
-                            modifier = Modifier.weight(1f),
-                            onClick = { viewModel.onTabSelected(0) }
-                        )
-                        TabItem(
-                            title = "المعلقة",
-                            isSelected = uiState.selectedTab == 1,
-                            modifier = Modifier.weight(1f),
-                            onClick = { viewModel.onTabSelected(1) }
-                        )
+                if (uiState.isAdmin && uiState.warehouses.isNotEmpty()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        ScrollableTabRow(
+                            selectedTabIndex = uiState.warehouses.indexOfFirst { it.id == uiState.selectedWarehouseId }.coerceAtLeast(0),
+                            containerColor = Color.Black.copy(alpha = 0.2f),
+                            contentColor = Color.White,
+                            edgePadding = 16.dp,
+                            divider = {},
+                            indicator = { tabPositions ->
+                                if (tabPositions.isNotEmpty()) {
+                                    val index = uiState.warehouses.indexOfFirst { it.id == uiState.selectedWarehouseId }.coerceAtLeast(0)
+                                    Box(
+                                        Modifier
+                                            .tabIndicatorOffset(tabPositions[index])
+                                            .height(4.dp)
+                                            .padding(horizontal = 16.dp)
+                                            .background(Color.White, RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
+                                    )
+                                }
+                            },
+                            modifier = Modifier.background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
+                        ) {
+                            uiState.warehouses.forEach { warehouse ->
+                                Tab(
+                                    selected = uiState.selectedWarehouseId == warehouse.id,
+                                    onClick = { viewModel.onWarehouseSelected(warehouse.id) },
+                                    text = {
+                                        Text(
+                                            warehouse.name,
+                                            style = MaterialTheme.typography.labelLarge,
+                                            fontWeight = if (uiState.selectedWarehouseId == warehouse.id) FontWeight.Bold else FontWeight.Medium
+                                        )
+                                    },
+                                    selectedContentColor = Color.White,
+                                    unselectedContentColor = Color.White.copy(alpha = 0.6f)
+                                )
+                            }
+                        }
                     }
                 }
             }

@@ -109,7 +109,7 @@ fun AppDateRangePickerDialog(
     DatePickerDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
-            Button(onClick = onConfirm) { Text("تأكيد") }
+            Button(onClick = onConfirm) { Text("موافق") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("إلغاء") }

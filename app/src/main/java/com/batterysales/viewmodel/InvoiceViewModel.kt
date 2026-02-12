@@ -3,11 +3,13 @@ package com.batterysales.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.batterysales.data.models.Invoice
+import com.batterysales.data.models.Warehouse
 import com.batterysales.data.repositories.AccountingRepository
 import com.batterysales.data.repositories.InvoiceRepository
 import com.batterysales.data.repositories.PaymentRepository
 import com.batterysales.data.repositories.StockEntryRepository
 import com.batterysales.data.repositories.WarehouseRepository
+import com.batterysales.data.repositories.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -15,14 +17,16 @@ import javax.inject.Inject
 
 data class InvoiceUiState(
     val invoices: List<Invoice> = emptyList(),
+    val warehouses: List<Warehouse> = emptyList(),
     val isLoading: Boolean = true,
     val errorMessage: String? = null,
     val invoiceToDelete: Invoice? = null,
     val deletionWarningMessage: String = "",
-    val selectedTab: Int = 0, // 0: All, 1: Pending
+    val selectedWarehouseId: String = "",
     val startDate: Long? = null,
     val endDate: Long? = null,
-    val searchQuery: String = ""
+    val searchQuery: String = "",
+    val isAdmin: Boolean = false
 )
 
 @HiltViewModel
@@ -31,18 +35,39 @@ class InvoiceViewModel @Inject constructor(
     private val stockEntryRepository: StockEntryRepository,
     private val warehouseRepository: WarehouseRepository,
     private val paymentRepository: PaymentRepository,
-    private val accountingRepository: AccountingRepository
+    private val accountingRepository: AccountingRepository,
+    private val userRepository: UserRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(InvoiceUiState())
     val uiState: StateFlow<InvoiceUiState> = _uiState.asStateFlow()
 
-    val invoices: StateFlow<List<Invoice>> = _uiState.map { it.invoices }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
-    val isLoading: StateFlow<Boolean> = _uiState.map { it.isLoading }.stateIn(viewModelScope, SharingStarted.Lazily, true)
-
-
     init {
+        checkRoleAndLoadWarehouses()
         loadInvoices()
+    }
+
+    private fun checkRoleAndLoadWarehouses() {
+        viewModelScope.launch {
+            val user = userRepository.getCurrentUser()
+            val isAdmin = user?.role == "admin"
+
+            warehouseRepository.getWarehouses().collect { warehouses ->
+                _uiState.update { state ->
+                    val initialWarehouseId = if (isAdmin) {
+                        warehouses.firstOrNull()?.id ?: ""
+                    } else {
+                        user?.warehouseId ?: ""
+                    }
+
+                    state.copy(
+                        warehouses = warehouses,
+                        isAdmin = isAdmin,
+                        selectedWarehouseId = initialWarehouseId
+                    )
+                }
+            }
+        }
     }
 
     fun loadInvoices() {
@@ -51,16 +76,23 @@ class InvoiceViewModel @Inject constructor(
                 invoiceRepository.getAllInvoices(),
                 _uiState
             ) { invoices, state ->
-                invoices.filter { invoice ->
-                    val matchesTab = if (state.selectedTab == 1) invoice.status == "pending" else true
-                    val matchesSearch = invoice.invoiceNumber.contains(state.searchQuery, ignoreCase = true) ||
-                            invoice.customerName.contains(state.searchQuery, ignoreCase = true)
-                    val matchesDate = if (state.startDate != null && state.endDate != null) {
-                        invoice.invoiceDate.time >= state.startDate && invoice.invoiceDate.time <= state.endDate + 86400000
-                    } else true
+                invoices
+                    .filter { invoice ->
+                        // Filter by warehouse
+                        val matchesWarehouse = invoice.warehouseId == state.selectedWarehouseId
 
-                    matchesTab && matchesSearch && matchesDate
-                }
+                        // Search filter
+                        val matchesSearch = invoice.invoiceNumber.contains(state.searchQuery, ignoreCase = true) ||
+                                invoice.customerName.contains(state.searchQuery, ignoreCase = true)
+
+                        // Date filter
+                        val matchesDate = if (state.startDate != null && state.endDate != null) {
+                            invoice.invoiceDate.time >= state.startDate && invoice.invoiceDate.time <= state.endDate + 86400000
+                        } else true
+
+                        matchesWarehouse && matchesSearch && matchesDate
+                    }
+                    .sortedByDescending { it.updatedAt } // Sort by updatedAt to show recent activity first
             }
                 .onStart { _uiState.update { it.copy(isLoading = true) } }
                 .catch { e -> _uiState.update { it.copy(isLoading = false, errorMessage = "Failed to load invoices") } }
@@ -70,8 +102,8 @@ class InvoiceViewModel @Inject constructor(
         }
     }
 
-    fun onTabSelected(tabIndex: Int) {
-        _uiState.update { it.copy(selectedTab = tabIndex) }
+    fun onWarehouseSelected(warehouseId: String) {
+        _uiState.update { it.copy(selectedWarehouseId = warehouseId) }
     }
 
     fun onSearchQueryChanged(query: String) {

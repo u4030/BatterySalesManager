@@ -15,10 +15,7 @@ import javax.inject.Inject
 data class WarehouseStats(
     val warehouseId: String,
     val warehouseName: String,
-    val todaySales: Double, // New Invoices Total
-    val todayInvoicesCount: Int,
-    val todayCollection: Double, // Payments received today
-    val totalOutstanding: Double // Total debt
+    val todayCollection: Double // Payments received today
 )
 
 data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
@@ -27,8 +24,6 @@ data class DashboardUiState(
     val pendingApprovalsCount: Int = 0,
     val lowStockVariants: List<LowStockItem> = emptyList(),
     val upcomingBills: List<com.batterysales.data.models.Bill> = emptyList(),
-    val todaySales: Double = 0.0,
-    val todayInvoicesCount: Int = 0,
     val warehouseStats: List<WarehouseStats> = emptyList(),
     val isLoading: Boolean = true
 )
@@ -126,7 +121,7 @@ class DashboardViewModel @Inject constructor(
                     !it.dueDate.after(nextWeek.time)
         }.sortedBy { it.dueDate }
 
-        // Calculate Today's Sales and Invoices
+        // Calculate Today's Collection
         val startOfToday = Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, 0)
             set(Calendar.MINUTE, 0)
@@ -134,26 +129,10 @@ class DashboardViewModel @Inject constructor(
             set(Calendar.MILLISECOND, 0)
         }.time
 
-        val todayInvoices = allInvoices.filter {
-            // Use createdAt if invoiceDate is missing/default (epoch)
-            val dateToCheck = if (it.invoiceDate.time > 0) it.invoiceDate else it.createdAt
-            val isFromToday = !dateToCheck.before(startOfToday)
-
-            // Exclude cancelled and draft invoices from sales statistics
-            isFromToday && it.status != "cancelled" && it.status != "draft"
-        }
-
-        val filteredTodayInvoices = if (isAdmin) todayInvoices
-                                   else todayInvoices.filter { it.warehouseId == userWarehouseId }
-
-        val todaySalesSum = filteredTodayInvoices.sumOf { it.finalAmount }
-        val todayCount = filteredTodayInvoices.size
-
         val relevantWarehouses = if (isAdmin) allWarehouses
                                 else allWarehouses.filter { it.id == userWarehouseId }
 
         val warehouseStatsList = relevantWarehouses.map { warehouse ->
-            val invoicesToday = todayInvoices.filter { it.warehouseId == warehouse.id }
             val allWhInvoices = allInvoices.filter { it.warehouseId == warehouse.id }
             val invoiceMap = allWhInvoices.associateBy { it.id }
 
@@ -165,19 +144,14 @@ class DashboardViewModel @Inject constructor(
             WarehouseStats(
                 warehouseId = warehouse.id,
                 warehouseName = warehouse.name,
-                todaySales = invoicesToday.sumOf { it.finalAmount },
-                todayInvoicesCount = invoicesToday.size,
-                todayCollection = paymentsToday.sumOf { it.amount },
-                totalOutstanding = allWhInvoices.sumOf { it.remainingAmount }
+                todayCollection = paymentsToday.sumOf { it.amount }
             )
-        }.filter { if (isAdmin) (it.todayInvoicesCount > 0 || it.todaySales > 0 || it.todayCollection > 0 || it.totalOutstanding > 0) else true }
+        }.filter { if (isAdmin) it.todayCollection > 0 else true }
 
         DashboardUiState(
             pendingApprovalsCount = pendingCount,
             lowStockVariants = lowStock,
             upcomingBills = upcoming,
-            todaySales = todaySalesSum,
-            todayInvoicesCount = todayCount,
             warehouseStats = warehouseStatsList,
             isLoading = false
         )

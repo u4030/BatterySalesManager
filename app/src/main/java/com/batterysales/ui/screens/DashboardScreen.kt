@@ -148,40 +148,9 @@ fun DashboardScreen(
                                         )
                                         Spacer(modifier = Modifier.height(12.dp))
 
-                                        androidx.compose.foundation.layout.FlowRow(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                                        ) {
-                                            Column(modifier = Modifier.padding(bottom = 4.dp)) {
-                                                Text("مبيعات اليوم", color = Color.White.copy(alpha = 0.6f), style = MaterialTheme.typography.labelSmall)
-                                                Text("JD ${String.format("%,.2f", stats.todaySales)}", color = Color(0xFF10B981), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge)
-                                            }
-
-                                            Column(horizontalAlignment = Alignment.End) {
-                                                Text("فواتير اليوم", color = Color.White.copy(alpha = 0.6f), style = MaterialTheme.typography.labelSmall)
-                                                Text("${stats.todayInvoicesCount}", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge)
-                                            }
-                                        }
-
-                                        Spacer(modifier = Modifier.height(12.dp))
-                                        HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
-                                        Spacer(modifier = Modifier.height(12.dp))
-
-                                        androidx.compose.foundation.layout.FlowRow(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                                        ) {
-                                            Column {
-                                                Text("المحصلة اليوم", color = Color.White.copy(alpha = 0.6f), style = MaterialTheme.typography.labelSmall)
-                                                Text("JD ${String.format("%,.2f", stats.todayCollection)}", color = Color(0xFF3B82F6), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge)
-                                            }
-
-                                            Column(horizontalAlignment = Alignment.End) {
-                                                Text("إجمالي الذمم", color = Color.White.copy(alpha = 0.6f), style = MaterialTheme.typography.labelSmall)
-                                                Text("JD ${String.format("%,.2f", stats.totalOutstanding)}", color = Color(0xFFEF4444), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge)
-                                            }
+                                        Column {
+                                            Text("المحصلة اليوم", color = Color.White.copy(alpha = 0.6f), style = MaterialTheme.typography.labelSmall)
+                                            Text("JD ${String.format("%,.2f", stats.todayCollection)}", color = Color(0xFF10B981), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge)
                                         }
                                     }
                                 }
