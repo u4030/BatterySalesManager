@@ -289,7 +289,7 @@ fun EditCustomerDialog(invoice: Invoice, onDismiss: () -> Unit, onConfirm: (Invo
 
 @Composable
 fun InvoiceItemCard(invoice: Invoice, onClick: () -> Unit, onDeleteClick: () -> Unit, onEditClick: () -> Unit) {
-    val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
+    val dateFormatter = SimpleDateFormat("yyyy/MM/dd hh:mm a", Locale.getDefault())
     var menuExpanded by remember { mutableStateOf(false) }
 
     Card(

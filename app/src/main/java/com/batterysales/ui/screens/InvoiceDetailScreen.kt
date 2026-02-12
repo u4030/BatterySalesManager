@@ -359,7 +359,7 @@ fun PaymentHistoryDialog(
                         headlineContent = { Text("المبلغ: JD ${String.format("%.3f", payment.amount)}", fontWeight = FontWeight.Bold) },
                         supportingContent = {
                             Text(
-                                text = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault()).format(payment.timestamp),
+                                text = SimpleDateFormat("yyyy/MM/dd hh:mm a", Locale.getDefault()).format(payment.timestamp),
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Medium
                             )

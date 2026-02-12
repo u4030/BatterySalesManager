@@ -121,13 +121,6 @@ fun DashboardScreen(
 
                 // Summary content below header
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        if (isAdmin) "إحصائيات المبيعات اليومية حسب المستودع" else "إحصائيات مبيعاتك اليوم",
-                        color = Color.White.copy(alpha = 0.7f),
-                        style = MaterialTheme.typography.labelSmall,
-                        modifier = Modifier.padding(bottom = 12.dp)
-                    )
-
                     if (dashboardState.warehouseStats.isNotEmpty()) {
                         androidx.compose.foundation.lazy.LazyRow(
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -165,7 +158,7 @@ fun DashboardScreen(
                                         ) {
                                             Column {
                                                 Text(
-                                                    "المحصلة اليوم",
+                                                    "إجمالي التحصيل | ",
                                                     color = Color.White.copy(alpha = 0.6f),
                                                     style = MaterialTheme.typography.labelSmall
                                                 )
@@ -183,7 +176,7 @@ fun DashboardScreen(
                                             }
                                             Column(horizontalAlignment = Alignment.End) {
                                                 Text(
-                                                    "فواتير التحصيل",
+                                                    "عدد الفواتير",
                                                     color = Color.White.copy(alpha = 0.6f),
                                                     style = MaterialTheme.typography.labelSmall
                                                 )
