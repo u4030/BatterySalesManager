@@ -225,6 +225,8 @@ class SalesViewModel @Inject constructor(
                 // Now, create a single stock entry linked to the new invoice
                 val stockEntry = StockEntry(
                     productVariantId = variant.id,
+                    productName = product.name,
+                    capacity = variant.capacity,
                     warehouseId = warehouse.id,
                     quantity = -qty,
                     costPrice = weightedAverageCost,

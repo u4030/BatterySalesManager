@@ -134,6 +134,8 @@ class StockTransferViewModel @Inject constructor(
             try {
                 stockEntryRepository.transferStock(
                     productVariantId = variant.id,
+                    productName = state.selectedProduct?.name ?: "",
+                    capacity = variant.capacity,
                     sourceWarehouseId = source.id,
                     destinationWarehouseId = dest.id,
                     quantity = qty,

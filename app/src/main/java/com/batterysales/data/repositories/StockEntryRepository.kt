@@ -53,6 +53,8 @@ class StockEntryRepository @Inject constructor(
 
     suspend fun transferStock(
         productVariantId: String,
+        productName: String,
+        capacity: Int,
         sourceWarehouseId: String,
         destinationWarehouseId: String,
         quantity: Int,
@@ -67,6 +69,8 @@ class StockEntryRepository @Inject constructor(
         val sourceStockEntry = StockEntry(
             id = sourceDocRef.id,
             productVariantId = productVariantId,
+            productName = productName,
+            capacity = capacity,
             warehouseId = sourceWarehouseId,
             quantity = -quantity,
             costPrice = 0.0, // Cost is already accounted for
@@ -81,6 +85,8 @@ class StockEntryRepository @Inject constructor(
         val destinationStockEntry = StockEntry(
             id = destinationDocRef.id,
             productVariantId = productVariantId,
+            productName = productName,
+            capacity = capacity,
             warehouseId = destinationWarehouseId,
             quantity = quantity,
             costPrice = 0.0, // Cost is already accounted for
