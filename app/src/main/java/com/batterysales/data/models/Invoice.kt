@@ -49,7 +49,7 @@ data class Invoice(
     val status: String = "draft",
     val paymentMethod: String = "cash",
     val warehouseId: String = "",
-    val invoiceDate: Date = Date(),
+    val invoiceDate: Date = Date(0), // Default to epoch to identify missing data in older documents
     val dueDate: Date = Date(),
     val paidDate: Date? = null,
     val notes: String = "",

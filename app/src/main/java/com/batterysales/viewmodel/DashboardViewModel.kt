@@ -128,7 +128,12 @@ class DashboardViewModel @Inject constructor(
         }.time
 
         val todayInvoices = allInvoices.filter {
-            !it.invoiceDate.before(startOfToday)
+            // Use createdAt if invoiceDate is missing/default (epoch)
+            val dateToCheck = if (it.invoiceDate.time > 0) it.invoiceDate else it.createdAt
+            val isFromToday = !dateToCheck.before(startOfToday)
+
+            // Exclude cancelled and draft invoices from sales statistics
+            isFromToday && it.status != "cancelled" && it.status != "draft"
         }
 
         val filteredTodayInvoices = if (isAdmin) todayInvoices
