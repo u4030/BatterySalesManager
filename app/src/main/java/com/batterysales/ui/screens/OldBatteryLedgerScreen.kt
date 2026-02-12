@@ -517,7 +517,17 @@ fun SellOldBatteryDialog(
 ) {
     var qty by remember { mutableStateOf(transaction.quantity.toString()) }
     var amps by remember { mutableStateOf(transaction.totalAmperes.toString()) }
+    var pricePerAmp by remember { mutableStateOf("") }
     var price by remember { mutableStateOf("") }
+
+    // Automatic price calculation
+    LaunchedEffect(amps, pricePerAmp) {
+        val a = amps.toDoubleOrNull() ?: 0.0
+        val ppa = pricePerAmp.toDoubleOrNull() ?: 0.0
+        if (a > 0 && ppa > 0) {
+            price = String.format("%.3f", a * ppa)
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -536,6 +546,11 @@ fun SellOldBatteryDialog(
                     value = amps,
                     onValueChange = { amps = it },
                     label = "إجمالي الأمبيرات"
+                )
+                com.batterysales.ui.components.CustomKeyboardTextField(
+                    value = pricePerAmp,
+                    onValueChange = { pricePerAmp = it },
+                    label = "سعر الأمبير الواحد"
                 )
                 com.batterysales.ui.components.CustomKeyboardTextField(
                     value = price,

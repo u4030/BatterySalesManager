@@ -128,7 +128,7 @@ class DashboardViewModel @Inject constructor(
         }.time
 
         val todayInvoices = allInvoices.filter {
-            !it.createdAt.before(startOfToday)
+            !it.invoiceDate.before(startOfToday)
         }
 
         val filteredTodayInvoices = if (isAdmin) todayInvoices
