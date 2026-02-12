@@ -68,7 +68,7 @@ fun BankScreen(
     val cardBgColor = MaterialTheme.colorScheme.surface
     val accentColor = Color(0xFFFB8C00)
     val headerGradient = androidx.compose.ui.graphics.Brush.verticalGradient(
-        colors = listOf(Color(0xFF1E293B), Color(0xFF0F172A))
+        colors = listOf(Color(0xFFE53935), Color(0xFFFB8C00))
     )
 
     Scaffold(
@@ -152,12 +152,12 @@ fun BankScreen(
                                     Icon(Icons.Default.CalendarMonth, contentDescription = "Date", tint = Color.White)
                                 }
                                 Spacer(modifier = Modifier.width(8.dp))
-                                IconButton(
-                                    onClick = { viewModel.loadData() },
-                                    modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
-                                ) {
-                                    Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color.White)
-                                }
+//                                IconButton(
+//                                    onClick = { viewModel.loadData() },
+//                                    modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
+//                                ) {
+//                                    Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color.White)
+//                                }
                             }
                         }
 

@@ -34,7 +34,7 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
     val cardBgColor = MaterialTheme.colorScheme.surface
     val accentColor = Color(0xFFFB8C00)
     val headerGradient = Brush.verticalGradient(
-        colors = listOf(Color(0xFF1E293B), Color(0xFF0F172A))
+        colors = listOf(Color(0xFFE53935), Color(0xFFFB8C00))
     )
 
     Scaffold(

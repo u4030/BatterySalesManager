@@ -49,7 +49,7 @@ fun LoginScreen(
     val accentColor = Color(0xFFFB8C00)
     val cardBg = Color(0xFF1E293B)
     val bgGradient = Brush.verticalGradient(
-        colors = listOf(Color(0xFF1E293B), Color(0xFF0F172A))
+        colors = listOf(Color(0xFFE53935), Color(0xFFFB8C00))
     )
 
     LaunchedEffect(isLoggedIn) {

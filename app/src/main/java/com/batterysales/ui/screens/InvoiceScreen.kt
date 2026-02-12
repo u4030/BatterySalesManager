@@ -44,7 +44,7 @@ fun InvoiceScreen(
     val cardBgColor = MaterialTheme.colorScheme.surface
     val accentColor = Color(0xFFFB8C00)
     val headerGradient = Brush.verticalGradient(
-        colors = listOf(Color(0xFF1E293B), Color(0xFF0F172A))
+        colors = listOf(Color(0xFFE53935), Color(0xFFFB8C00))
     )
 
     if (uiState.invoiceToDelete != null) {
@@ -128,12 +128,12 @@ fun InvoiceScreen(
                                     Icon(Icons.Default.CalendarMonth, contentDescription = "Date", tint = Color.White)
                                 }
                                 Spacer(modifier = Modifier.width(8.dp))
-                                IconButton(
-                                    onClick = { viewModel.loadInvoices() },
-                                    modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
-                                ) {
-                                    Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color.White)
-                                }
+//                                IconButton(
+//                                    onClick = { viewModel.loadInvoices() },
+//                                    modifier = Modifier.background(Color.White.copy(alpha = 0.2f), CircleShape)
+//                                ) {
+//                                    Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color.White)
+//                                }
                             }
                         }
 

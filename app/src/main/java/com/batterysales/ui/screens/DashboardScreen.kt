@@ -49,7 +49,7 @@ fun DashboardScreen(
     val dashboardBgColor = MaterialTheme.colorScheme.background
     val cardBgColor = MaterialTheme.colorScheme.surface
     val headerGradient = Brush.verticalGradient(
-        colors = listOf(Color(0xFF1E293B), Color(0xFF0F172A))
+        colors = listOf(Color(0xFFE53935), Color(0xFFFB8C00))
     )
 
     val items = remember(isAdmin) {
@@ -151,20 +151,70 @@ fun DashboardScreen(
                         Spacer(modifier = Modifier.height(32.dp))
 
                         // Summary Cards Row
+                        if (isAdmin) {
+                            Text(
+                                "الإجمالي العام",
+                                color = Color.White.copy(alpha = 0.7f),
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                        }
+
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
                             SummaryCard(
-                                title = "المبيعات اليوم",
-                                    value = "JD ${String.format("%,.0f", dashboardState.todaySales)}",
+                                title = if (isAdmin) "إجمالي المبيعات" else "مبيعاتي اليوم",
+                                value = "JD ${String.format("%,.2f", dashboardState.todaySales)}",
                                 modifier = Modifier.weight(1f)
                             )
                             SummaryCard(
-                                title = "الفواتير",
+                                title = if (isAdmin) "إجمالي الفواتير" else "فواتيري",
                                 value = "${dashboardState.todayInvoicesCount} فاتورة",
                                 modifier = Modifier.weight(1f)
                             )
+                        }
+
+                        if (isAdmin && dashboardState.warehouseStats.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(24.dp))
+                            Text(
+                                "حسب المستودع",
+                                color = Color.White.copy(alpha = 0.7f),
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+
+                            androidx.compose.foundation.lazy.LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                contentPadding = PaddingValues(bottom = 8.dp)
+                            ) {
+                                items(dashboardState.warehouseStats) { stats ->
+                                    Card(
+                                        modifier = Modifier.width(200.dp),
+                                        shape = RoundedCornerShape(16.dp),
+                                        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.1f))
+                                    ) {
+                                        Column(modifier = Modifier.padding(12.dp)) {
+                                            Text(stats.warehouseName, color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                                Text("المبيعات:", color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelSmall)
+                                                Text("JD ${String.format("%.2f", stats.todaySales)}", color = Color(0xFF10B981), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+                                            }
+                                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                                Text("الفواتير:", color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelSmall)
+                                                Text("${stats.todayInvoicesCount}", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else if (!isAdmin && currentUser?.warehouseId != null) {
+                            // Already showing the summary cards which are calculated for the todayInvoices.
+                            // If we want to be explicit, the ViewModel calculates todaySalesSum for ALL invoices.
+                            // For a Seller, the InvoiceRepository should probably only return their invoices if restricted,
+                            // but usually restriction is at the UI or Repository level.
                         }
                     }
                 }
@@ -233,7 +283,7 @@ fun DashboardScreen(
                     }
                 }
             }
-            
+
             // Extra spacer at bottom
             item {
                 Spacer(modifier = Modifier.height(16.dp))

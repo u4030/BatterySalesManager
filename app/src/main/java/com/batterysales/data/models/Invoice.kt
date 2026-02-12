@@ -48,6 +48,7 @@ data class Invoice(
     val remainingAmount: Double = 0.0,
     val status: String = "draft",
     val paymentMethod: String = "cash",
+    val warehouseId: String = "",
     val invoiceDate: Date = Date(),
     val dueDate: Date = Date(),
     val paidDate: Date? = null,

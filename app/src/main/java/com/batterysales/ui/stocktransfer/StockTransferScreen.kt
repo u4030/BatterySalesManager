@@ -128,7 +128,8 @@ fun StockTransferScreen(
                 )
             }
         }
-    ) { padding ->
+    )
+    { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize().imePadding()) {
             // Header Section
             Box(
