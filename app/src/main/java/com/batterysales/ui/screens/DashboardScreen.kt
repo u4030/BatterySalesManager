@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.batterysales.viewmodel.AuthViewModel
@@ -36,7 +37,7 @@ data class DashboardItem(
     val color: Color = Color.Gray
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun DashboardScreen(
     navController: NavHostController,
@@ -134,7 +135,7 @@ fun DashboardScreen(
                         ) {
                             items(dashboardState.warehouseStats) { stats ->
                                 Card(
-                                    modifier = Modifier.width(if (isAdmin) 220.dp else 280.dp),
+                                    modifier = Modifier.widthIn(min = if (isAdmin) 220.dp else 280.dp),
                                     shape = RoundedCornerShape(20.dp),
                                     colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.15f))
                                 ) {
@@ -147,12 +148,16 @@ fun DashboardScreen(
                                         )
                                         Spacer(modifier = Modifier.height(12.dp))
 
-                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                        androidx.compose.foundation.layout.FlowRow(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
                                             Column {
                                                 Text("إجمالي المبيعات", color = Color.White.copy(alpha = 0.6f), style = MaterialTheme.typography.labelSmall)
                                                 Text("JD ${String.format("%,.2f", stats.todaySales)}", color = Color(0xFF10B981), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge)
                                             }
-                                            Box(modifier = Modifier.size(1.dp, 30.dp).background(Color.White.copy(alpha = 0.1f)))
+
                                             Column(horizontalAlignment = Alignment.End) {
                                                 Text("عدد الفواتير", color = Color.White.copy(alpha = 0.6f), style = MaterialTheme.typography.labelSmall)
                                                 Text("${stats.todayInvoicesCount}", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge)
@@ -318,7 +323,7 @@ fun DashboardCardItem(item: DashboardItem, modifier: Modifier = Modifier, onClic
                     item.title,
                     color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
+                    style = MaterialTheme.typography.titleMedium,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     modifier = Modifier.padding(horizontal = 8.dp)
                 )
