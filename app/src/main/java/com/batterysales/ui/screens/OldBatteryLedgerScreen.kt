@@ -8,6 +8,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -42,47 +43,32 @@ fun OldBatteryLedgerScreen(
     navController: NavHostController,
     viewModel: OldBatteryViewModel = hiltViewModel()
 ) {
-    val allTransactions by viewModel.transactions.collectAsState()
+    val transactions by viewModel.transactions.collectAsState()
+    val summary by viewModel.summary.collectAsState()
     val warehouses by viewModel.warehouses.collectAsState()
     val isSeller by viewModel.isSeller.collectAsState()
     val userWarehouseId by viewModel.userWarehouseId.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val isLoadingMore by viewModel.isLoadingMore.collectAsState()
+    val isLastPage by viewModel.isLastPage.collectAsState()
+    val listState = rememberLazyListState()
     
     var selectedFilterWH by remember { mutableStateOf<String?>(null) }
     var showDateRangePicker by remember { mutableStateOf(false) }
     val dateRangePickerState = rememberDateRangePickerState()
-    
-    val transactions = remember(allTransactions, selectedFilterWH, dateRangePickerState.selectedStartDateMillis, dateRangePickerState.selectedEndDateMillis) {
-        allTransactions.filter { transaction ->
-            val matchesWarehouse = if (selectedFilterWH == null) true else transaction.warehouseId == selectedFilterWH
-            val matchesDateRange = if (dateRangePickerState.selectedStartDateMillis != null && dateRangePickerState.selectedEndDateMillis != null) {
-                transaction.date.time >= dateRangePickerState.selectedStartDateMillis!! &&
-                        transaction.date.time <= dateRangePickerState.selectedEndDateMillis!! + 86400000 // End of day
-            } else true
-            matchesWarehouse && matchesDateRange
+
+    // Load more when reaching the end
+    val shouldLoadMore = remember {
+        derivedStateOf {
+            val lastVisibleItem = listState.layoutInfo.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf false
+            lastVisibleItem.index >= listState.layoutInfo.totalItemsCount - 5
         }
     }
-    
-    val summary = remember(transactions) {
-        var totalQty = 0
-        var totalAmperes = 0.0
-        transactions.forEach {
-            when (it.type) {
-                OldBatteryTransactionType.INTAKE -> {
-                    totalQty += it.quantity
-                    totalAmperes += it.totalAmperes
-                }
-                OldBatteryTransactionType.SALE -> {
-                    totalQty -= it.quantity
-                    totalAmperes -= it.totalAmperes
-                }
-                OldBatteryTransactionType.ADJUSTMENT -> {
-                    totalQty += it.quantity
-                    totalAmperes += it.totalAmperes
-                }
-            }
+
+    LaunchedEffect(shouldLoadMore.value) {
+        if (shouldLoadMore.value && !isLoading && !isLoadingMore && !isLastPage) {
+            viewModel.loadTransactions()
         }
-        Pair(totalQty, totalAmperes)
     }
 
     var showSaleDialog by remember { mutableStateOf<OldBatteryTransaction?>(null) }
@@ -111,6 +97,7 @@ fun OldBatteryLedgerScreen(
         }
     ) { paddingValues ->
         LazyColumn(
+            state = listState,
             modifier = Modifier.padding(paddingValues).fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(8.dp),
             contentPadding = PaddingValues(bottom = 32.dp)
@@ -231,6 +218,14 @@ fun OldBatteryLedgerScreen(
                         onSell = { showSaleDialog = transaction }
                     )
                 }
+
+            if (isLoadingMore) {
+                item {
+                    Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(modifier = Modifier.size(32.dp), color = accentColor)
+                    }
+                }
+            }
             }
         }
     }

@@ -88,7 +88,13 @@ class InvoiceDetailViewModel @Inject constructor(
         viewModelScope.launch {
             if (amount <= 0) return@launch
             try {
-                val payment = Payment(invoiceId = invoiceId, amount = amount, timestamp = Date())
+                val currentInvoice = _uiState.value.invoice
+                val payment = Payment(
+                    invoiceId = invoiceId,
+                    warehouseId = currentInvoice?.warehouseId ?: "",
+                    amount = amount,
+                    timestamp = Date()
+                )
                 val paymentId = paymentRepository.addPayment(payment)
 
                 // Record in treasury

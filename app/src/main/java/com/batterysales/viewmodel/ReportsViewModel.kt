@@ -225,42 +225,23 @@ class ReportsViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val oldBatterySummary: StateFlow<Pair<Int, Double>> = combine(
-        oldBatteryRepository.getAllTransactionsFlow(),
         isSeller,
         userRepository.getCurrentUserFlow()
-    ) { transactions, seller, user ->
-        val filtered = if (seller) transactions.filter { it.warehouseId == user?.warehouseId } else transactions
-        calculateOldBatterySummary(filtered)
+    ) { seller, user ->
+        val warehouseId = if (seller) user?.warehouseId else null
+        oldBatteryRepository.getStockSummary(warehouseId)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), Pair(0, 0.0))
 
     val oldBatteryWarehouseSummary: StateFlow<Map<String, Pair<Int, Double>>> = combine(
-        oldBatteryRepository.getAllTransactionsFlow(),
+        warehouses,
         isSeller,
         userRepository.getCurrentUserFlow()
-    ) { transactions, seller, user ->
-        val filtered = if (seller) transactions.filter { it.warehouseId == user?.warehouseId } else transactions
-        filtered.groupBy { it.warehouseId }.mapValues { calculateOldBatterySummary(it.value) }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
-
-    private fun calculateOldBatterySummary(transactions: List<OldBatteryTransaction>): Pair<Int, Double> {
-        var totalQty = 0
-        var totalAmperes = 0.0
-        transactions.forEach {
-            when (it.type) {
-                com.batterysales.data.models.OldBatteryTransactionType.INTAKE -> {
-                    totalQty += it.quantity
-                    totalAmperes += it.totalAmperes
-                }
-                com.batterysales.data.models.OldBatteryTransactionType.SALE -> {
-                    totalQty -= it.quantity
-                    totalAmperes -= it.totalAmperes
-                }
-                com.batterysales.data.models.OldBatteryTransactionType.ADJUSTMENT -> {
-                    totalQty += it.quantity
-                    totalAmperes += it.totalAmperes
-                }
-            }
+    ) { allWh, seller, user ->
+        val result = mutableMapOf<String, Pair<Int, Double>>()
+        val targetWhs = if (seller) allWh.filter { it.id == user?.warehouseId } else allWh
+        for (wh in targetWhs) {
+            result[wh.id] = oldBatteryRepository.getStockSummary(wh.id)
         }
-        return Pair(totalQty, totalAmperes)
-    }
+        result
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 }

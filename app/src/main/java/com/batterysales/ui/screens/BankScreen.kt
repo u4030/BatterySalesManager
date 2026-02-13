@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -40,6 +41,9 @@ fun BankScreen(
     val transactions by viewModel.transactions.collectAsState()
     val balance by viewModel.balance.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val isLoadingMore by viewModel.isLoadingMore.collectAsState()
+    val isLastPage by viewModel.isLastPage.collectAsState()
+    val listState = rememberLazyListState()
     var showAddDialog by remember { mutableStateOf(false) }
     var selectedType by remember { mutableStateOf(com.batterysales.data.models.BankTransactionType.DEPOSIT) }
 
@@ -49,21 +53,31 @@ fun BankScreen(
 
     var searchQuery by remember { mutableStateOf("") }
 
-    val filteredTransactions = remember(transactions, selectedTab, dateRangePickerState.selectedStartDateMillis, dateRangePickerState.selectedEndDateMillis, searchQuery) {
+    val filteredTransactions = remember(transactions, selectedTab, searchQuery) {
         transactions.filter { transaction ->
             val matchesTab = when (selectedTab) {
                 0 -> true // All
                 1 -> transaction.type == com.batterysales.data.models.BankTransactionType.WITHDRAWAL // Withdrawals
                 else -> true
             }
-            val matchesDateRange = if (dateRangePickerState.selectedStartDateMillis != null && dateRangePickerState.selectedEndDateMillis != null) {
-                transaction.date.time >= dateRangePickerState.selectedStartDateMillis!! &&
-                        transaction.date.time <= dateRangePickerState.selectedEndDateMillis!! + 86400000 // End of day
-            } else true
             val matchesSearch = transaction.description.contains(searchQuery, ignoreCase = true) || 
                                transaction.referenceNumber.contains(searchQuery, ignoreCase = true)
-            matchesTab && matchesDateRange && matchesSearch
-        }.sortedByDescending { it.date }
+            matchesTab && matchesSearch
+        }
+    }
+
+    // Load more when reaching the end
+    val shouldLoadMore = remember {
+        derivedStateOf {
+            val lastVisibleItem = listState.layoutInfo.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf false
+            lastVisibleItem.index >= listState.layoutInfo.totalItemsCount - 5
+        }
+    }
+
+    LaunchedEffect(shouldLoadMore.value) {
+        if (shouldLoadMore.value && !isLoading && !isLoadingMore && !isLastPage) {
+            viewModel.loadData()
+        }
     }
 
     val bgColor = MaterialTheme.colorScheme.background
@@ -107,6 +121,7 @@ fun BankScreen(
         }
     ) { paddingValues ->
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
@@ -237,7 +252,13 @@ fun BankScreen(
         com.batterysales.ui.components.AppDateRangePickerDialog(
             state = dateRangePickerState,
             onDismiss = { showDateRangePicker = false },
-            onConfirm = { showDateRangePicker = false }
+            onConfirm = {
+                viewModel.onDateRangeSelected(
+                    dateRangePickerState.selectedStartDateMillis,
+                    dateRangePickerState.selectedEndDateMillis
+                )
+                showDateRangePicker = false
+            }
         )
     }
 

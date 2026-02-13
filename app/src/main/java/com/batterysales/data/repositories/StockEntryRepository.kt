@@ -1,6 +1,9 @@
 package com.batterysales.data.repositories
 
 import com.batterysales.data.models.StockEntry
+import com.google.firebase.firestore.AggregateField
+import com.google.firebase.firestore.AggregateSource
+import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import kotlinx.coroutines.channels.awaitClose
@@ -99,6 +102,32 @@ class StockEntryRepository @Inject constructor(
         batch.commit().await()
     }
 
+    suspend fun getEntriesPaginated(
+        productVariantId: String,
+        warehouseId: String? = null,
+        lastDocument: DocumentSnapshot? = null,
+        limit: Long = 20
+    ): Pair<List<StockEntry>, DocumentSnapshot?> {
+        var query: Query = firestore.collection(StockEntry.COLLECTION_NAME)
+            .whereEqualTo("productVariantId", productVariantId)
+
+        if (warehouseId != null) {
+            query = query.whereEqualTo("warehouseId", warehouseId)
+        }
+
+        query = query.orderBy("timestamp", Query.Direction.DESCENDING)
+
+        if (lastDocument != null) {
+            query = query.startAfter(lastDocument)
+        }
+
+        val snapshot = query.limit(limit).get().await()
+        val entries = snapshot.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
+        val lastDoc = snapshot.documents.lastOrNull()
+
+        return Pair(entries, lastDoc)
+    }
+
     fun getEntriesForVariant(productVariantId: String): Flow<List<StockEntry>> = callbackFlow {
         val listenerRegistration = firestore.collection(StockEntry.COLLECTION_NAME)
             .whereEqualTo("productVariantId", productVariantId)
@@ -169,5 +198,14 @@ class StockEntryRepository @Inject constructor(
             .document(entryId)
             .update("status", "approved")
             .await()
+    }
+
+    suspend fun getPendingCount(): Int {
+        val snapshot = firestore.collection(StockEntry.COLLECTION_NAME)
+            .whereEqualTo("status", "pending")
+            .count()
+            .get(AggregateSource.SERVER)
+            .await()
+        return snapshot.count.toInt()
     }
 }

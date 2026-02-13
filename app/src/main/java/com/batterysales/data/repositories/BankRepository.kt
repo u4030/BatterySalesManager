@@ -2,7 +2,11 @@ package com.batterysales.data.repositories
 
 import com.batterysales.data.models.BankTransaction
 import com.batterysales.data.models.BankTransactionType
+import com.google.firebase.firestore.AggregateField
+import com.google.firebase.firestore.AggregateSource
+import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.snapshots
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -27,14 +31,45 @@ class BankRepository @Inject constructor(
     }
 
     suspend fun getCurrentBalance(): Double {
-        val transactions = firestore.collection(BankTransaction.COLLECTION_NAME)
-            .get()
-            .await()
-            .documents.mapNotNull { it.toObject(BankTransaction::class.java)?.copy(id = it.id) }
+        val baseQuery = firestore.collection(BankTransaction.COLLECTION_NAME)
 
-        return transactions.sumOf {
-            if (it.type == BankTransactionType.DEPOSIT) it.amount else -it.amount
+        // Sum DEPOSIT
+        val depositQuery = baseQuery.whereEqualTo("type", BankTransactionType.DEPOSIT.name)
+        val depositSnap = depositQuery.aggregate(AggregateField.sum("amount")).get(AggregateSource.SERVER).await()
+        val totalDeposit = depositSnap.getDouble(AggregateField.sum("amount")) ?: 0.0
+
+        // Sum WITHDRAWAL
+        val withdrawalQuery = baseQuery.whereEqualTo("type", BankTransactionType.WITHDRAWAL.name)
+        val withdrawalSnap = withdrawalQuery.aggregate(AggregateField.sum("amount")).get(AggregateSource.SERVER).await()
+        val totalWithdrawal = withdrawalSnap.getDouble(AggregateField.sum("amount")) ?: 0.0
+
+        return totalDeposit - totalWithdrawal
+    }
+
+    suspend fun getTransactionsPaginated(
+        startDate: Long? = null,
+        endDate: Long? = null,
+        lastDocument: DocumentSnapshot? = null,
+        limit: Long = 20
+    ): Pair<List<BankTransaction>, DocumentSnapshot?> {
+        var query: Query = firestore.collection(BankTransaction.COLLECTION_NAME)
+
+        if (startDate != null && endDate != null) {
+            query = query.whereGreaterThanOrEqualTo("date", java.util.Date(startDate))
+                .whereLessThanOrEqualTo("date", java.util.Date(endDate + 86400000))
         }
+
+        query = query.orderBy("date", Query.Direction.DESCENDING)
+
+        if (lastDocument != null) {
+            query = query.startAfter(lastDocument)
+        }
+
+        val snapshot = query.limit(limit).get().await()
+        val transactions = snapshot.documents.mapNotNull { it.toObject(BankTransaction::class.java)?.copy(id = it.id) }
+        val lastDoc = snapshot.documents.lastOrNull()
+
+        return Pair(transactions, lastDoc)
     }
 
     suspend fun deleteTransaction(id: String) {

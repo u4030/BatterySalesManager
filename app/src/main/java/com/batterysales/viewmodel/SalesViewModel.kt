@@ -205,6 +205,7 @@ class SalesViewModel @Inject constructor(
                 if (paidAmount > 0) {
                     val payment = Payment(
                         invoiceId = createdInvoice.id,
+                        warehouseId = warehouse.id,
                         amount = paidAmount,
                         timestamp = Date(),
                         paymentMethod = "cash",
