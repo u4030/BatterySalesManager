@@ -208,4 +208,67 @@ class StockEntryRepository @Inject constructor(
             .await()
         return snapshot.count.toInt()
     }
+
+    suspend fun getVariantSummary(variantId: String, warehouseId: String? = null): Triple<Int, Double, Double> {
+        var baseQuery = firestore.collection(StockEntry.COLLECTION_NAME)
+            .whereEqualTo("productVariantId", variantId)
+            .whereEqualTo("status", "approved")
+
+        if (warehouseId != null) {
+            baseQuery = baseQuery.whereEqualTo("warehouseId", warehouseId)
+        }
+
+        // 1. Current Quantity (Sum all quantity - sum all returnedQuantity)
+        val qtySnap = baseQuery.aggregate(
+            AggregateField.sum("quantity"),
+            AggregateField.sum("returnedQuantity")
+        ).get(AggregateSource.SERVER).await()
+
+        val totalQty = (qtySnap.getLong(AggregateField.sum("quantity")) ?: 0).toInt()
+        val totalRet = (qtySnap.getLong(AggregateField.sum("returnedQuantity")) ?: 0).toInt()
+        val currentQty = totalQty - totalRet
+
+        // 2. Average Cost (Sum of totalCost / sum of (quantity - returnedQuantity) where quantity > 0)
+        val purchaseQuery = baseQuery.whereGreaterThan("quantity", 0)
+        val costSnap = purchaseQuery.aggregate(
+            AggregateField.sum("totalCost"),
+            AggregateField.sum("quantity"),
+            AggregateField.sum("returnedQuantity")
+        ).get(AggregateSource.SERVER).await()
+
+        val sumTotalCost = costSnap.getDouble(AggregateField.sum("totalCost")) ?: 0.0
+        val sumPurchasedQty = (costSnap.getLong(AggregateField.sum("quantity")) ?: 0).toInt()
+        val sumReturnedPurchasedQty = (costSnap.getLong(AggregateField.sum("returnedQuantity")) ?: 0).toInt()
+
+        val netPurchasedQty = sumPurchasedQty - sumReturnedPurchasedQty
+        val averageCost = if (netPurchasedQty > 0) sumTotalCost / netPurchasedQty else 0.0
+
+        return Triple(currentQty, averageCost, currentQty * averageCost)
+    }
+
+    suspend fun getRecentApprovedPurchases(limit: Long = 100): List<StockEntry> {
+        // We can't easily filter by totalCost > 0 and orderBy timestamp without a composite index.
+        // But since most entries are approved, we just fetch last 100 approved ones and filter in memory.
+        val snapshot = firestore.collection(StockEntry.COLLECTION_NAME)
+            .whereEqualTo("status", "approved")
+            .orderBy("timestamp", Query.Direction.DESCENDING)
+            .limit(limit)
+            .get()
+            .await()
+        return snapshot.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
+            .filter { it.totalCost > 0 }
+    }
+
+    suspend fun getSupplierDebit(supplierId: String, resetDate: java.util.Date? = null, startDate: Long? = null, endDate: Long? = null): Double {
+        var query = firestore.collection(StockEntry.COLLECTION_NAME)
+            .whereEqualTo("supplierId", supplierId)
+            .whereEqualTo("status", "approved")
+
+        resetDate?.let { query = query.whereGreaterThan("timestamp", it) }
+        startDate?.let { query = query.whereGreaterThanOrEqualTo("timestamp", java.util.Date(it)) }
+        endDate?.let { query = query.whereLessThanOrEqualTo("timestamp", java.util.Date(it + 86400000)) }
+
+        val snapshot = query.aggregate(AggregateField.sum("totalCost")).get(AggregateSource.SERVER).await()
+        return snapshot.getDouble(AggregateField.sum("totalCost")) ?: 0.0
+    }
 }
