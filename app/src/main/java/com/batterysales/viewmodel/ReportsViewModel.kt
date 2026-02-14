@@ -6,6 +6,8 @@ import com.batterysales.data.models.*
 import com.batterysales.data.repositories.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -98,25 +100,25 @@ class ReportsViewModel @Inject constructor(
                 val activeVariants = allVariants.filter { !it.archived }
                     .filter { if (barcode.isNullOrBlank()) true else it.barcode == barcode }
 
-                for (variant in activeVariants) {
-                    val product = activeProducts[variant.productId] ?: continue
+                val jobs = activeVariants.map { variant ->
+                    async {
+                        val product = activeProducts[variant.productId] ?: return@async null
 
-                    val warehouseQuantities = mutableMapOf<String, Int>()
-                    var totalQuantity = 0
+                        // Batch optimization: use aggregated summary for the entire variant first
+                        val globalSummary = stockEntryRepository.getVariantSummary(variant.id, null)
+                        if (globalSummary.first <= 0) return@async null
 
-                    // Batch optimization: use aggregated summary for the entire variant first
-                    val globalSummary = stockEntryRepository.getVariantSummary(variant.id, null)
-                    if (globalSummary.first <= 0) continue
+                        val warehouseQuantities = mutableMapOf<String, Int>()
+                        var totalQuantity = 0
 
-                    for (warehouse in warehouseList) {
-                        val whSummary = stockEntryRepository.getVariantSummary(variant.id, warehouse.id)
-                        warehouseQuantities[warehouse.id] = whSummary.first
-                        totalQuantity += whSummary.first
-                    }
+                        for (warehouse in warehouseList) {
+                            val whSummary = stockEntryRepository.getVariantSummary(variant.id, warehouse.id)
+                            warehouseQuantities[warehouse.id] = whSummary.first
+                            totalQuantity += whSummary.first
+                        }
 
-                    if (totalQuantity <= 0) continue
+                        if (totalQuantity <= 0) return@async null
 
-                    reportItems.add(
                         InventoryReportItem(
                             product = product,
                             variant = variant,
@@ -125,8 +127,10 @@ class ReportsViewModel @Inject constructor(
                             averageCost = globalSummary.second,
                             totalCostValue = totalQuantity * globalSummary.second
                         )
-                    )
+                    }
                 }
+
+                reportItems.addAll(jobs.awaitAll().filterNotNull())
                 _inventoryReport.value = reportItems
                 _isLoading.value = false
             }
@@ -157,32 +161,36 @@ class ReportsViewModel @Inject constructor(
                 _endDate,
                 _supplierSearchQuery
             ) { suppliers, start, end, query ->
-                suppliers.map { supplier ->
-                    // Optimized aggregation instead of fetching all entries/bills
-                    val totalDebit = stockEntryRepository.getSupplierDebit(supplier.id, supplier.resetDate, start, end)
-                    val totalCredit = billRepository.getSupplierCredit(supplier.id, supplier.resetDate, start, end)
-                    val balance = totalDebit - totalCredit
+                Quadruple(suppliers, start, end, query)
+            }.collectLatest { quad ->
+                val suppliers = quad.first
+                val start = quad.second
+                val end = quad.third
+                val query = quad.fourth
 
-                    // Purchase orders still need some fetching for details if expanded, but we can optimize the list
-                    // For the summary view, we don't necessarily need all purchase orders immediately.
-                    // However, to keep existing UI working, we fetch only the relevant ones.
-                    val purchaseOrders = emptyList<PurchaseOrderItem>() // Simplified for now, or fetch on demand
+                val report = suppliers.map { supplier ->
+                    async {
+                        // Optimized aggregation instead of fetching all entries/bills
+                        val totalDebit = stockEntryRepository.getSupplierDebit(supplier.id, supplier.resetDate, start, end)
+                        val totalCredit = billRepository.getSupplierCredit(supplier.id, supplier.resetDate, start, end)
+                        val balance = totalDebit - totalCredit
 
-                    val targetProgress = if (supplier.yearlyTarget > 0) totalDebit / supplier.yearlyTarget else 0.0
+                        val targetProgress = if (supplier.yearlyTarget > 0) totalDebit / supplier.yearlyTarget else 0.0
 
-                    SupplierReportItem(
-                        supplier = supplier,
-                        totalDebit = totalDebit,
-                        totalCredit = totalCredit,
-                        balance = balance,
-                        targetProgress = targetProgress,
-                        purchaseOrders = purchaseOrders
-                    )
-                }.filter { item ->
-                    if (query.isBlank()) true
+                        SupplierReportItem(
+                            supplier = supplier,
+                            totalDebit = totalDebit,
+                            totalCredit = totalCredit,
+                            balance = balance,
+                            targetProgress = targetProgress,
+                            purchaseOrders = emptyList()
+                        )
+                    }
+                }.awaitAll().filter { item ->
+                    if (query.isNullOrBlank()) true
                     else item.supplier.name.contains(query, ignoreCase = true)
                 }
-            }.collect { report ->
+
                 _supplierReport.value = report
             }
         }

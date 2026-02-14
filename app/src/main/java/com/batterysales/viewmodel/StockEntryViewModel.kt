@@ -94,7 +94,7 @@ class StockEntryViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         products = activeProducts,
-                        warehouses = warehouses,
+                        warehouses = warehouses.filter { w -> w.isActive },
                         suppliers = suppliers,
                         userRole = user?.role ?: "seller",
                         selectedWarehouse = if (user?.role == "seller") selectedWH else it.selectedWarehouse

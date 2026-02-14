@@ -45,9 +45,9 @@ class OldBatteryRepository @Inject constructor(
     }
 
     suspend fun getStockSummary(warehouseId: String? = null): Pair<Int, Double> {
-        var baseQuery = firestore.collection(OldBatteryTransaction.COLLECTION_NAME)
+        var baseQuery: Query = firestore.collection(OldBatteryTransaction.COLLECTION_NAME)
         if (warehouseId != null) {
-            baseQuery = baseQuery.whereEqualTo("warehouseId", warehouseId) as com.google.firebase.firestore.CollectionReference
+            baseQuery = baseQuery.whereEqualTo("warehouseId", warehouseId)
         }
 
         // Aggregate INTAKE

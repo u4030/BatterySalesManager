@@ -23,10 +23,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
+import com.batterysales.viewmodel.AppNotification
 import com.batterysales.viewmodel.AuthViewModel
 import com.batterysales.viewmodel.DashboardViewModel
+import com.batterysales.viewmodel.NotificationType
 import com.batterysales.ui.components.SharedHeader
 import com.batterysales.ui.components.HeaderIconButton
 
@@ -48,6 +51,7 @@ fun DashboardScreen(
     val dashboardState by dashboardViewModel.uiState.collectAsState()
     val userRole = currentUser?.role ?: "seller"
     val isAdmin = userRole == "admin"
+    var showNotificationDialog by remember { mutableStateOf(false) }
 
     val dashboardBgColor = MaterialTheme.colorScheme.background
     val cardBgColor = MaterialTheme.colorScheme.surface
@@ -95,6 +99,33 @@ fun DashboardScreen(
                 SharedHeader(
                     title = "لوحة التحكم",
                     actions = {
+                        Box {
+                            HeaderIconButton(
+                                icon = if (dashboardState.notifications.isNotEmpty()) Icons.Default.NotificationsActive else Icons.Default.Notifications,
+                                onClick = { showNotificationDialog = true },
+                                contentDescription = "Notifications"
+                            )
+                            if (dashboardState.notifications.isNotEmpty()) {
+                                Surface(
+                                    color = Color.Red,
+                                    shape = CircleShape,
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .size(16.dp)
+                                        .offset(x = (-4).dp, y = 4.dp),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text(
+                                            text = dashboardState.notifications.size.toString(),
+                                            color = Color.White,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                        }
                         HeaderIconButton(
                             icon = Icons.Default.Settings,
                             onClick = { navController.navigate("settings") },
@@ -204,48 +235,6 @@ fun DashboardScreen(
                 }
             }
 
-            // Alerts Section
-            if (isAdmin && dashboardState.pendingApprovalsCount > 0) {
-                item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).clickable { navController.navigate("approvals") },
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF3B1F1F)),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.NotificationsActive, contentDescription = null, tint = Color(0xFFEF4444))
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text("لديك ${dashboardState.pendingApprovalsCount} طلبات موافقة معلقة", color = Color.White, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-            }
-
-            if (dashboardState.lowStockVariants.isNotEmpty()) {
-                item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).clickable { navController.navigate("reports") },
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF3B1F1F)),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFEF4444))
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Text("تنبيه انخفاض المخزون", fontWeight = FontWeight.Bold, color = Color.White)
-                            }
-                            dashboardState.lowStockVariants.take(3).forEach { lowStockItem ->
-                                Text(
-                                    "${lowStockItem.productName} (${lowStockItem.capacity} أمبير) في ${lowStockItem.warehouseName}: الكمية ${lowStockItem.currentQuantity}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = Color.White.copy(alpha = 0.8f)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
             // Grid Items (Chunked into Rows)
             items(items.chunked(2)) { rowItems ->
                 Row(
@@ -271,6 +260,111 @@ fun DashboardScreen(
             // Extra spacer at bottom
             item {
                 Spacer(modifier = Modifier.height(16.dp))
+            }
+        }
+    }
+
+    if (showNotificationDialog) {
+        NotificationDialog(
+            notifications = dashboardState.notifications,
+            onDismiss = { showNotificationDialog = false },
+            onNotificationClick = { route ->
+                if (route != null) {
+                    navController.navigate(route)
+                }
+                showNotificationDialog = false
+            }
+        )
+    }
+}
+
+@Composable
+fun NotificationDialog(
+    notifications: List<AppNotification>,
+    onDismiss: () -> Unit,
+    onNotificationClick: (String?) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Notifications, contentDescription = null, tint = Color(0xFFFB8C00))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("التنبيهات", style = MaterialTheme.typography.titleLarge)
+            }
+        },
+        text = {
+            if (notifications.isEmpty()) {
+                Box(modifier = Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
+                    Text("لا توجد تنبيهات حالياً", color = Color.Gray)
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 400.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(notifications) { notification ->
+                        NotificationItem(notification, onNotificationClick)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("إغلاق") }
+        }
+    )
+}
+
+@Composable
+fun NotificationItem(notification: AppNotification, onClick: (String?) -> Unit) {
+    val color = when (notification.type) {
+        NotificationType.LOW_STOCK -> Color(0xFFEF4444)
+        NotificationType.PENDING_APPROVAL -> Color(0xFFF59E0B)
+        NotificationType.UPCOMING_BILL -> Color(0xFF3B82F6)
+        NotificationType.OVERDUE_BILL -> Color(0xFFEF4444)
+    }
+
+    val icon = when (notification.type) {
+        NotificationType.LOW_STOCK -> Icons.Default.Warning
+        NotificationType.PENDING_APPROVAL -> Icons.Default.FactCheck
+        NotificationType.UPCOMING_BILL -> Icons.Default.CalendarMonth
+        NotificationType.OVERDUE_BILL -> Icons.Default.Error
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick(notification.route) },
+        colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.1f)),
+        shape = RoundedCornerShape(12.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, color.copy(alpha = 0.2f))
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                color = color,
+                shape = CircleShape,
+                modifier = Modifier.size(36.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                }
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Column {
+                Text(
+                    text = notification.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = color
+                )
+                Text(
+                    text = notification.message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                )
             }
         }
     }

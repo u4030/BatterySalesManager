@@ -10,6 +10,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -29,8 +34,11 @@ import com.batterysales.ui.components.HeaderIconButton
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel = hiltViewModel()) {
+    val warehouses by viewModel.warehouses.collectAsState()
     val stockLevels by viewModel.stockLevels.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    var selectedTab by remember { mutableIntStateOf(0) } // 0: Stock, 1: Manage
+    var warehouseToDelete by remember { mutableStateOf<com.batterysales.data.models.Warehouse?>(null) }
 
     val bgColor = MaterialTheme.colorScheme.background
     val cardBgColor = MaterialTheme.colorScheme.surface
@@ -49,7 +57,7 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
             // Gradient Header
             item {
                 SharedHeader(
-                    title = "مخزون المستودعات",
+                    title = if (selectedTab == 0) "مخزون المستودعات" else "إدارة المستودعات",
                     onBackClick = { navController.popBackStack() },
                     actions = {
                         HeaderIconButton(
@@ -61,6 +69,32 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
                 )
             }
 
+            item {
+                Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                    TabRow(
+                        selectedTabIndex = selectedTab,
+                        containerColor = Color.Transparent,
+                        contentColor = accentColor,
+                        indicator = { tabPositions ->
+                            TabRowDefaults.SecondaryIndicator(
+                                modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
+                                color = accentColor
+                            )
+                        },
+                        divider = {}
+                    ) {
+                        Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }) {
+                            Text("المخزون", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleSmall, color = if(selectedTab == 0) accentColor else MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) {
+                            Text("الإدارة", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleSmall, color = if(selectedTab == 1) accentColor else MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+            }
+
+            if (selectedTab == 0) {
             if (isLoading && stockLevels.isEmpty()) {
                 item {
                     Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
@@ -156,9 +190,119 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
                     }
                 }
             }
+            } else {
+                // Manage Warehouses Tab
+                items(warehouses) { warehouse ->
+                    WarehouseManagementCard(
+                        warehouse = warehouse,
+                        onToggleStatus = { viewModel.toggleWarehouseStatus(warehouse) },
+                        onDelete = { warehouseToDelete = warehouse }
+                    )
+                }
+
+                if (warehouses.isEmpty() && !isLoading) {
+                    item {
+                        Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                            Text("لا توجد مستودعات حالياً", color = Color.Gray)
+                        }
+                    }
+                }
+            }
             
             item {
                 Spacer(modifier = Modifier.height(16.dp))
+            }
+        }
+    }
+
+    if (warehouseToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { warehouseToDelete = null },
+            title = { Text("حذف المستودع") },
+            text = { Text("هل أنت متأكد من حذف مستودع '${warehouseToDelete!!.name}'؟ سيؤدي هذا إلى حذف بيانات المستودع ولا يمكن التراجع عنه.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.deleteWarehouse(warehouseToDelete!!.id)
+                        warehouseToDelete = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("حذف") }
+            },
+            dismissButton = {
+                TextButton(onClick = { warehouseToDelete = null }) { Text("إلغاء") }
+            }
+        )
+    }
+}
+
+@Composable
+fun WarehouseManagementCard(
+    warehouse: com.batterysales.data.models.Warehouse,
+    onToggleStatus: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Row(
+            modifier = Modifier.padding(20.dp).fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = warehouse.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                if (warehouse.location.isNotEmpty()) {
+                    Text(
+                        text = warehouse.location,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Surface(
+                    color = if (warehouse.isActive) Color(0xFF10B981).copy(alpha = 0.1f) else Color(0xFFEF4444).copy(alpha = 0.1f),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(
+                        text = if (warehouse.isActive) "نشط" else "متوقف / معلق",
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        color = if (warehouse.isActive) Color(0xFF10B981) else Color(0xFFEF4444),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                IconButton(
+                    onClick = onToggleStatus,
+                    modifier = Modifier.size(40.dp).background(if (warehouse.isActive) Color(0xFFEF4444).copy(alpha = 0.1f) else Color(0xFF10B981).copy(alpha = 0.1f), CircleShape)
+                ) {
+                    Icon(
+                        imageVector = if (warehouse.isActive) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = "Toggle Status",
+                        tint = if (warehouse.isActive) Color(0xFFEF4444) else Color(0xFF10B981)
+                    )
+                }
+
+                IconButton(
+                    onClick = onDelete,
+                    modifier = Modifier.size(40.dp).background(Color(0xFF3B1F1F), CircleShape)
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color(0xFFEF4444))
+                }
             }
         }
     }

@@ -21,11 +21,27 @@ data class WarehouseStats(
 
 data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 
+data class AppNotification(
+    val id: String,
+    val title: String,
+    val message: String,
+    val type: NotificationType,
+    val route: String? = null
+)
+
+enum class NotificationType {
+    LOW_STOCK,
+    PENDING_APPROVAL,
+    UPCOMING_BILL,
+    OVERDUE_BILL
+}
+
 data class DashboardUiState(
     val pendingApprovalsCount: Int = 0,
     val lowStockVariants: List<LowStockItem> = emptyList(),
     val upcomingBills: List<com.batterysales.data.models.Bill> = emptyList(),
     val warehouseStats: List<WarehouseStats> = emptyList(),
+    val notifications: List<AppNotification> = emptyList(),
     val isLoading: Boolean = true
 )
 
@@ -99,7 +115,7 @@ class DashboardViewModel @Inject constructor(
                 }.time
 
                 val relevantWarehouses = if (isAdmin) warehouses
-                                        else warehouses.filter { it.id == userWarehouseId }
+                                        else warehouses.filter { it.id == userWarehouseId && it.isActive }
 
                 val warehouseStatsList = relevantWarehouses.map { warehouse ->
                     val collection = paymentRepository.getTodayCollection(startOfToday, warehouse.id)
@@ -117,11 +133,54 @@ class DashboardViewModel @Inject constructor(
                 // For now, we still rely on full fetch but we should consider denormalizing 'currentStock'
                 val lowStock = calculateLowStock(variants, products, warehouses)
 
+                val allNotifications = mutableListOf<AppNotification>()
+
+                // Add Low Stock Notifications
+                lowStock.forEach { item ->
+                    allNotifications.add(
+                        AppNotification(
+                            id = "low_stock_${item.variantId}_${item.warehouseName}",
+                            title = "انخفاض المخزون",
+                            message = "${item.productName} (${item.capacity}A) في ${item.warehouseName}: الكمية ${item.currentQuantity}",
+                            type = NotificationType.LOW_STOCK,
+                            route = "reports"
+                        )
+                    )
+                }
+
+                // Add Pending Approvals Notification
+                if (pendingCount > 0) {
+                    allNotifications.add(
+                        AppNotification(
+                            id = "pending_approvals",
+                            title = "موافقات معلقة",
+                            message = "لديك $pendingCount طلبات ترحيل مخزون بانتظار الموافقة",
+                            type = NotificationType.PENDING_APPROVAL,
+                            route = "approvals"
+                        )
+                    )
+                }
+
+                // Add Bill Notifications
+                upcoming.forEach { bill ->
+                    val isOverdue = bill.dueDate.before(today.time)
+                    allNotifications.add(
+                        AppNotification(
+                            id = "bill_${bill.id}",
+                            title = if (isOverdue) "كمبيالة متأخرة" else "موعد استحقاق قريب",
+                            message = "الكمبيالة: ${bill.description} تستحق بتاريخ ${java.text.SimpleDateFormat("yyyy/MM/dd").format(bill.dueDate)}",
+                            type = if (isOverdue) NotificationType.OVERDUE_BILL else NotificationType.UPCOMING_BILL,
+                            route = "bills"
+                        )
+                    )
+                }
+
                 DashboardUiState(
                     pendingApprovalsCount = pendingCount,
                     lowStockVariants = lowStock,
                     upcomingBills = upcoming,
                     warehouseStats = warehouseStatsList,
+                    notifications = allNotifications,
                     isLoading = false
                 )
             }.onEach { state ->

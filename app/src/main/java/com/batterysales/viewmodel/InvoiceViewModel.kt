@@ -59,10 +59,12 @@ class InvoiceViewModel @Inject constructor(
             val user = userRepository.getCurrentUser()
             val isAdmin = user?.role == "admin"
             
-            warehouseRepository.getWarehouses().collect { warehouses ->
+            warehouseRepository.getWarehouses().collect { allWh ->
+                val warehouses = if (isAdmin) allWh else allWh.filter { it.isActive }
+
                 _uiState.update { state ->
                     val initialWarehouseId = if (isAdmin) {
-                        warehouses.firstOrNull()?.id ?: ""
+                        allWh.firstOrNull()?.id ?: ""
                     } else {
                         user?.warehouseId ?: ""
                     }
@@ -97,6 +99,7 @@ class InvoiceViewModel @Inject constructor(
                     status = statusFilter,
                     startDate = state.startDate,
                     endDate = state.endDate,
+                    searchQuery = state.searchQuery.ifBlank { null },
                     lastDocument = lastDocument,
                     limit = 20
                 )
@@ -107,16 +110,8 @@ class InvoiceViewModel @Inject constructor(
                 _uiState.update { currentState ->
                     val combinedInvoices = if (reset) newInvoices else currentState.invoices + newInvoices
 
-                    // Filter by search query in memory for now as Firestore doesn't support complex text search
-                    val filteredBySearch = if (currentState.searchQuery.isNotBlank()) {
-                        combinedInvoices.filter {
-                            it.invoiceNumber.contains(currentState.searchQuery, ignoreCase = true) ||
-                            it.customerName.contains(currentState.searchQuery, ignoreCase = true)
-                        }
-                    } else combinedInvoices
-
                     currentState.copy(
-                        invoices = filteredBySearch,
+                        invoices = combinedInvoices,
                         isLoading = false,
                         isLoadingMore = false,
                         isLastPage = newInvoices.size < 20

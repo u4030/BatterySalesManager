@@ -293,7 +293,7 @@ fun UserCard(
                             Text("إلغاء الربط")
                         }
                     }
-                    items(warehouses) { warehouse ->
+                    items(warehouses.filter { it.isActive }) { warehouse ->
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { onWarehouseChange(warehouse.id); showWarehouseDialog = false }) {
                             RadioButton(selected = user.warehouseId == warehouse.id, onClick = { onWarehouseChange(warehouse.id); showWarehouseDialog = false })
                             Text(warehouse.name)
@@ -358,7 +358,7 @@ fun CreateUserDialog(
                 if (role == "seller") {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text("المستودع المرتبط:", style = MaterialTheme.typography.titleSmall)
-                    warehouses.forEach { warehouse ->
+                    warehouses.filter { it.isActive }.forEach { warehouse ->
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.fillMaxWidth().clickable { selectedWarehouseId = warehouse.id }

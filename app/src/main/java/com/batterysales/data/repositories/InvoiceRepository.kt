@@ -69,6 +69,7 @@ class InvoiceRepository @Inject constructor(
         status: String? = null,
         startDate: Long? = null,
         endDate: Long? = null,
+        searchQuery: String? = null,
         lastDocument: DocumentSnapshot? = null,
         limit: Long = 20
     ): Pair<List<Invoice>, DocumentSnapshot?> {
@@ -84,7 +85,13 @@ class InvoiceRepository @Inject constructor(
                 .whereLessThanOrEqualTo("invoiceDate", Date(endDate + 86400000))
         }
 
-        query = query.orderBy("invoiceDate", Query.Direction.DESCENDING)
+        if (!searchQuery.isNullOrBlank()) {
+            // Prefix search for invoiceNumber
+            query = query.whereGreaterThanOrEqualTo("invoiceNumber", searchQuery)
+                .whereLessThanOrEqualTo("invoiceNumber", searchQuery + "\uf8ff")
+        }
+
+        query = query.orderBy(if (!searchQuery.isNullOrBlank()) "invoiceNumber" else "invoiceDate", Query.Direction.DESCENDING)
 
         if (lastDocument != null) {
             query = query.startAfter(lastDocument)

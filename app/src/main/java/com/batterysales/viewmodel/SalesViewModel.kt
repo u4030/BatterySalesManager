@@ -76,7 +76,7 @@ class SalesViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         products = products.filter { p -> !p.archived },
-                        warehouses = warehouses,
+                        warehouses = warehouses.filter { w -> w.isActive },
                         selectedWarehouse = if (user?.role == "seller") selectedWH else it.selectedWarehouse,
                         isWarehouseFixed = user?.role == "seller",
                         stockLevels = stockMap,

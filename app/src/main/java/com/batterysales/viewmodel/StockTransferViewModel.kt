@@ -66,7 +66,7 @@ class StockTransferViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         products = products.filter { p -> !p.archived },
-                        warehouses = warehouses,
+                        warehouses = warehouses.filter { w -> w.isActive },
                         sourceWarehouse = if (user?.role == "seller") warehouses.find { w -> w.id == user.warehouseId } else it.sourceWarehouse,
                         isSourceWarehouseFixed = user?.role == "seller",
                         stockLevels = stockMap,
