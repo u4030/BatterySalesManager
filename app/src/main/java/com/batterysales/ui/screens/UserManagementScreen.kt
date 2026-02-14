@@ -113,6 +113,7 @@ fun UserManagementScreen(
                             warehouses = uiState.warehouses,
                             onRoleChange = { role -> viewModel.updateUserRole(user, role) },
                             onWarehouseChange = { warehouseId -> viewModel.linkUserToWarehouse(user, warehouseId) },
+                            onPermissionToggle = { permission -> viewModel.togglePermission(user, permission) },
                             onDelete = { userToDelete = user }
                         )
                     }
@@ -160,6 +161,7 @@ fun UserCard(
     warehouses: List<com.batterysales.data.models.Warehouse>,
     onRoleChange: (String) -> Unit,
     onWarehouseChange: (String?) -> Unit,
+    onPermissionToggle: (String) -> Unit,
     onDelete: () -> Unit
 ) {
     var showRoleDialog by remember { mutableStateOf(false) }
@@ -255,6 +257,27 @@ fun UserCard(
                             }
                         }
                     }
+                }
+            }
+
+            if (user.role == "seller") {
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("صلاحيات الخزينة:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(modifier = Modifier.height(8.dp))
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(
+                        selected = user.permissions.contains(User.PERMISSION_VIEW_TREASURY),
+                        onClick = { onPermissionToggle(User.PERMISSION_VIEW_TREASURY) },
+                        label = { Text("اطلاع على الخزينة", fontSize = 11.sp) }
+                    )
+                    FilterChip(
+                        selected = user.permissions.contains(User.PERMISSION_USE_TREASURY),
+                        onClick = { onPermissionToggle(User.PERMISSION_USE_TREASURY) },
+                        label = { Text("استخدام الخزينة", fontSize = 11.sp) }
+                    )
                 }
             }
         }

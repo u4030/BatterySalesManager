@@ -29,8 +29,11 @@ class AccountingRepository @Inject constructor(
         return snapshot.documents.mapNotNull { it.toObject(Expense::class.java)?.copy(id = it.id) }
     }
 
-    suspend fun getCurrentBalance(): Double {
-        val baseQuery = firestore.collection(Transaction.COLLECTION_NAME)
+    suspend fun getCurrentBalance(warehouseId: String? = null): Double {
+        var baseQuery: Query = firestore.collection(Transaction.COLLECTION_NAME)
+        if (warehouseId != null) {
+            baseQuery = baseQuery.whereEqualTo("warehouseId", warehouseId)
+        }
 
         // Sum INCOME & PAYMENT
         val incomeQuery = baseQuery.whereIn("type", listOf(TransactionType.INCOME.name, TransactionType.PAYMENT.name))
@@ -46,12 +49,17 @@ class AccountingRepository @Inject constructor(
     }
 
     suspend fun getTransactionsPaginated(
+        warehouseId: String? = null,
         startDate: Long? = null,
         endDate: Long? = null,
         lastDocument: DocumentSnapshot? = null,
         limit: Long = 20
     ): Pair<List<Transaction>, DocumentSnapshot?> {
         var query: Query = firestore.collection(Transaction.COLLECTION_NAME)
+
+        if (warehouseId != null) {
+            query = query.whereEqualTo("warehouseId", warehouseId)
+        }
 
         if (startDate != null && endDate != null) {
             query = query.whereGreaterThanOrEqualTo("createdAt", java.util.Date(startDate))
@@ -87,6 +95,7 @@ class AccountingRepository @Inject constructor(
             type = com.batterysales.data.models.TransactionType.EXPENSE,
             amount = expense.amount,
             description = expense.description,
+            warehouseId = expense.warehouseId,
             createdAt = expense.timestamp
         )
 

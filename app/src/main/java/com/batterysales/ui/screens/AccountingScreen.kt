@@ -57,6 +57,10 @@ fun AccountingScreen(
 
     var searchQuery by remember { mutableStateOf("") }
 
+    val warehouses by viewModel.warehouses.collectAsState()
+    val selectedWarehouseId by viewModel.selectedWarehouseId.collectAsState()
+    val currentUser by viewModel.currentUser.collectAsState()
+
     val filteredTransactions = remember(transactions, selectedTab, searchQuery) {
         transactions.filter { transaction ->
             val matchesTab = when (selectedTab) {
@@ -91,29 +95,35 @@ fun AccountingScreen(
         colors = listOf(Color(0xFFE53935), Color(0xFFFB8C00))
     )
 
+    val canUseTreasury = remember(currentUser) {
+        currentUser?.role == "admin" || currentUser?.permissions?.contains("use_treasury") == true
+    }
+
     Scaffold(
         containerColor = bgColor,
         floatingActionButton = {
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                FloatingActionButton(
-                    onClick = {
-                        selectedType = TransactionType.INCOME
-                        showAddTransactionDialog = true
-                    },
-                    containerColor = Color(0xFF4CAF50).copy(alpha = 0.7f),
-                    contentColor = Color.White
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = "إيداع")
-                }
-                FloatingActionButton(
-                    onClick = {
-                        selectedType = TransactionType.EXPENSE
-                        showAddTransactionDialog = true
-                    },
-                    containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
-                    contentColor = Color.White
-                ) {
-                    Icon(Icons.Default.Remove, contentDescription = "سحب")
+            if (canUseTreasury) {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    FloatingActionButton(
+                        onClick = {
+                            selectedType = TransactionType.INCOME
+                            showAddTransactionDialog = true
+                        },
+                        containerColor = Color(0xFF4CAF50).copy(alpha = 0.7f),
+                        contentColor = Color.White
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "إيداع")
+                    }
+                    FloatingActionButton(
+                        onClick = {
+                            selectedType = TransactionType.EXPENSE
+                            showAddTransactionDialog = true
+                        },
+                        containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
+                        contentColor = Color.White
+                    ) {
+                        Icon(Icons.Default.Remove, contentDescription = "سحب")
+                    }
                 }
             }
         }
@@ -127,35 +137,85 @@ fun AccountingScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
             contentPadding = PaddingValues(bottom = 80.dp)
         ) {
-            // Gradient Header
+            // Gradient Header with Balance
             item {
-                SharedHeader(
-                    title = "الخزينة والمحاسبة",
-                    onBackClick = { navController.popBackStack() },
-                    actions = {
-                        HeaderIconButton(
-                            icon = Icons.Default.CalendarMonth,
-                            onClick = { showDateRangePicker = true },
-                            contentDescription = "Date Range"
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                                colors = listOf(Color(0xFFE53935), Color(0xFFFB8C00))
+                            ),
+                            shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
                         )
-                    }
-                )
+                        .padding(bottom = 24.dp)
+                        .statusBarsPadding()
+                ) {
+                    Column {
+                        Row(
+                            modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                HeaderIconButton(
+                                    icon = Icons.AutoMirrored.Filled.ArrowBack,
+                                    onClick = { navController.popBackStack() },
+                                    contentDescription = "Back"
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = "الخزينة والمحاسبة",
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            HeaderIconButton(
+                                icon = Icons.Default.CalendarMonth,
+                                onClick = { showDateRangePicker = true },
+                                contentDescription = "Date Range"
+                            )
+                        }
 
-                Column(modifier = Modifier.padding(16.dp)) {
-                    // بطاقة الرصيد الحالي داخل الهيدر
+                        // Warehouse selection for admins
+                        if (currentUser?.role == "admin" && warehouses.isNotEmpty()) {
+                            androidx.compose.foundation.lazy.LazyRow(
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                                contentPadding = PaddingValues(horizontal = 16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                items(warehouses) { warehouse ->
+                                    FilterChip(
+                                        selected = selectedWarehouseId == warehouse.id,
+                                        onClick = { viewModel.onWarehouseSelected(warehouse.id) },
+                                        label = { Text(warehouse.name, color = if(selectedWarehouseId == warehouse.id) Color.Black else Color.White) },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = Color.White,
+                                            containerColor = Color.White.copy(alpha = 0.2f),
+                                            labelColor = Color.White
+                                        ),
+                                        border = null
+                                    )
+                                }
+                            }
+                        }
+
+                        // Balance Card inside the gradient
                         Card(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
                             shape = RoundedCornerShape(20.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.15f))
+                            colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.2f))
                         ) {
                             Column(
                                 modifier = Modifier.padding(20.dp).fillMaxWidth(),
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
+                                val currentWhName = warehouses.find { it.id == selectedWarehouseId }?.name ?: "الخزينة العامة"
                                 Text(
-                                    "إجمالي الرصيد الحالي",
+                                    "إجمالي الرصيد الحالي ($currentWhName)",
                                     style = MaterialTheme.typography.bodyMedium,
-                                    color = Color.White.copy(alpha = 0.7f)
+                                    color = Color.White.copy(alpha = 0.9f)
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
@@ -168,6 +228,7 @@ fun AccountingScreen(
                         }
                     }
                 }
+            }
 
             item {
                 Column(modifier = Modifier.padding(horizontal = 16.dp)) {

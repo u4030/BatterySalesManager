@@ -106,6 +106,10 @@ class BillViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoading.value = true
             try {
+                val warehouseId = if (relatedEntryId != null) {
+                    _pendingPurchases.value.find { it.id == relatedEntryId }?.warehouseId
+                } else null
+
                 val bill = Bill(
                     description = description,
                     amount = amount,
@@ -113,7 +117,8 @@ class BillViewModel @Inject constructor(
                     billType = billType,
                     referenceNumber = referenceNumber,
                     supplierId = supplierId,
-                    relatedEntryId = relatedEntryId
+                    relatedEntryId = relatedEntryId,
+                    warehouseId = warehouseId
                 )
                 repository.addBill(bill)
                 loadBills(reset = true)
@@ -138,7 +143,8 @@ class BillViewModel @Inject constructor(
                     amount = amount,
                     description = "تسديد ${if (amount >= (bill.amount - bill.paidAmount)) "كلي" else "جزئي"} ${if (bill.billType == BillType.CHECK) "لشيك" else "لكمبيالة"}: ${bill.description} (المورد: $supplierName)",
                     relatedId = billId,
-                    referenceNumber = bill.referenceNumber
+                    referenceNumber = bill.referenceNumber,
+                    warehouseId = bill.warehouseId
                 )
                 accountingRepository.addTransaction(transaction)
 

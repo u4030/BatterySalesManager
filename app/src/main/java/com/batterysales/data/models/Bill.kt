@@ -23,7 +23,8 @@ data class Bill(
     val notes: String = "",
     val referenceNumber: String = "", // رقم السند/الشيك
     val supplierId: String = "", // Link to Supplier model
-    val relatedEntryId: String? = null // Link to a specific StockEntry (Purchase)
+    val relatedEntryId: String? = null, // Link to a specific StockEntry (Purchase)
+    val warehouseId: String? = null // المستودع المرتبط
 ) {
     companion object {
         const val COLLECTION_NAME = "bills"

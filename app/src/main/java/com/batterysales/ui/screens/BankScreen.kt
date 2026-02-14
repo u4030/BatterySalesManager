@@ -129,26 +129,52 @@ fun BankScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
             contentPadding = PaddingValues(bottom = 80.dp)
         ) {
-            // Gradient Header
+            // Gradient Header with Balance
             item {
-                SharedHeader(
-                    title = "البنك والشيكات",
-                    onBackClick = { navController.popBackStack() },
-                    actions = {
-                        HeaderIconButton(
-                            icon = Icons.Default.CalendarMonth,
-                            onClick = { showDateRangePicker = true },
-                            contentDescription = "Date Range"
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                                colors = listOf(Color(0xFFE53935), Color(0xFFFB8C00))
+                            ),
+                            shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
                         )
-                    }
-                )
+                        .padding(bottom = 24.dp)
+                        .statusBarsPadding()
+                ) {
+                    Column {
+                        Row(
+                            modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                HeaderIconButton(
+                                    icon = Icons.AutoMirrored.Filled.ArrowBack,
+                                    onClick = { navController.popBackStack() },
+                                    contentDescription = "Back"
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = "البنك والشيكات",
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            HeaderIconButton(
+                                icon = Icons.Default.CalendarMonth,
+                                onClick = { showDateRangePicker = true },
+                                contentDescription = "Date Range"
+                            )
+                        }
 
-                Column(modifier = Modifier.padding(16.dp)) {
-                    // Balance Card inside header
+                        // Balance Card inside the gradient
                         Card(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
                             shape = RoundedCornerShape(20.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.15f))
+                            colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.2f))
                         ) {
                             Column(
                                 modifier = Modifier.padding(20.dp).fillMaxWidth(),
@@ -157,7 +183,7 @@ fun BankScreen(
                                 Text(
                                     "إجمالي رصيد الشيكات في البنك",
                                     style = MaterialTheme.typography.bodyMedium,
-                                    color = Color.White.copy(alpha = 0.7f)
+                                    color = Color.White.copy(alpha = 0.9f)
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
@@ -170,6 +196,7 @@ fun BankScreen(
                         }
                     }
                 }
+            }
 
             item {
                 Column(modifier = Modifier.padding(horizontal = 16.dp)) {

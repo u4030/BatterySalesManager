@@ -51,7 +51,6 @@ class InvoiceViewModel @Inject constructor(
 
     init {
         checkRoleAndLoadWarehouses()
-        loadInvoices(reset = true)
     }
 
     private fun checkRoleAndLoadWarehouses() {
@@ -59,21 +58,30 @@ class InvoiceViewModel @Inject constructor(
             val user = userRepository.getCurrentUser()
             val isAdmin = user?.role == "admin"
             
-            warehouseRepository.getWarehouses().collect { allWh ->
-                val warehouses = if (isAdmin) allWh else allWh.filter { it.isActive }
+            launch {
+                warehouseRepository.getWarehouses().collect { allWh ->
+                    val warehouses = if (isAdmin) allWh else allWh.filter { it.isActive }
 
-                _uiState.update { state ->
-                    val initialWarehouseId = if (isAdmin) {
-                        allWh.firstOrNull()?.id ?: ""
-                    } else {
-                        user?.warehouseId ?: ""
+                    val oldWhId = _uiState.value.selectedWarehouseId
+                    _uiState.update { state ->
+                        val initialWarehouseId = if (isAdmin) {
+                            state.selectedWarehouseId.ifBlank { allWh.firstOrNull()?.id ?: "" }
+                        } else {
+                            user?.warehouseId ?: ""
+                        }
+
+                        state.copy(
+                            warehouses = warehouses,
+                            isAdmin = isAdmin,
+                            selectedWarehouseId = initialWarehouseId
+                        )
                     }
                     
-                    state.copy(
-                        warehouses = warehouses,
-                        isAdmin = isAdmin,
-                        selectedWarehouseId = initialWarehouseId
-                    )
+                    val newWhId = _uiState.value.selectedWarehouseId
+                    // Trigger load if warehouse ID was empty and now it's not, or if it changed (though it shouldn't normally change here for non-admins)
+                    if (newWhId.isNotBlank() && (oldWhId.isBlank() || _uiState.value.invoices.isEmpty())) {
+                        loadInvoices(reset = true)
+                    }
                 }
             }
         }

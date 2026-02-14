@@ -55,6 +55,24 @@ class UserManagementViewModel @Inject constructor(
         }
     }
 
+    fun togglePermission(user: User, permission: String) {
+        viewModelScope.launch {
+            try {
+                val currentPermissions = user.permissions.toMutableList()
+                if (currentPermissions.contains(permission)) {
+                    currentPermissions.remove(permission)
+                } else {
+                    currentPermissions.add(permission)
+                }
+                val updatedUser = user.copy(permissions = currentPermissions)
+                userRepository.updateUser(updatedUser)
+                _uiState.update { it.copy(successMessage = "تم تحديث الصلاحيات") }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "فشل تحديث الصلاحيات") }
+            }
+        }
+    }
+
     fun deleteUser(userId: String) {
         viewModelScope.launch {
             try {

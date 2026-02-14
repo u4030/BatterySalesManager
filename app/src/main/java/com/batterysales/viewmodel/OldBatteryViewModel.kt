@@ -70,8 +70,10 @@ class OldBatteryViewModel @Inject constructor(
                 _isSeller.value = currentUser?.role == "seller"
                 _userWarehouseId.value = currentUser?.warehouseId
 
-                warehouseRepository.getWarehouses().collect { allWh ->
-                    _warehouses.value = allWh.filter { it.isActive }
+                launch {
+                    warehouseRepository.getWarehouses().collect { allWh ->
+                        _warehouses.value = allWh.filter { it.isActive }
+                    }
                 }
 
                 loadTransactions(reset = true)

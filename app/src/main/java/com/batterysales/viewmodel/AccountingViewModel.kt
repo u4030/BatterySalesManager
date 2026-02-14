@@ -15,7 +15,9 @@ import javax.inject.Inject
 
 @HiltViewModel
 class AccountingViewModel @Inject constructor(
-    private val repository: AccountingRepository
+    private val repository: AccountingRepository,
+    private val userRepository: com.batterysales.data.repositories.UserRepository,
+    private val warehouseRepository: com.batterysales.data.repositories.WarehouseRepository
 ) : ViewModel() {
 
     private val _transactions = MutableStateFlow<List<Transaction>>(emptyList())
@@ -36,11 +38,46 @@ class AccountingViewModel @Inject constructor(
     private val _isLastPage = MutableStateFlow(false)
     val isLastPage = _isLastPage.asStateFlow()
 
+    private val _warehouses = MutableStateFlow<List<com.batterysales.data.models.Warehouse>>(emptyList())
+    val warehouses = _warehouses.asStateFlow()
+
+    private val _selectedWarehouseId = MutableStateFlow<String?>(null)
+    val selectedWarehouseId = _selectedWarehouseId.asStateFlow()
+
+    private val _currentUser = MutableStateFlow<com.batterysales.data.models.User?>(null)
+    val currentUser = _currentUser.asStateFlow()
+
     private var lastDocument: DocumentSnapshot? = null
     private var currentStartDate: Long? = null
     private var currentEndDate: Long? = null
 
     init {
+        loadInitialData()
+    }
+
+    private fun loadInitialData() {
+        viewModelScope.launch {
+            val user = userRepository.getCurrentUser()
+            _currentUser.value = user
+
+            if (user?.role == "admin") {
+                warehouseRepository.getWarehouses().collect { allWh ->
+                    val active = allWh.filter { it.isActive }
+                    _warehouses.value = active
+                    if (_selectedWarehouseId.value == null) {
+                        _selectedWarehouseId.value = active.firstOrNull()?.id
+                        loadData(reset = true)
+                    }
+                }
+            } else {
+                _selectedWarehouseId.value = user?.warehouseId
+                loadData(reset = true)
+            }
+        }
+    }
+
+    fun onWarehouseSelected(id: String) {
+        _selectedWarehouseId.value = id
         loadData(reset = true)
     }
 
@@ -58,7 +95,10 @@ class AccountingViewModel @Inject constructor(
             try {
                 if (!reset) _isLoadingMore.value = true
 
+                val warehouseId = _selectedWarehouseId.value
+
                 val result = repository.getTransactionsPaginated(
+                    warehouseId = warehouseId,
                     startDate = currentStartDate,
                     endDate = currentEndDate,
                     lastDocument = lastDocument,
@@ -72,7 +112,7 @@ class AccountingViewModel @Inject constructor(
                 _isLastPage.value = newTransactions.size < 20
 
                 if (reset) {
-                    _balance.value = repository.getCurrentBalance()
+                    _balance.value = repository.getCurrentBalance(warehouseId)
                     _expenses.value = repository.getAllExpenses() // Expenses are fewer, keep for now
                 }
             } finally {
@@ -92,7 +132,11 @@ class AccountingViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                val expense = Expense(description = description, amount = amount)
+                val expense = Expense(
+                    description = description,
+                    amount = amount,
+                    warehouseId = _selectedWarehouseId.value
+                )
                 repository.addExpense(expense)
                 loadData(reset = true)
             } finally {
@@ -109,7 +153,8 @@ class AccountingViewModel @Inject constructor(
                     type = type,
                     amount = amount,
                     description = description,
-                    referenceNumber = referenceNumber
+                    referenceNumber = referenceNumber,
+                    warehouseId = _selectedWarehouseId.value
                 )
                 repository.addTransaction(transaction)
                 loadData(reset = true)

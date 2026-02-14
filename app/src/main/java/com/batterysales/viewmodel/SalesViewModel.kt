@@ -218,7 +218,8 @@ class SalesViewModel @Inject constructor(
                         type = TransactionType.INCOME,
                         amount = paidAmount,
                         description = "دفعة مبيعات: $customerName",
-                        relatedId = createdInvoice.id
+                        relatedId = createdInvoice.id,
+                        warehouseId = warehouse.id
                     )
                     accountingRepository.addTransaction(transaction)
                 }

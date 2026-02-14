@@ -11,6 +11,7 @@ data class Transaction(
     val description: String = "", // الوصف
     val relatedId: String? = null, // معرف الفاتورة أو المصروف المرتبطة
     val referenceNumber: String = "", // رقم الشيك أو السند
+    val warehouseId: String? = null, // المستودع المرتبط (للخزينة لكل مستودع)
     val createdAt: Date = Date(),
     val notes: String = ""
 ) {

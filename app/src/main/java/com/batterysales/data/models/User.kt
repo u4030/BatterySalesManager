@@ -368,6 +368,8 @@ data class User(
         const val PERMISSION_EDIT_INVOICE = "edit_invoice"
         const val PERMISSION_VIEW_ACCOUNTING = "view_accounting"
         const val PERMISSION_EDIT_ACCOUNTING = "edit_accounting"
+        const val PERMISSION_VIEW_TREASURY = "view_treasury"
+        const val PERMISSION_USE_TREASURY = "use_treasury"
     }
 }
 

@@ -592,6 +592,7 @@ fun SupplierReportControls(viewModel: ReportsViewModel) {
 @Composable
 fun SupplierCardRedesigned(item: com.batterysales.viewmodel.SupplierReportItem) {
     var expanded by remember { mutableStateOf(false) }
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     Card(
         modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
@@ -602,8 +603,17 @@ fun SupplierCardRedesigned(item: com.batterysales.viewmodel.SupplierReportItem) 
         Column(modifier = Modifier.padding(20.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text(item.supplier.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                IconButton(onClick = { expanded = !expanded }, modifier = Modifier.size(24.dp)) {
-                    Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, contentDescription = null)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = { com.batterysales.utils.PrintUtils.printSupplierReport(context, item) },
+                        modifier = Modifier.size(36.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), CircleShape)
+                    ) {
+                        Icon(Icons.Default.Print, contentDescription = "طباعة", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    IconButton(onClick = { expanded = !expanded }, modifier = Modifier.size(24.dp)) {
+                        Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, contentDescription = null)
+                    }
                 }
             }
             
