@@ -64,20 +64,6 @@ class ReportsViewModel @Inject constructor(
     private val _supplierSearchQuery = MutableStateFlow("")
     val supplierSearchQuery = _supplierSearchQuery.asStateFlow()
 
-    init {
-        checkUserRoleAndLoadReports()
-    }
-
-    private fun checkUserRoleAndLoadReports() {
-        viewModelScope.launch {
-            val user = userRepository.getCurrentUser()
-            _isSeller.value = user?.role == "seller"
-
-            loadInventoryReport()
-            loadSupplierReport()
-        }
-    }
-
     val warehouses: StateFlow<List<Warehouse>> = warehouseRepository.getWarehouses()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -222,4 +208,18 @@ class ReportsViewModel @Inject constructor(
         }
         result
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    init {
+        checkUserRoleAndLoadReports()
+    }
+
+    private fun checkUserRoleAndLoadReports() {
+        viewModelScope.launch {
+            val user = userRepository.getCurrentUser()
+            _isSeller.value = user?.role == "seller"
+
+            loadInventoryReport()
+            loadSupplierReport()
+        }
+    }
 }
