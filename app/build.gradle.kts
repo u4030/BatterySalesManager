@@ -88,11 +88,11 @@ dependencies {
     implementation("com.google.firebase:firebase-firestore")
     implementation("com.google.firebase:firebase-storage")
     implementation("com.google.firebase:firebase-messaging")
+    implementation("com.google.firebase:firebase-analytics")
 
     // ML Kit & CameraX
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
     implementation("com.google.mlkit:vision-common:17.3.0")
-    implementation("com.google.android.gms:play-services-analytics-impl:18.2.0")
     implementation("com.google.guava:guava:31.0.1-android")
 
     val cameraVersion = "1.4.0"

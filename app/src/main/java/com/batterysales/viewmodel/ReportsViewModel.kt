@@ -69,10 +69,13 @@ class ReportsViewModel @Inject constructor(
     val warehouses: StateFlow<List<Warehouse>> = warehouseRepository.getWarehouses()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    private val _currentUser = userRepository.getCurrentUserFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
     val filteredWarehouses: StateFlow<List<Warehouse>> = combine(
         warehouses,
         isSeller,
-        userRepository.getCurrentUserFlow()
+        _currentUser
     ) { allWh, seller, user ->
         if (seller) allWh.filter { it.id == user?.warehouseId } else allWh
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -198,7 +201,7 @@ class ReportsViewModel @Inject constructor(
 
     val oldBatterySummary: StateFlow<Pair<Int, Double>> = combine(
         isSeller,
-        userRepository.getCurrentUserFlow()
+        _currentUser
     ) { seller, user ->
         val warehouseId = if (seller) user?.warehouseId else null
         oldBatteryRepository.getStockSummary(warehouseId)
@@ -207,7 +210,7 @@ class ReportsViewModel @Inject constructor(
     val oldBatteryWarehouseSummary: StateFlow<Map<String, Pair<Int, Double>>> = combine(
         warehouses,
         isSeller,
-        userRepository.getCurrentUserFlow()
+        _currentUser
     ) { allWh, seller, user ->
         val result = mutableMapOf<String, Pair<Int, Double>>()
         val targetWhs = if (seller) allWh.filter { it.id == user?.warehouseId } else allWh
