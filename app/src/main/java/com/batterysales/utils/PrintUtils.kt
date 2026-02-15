@@ -26,17 +26,20 @@ object PrintUtils {
         
         try {
             file.writeText(htmlContent)
-            // Use applicationId.fileprovider directly as defined in manifest
-            val contentUri = FileProvider.getUriForFile(context, "com.batterysales.fileprovider", file)
+
+            // Dynamic authority based on package name
+            val contentUri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
             
             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                 type = "text/html"
                 putExtra(Intent.EXTRA_STREAM, contentUri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
 
             val chooser = Intent.createChooser(shareIntent, "مشاركة التقرير")
             chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(chooser)
             Toast.makeText(context, "جاري تحضير ملف المشاركة...", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {

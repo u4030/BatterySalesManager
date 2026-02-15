@@ -187,24 +187,41 @@ fun AccountingScreen(
                             )
                         }
 
-                        // Warehouse selection for admins
+                        // Warehouse selection for admins - Primary Filter as Tabs
                         if (currentUser?.role == "admin" && warehouses.isNotEmpty()) {
-                            androidx.compose.foundation.lazy.LazyRow(
-                                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-                                contentPadding = PaddingValues(horizontal = 16.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            val selectedIndex = warehouses.indexOfFirst { it.id == selectedWarehouseId }.coerceAtLeast(0)
+                            ScrollableTabRow(
+                                selectedTabIndex = selectedIndex,
+                                containerColor = Color.Transparent,
+                                contentColor = Color.White,
+                                edgePadding = 16.dp,
+                                divider = {},
+                                indicator = { tabPositions ->
+                                    if (tabPositions.isNotEmpty()) {
+                                        Box(
+                                            Modifier
+                                                .tabIndicatorOffset(tabPositions[selectedIndex])
+                                                .height(4.dp)
+                                                .padding(horizontal = 16.dp)
+                                                .background(Color.White, RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
+                                        )
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
                             ) {
-                                items(warehouses) { warehouse ->
-                                    FilterChip(
+                                warehouses.forEach { warehouse ->
+                                    Tab(
                                         selected = selectedWarehouseId == warehouse.id,
                                         onClick = { viewModel.onWarehouseSelected(warehouse.id) },
-                                        label = { Text(warehouse.name, color = if(selectedWarehouseId == warehouse.id) Color.Black else Color.White) },
-                                        colors = FilterChipDefaults.filterChipColors(
-                                            selectedContainerColor = Color.White,
-                                            containerColor = Color.White.copy(alpha = 0.2f),
-                                            labelColor = Color.White
-                                        ),
-                                        border = null
+                                        text = {
+                                            Text(
+                                                warehouse.name,
+                                                style = MaterialTheme.typography.titleSmall,
+                                                fontWeight = if (selectedWarehouseId == warehouse.id) FontWeight.Bold else FontWeight.Medium
+                                            )
+                                        },
+                                        selectedContentColor = Color.White,
+                                        unselectedContentColor = Color.White.copy(alpha = 0.6f)
                                     )
                                 }
                             }
@@ -264,37 +281,28 @@ fun AccountingScreen(
 
             item {
                 Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                    TabRow(
-                        selectedTabIndex = selectedTab,
-                        containerColor = Color.Transparent,
-                        contentColor = accentColor,
-                        indicator = { tabPositions ->
-                            TabRowDefaults.SecondaryIndicator(
-                                modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
-                                color = accentColor
-                            )
-                        },
-                        divider = {}
-                    ) {
-                        Tab(selected = selectedTab == 0, onClick = { viewModel.onTabSelected(0) }) {
-                            Text("جميع القيود", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleSmall, color = if(selectedTab == 0) accentColor else MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Tab(selected = selectedTab == 1, onClick = { viewModel.onTabSelected(1) }) {
-                            Text("المسحوبات فقط", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleSmall, color = if(selectedTab == 1) accentColor else MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // Year and Payment Method Filters
+                    // Secondary filters as Chips instead of tabs to avoid confusion
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        FilterChip(
+                            selected = selectedTab == 0,
+                            onClick = { viewModel.onTabSelected(0) },
+                            label = { Text("جميع القيود") }
+                        )
+                        FilterChip(
+                            selected = selectedTab == 1,
+                            onClick = { viewModel.onTabSelected(1) },
+                            label = { Text("المسحوبات") }
+                        )
+
+                        Spacer(modifier = Modifier.weight(1f))
+
                         // Year Selector
                         var yearExpanded by remember { mutableStateOf(false) }
-                        Box(modifier = Modifier.weight(1f)) {
+                        Box {
                             FilterChip(
                                 selected = selectedYear != null,
                                 onClick = { yearExpanded = true },
@@ -309,41 +317,26 @@ fun AccountingScreen(
                                 }
                             }
                         }
+                    }
 
-                        // Payment Method Tabs
-                        ScrollableTabRow(
-                            selectedTabIndex = when(selectedPaymentMethod) {
-                                "cash" -> 1
-                                "e-wallet" -> 2
-                                "visa" -> 3
-                                else -> 0
-                            },
-                            modifier = Modifier.weight(2f),
-                            containerColor = Color.Transparent,
-                            contentColor = accentColor,
-                            edgePadding = 0.dp,
-                            divider = {},
-                            indicator = { tabPositions ->
-                                val index = when(selectedPaymentMethod) {
-                                    "cash" -> 1
-                                    "e-wallet" -> 2
-                                    "visa" -> 3
-                                    else -> 0
-                                }
-                                TabRowDefaults.SecondaryIndicator(
-                                    modifier = Modifier.tabIndicatorOffset(tabPositions[index]),
-                                    color = accentColor
-                                )
-                            }
-                        ) {
-                            listOf(null to "جميع الطرق", "cash" to "كاش", "e-wallet" to "محفظة", "visa" to "فيزا").forEach { (id, label) ->
-                                Tab(
-                                    selected = selectedPaymentMethod == id,
-                                    onClick = { viewModel.onPaymentMethodSelected(id) }
-                                ) {
-                                    Text(label, modifier = Modifier.padding(8.dp), fontSize = 12.sp)
-                                }
-                            }
+                    // Payment Method Chips
+                    androidx.compose.foundation.lazy.LazyRow(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        item {
+                            FilterChip(
+                                selected = selectedPaymentMethod == null,
+                                onClick = { viewModel.onPaymentMethodSelected(null) },
+                                label = { Text("جميع طرق الدفع") }
+                            )
+                        }
+                        items(listOf("cash" to "كاش", "e-wallet" to "محفظة", "visa" to "فيزا")) { (id, label) ->
+                            FilterChip(
+                                selected = selectedPaymentMethod == id,
+                                onClick = { viewModel.onPaymentMethodSelected(id) },
+                                label = { Text(label) }
+                            )
                         }
                     }
 

@@ -144,7 +144,7 @@ fun InvoiceScreen(
 
                             ScrollableTabRow(
                                 selectedTabIndex = selectedIndex,
-                                containerColor = Color.Black.copy(alpha = 0.2f),
+                                containerColor = Color.Transparent,
                                 contentColor = Color.White,
                                 edgePadding = 16.dp,
                                 divider = {},
@@ -159,7 +159,7 @@ fun InvoiceScreen(
                                         )
                                     }
                                 },
-                                modifier = Modifier.background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
                             ) {
                                 uiState.warehouses.forEach { warehouse ->
                                     Tab(
@@ -168,7 +168,7 @@ fun InvoiceScreen(
                                         text = {
                                             Text(
                                                 warehouse.name,
-                                                style = MaterialTheme.typography.labelLarge,
+                                                style = MaterialTheme.typography.titleSmall,
                                                 fontWeight = if (uiState.selectedWarehouseId == warehouse.id) FontWeight.Bold else FontWeight.Medium
                                             )
                                         },
@@ -179,24 +179,20 @@ fun InvoiceScreen(
                             }
                     }
 
-                    // All / Pending Tabs
+                    // Secondary filters as Chips
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
-                            .padding(4.dp)
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        TabItem(
-                            title = "كافة الفواتير",
-                            isSelected = uiState.selectedTab == 0,
-                            modifier = Modifier.weight(1f),
-                            onClick = { viewModel.onTabSelected(0) }
+                        FilterChip(
+                            selected = uiState.selectedTab == 0,
+                            onClick = { viewModel.onTabSelected(0) },
+                            label = { Text("كافة الفواتير") }
                         )
-                        TabItem(
-                            title = "الذمم فقط",
-                            isSelected = uiState.selectedTab == 1,
-                            modifier = Modifier.weight(1f),
-                            onClick = { viewModel.onTabSelected(1) }
+                        FilterChip(
+                            selected = uiState.selectedTab == 1,
+                            onClick = { viewModel.onTabSelected(1) },
+                            label = { Text("الذمم فقط") }
                         )
                     }
 
