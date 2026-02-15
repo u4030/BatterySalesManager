@@ -65,7 +65,7 @@ class InvoiceViewModel @Inject constructor(
                     val oldWhId = _uiState.value.selectedWarehouseId
                     _uiState.update { state ->
                         val initialWarehouseId = if (isAdmin) {
-                            state.selectedWarehouseId.ifBlank { "all" }
+                            state.selectedWarehouseId.ifBlank { allWh.firstOrNull()?.id ?: "" }
                         } else {
                             user?.warehouseId ?: ""
                         }

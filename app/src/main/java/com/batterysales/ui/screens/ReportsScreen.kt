@@ -654,6 +654,9 @@ fun SupplierCardRedesigned(item: com.batterysales.viewmodel.SupplierReportItem) 
                     ) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text(dateFormatter.format(po.entry.timestamp), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                            if (po.entry.invoiceNumber.isNotEmpty()) {
+                                Text("فاتورة: ${po.entry.invoiceNumber}", style = MaterialTheme.typography.labelSmall, color = Color(0xFFFB8C00))
+                            }
                             Text("JD ${String.format("%.3f", po.entry.totalCost)}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
                         }
                         Spacer(modifier = Modifier.height(4.dp))

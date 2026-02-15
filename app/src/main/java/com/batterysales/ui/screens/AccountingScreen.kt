@@ -177,19 +177,16 @@ fun AccountingScreen(
 
                         // Warehouse selection for admins
                         if (currentUser?.role == "admin" && warehouses.isNotEmpty()) {
-                            val warehouseTabs = remember(warehouses) {
-                                listOf(com.batterysales.data.models.Warehouse(id = "all", name = "الكل")) + warehouses
-                            }
                             androidx.compose.foundation.lazy.LazyRow(
                                 modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
                                 contentPadding = PaddingValues(horizontal = 16.dp),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                items(warehouseTabs) { warehouse ->
+                                items(warehouses) { warehouse ->
                                     FilterChip(
-                                        selected = (selectedWarehouseId ?: "all") == warehouse.id,
+                                        selected = selectedWarehouseId == warehouse.id,
                                         onClick = { viewModel.onWarehouseSelected(warehouse.id) },
-                                        label = { Text(warehouse.name, color = if((selectedWarehouseId ?: "all") == warehouse.id) Color.Black else Color.White) },
+                                        label = { Text(warehouse.name, color = if(selectedWarehouseId == warehouse.id) Color.Black else Color.White) },
                                         colors = FilterChipDefaults.filterChipColors(
                                             selectedContainerColor = Color.White,
                                             containerColor = Color.White.copy(alpha = 0.2f),
@@ -211,7 +208,7 @@ fun AccountingScreen(
                                 modifier = Modifier.padding(20.dp).fillMaxWidth(),
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                val currentWhName = if (selectedWarehouseId == "all") "الخزينة العامة" else (warehouses.find { it.id == selectedWarehouseId }?.name ?: "الخزينة")
+                                val currentWhName = warehouses.find { it.id == selectedWarehouseId }?.name ?: "الخزينة"
                                 Text(
                                     "إجمالي الرصيد الحالي ($currentWhName)",
                                     style = MaterialTheme.typography.bodyMedium,

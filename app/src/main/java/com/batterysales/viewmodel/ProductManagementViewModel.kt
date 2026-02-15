@@ -78,10 +78,10 @@ class ProductManagementViewModel @Inject constructor(
         _selectedProduct.value = product
     }
 
-    fun addProduct(name: String, specification: String) {
+    fun addProduct(name: String) {
         viewModelScope.launch {
             try {
-                val product = Product(name = name, specification = specification)
+                val product = Product(name = name)
                 if (product.isValid()) {
                     productRepository.addProduct(product)
                 } else {

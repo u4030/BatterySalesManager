@@ -129,10 +129,7 @@ fun InvoiceScreen(
 
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (uiState.isAdmin && uiState.warehouses.isNotEmpty()) {
-                            val warehouseTabs = remember(uiState.warehouses) {
-                                listOf(com.batterysales.data.models.Warehouse(id = "all", name = "الكل")) + uiState.warehouses
-                            }
-                            val selectedIndex = warehouseTabs.indexOfFirst { it.id == uiState.selectedWarehouseId }.coerceAtLeast(0)
+                            val selectedIndex = uiState.warehouses.indexOfFirst { it.id == uiState.selectedWarehouseId }.coerceAtLeast(0)
 
                             ScrollableTabRow(
                                 selectedTabIndex = selectedIndex,
@@ -153,7 +150,7 @@ fun InvoiceScreen(
                                 },
                                 modifier = Modifier.background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
                             ) {
-                                warehouseTabs.forEach { warehouse ->
+                                uiState.warehouses.forEach { warehouse ->
                                     Tab(
                                         selected = uiState.selectedWarehouseId == warehouse.id,
                                         onClick = { viewModel.onWarehouseSelected(warehouse.id) },

@@ -78,7 +78,7 @@ class AccountingViewModel @Inject constructor(
                     val active = allWh.filter { it.isActive }
                     _warehouses.value = active
                     if (_selectedWarehouseId.value == null) {
-                        _selectedWarehouseId.value = "all"
+                        _selectedWarehouseId.value = active.firstOrNull()?.id
                         loadData(reset = true)
                     }
                 }
@@ -133,7 +133,7 @@ class AccountingViewModel @Inject constructor(
             try {
                 if (!reset) _isLoadingMore.value = true
 
-                val warehouseId = if (_selectedWarehouseId.value == "all") null else _selectedWarehouseId.value
+                val warehouseId = _selectedWarehouseId.value
                 val paymentMethod = _selectedPaymentMethod.value
                 val typesFilter = if (_selectedTab.value == 1) {
                     listOf(com.batterysales.data.models.TransactionType.EXPENSE.name, com.batterysales.data.models.TransactionType.REFUND.name)

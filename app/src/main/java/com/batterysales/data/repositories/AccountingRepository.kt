@@ -48,12 +48,12 @@ class AccountingRepository @Inject constructor(
         // Sum INCOME & PAYMENT
         val incomeQuery = baseQuery.whereIn("type", listOf(TransactionType.INCOME.name, TransactionType.PAYMENT.name))
         val incomeSnap = incomeQuery.aggregate(AggregateField.sum("amount")).get(AggregateSource.SERVER).await()
-        val totalIncome = incomeSnap.getDouble(AggregateField.sum("amount")) ?: 0.0
+        val totalIncome = (incomeSnap.get(AggregateField.sum("amount")) as? Number)?.toDouble() ?: 0.0
 
         // Sum EXPENSE & REFUND
         val expenseQuery = baseQuery.whereIn("type", listOf(TransactionType.EXPENSE.name, TransactionType.REFUND.name))
         val expenseSnap = expenseQuery.aggregate(AggregateField.sum("amount")).get(AggregateSource.SERVER).await()
-        val totalExpense = expenseSnap.getDouble(AggregateField.sum("amount")) ?: 0.0
+        val totalExpense = (expenseSnap.get(AggregateField.sum("amount")) as? Number)?.toDouble() ?: 0.0
 
         return totalIncome - totalExpense
     }
@@ -79,7 +79,7 @@ class AccountingRepository @Inject constructor(
         }
 
         val snapshot = baseQuery.aggregate(AggregateField.sum("amount")).get(AggregateSource.SERVER).await()
-        return snapshot.getDouble(AggregateField.sum("amount")) ?: 0.0
+        return (snapshot.get(AggregateField.sum("amount")) as? Number)?.toDouble() ?: 0.0
     }
 
     suspend fun getTransactionsPaginated(

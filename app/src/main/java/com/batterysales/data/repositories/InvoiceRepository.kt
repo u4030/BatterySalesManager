@@ -64,7 +64,7 @@ class InvoiceRepository @Inject constructor(
 
         val aggregateQuery = query.aggregate(AggregateField.sum("remainingAmount"))
         val snapshot = aggregateQuery.get(AggregateSource.SERVER).await()
-        return snapshot.getDouble(AggregateField.sum("remainingAmount")) ?: 0.0
+        return (snapshot.get(AggregateField.sum("remainingAmount")) as? Number)?.toDouble() ?: 0.0
     }
 
     suspend fun getInvoicesPaginated(

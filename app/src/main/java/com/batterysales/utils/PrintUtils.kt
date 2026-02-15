@@ -17,7 +17,9 @@ object PrintUtils {
     fun shareSupplierReport(context: Context, item: SupplierReportItem) {
         val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
         val fileName = "SupplierReport_${item.supplier.name.replace(" ", "_")}_${System.currentTimeMillis()}.html"
-        val file = File(context.cacheDir, fileName)
+        val reportsDir = File(context.cacheDir, "reports")
+        if (!reportsDir.exists()) reportsDir.mkdirs()
+        val file = File(reportsDir, fileName)
         
         val htmlContent = generateSupplierHtml(item, dateFormatter)
         
@@ -72,6 +74,7 @@ object PrintUtils {
                     <thead>
                         <tr>
                             <th>التاريخ</th>
+                            <th>رقم الفاتورة</th>
                             <th>القيمة الإجمالية</th>
                             <th>المدفوع</th>
                             <th>المتبقي</th>
@@ -85,6 +88,7 @@ object PrintUtils {
             htmlContent.append("""
                 <tr>
                     <td>${dateFormatter.format(po.entry.timestamp)}</td>
+                    <td>${po.entry.invoiceNumber}</td>
                     <td>JD ${String.format("%.3f", po.entry.totalCost)}</td>
                     <td>JD ${String.format("%.3f", po.linkedPaidAmount)}</td>
                     <td>JD ${String.format("%.3f", po.remainingBalance)}</td>
