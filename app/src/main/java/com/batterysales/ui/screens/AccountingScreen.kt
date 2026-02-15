@@ -46,6 +46,7 @@ fun AccountingScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
     val isLastPage by viewModel.isLastPage.collectAsState()
+    val errorMessage by viewModel.errorMessage.collectAsState()
     val listState = rememberLazyListState()
     var showAddTransactionDialog by remember { mutableStateOf(false) }
     var selectedType by remember { mutableStateOf(TransactionType.INCOME) }
@@ -94,6 +95,17 @@ fun AccountingScreen(
 
     val canUseTreasury = remember(currentUser) {
         currentUser?.role == "admin" || currentUser?.permissions?.contains("use_treasury") == true
+    }
+
+    errorMessage?.let { error ->
+        AlertDialog(
+            onDismissRequest = { viewModel.clearError() },
+            title = { Text("خطأ") },
+            text = { Text(error) },
+            confirmButton = {
+                Button(onClick = { viewModel.clearError() }) { Text("موافق") }
+            }
+        )
     }
 
     Scaffold(
@@ -265,10 +277,10 @@ fun AccountingScreen(
                         divider = {}
                     ) {
                         Tab(selected = selectedTab == 0, onClick = { viewModel.onTabSelected(0) }) {
-                            Text("الكل", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleSmall, color = if(selectedTab == 0) accentColor else MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("جميع القيود", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleSmall, color = if(selectedTab == 0) accentColor else MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Tab(selected = selectedTab == 1, onClick = { viewModel.onTabSelected(1) }) {
-                            Text("المسحوبات", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleSmall, color = if(selectedTab == 1) accentColor else MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("المسحوبات فقط", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleSmall, color = if(selectedTab == 1) accentColor else MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
 
@@ -324,7 +336,7 @@ fun AccountingScreen(
                                 )
                             }
                         ) {
-                            listOf(null to "الكل", "cash" to "كاش", "e-wallet" to "محفظة", "visa" to "فيزا").forEach { (id, label) ->
+                            listOf(null to "جميع الطرق", "cash" to "كاش", "e-wallet" to "محفظة", "visa" to "فيزا").forEach { (id, label) ->
                                 Tab(
                                     selected = selectedPaymentMethod == id,
                                     onClick = { viewModel.onPaymentMethodSelected(id) }

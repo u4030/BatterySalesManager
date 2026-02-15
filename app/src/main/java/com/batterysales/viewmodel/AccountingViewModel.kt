@@ -119,6 +119,9 @@ class AccountingViewModel @Inject constructor(
         loadData(reset = true)
     }
 
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    val errorMessage = _errorMessage.asStateFlow()
+
     fun loadData(reset: Boolean = false) {
         if (reset) {
             lastDocument = null
@@ -160,11 +163,17 @@ class AccountingViewModel @Inject constructor(
                     _totalExpenses.value = repository.getTotalExpenses(warehouseId, paymentMethod, currentStartDate, currentEndDate)
                     _expenses.value = repository.getAllExpenses() // Expenses are fewer, keep for now
                 }
+            } catch (e: Exception) {
+                _errorMessage.value = "خطأ في تحميل البيانات: ${e.message}"
             } finally {
                 _isLoading.value = false
                 _isLoadingMore.value = false
             }
         }
+    }
+
+    fun clearError() {
+        _errorMessage.value = null
     }
 
     fun onDateRangeSelected(start: Long?, end: Long?) {

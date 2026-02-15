@@ -142,7 +142,7 @@ class InvoiceViewModel @Inject constructor(
                 val debt = invoiceRepository.getTotalDebtForWarehouse(if (warehouseId == "all") null else warehouseId)
                 _uiState.update { it.copy(totalDebt = debt) }
             } catch (e: Exception) {
-                // Fallback or log error
+                _uiState.update { it.copy(errorMessage = "خطأ في حساب الذمم: ${e.message}") }
             }
         }
     }

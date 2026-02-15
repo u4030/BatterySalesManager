@@ -84,6 +84,17 @@ fun InvoiceScreen(
         )
     }
 
+    uiState.errorMessage?.let { error ->
+        AlertDialog(
+            onDismissRequest = { viewModel.onDismissError() },
+            title = { Text("خطأ") },
+            text = { Text(error) },
+            confirmButton = {
+                Button(onClick = { viewModel.onDismissError() }) { Text("موافق") }
+            }
+        )
+    }
+
     // Load more when reaching the end
     val shouldLoadMore = remember {
         derivedStateOf {
@@ -176,13 +187,13 @@ fun InvoiceScreen(
                             .padding(4.dp)
                     ) {
                         TabItem(
-                            title = "الكل",
+                            title = "كافة الفواتير",
                             isSelected = uiState.selectedTab == 0,
                             modifier = Modifier.weight(1f),
                             onClick = { viewModel.onTabSelected(0) }
                         )
                         TabItem(
-                            title = "المعلقة",
+                            title = "الذمم فقط",
                             isSelected = uiState.selectedTab == 1,
                             modifier = Modifier.weight(1f),
                             onClick = { viewModel.onTabSelected(1) }

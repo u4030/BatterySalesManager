@@ -6,6 +6,7 @@ import android.print.PrintAttributes
 import android.print.PrintManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Toast
 import androidx.core.content.FileProvider
 import com.batterysales.viewmodel.SupplierReportItem
 import java.io.File
@@ -25,16 +26,22 @@ object PrintUtils {
         
         try {
             file.writeText(htmlContent)
-            val contentUri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+            // Use applicationId.fileprovider directly as defined in manifest
+            val contentUri = FileProvider.getUriForFile(context, "com.batterysales.fileprovider", file)
             
             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                 type = "text/html"
                 putExtra(Intent.EXTRA_STREAM, contentUri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            context.startActivity(Intent.createChooser(shareIntent, "مشاركة التقرير"))
+
+            val chooser = Intent.createChooser(shareIntent, "مشاركة التقرير")
+            chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            context.startActivity(chooser)
+            Toast.makeText(context, "جاري تحضير ملف المشاركة...", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             e.printStackTrace()
+            Toast.makeText(context, "فشل في مشاركة الملف: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 

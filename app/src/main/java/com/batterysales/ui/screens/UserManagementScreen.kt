@@ -226,7 +226,7 @@ fun UserCard(
                             modifier = Modifier.height(32.dp).padding(end = 8.dp),
                             shape = RoundedCornerShape(8.dp)
                         ) {
-                            Text("تنشيط", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text("إعادة تفعيل", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     } else {
                         IconButton(onClick = onStatusToggle) {
