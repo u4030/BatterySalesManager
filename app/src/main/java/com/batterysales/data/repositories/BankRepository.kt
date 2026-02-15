@@ -30,8 +30,12 @@ class BankRepository @Inject constructor(
         docRef.set(finalTransaction).await()
     }
 
-    suspend fun getCurrentBalance(): Double {
-        val baseQuery = firestore.collection(BankTransaction.COLLECTION_NAME)
+    suspend fun getCurrentBalance(startDate: Long? = null, endDate: Long? = null): Double {
+        var baseQuery: Query = firestore.collection(BankTransaction.COLLECTION_NAME)
+        if (startDate != null && endDate != null) {
+            baseQuery = baseQuery.whereGreaterThanOrEqualTo("date", java.util.Date(startDate))
+                .whereLessThanOrEqualTo("date", java.util.Date(endDate + 86400000))
+        }
 
         // Sum DEPOSIT
         val depositQuery = baseQuery.whereEqualTo("type", BankTransactionType.DEPOSIT.name)
@@ -44,6 +48,19 @@ class BankRepository @Inject constructor(
         val totalWithdrawal = withdrawalSnap.getDouble(AggregateField.sum("amount")) ?: 0.0
 
         return totalDeposit - totalWithdrawal
+    }
+
+    suspend fun getTotalWithdrawals(startDate: Long? = null, endDate: Long? = null): Double {
+        var baseQuery: Query = firestore.collection(BankTransaction.COLLECTION_NAME)
+            .whereEqualTo("type", BankTransactionType.WITHDRAWAL.name)
+
+        if (startDate != null && endDate != null) {
+            baseQuery = baseQuery.whereGreaterThanOrEqualTo("date", java.util.Date(startDate))
+                .whereLessThanOrEqualTo("date", java.util.Date(endDate + 86400000))
+        }
+
+        val snapshot = baseQuery.aggregate(AggregateField.sum("amount")).get(AggregateSource.SERVER).await()
+        return snapshot.getDouble(AggregateField.sum("amount")) ?: 0.0
     }
 
     suspend fun getTransactionsPaginated(

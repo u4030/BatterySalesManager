@@ -84,7 +84,7 @@ class InvoiceDetailViewModel @Inject constructor(
         }
     }
 
-    fun addPayment(amount: Double) {
+    fun addPayment(amount: Double, paymentMethod: String = "cash") {
         viewModelScope.launch {
             if (amount <= 0) return@launch
             try {
@@ -93,6 +93,7 @@ class InvoiceDetailViewModel @Inject constructor(
                     invoiceId = invoiceId,
                     warehouseId = currentInvoice?.warehouseId ?: "",
                     amount = amount,
+                    paymentMethod = paymentMethod,
                     timestamp = Date()
                 )
                 val paymentId = paymentRepository.addPayment(payment)
@@ -102,8 +103,10 @@ class InvoiceDetailViewModel @Inject constructor(
                 val transaction = Transaction(
                     type = TransactionType.PAYMENT,
                     amount = amount,
-                    description = "دفعة فاتورة: ${invoice?.customerName ?: ""}",
-                    relatedId = paymentId // Use paymentId instead of invoiceId for granular tracking
+                    description = "دفعة فاتورة: ${invoice?.customerName ?: ""} (رقم: ${invoice?.invoiceNumber ?: ""})",
+                    relatedId = paymentId, // Use paymentId instead of invoiceId for granular tracking
+                    warehouseId = currentInvoice?.warehouseId,
+                    paymentMethod = paymentMethod
                 )
                 accountingRepository.addTransaction(transaction)
             } catch (e: Exception) {

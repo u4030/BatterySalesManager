@@ -29,10 +29,22 @@ class AccountingRepository @Inject constructor(
         return snapshot.documents.mapNotNull { it.toObject(Expense::class.java)?.copy(id = it.id) }
     }
 
-    suspend fun getCurrentBalance(warehouseId: String? = null): Double {
+    suspend fun getCurrentBalance(
+        warehouseId: String? = null,
+        paymentMethod: String? = null,
+        startDate: Long? = null,
+        endDate: Long? = null
+    ): Double {
         var baseQuery: Query = firestore.collection(Transaction.COLLECTION_NAME)
         if (warehouseId != null) {
             baseQuery = baseQuery.whereEqualTo("warehouseId", warehouseId)
+        }
+        if (paymentMethod != null) {
+            baseQuery = baseQuery.whereEqualTo("paymentMethod", paymentMethod)
+        }
+        if (startDate != null && endDate != null) {
+            baseQuery = baseQuery.whereGreaterThanOrEqualTo("createdAt", java.util.Date(startDate))
+                .whereLessThanOrEqualTo("createdAt", java.util.Date(endDate + 86400000))
         }
 
         // Sum INCOME & PAYMENT
@@ -48,8 +60,33 @@ class AccountingRepository @Inject constructor(
         return totalIncome - totalExpense
     }
 
+    suspend fun getTotalExpenses(
+        warehouseId: String? = null,
+        paymentMethod: String? = null,
+        startDate: Long? = null,
+        endDate: Long? = null
+    ): Double {
+        var baseQuery: Query = firestore.collection(Transaction.COLLECTION_NAME)
+            .whereIn("type", listOf(TransactionType.EXPENSE.name, TransactionType.REFUND.name))
+
+        if (warehouseId != null) {
+            baseQuery = baseQuery.whereEqualTo("warehouseId", warehouseId)
+        }
+        if (paymentMethod != null) {
+            baseQuery = baseQuery.whereEqualTo("paymentMethod", paymentMethod)
+        }
+        if (startDate != null && endDate != null) {
+            baseQuery = baseQuery.whereGreaterThanOrEqualTo("createdAt", java.util.Date(startDate))
+                .whereLessThanOrEqualTo("createdAt", java.util.Date(endDate + 86400000))
+        }
+
+        val snapshot = baseQuery.aggregate(AggregateField.sum("amount")).get(AggregateSource.SERVER).await()
+        return snapshot.getDouble(AggregateField.sum("amount")) ?: 0.0
+    }
+
     suspend fun getTransactionsPaginated(
         warehouseId: String? = null,
+        paymentMethod: String? = null,
         startDate: Long? = null,
         endDate: Long? = null,
         lastDocument: DocumentSnapshot? = null,
@@ -59,6 +96,9 @@ class AccountingRepository @Inject constructor(
 
         if (warehouseId != null) {
             query = query.whereEqualTo("warehouseId", warehouseId)
+        }
+        if (paymentMethod != null) {
+            query = query.whereEqualTo("paymentMethod", paymentMethod)
         }
 
         if (startDate != null && endDate != null) {
@@ -96,6 +136,7 @@ class AccountingRepository @Inject constructor(
             amount = expense.amount,
             description = expense.description,
             warehouseId = expense.warehouseId,
+            paymentMethod = expense.paymentMethod,
             createdAt = expense.timestamp
         )
 

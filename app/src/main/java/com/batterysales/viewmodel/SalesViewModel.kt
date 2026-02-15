@@ -24,6 +24,8 @@ data class SalesUiState(
     val oldBatteriesQuantity: String = "0",
     val oldBatteriesTotalAmps: String = "0.0",
     val oldBatteriesValue: String = "0.0",
+    val paymentMethod: String = "cash",
+    val invoiceNumber: String = "",
     val isWarehouseFixed: Boolean = false,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
@@ -130,6 +132,14 @@ class SalesViewModel @Inject constructor(
         _uiState.update { it.copy(oldBatteriesValue = value) }
     }
 
+    fun onPaymentMethodChanged(method: String) {
+        _uiState.update { it.copy(paymentMethod = method) }
+    }
+
+    fun onInvoiceNumberChanged(number: String) {
+        _uiState.update { it.copy(invoiceNumber = number) }
+    }
+
     fun createSale(customerName: String, customerPhone: String, paidAmount: Double) {
         viewModelScope.launch {
             val state = _uiState.value
@@ -161,11 +171,12 @@ class SalesViewModel @Inject constructor(
                 val finalTotal = total - oldBatteriesVal
 
                 val newInvoice = Invoice(
+                    invoiceNumber = state.invoiceNumber,
                     customerName = customerName,
                     customerPhone = customerPhone,
                     items = listOf(InvoiceItem(
                         productId = variant.id,
-                        productName = "${product.name} - ${variant.capacity} Amp",
+                        productName = "${product.name} - ${variant.capacity} Amp" + if(variant.specification.isNotEmpty()) " (${variant.specification})" else "",
                         quantity = qty,
                         price = price,
                         total = total,
@@ -181,6 +192,7 @@ class SalesViewModel @Inject constructor(
                     paidAmount = paidAmount,
                     remainingAmount = finalTotal - paidAmount,
                     status = if (paidAmount >= finalTotal) "paid" else "pending",
+                    paymentMethod = state.paymentMethod,
                     warehouseId = warehouse.id,
                     invoiceDate = Date()
                 )
@@ -208,7 +220,7 @@ class SalesViewModel @Inject constructor(
                         warehouseId = warehouse.id,
                         amount = paidAmount,
                         timestamp = Date(),
-                        paymentMethod = "cash",
+                        paymentMethod = state.paymentMethod,
                         notes = "الدفعة الأولى عند البيع"
                     )
                     paymentRepository.addPayment(payment)
@@ -217,9 +229,10 @@ class SalesViewModel @Inject constructor(
                     val transaction = Transaction(
                         type = TransactionType.INCOME,
                         amount = paidAmount,
-                        description = "دفعة مبيعات: $customerName",
+                        description = "دفعة مبيعات: $customerName (فاتورة رقم: ${createdInvoice.invoiceNumber})",
                         relatedId = createdInvoice.id,
-                        warehouseId = warehouse.id
+                        warehouseId = warehouse.id,
+                        paymentMethod = state.paymentMethod
                     )
                     accountingRepository.addTransaction(transaction)
                 }

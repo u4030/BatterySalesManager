@@ -23,6 +23,9 @@ class BankViewModel @Inject constructor(
     private val _balance = MutableStateFlow(0.0)
     val balance = _balance.asStateFlow()
 
+    private val _totalWithdrawals = MutableStateFlow(0.0)
+    val totalWithdrawals = _totalWithdrawals.asStateFlow()
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading = _isLoading.asStateFlow()
 
@@ -68,7 +71,8 @@ class BankViewModel @Inject constructor(
                 _isLastPage.value = newTransactions.size < 20
 
                 if (reset) {
-                    _balance.value = repository.getCurrentBalance()
+                    _balance.value = repository.getCurrentBalance(currentStartDate, currentEndDate)
+                    _totalWithdrawals.value = repository.getTotalWithdrawals(currentStartDate, currentEndDate)
                 }
 
                 _isLoading.value = false

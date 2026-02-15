@@ -40,6 +40,7 @@ fun BankScreen(
 ) {
     val transactions by viewModel.transactions.collectAsState()
     val balance by viewModel.balance.collectAsState()
+    val totalWithdrawals by viewModel.totalWithdrawals.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
     val isLastPage by viewModel.isLastPage.collectAsState()
@@ -185,13 +186,31 @@ fun BankScreen(
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = Color.White.copy(alpha = 0.9f)
                                 )
-                                Spacer(modifier = Modifier.height(4.dp))
                                 Text(
                                     "JD ${String.format("%.3f", balance)}",
                                     style = MaterialTheme.typography.headlineMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = Color.White
                                 )
+
+                                Spacer(modifier = Modifier.height(12.dp))
+                                HorizontalDivider(color = Color.White.copy(alpha = 0.2f))
+                                Spacer(modifier = Modifier.height(12.dp))
+
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("إجمالي المسحوبات", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
+                                        Text("JD ${String.format("%.3f", totalWithdrawals)}", color = Color.White, fontWeight = FontWeight.Bold)
+                                    }
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("حالة الرصيد", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
+                                        Text(
+                                            if (balance >= 0) "إيجابي" else "مدين",
+                                            color = if (balance >= 0) Color(0xFF10B981) else Color(0xFFEF4444),
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

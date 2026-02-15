@@ -178,7 +178,10 @@ fun OldBatteryLedgerScreen(
                         item {
                             FilterChip(
                                 selected = selectedFilterWH == null,
-                                onClick = { selectedFilterWH = null },
+                                onClick = {
+                                    selectedFilterWH = null
+                                    viewModel.loadTransactions(reset = true, warehouseId = null)
+                                },
                                 label = { Text("الكل") },
                                 colors = FilterChipDefaults.filterChipColors(selectedContainerColor = accentColor, selectedLabelColor = Color.White)
                             )
@@ -186,7 +189,10 @@ fun OldBatteryLedgerScreen(
                         items(warehouses) { warehouse ->
                             FilterChip(
                                 selected = selectedFilterWH == warehouse.id,
-                                onClick = { selectedFilterWH = warehouse.id },
+                                onClick = {
+                                    selectedFilterWH = warehouse.id
+                                    viewModel.loadTransactions(reset = true, warehouseId = warehouse.id)
+                                },
                                 label = { Text(warehouse.name) },
                                 colors = FilterChipDefaults.filterChipColors(selectedContainerColor = accentColor, selectedLabelColor = Color.White)
                             )

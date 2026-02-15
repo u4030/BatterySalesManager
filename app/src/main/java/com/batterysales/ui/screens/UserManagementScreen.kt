@@ -114,6 +114,7 @@ fun UserManagementScreen(
                             onRoleChange = { role -> viewModel.updateUserRole(user, role) },
                             onWarehouseChange = { warehouseId -> viewModel.linkUserToWarehouse(user, warehouseId) },
                             onPermissionToggle = { permission -> viewModel.togglePermission(user, permission) },
+                            onStatusToggle = { viewModel.toggleUserStatus(user) },
                             onDelete = { userToDelete = user }
                         )
                     }
@@ -162,6 +163,7 @@ fun UserCard(
     onRoleChange: (String) -> Unit,
     onWarehouseChange: (String?) -> Unit,
     onPermissionToggle: (String) -> Unit,
+    onStatusToggle: () -> Unit,
     onDelete: () -> Unit
 ) {
     var showRoleDialog by remember { mutableStateOf(false) }
@@ -186,20 +188,46 @@ fun UserCard(
                 }
                 Spacer(modifier = Modifier.width(16.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = user.displayName,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = user.displayName,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = if (user.isActive) MaterialTheme.colorScheme.onSurface else Color.Gray
+                        )
+                        if (!user.isActive) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Surface(
+                                color = Color.Red.copy(alpha = 0.1f),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text(
+                                    "موقوف",
+                                    color = Color.Red,
+                                    fontSize = 10.sp,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
                     Text(
                         text = user.email,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                IconButton(onClick = onDelete) {
-                    Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
+                Row {
+                    IconButton(onClick = onStatusToggle) {
+                        Icon(
+                            if (user.isActive) Icons.Default.Block else Icons.Default.CheckCircle,
+                            contentDescription = "Status",
+                            tint = if (user.isActive) Color(0xFFFF9800) else Color(0xFF4CAF50)
+                        )
+                    }
+                    IconButton(onClick = onDelete) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
+                    }
                 }
             }
 

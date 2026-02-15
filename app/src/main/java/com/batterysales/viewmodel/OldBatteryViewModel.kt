@@ -45,6 +45,9 @@ class OldBatteryViewModel @Inject constructor(
     private val _userWarehouseId = MutableStateFlow<String?>(null)
     val userWarehouseId = _userWarehouseId.asStateFlow()
 
+    private val _selectedWarehouseId = MutableStateFlow<String?>(null)
+    val selectedWarehouseId = _selectedWarehouseId.asStateFlow()
+
     private var currentUser: com.batterysales.data.models.User? = null
 
     private val _isLoading = MutableStateFlow(false)
@@ -83,8 +86,9 @@ class OldBatteryViewModel @Inject constructor(
         }
     }
 
-    fun loadTransactions(reset: Boolean = false) {
+    fun loadTransactions(reset: Boolean = false, warehouseId: String? = _selectedWarehouseId.value) {
         if (reset) {
+            _selectedWarehouseId.value = warehouseId
             lastDocument = null
             _transactions.value = emptyList()
             _isLastPage.value = false
@@ -97,7 +101,7 @@ class OldBatteryViewModel @Inject constructor(
             try {
                 if (!reset) _isLoadingMore.value = true
 
-                val warehouseFilter = if (_isSeller.value) _userWarehouseId.value else null
+                val warehouseFilter = if (_isSeller.value) _userWarehouseId.value else warehouseId
 
                 val result = repository.getTransactionsPaginated(
                     warehouseId = warehouseFilter,

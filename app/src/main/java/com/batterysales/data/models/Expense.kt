@@ -9,6 +9,7 @@ data class Expense(
     val description: String = "",
     val amount: Double = 0.0,
     val warehouseId: String? = null,
+    val paymentMethod: String = "cash",
     val timestamp: Date = Date()
 ) {
     companion object {

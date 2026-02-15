@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.*
 import javax.inject.Inject
 
 @HiltViewModel
@@ -29,6 +30,9 @@ class AccountingViewModel @Inject constructor(
     private val _balance = MutableStateFlow(0.0)
     val balance = _balance.asStateFlow()
 
+    private val _totalExpenses = MutableStateFlow(0.0)
+    val totalExpenses = _totalExpenses.asStateFlow()
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading = _isLoading.asStateFlow()
 
@@ -46,6 +50,12 @@ class AccountingViewModel @Inject constructor(
 
     private val _currentUser = MutableStateFlow<com.batterysales.data.models.User?>(null)
     val currentUser = _currentUser.asStateFlow()
+
+    private val _selectedPaymentMethod = MutableStateFlow<String?>(null) // null means "All"
+    val selectedPaymentMethod = _selectedPaymentMethod.asStateFlow()
+
+    private val _selectedYear = MutableStateFlow<Int?>(null)
+    val selectedYear = _selectedYear.asStateFlow()
 
     private var lastDocument: DocumentSnapshot? = null
     private var currentStartDate: Long? = null
@@ -81,6 +91,26 @@ class AccountingViewModel @Inject constructor(
         loadData(reset = true)
     }
 
+    fun onPaymentMethodSelected(method: String?) {
+        _selectedPaymentMethod.value = method
+        loadData(reset = true)
+    }
+
+    fun onYearSelected(year: Int?) {
+        _selectedYear.value = year
+        if (year != null) {
+            val cal = Calendar.getInstance()
+            cal.set(year, Calendar.JANUARY, 1, 0, 0, 0)
+            currentStartDate = cal.timeInMillis
+            cal.set(year, Calendar.DECEMBER, 31, 23, 59, 59)
+            currentEndDate = cal.timeInMillis
+        } else {
+            currentStartDate = null
+            currentEndDate = null
+        }
+        loadData(reset = true)
+    }
+
     fun loadData(reset: Boolean = false) {
         if (reset) {
             lastDocument = null
@@ -96,9 +126,11 @@ class AccountingViewModel @Inject constructor(
                 if (!reset) _isLoadingMore.value = true
 
                 val warehouseId = _selectedWarehouseId.value
+                val paymentMethod = _selectedPaymentMethod.value
 
                 val result = repository.getTransactionsPaginated(
                     warehouseId = warehouseId,
+                    paymentMethod = paymentMethod,
                     startDate = currentStartDate,
                     endDate = currentEndDate,
                     lastDocument = lastDocument,
@@ -112,7 +144,8 @@ class AccountingViewModel @Inject constructor(
                 _isLastPage.value = newTransactions.size < 20
 
                 if (reset) {
-                    _balance.value = repository.getCurrentBalance(warehouseId)
+                    _balance.value = repository.getCurrentBalance(warehouseId, paymentMethod, currentStartDate, currentEndDate)
+                    _totalExpenses.value = repository.getTotalExpenses(warehouseId, paymentMethod, currentStartDate, currentEndDate)
                     _expenses.value = repository.getAllExpenses() // Expenses are fewer, keep for now
                 }
             } finally {
@@ -128,7 +161,7 @@ class AccountingViewModel @Inject constructor(
         loadData(reset = true)
     }
 
-    fun addExpense(description: String, amount: Double) {
+    fun addExpense(description: String, amount: Double, paymentMethod: String = "cash") {
         viewModelScope.launch {
             _isLoading.value = true
             try {
@@ -145,18 +178,35 @@ class AccountingViewModel @Inject constructor(
         }
     }
 
-    fun addManualTransaction(type: com.batterysales.data.models.TransactionType, amount: Double, description: String, referenceNumber: String = "") {
+    fun addManualTransaction(
+        type: com.batterysales.data.models.TransactionType,
+        amount: Double,
+        description: String,
+        referenceNumber: String = "",
+        paymentMethod: String = "cash"
+    ) {
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                val transaction = Transaction(
-                    type = type,
-                    amount = amount,
-                    description = description,
-                    referenceNumber = referenceNumber,
-                    warehouseId = _selectedWarehouseId.value
-                )
-                repository.addTransaction(transaction)
+                if (type == com.batterysales.data.models.TransactionType.EXPENSE) {
+                    val expense = Expense(
+                        description = description,
+                        amount = amount,
+                        warehouseId = _selectedWarehouseId.value,
+                        paymentMethod = paymentMethod
+                    )
+                    repository.addExpense(expense)
+                } else {
+                    val transaction = Transaction(
+                        type = type,
+                        amount = amount,
+                        description = description,
+                        referenceNumber = referenceNumber,
+                        warehouseId = _selectedWarehouseId.value,
+                        paymentMethod = paymentMethod
+                    )
+                    repository.addTransaction(transaction)
+                }
                 loadData(reset = true)
             } finally {
                 _isLoading.value = false
