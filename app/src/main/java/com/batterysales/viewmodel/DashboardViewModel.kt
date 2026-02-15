@@ -21,11 +21,27 @@ data class WarehouseStats(
 
 data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 
+data class AppNotification(
+    val id: String,
+    val title: String,
+    val message: String,
+    val type: NotificationType,
+    val route: String? = null
+)
+
+enum class NotificationType {
+    LOW_STOCK,
+    PENDING_APPROVAL,
+    UPCOMING_BILL,
+    OVERDUE_BILL
+}
+
 data class DashboardUiState(
     val pendingApprovalsCount: Int = 0,
     val lowStockVariants: List<LowStockItem> = emptyList(),
     val upcomingBills: List<com.batterysales.data.models.Bill> = emptyList(),
     val warehouseStats: List<WarehouseStats> = emptyList(),
+    val notifications: List<AppNotification> = emptyList(),
     val isLoading: Boolean = true
 )
 
@@ -45,47 +61,148 @@ class DashboardViewModel @Inject constructor(
     private val productRepository: ProductRepository,
     private val billRepository: BillRepository,
     private val warehouseRepository: WarehouseRepository,
-    private val invoiceRepository: InvoiceRepository,
     private val userRepository: UserRepository,
     private val paymentRepository: PaymentRepository
 ) : ViewModel() {
 
-    val uiState: StateFlow<DashboardUiState> = combine(
-        stockEntryRepository.getAllStockEntriesFlow(),
-        productVariantRepository.getAllVariantsFlow(),
-        productRepository.getProducts(),
-        billRepository.getAllBillsFlow(),
+    private val _uiState = MutableStateFlow(DashboardUiState())
+    val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
+
+    init {
+        loadDashboardData()
+    }
+
+    private fun loadDashboardData() {
         combine(
-            warehouseRepository.getWarehouses(),
-            invoiceRepository.getAllInvoices(),
-            userRepository.getCurrentUserFlow(),
-            paymentRepository.getAllPayments()
-        ) { w, i, u, p -> Quadruple(w, i, u, p) }
-    ) { allEntries, allVariants, allProducts, allBills, quad ->
-        val allWarehouses = quad.first
-        val allInvoices = quad.second
-        val currentUser = quad.third
-        val allPayments = quad.fourth
-        val isAdmin = currentUser?.role == "admin"
-        val userWarehouseId = currentUser?.warehouseId
+                warehouseRepository.getWarehouses(),
+                userRepository.getCurrentUserFlow(),
+                billRepository.getAllBillsFlow(),
+                productVariantRepository.getAllVariantsFlow(),
+                productRepository.getProducts()
+            ) { warehouses, user, bills, variants, products ->
+                val isAdmin = user?.role == "admin"
+                val userWarehouseId = user?.warehouseId
 
-        val pendingCount = allEntries.count { it.status == StockEntry.STATUS_PENDING }
+                // 1. Pending Approvals Count (Optimized)
+                val pendingCount = stockEntryRepository.getPendingCount()
 
-        val productMap = allProducts.associateBy { it.id }
+                // 2. Upcoming Bills
+                val today = Calendar.getInstance().apply {
+                    set(Calendar.HOUR_OF_DAY, 0)
+                    set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }
+                val nextWeek = Calendar.getInstance().apply {
+                    add(Calendar.DAY_OF_YEAR, 7)
+                    set(Calendar.HOUR_OF_DAY, 23)
+                    set(Calendar.MINUTE, 59)
+                    set(Calendar.SECOND, 59)
+                    set(Calendar.MILLISECOND, 999)
+                }
+                val upcoming = bills.filter {
+                    it.status != BillStatus.PAID &&
+                            !it.dueDate.before(today.time) &&
+                            !it.dueDate.after(nextWeek.time)
+                }.sortedBy { it.dueDate }
 
-        // Optimize: Group approved entries by Pair(variantId, warehouseId)
+                // 3. Today's Collections (Optimized via aggregation)
+                val startOfToday = Calendar.getInstance().apply {
+                    set(Calendar.HOUR_OF_DAY, 0)
+                    set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }.time
+
+                val relevantWarehouses = if (isAdmin) warehouses 
+                                        else warehouses.filter { it.id == userWarehouseId && it.isActive }
+
+                val warehouseStatsList = relevantWarehouses.map { warehouse ->
+                    val collection = paymentRepository.getTodayCollection(startOfToday, warehouse.id)
+                    val count = paymentRepository.getTodayCollectionCount(startOfToday, warehouse.id)
+
+                    WarehouseStats(
+                        warehouseId = warehouse.id,
+                        warehouseName = warehouse.name,
+                        todayCollection = collection,
+                        todayCollectionCount = count
+                    )
+                }.filter { if (isAdmin) it.todayCollection > 0 else true }
+
+                // 4. Low Stock (Still needs optimization, but we'll use a limited fetch if possible)
+                // For now, we still rely on full fetch but we should consider denormalizing 'currentStock'
+                val lowStock = calculateLowStock(variants, products, warehouses)
+
+                val allNotifications = mutableListOf<AppNotification>()
+                
+                // Add Low Stock Notifications
+                lowStock.forEach { item ->
+                    allNotifications.add(
+                        AppNotification(
+                            id = "low_stock_${item.variantId}_${item.warehouseName}",
+                            title = "انخفاض المخزون",
+                            message = "${item.productName} (${item.capacity}A) في ${item.warehouseName}: الكمية ${item.currentQuantity}",
+                            type = NotificationType.LOW_STOCK,
+                            route = "reports"
+                        )
+                    )
+                }
+
+                // Add Pending Approvals Notification
+                if (pendingCount > 0) {
+                    allNotifications.add(
+                        AppNotification(
+                            id = "pending_approvals",
+                            title = "موافقات معلقة",
+                            message = "لديك $pendingCount طلبات ترحيل مخزون بانتظار الموافقة",
+                            type = NotificationType.PENDING_APPROVAL,
+                            route = "approvals"
+                        )
+                    )
+                }
+
+                // Add Bill Notifications
+                upcoming.forEach { bill ->
+                    val isOverdue = bill.dueDate.before(today.time)
+                    allNotifications.add(
+                        AppNotification(
+                            id = "bill_${bill.id}",
+                            title = if (isOverdue) "كمبيالة متأخرة" else "موعد استحقاق قريب",
+                            message = "الكمبيالة: ${bill.description} تستحق بتاريخ ${java.text.SimpleDateFormat("yyyy/MM/dd").format(bill.dueDate)}",
+                            type = if (isOverdue) NotificationType.OVERDUE_BILL else NotificationType.UPCOMING_BILL,
+                            route = "bills"
+                        )
+                    )
+                }
+
+                DashboardUiState(
+                    pendingApprovalsCount = pendingCount,
+                    lowStockVariants = lowStock,
+                    upcomingBills = upcoming,
+                    warehouseStats = warehouseStatsList,
+                    notifications = allNotifications,
+                    isLoading = false
+                )
+            }.onEach { state ->
+                _uiState.value = state
+            }.launchIn(viewModelScope)
+    }
+
+    private suspend fun calculateLowStock(variants: List<ProductVariant>, products: List<com.batterysales.data.models.Product>, warehouses: List<com.batterysales.data.models.Warehouse>): List<LowStockItem> {
+        // This is still heavy, but better than nothing.
+        // Ideally, we'd have a cloud function updating a 'stock_summary' document.
+        val allEntries = stockEntryRepository.getAllStockEntries() 
         val stockMap = allEntries.filter { it.status == StockEntry.STATUS_APPROVED }
             .groupBy { Pair(it.productVariantId, it.warehouseId) }
             .mapValues { entry -> entry.value.sumOf { it.quantity - it.returnedQuantity } }
 
+        val productMap = products.associateBy { it.id }
         val lowStock = mutableListOf<LowStockItem>()
-
-        val activeVariants = allVariants.filter { !it.archived && it.minQuantity > 0 }
+        val activeVariants = variants.filter { !it.archived && it.minQuantity > 0 }
 
         for (variant in activeVariants) {
             val product = productMap[variant.productId] ?: continue
-
-            for (warehouse in allWarehouses) {
+            for (warehouse in warehouses) {
                 val currentQty = stockMap[Pair(variant.id, warehouse.id)] ?: 0
                 if (currentQty <= variant.minQuantity) {
                     lowStock.add(
@@ -101,63 +218,6 @@ class DashboardViewModel @Inject constructor(
                 }
             }
         }
-
-        val today = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }
-        val nextWeek = Calendar.getInstance().apply {
-            add(Calendar.DAY_OF_YEAR, 7)
-            set(Calendar.HOUR_OF_DAY, 23)
-            set(Calendar.MINUTE, 59)
-            set(Calendar.SECOND, 59)
-            set(Calendar.MILLISECOND, 999)
-        }
-
-        val upcoming = allBills.filter {
-            it.status != BillStatus.PAID &&
-                    !it.dueDate.before(today.time) &&
-                    !it.dueDate.after(nextWeek.time)
-        }.sortedBy { it.dueDate }
-
-        // Calculate Today's Collection
-        val startOfToday = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }.time
-
-        val relevantWarehouses = if (isAdmin) allWarehouses 
-                                else allWarehouses.filter { it.id == userWarehouseId }
-
-        val warehouseStatsList = relevantWarehouses.map { warehouse ->
-            val allWhInvoices = allInvoices.filter { it.warehouseId == warehouse.id }
-            val invoiceMap = allWhInvoices.associateBy { it.id }
-            
-            val paymentsToday = allPayments.filter { payment ->
-                val invoice = invoiceMap[payment.invoiceId]
-                invoice != null && !payment.timestamp.before(startOfToday)
-            }
-
-            val uniqueInvoicesCollected = paymentsToday.map { it.invoiceId }.distinct().size
-
-            WarehouseStats(
-                warehouseId = warehouse.id,
-                warehouseName = warehouse.name,
-                todayCollection = paymentsToday.sumOf { it.amount },
-                todayCollectionCount = uniqueInvoicesCollected
-            )
-        }.filter { if (isAdmin) it.todayCollection > 0 else true }
-
-        DashboardUiState(
-            pendingApprovalsCount = pendingCount,
-            lowStockVariants = lowStock,
-            upcomingBills = upcoming,
-            warehouseStats = warehouseStatsList,
-            isLoading = false
-        )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DashboardUiState())
+        return lowStock
+    }
 }

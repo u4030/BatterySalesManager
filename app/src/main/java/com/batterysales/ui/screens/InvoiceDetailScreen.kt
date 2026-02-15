@@ -34,7 +34,7 @@ import java.util.*
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.shape.CircleShape
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun InvoiceDetailScreen(
     navController: NavHostController,
@@ -44,6 +44,7 @@ fun InvoiceDetailScreen(
     var showPaymentDialog by remember { mutableStateOf(false) }
     var showPaymentHistoryDialog by remember { mutableStateOf(false) }
     var paymentAmount by remember { mutableStateOf("") }
+    var selectedPaymentMethod by remember { mutableStateOf("cash") }
 
     val snackbarHostState = remember { SnackbarHostState() }
     uiState.errorMessage?.let {
@@ -267,9 +268,9 @@ fun InvoiceDetailScreen(
             onDismissRequest = { showPaymentDialog = false },
             title = { Text("تسجيل دفعة جديدة") },
             text = {
-                Column {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("المبلغ المتبقي: JD ${String.format("%.3f", invoice.remainingAmount)}")
-                    Spacer(modifier = Modifier.height(16.dp))
+                    
                     OutlinedTextField(
                         value = paymentAmount,
                         onValueChange = { paymentAmount = it },
@@ -278,13 +279,31 @@ fun InvoiceDetailScreen(
                         modifier = Modifier.fillMaxWidth(),
                         textStyle = MaterialTheme.typography.bodyLarge
                     )
+
+                    Text("طريقة الدفع:", style = MaterialTheme.typography.labelMedium)
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(
+                            "cash" to "كاش",
+                            "e-wallet" to "محفظة إلكترونية",
+                            "visa" to "فيزا"
+                        ).forEach { (id, label) ->
+                            FilterChip(
+                                selected = selectedPaymentMethod == id,
+                                onClick = { selectedPaymentMethod = id },
+                                label = { Text(label) }
+                            )
+                        }
+                    }
                 }
             },
             confirmButton = {
                 Button(onClick = {
                     val amount = paymentAmount.toDoubleOrNull()
                     if (amount != null && amount > 0) {
-                        viewModel.addPayment(amount)
+                        viewModel.addPayment(amount, selectedPaymentMethod)
                         showPaymentDialog = false
                         paymentAmount = ""
                     }

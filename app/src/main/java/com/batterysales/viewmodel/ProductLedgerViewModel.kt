@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.batterysales.data.models.StockEntry
 import com.batterysales.data.models.Warehouse
+import com.google.firebase.firestore.DocumentSnapshot
 import com.batterysales.data.repositories.StockEntryRepository
 import com.batterysales.data.repositories.UserRepository
 import com.batterysales.data.repositories.WarehouseRepository
@@ -45,6 +46,14 @@ class ProductLedgerViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(true)
     val isLoading = _isLoading.asStateFlow()
 
+    private val _isLoadingMore = MutableStateFlow(false)
+    val isLoadingMore = _isLoadingMore.asStateFlow()
+
+    private val _isLastPage = MutableStateFlow(false)
+    val isLastPage = _isLastPage.asStateFlow()
+
+    private var lastDocument: DocumentSnapshot? = null
+
     private val _userRole = MutableStateFlow("seller")
     val userRole = _userRole.asStateFlow()
 
@@ -54,55 +63,100 @@ class ProductLedgerViewModel @Inject constructor(
     private val _searchQuery = MutableStateFlow("")
     val searchQuery = _searchQuery.asStateFlow()
 
+    private val _ledgerItems = MutableStateFlow<List<LedgerItem>>(emptyList())
+    val ledgerItems: StateFlow<List<LedgerItem>> = _ledgerItems.asStateFlow()
+
+    private var allEntries: List<StockEntry> = emptyList()
+    private var allWarehouses: List<Warehouse> = emptyList()
+
     init {
         viewModelScope.launch {
             val user = userRepository.getCurrentUser()
             _userRole.value = user?.role ?: "seller"
+
+            warehouseRepository.getWarehouses().collect { warehouses ->
+                allWarehouses = warehouses
+                loadData(reset = true)
+            }
         }
     }
 
-    val ledgerItems: StateFlow<List<LedgerItem>> = if (productVariantId.isEmpty()) {
-        flowOf(emptyList())
-    } else {
-        combine(
-            stockEntryRepository.getEntriesForVariant(productVariantId),
-            warehouseRepository.getWarehouses(),
-            _selectedCategory,
-            _searchQuery
-        ) { entries, warehouses, category, query ->
-            val warehouseMap = warehouses.associateBy { it.id }
-            val items = entries.mapNotNull { entry ->
-                warehouseMap[entry.warehouseId]?.let { warehouse ->
-                    LedgerItem(
-                        entry = entry,
-                        warehouseName = warehouse.name
-                    )
-                }
-            }.filter {
-                if (query.isBlank()) true
-                else it.entry.supplier.contains(query, ignoreCase = true) ||
-                        it.warehouseName.contains(query, ignoreCase = true) ||
-                        it.entry.createdByUserName.contains(query, ignoreCase = true)
-            }
+    fun loadData(reset: Boolean = false) {
+        if (productVariantId.isEmpty()) return
+        if (reset) {
+            lastDocument = null
+            allEntries = emptyList()
+            _isLastPage.value = false
+            _isLoading.value = true
+        }
 
-            when (category) {
-                LedgerCategory.ALL -> items
-                LedgerCategory.PURCHASES -> items.filter { it.entry.quantity > 0 && it.entry.supplier != "Sale" && it.entry.costPrice > 0 && !it.entry.supplier.contains("Reversal") }
-                LedgerCategory.SALES -> items.filter { it.entry.supplier == "Sale" }
-                LedgerCategory.TRANSFERS -> items.filter { it.entry.costPrice == 0.0 && !it.entry.supplier.contains("Reversal") }
-                LedgerCategory.RETURNS -> items.filter { it.entry.supplier.contains("Reversal") || it.entry.returnedQuantity > 0 }
+        if (_isLastPage.value || _isLoadingMore.value) return
+
+        viewModelScope.launch {
+            try {
+                if (!reset) _isLoadingMore.value = true
+
+                val result = stockEntryRepository.getEntriesPaginated(
+                    productVariantId = productVariantId,
+                    lastDocument = lastDocument,
+                    limit = 20
+                )
+
+                val newEntries = result.first
+                lastDocument = result.second
+
+                allEntries = if (reset) newEntries else allEntries + newEntries
+                _isLastPage.value = newEntries.size < 20
+
+                applyFilters()
+
+            } catch (e: Exception) {
+                // error
+            } finally {
+                _isLoading.value = false
+                _isLoadingMore.value = false
             }
         }
-    }.onStart { _isLoading.value = true }
-        .onEach { _isLoading.value = false }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }
+
+    private fun applyFilters() {
+        val warehouseMap = allWarehouses.associateBy { it.id }
+        val category = _selectedCategory.value
+        val query = _searchQuery.value
+
+        val items = allEntries.mapNotNull { entry ->
+            warehouseMap[entry.warehouseId]?.let { warehouse ->
+                LedgerItem(
+                    entry = entry,
+                    warehouseName = warehouse.name
+                )
+            }
+        }.filter {
+            if (query.isBlank()) true
+            else it.entry.supplier.contains(query, ignoreCase = true) ||
+                    it.warehouseName.contains(query, ignoreCase = true) ||
+                    it.entry.createdByUserName.contains(query, ignoreCase = true)
+        }
+
+        val filtered = when (category) {
+            LedgerCategory.ALL -> items
+            LedgerCategory.PURCHASES -> items.filter { it.entry.quantity > 0 && it.entry.supplier != "Sale" && it.entry.costPrice > 0 && !it.entry.supplier.contains("Reversal") }
+            LedgerCategory.SALES -> items.filter { it.entry.supplier == "Sale" }
+            LedgerCategory.TRANSFERS -> items.filter { it.entry.costPrice == 0.0 && !it.entry.supplier.contains("Reversal") }
+            LedgerCategory.RETURNS -> items.filter { it.entry.supplier.contains("Reversal") || it.entry.returnedQuantity > 0 }
+        }
+
+        _ledgerItems.value = filtered
+    }
 
     fun selectCategory(category: LedgerCategory) {
         _selectedCategory.value = category
+        applyFilters()
     }
 
     fun onSearchQueryChanged(query: String) {
         _searchQuery.value = query
+        applyFilters()
     }
 
     suspend fun findVariantByBarcode(barcode: String): com.batterysales.data.models.ProductVariant? {
@@ -117,7 +171,7 @@ class ProductLedgerViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 stockEntryRepository.deleteStockEntry(entryId)
-                // No need to manually refresh, the Flow will do it automatically.
+                loadData(reset = true)
             } catch (e: Exception) {
                 // Handle error (e.g., show a snackbar)
             }

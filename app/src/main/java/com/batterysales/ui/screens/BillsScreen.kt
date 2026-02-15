@@ -8,6 +8,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -46,18 +47,28 @@ fun BillsScreen(
     val suppliers by viewModel.suppliers.collectAsState()
     val pendingPurchases by viewModel.pendingPurchases.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val isLoadingMore by viewModel.isLoadingMore.collectAsState()
+    val isLastPage by viewModel.isLastPage.collectAsState()
+    val listState = rememberLazyListState()
+
     var showAddBillDialog by remember { mutableStateOf(false) }
     var showDateRangePicker by remember { mutableStateOf(false) }
     val dateRangePickerState = rememberDateRangePickerState()
 
-    val filteredBills = remember(bills, dateRangePickerState.selectedStartDateMillis, dateRangePickerState.selectedEndDateMillis) {
-        bills.filter { bill ->
-            val matchesDateRange = if (dateRangePickerState.selectedStartDateMillis != null && dateRangePickerState.selectedEndDateMillis != null) {
-                bill.dueDate.time >= dateRangePickerState.selectedStartDateMillis!! &&
-                        bill.dueDate.time <= dateRangePickerState.selectedEndDateMillis!! + 86400000 // End of day
-            } else true
-            matchesDateRange
-        }.sortedByDescending { it.dueDate }
+    val filteredBills = remember(bills) { bills }
+
+    // Load more when reaching the end
+    val shouldLoadMore = remember {
+        derivedStateOf {
+            val lastVisibleItem = listState.layoutInfo.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf false
+            lastVisibleItem.index >= listState.layoutInfo.totalItemsCount - 5
+        }
+    }
+
+    LaunchedEffect(shouldLoadMore.value) {
+        if (shouldLoadMore.value && !isLoading && !isLoadingMore && !isLastPage) {
+            viewModel.loadBills()
+        }
     }
 
     val bgColor = MaterialTheme.colorScheme.background
@@ -85,6 +96,7 @@ fun BillsScreen(
         }
     ) { paddingValues ->
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
@@ -134,7 +146,7 @@ fun BillsScreen(
             }
 
             if (!isLoading && filteredBills.isNotEmpty()) {
-                items(filteredBills) { bill ->
+                items(filteredBills, key = { it.id }) { bill ->
                     val supplier = suppliers.find { it.id == bill.supplierId }
                     Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                         BillItemCard(
@@ -144,6 +156,14 @@ fun BillsScreen(
                             onDeleteClick = { billToDelete = bill },
                             onEditClick = { billToEdit = bill }
                         )
+                    }
+                }
+
+                if (isLoadingMore) {
+                    item {
+                        Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(modifier = Modifier.size(32.dp), color = accentColor)
+                        }
                     }
                 }
             }

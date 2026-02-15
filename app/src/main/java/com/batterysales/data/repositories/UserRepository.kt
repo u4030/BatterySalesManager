@@ -69,12 +69,16 @@ class UserRepository @Inject constructor(
     }
 
     fun getCurrentUserFlow(): Flow<User?> = callbackFlow {
+        var snapshotListener: com.google.firebase.firestore.ListenerRegistration? = null
+        
         val authListener = FirebaseAuth.AuthStateListener { firebaseAuth ->
             val uid = firebaseAuth.currentUser?.uid
+            snapshotListener?.remove()
+            
             if (uid == null) {
                 trySend(null)
             } else {
-                firestore.collection("users").document(uid)
+                snapshotListener = firestore.collection("users").document(uid)
                     .addSnapshotListener { snapshot, error ->
                         if (error == null && snapshot != null) {
                             trySend(snapshot.toObject(User::class.java)?.copy(id = snapshot.id))
@@ -83,7 +87,10 @@ class UserRepository @Inject constructor(
             }
         }
         auth.addAuthStateListener(authListener)
-        awaitClose { auth.removeAuthStateListener(authListener) }
+        awaitClose { 
+            auth.removeAuthStateListener(authListener)
+            snapshotListener?.remove()
+        }
     }
 
     fun logout() {

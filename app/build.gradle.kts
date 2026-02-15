@@ -88,12 +88,12 @@ dependencies {
     implementation("com.google.firebase:firebase-firestore")
     implementation("com.google.firebase:firebase-storage")
     implementation("com.google.firebase:firebase-messaging")
+    implementation("com.google.firebase:firebase-analytics")
 
     // ML Kit & CameraX
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
     implementation("com.google.mlkit:vision-common:17.3.0")
-    implementation("com.google.android.gms:play-services-analytics-impl:18.2.0")
-    implementation("com.google.guava:guava:31.0.1-android")
+    implementation("com.google.guava:guava:33.4.0-android")
 
     val cameraVersion = "1.4.0"
     implementation("androidx.camera:camera-core:$cameraVersion")
@@ -102,9 +102,8 @@ dependencies {
     implementation("androidx.camera:camera-view:$cameraVersion")
 
     // Dependency Injection (Hilt)
-    implementation("com.google.dagger:hilt-android:2.57.2")
-    ksp("com.google.dagger:hilt-compiler:2.57.2")
-//    kapt("com.google.dagger:hilt-compiler:2.51.1")
+    implementation("com.google.dagger:hilt-android:2.51.1")
+    ksp("com.google.dagger:hilt-compiler:2.51.1")
     implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
 
     // Other Libs

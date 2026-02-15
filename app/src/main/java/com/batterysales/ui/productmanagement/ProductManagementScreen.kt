@@ -67,8 +67,8 @@ fun ProductManagementScreen(navController: NavHostController, viewModel: Product
         AddVariantDialog(
             warehouses = uiState.warehouses,
             onDismiss = { showAddVariantDialog = false },
-            onAddVariant = { capacity, sellingPrice, barcode, minQuantity, minQuantities, specification ->
-                viewModel.addVariant(capacity, sellingPrice, barcode, minQuantity, minQuantities, specification)
+            onAddVariant = { capacity, barcode, minQuantity, minQuantities ->
+                viewModel.addVariant(capacity, 0.0, barcode, minQuantity, minQuantities, "")
             }
         )
     }
@@ -491,14 +491,12 @@ fun EditProductDialog(
 fun AddVariantDialog(
     warehouses: List<Warehouse>,
     onDismiss: () -> Unit,
-    onAddVariant: (Int, Double, String, Int, Map<String, Int>, String) -> Unit
+    onAddVariant: (Int, String, Int, Map<String, Int>) -> Unit
 ) {
     var capacity by remember { mutableStateOf("") }
-    var sellingPrice by remember { mutableStateOf("") }
     var barcode by remember { mutableStateOf("") }
     var minQuantity by remember { mutableStateOf("") }
     var minQuantities by remember { mutableStateOf(mutableMapOf<String, String>()) }
-    var specification by remember { mutableStateOf("") }
     var showScanner by remember { mutableStateOf(false) }
 
     if (showScanner) {
@@ -541,12 +539,6 @@ fun AddVariantDialog(
                             label = "السعة (أمبير)",
                             modifier = Modifier.widthIn(min = 120.dp)
                         )
-                        com.batterysales.ui.components.CustomKeyboardTextField(
-                            value = sellingPrice,
-                            onValueChange = { sellingPrice = it },
-                            label = "سعر البيع",
-                            modifier = Modifier.widthIn(min = 120.dp)
-                        )
                         Box(modifier = Modifier.widthIn(min = 120.dp)) {
                             com.batterysales.ui.components.CustomKeyboardTextField(
                                 value = barcode,
@@ -580,13 +572,6 @@ fun AddVariantDialog(
                                 modifier = Modifier.widthIn(min = 120.dp)
                             )
                         }
-
-                        com.batterysales.ui.components.CustomKeyboardTextField(
-                            value = specification,
-                            onValueChange = { specification = it },
-                            label = "المواصفة",
-                            modifier = Modifier.fillMaxWidth()
-                        )
                     }
                     Spacer(modifier = Modifier.height(com.batterysales.ui.components.LocalCustomKeyboardController.current.keyboardHeight.value))
                 }
@@ -595,11 +580,9 @@ fun AddVariantDialog(
                 Button(onClick = {
                     onAddVariant(
                         capacity.toIntOrNull() ?: 0,
-                        sellingPrice.toDoubleOrNull() ?: 0.0,
                         barcode,
                         minQuantity.toIntOrNull() ?: 0,
-                        minQuantities.mapValues { it.value.toIntOrNull() ?: 0 },
-                        specification
+                        minQuantities.mapValues { it.value.toIntOrNull() ?: 0 }
                     )
                     onDismiss()
                 }) { Text("إضافة") }
@@ -616,11 +599,9 @@ fun EditVariantDialog(
     onUpdateVariant: (ProductVariant) -> Unit
 ) {
     var capacity by remember { mutableStateOf(variant.capacity.toString()) }
-    var sellingPrice by remember { mutableStateOf(variant.sellingPrice.toString()) }
     var barcode by remember { mutableStateOf(variant.barcode) }
     var minQuantity by remember { mutableStateOf(variant.minQuantity.toString()) }
     var minQuantities by remember { mutableStateOf(variant.minQuantities.mapValues { it.value.toString() }.toMutableMap()) }
-    var specification by remember { mutableStateOf(variant.specification) }
     var showScanner by remember { mutableStateOf(false) }
 
     if (showScanner) {
@@ -663,12 +644,6 @@ fun EditVariantDialog(
                             label = "السعة (أمبير)",
                             modifier = Modifier.widthIn(min = 120.dp)
                         )
-                        com.batterysales.ui.components.CustomKeyboardTextField(
-                            value = sellingPrice,
-                            onValueChange = { sellingPrice = it },
-                            label = "سعر البيع",
-                            modifier = Modifier.widthIn(min = 120.dp)
-                        )
                         Box(modifier = Modifier.widthIn(min = 120.dp)) {
                             com.batterysales.ui.components.CustomKeyboardTextField(
                                 value = barcode,
@@ -702,13 +677,6 @@ fun EditVariantDialog(
                                 modifier = Modifier.widthIn(min = 120.dp)
                             )
                         }
-
-                        com.batterysales.ui.components.CustomKeyboardTextField(
-                            value = specification,
-                            onValueChange = { specification = it },
-                            label = "المواصفة",
-                            modifier = Modifier.fillMaxWidth()
-                        )
                     }
                     Spacer(modifier = Modifier.height(com.batterysales.ui.components.LocalCustomKeyboardController.current.keyboardHeight.value))
                 }
@@ -717,11 +685,9 @@ fun EditVariantDialog(
                 Button(onClick = {
                     onUpdateVariant(variant.copy(
                         capacity = capacity.toIntOrNull() ?: 0,
-                        sellingPrice = sellingPrice.toDoubleOrNull() ?: 0.0,
                         barcode = barcode,
                         minQuantity = minQuantity.toIntOrNull() ?: 0,
-                        minQuantities = minQuantities.mapValues { it.value.toIntOrNull() ?: 0 },
-                        specification = specification
+                        minQuantities = minQuantities.mapValues { it.value.toIntOrNull() ?: 0 }
                     ))
                     onDismiss()
                 }) { Text("حفظ") }

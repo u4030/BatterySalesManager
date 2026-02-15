@@ -276,6 +276,40 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
                     }
                 }
 
+                // Payment Method
+                item {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                        shape = RoundedCornerShape(24.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text("طريقة الدفع", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                            
+                            FlowRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                listOf(
+                                    "cash" to "كاش",
+                                    "e-wallet" to "محفظة إلكترونية",
+                                    "visa" to "فيزا"
+                                ).forEach { (id, label) ->
+                                    FilterChip(
+                                        selected = uiState.paymentMethod == id,
+                                        onClick = { viewModel.onPaymentMethodChanged(id) },
+                                        label = { Text(label) },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = accentColor,
+                                            selectedLabelColor = Color.White
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Customer Info & Submit
                 item {
                     Card(

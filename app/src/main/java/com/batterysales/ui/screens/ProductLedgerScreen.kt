@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -44,6 +45,9 @@ fun ProductLedgerScreen(
 ) {
     val ledgerItems by viewModel.ledgerItems.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val isLoadingMore by viewModel.isLoadingMore.collectAsState()
+    val isLastPage by viewModel.isLastPage.collectAsState()
+    val listState = rememberLazyListState()
     val selectedCategory by viewModel.selectedCategory.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val userRole by viewModel.userRole.collectAsState()
@@ -53,6 +57,19 @@ fun ProductLedgerScreen(
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
+    // Load more when reaching the end
+    val shouldLoadMore = remember {
+        derivedStateOf {
+            val lastVisibleItem = listState.layoutInfo.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf false
+            lastVisibleItem.index >= listState.layoutInfo.totalItemsCount - 5
+        }
+    }
+
+    LaunchedEffect(shouldLoadMore.value) {
+        if (shouldLoadMore.value && !isLoading && !isLoadingMore && !isLastPage) {
+            viewModel.loadData()
+        }
+    }
 
     if (showScanner) {
         androidx.compose.ui.window.Dialog(
@@ -115,6 +132,7 @@ fun ProductLedgerScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         LazyColumn(
+            state = listState,
             modifier = Modifier.padding(padding).fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(16.dp),
             contentPadding = PaddingValues(bottom = 32.dp)
@@ -197,7 +215,7 @@ fun ProductLedgerScreen(
                     }
                 }
             } else {
-                items(ledgerItems) { item ->
+                items(ledgerItems, key = { it.entry.id }) { item ->
                     Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                         LedgerItemCard(
                             item = item,
@@ -216,6 +234,14 @@ fun ProductLedgerScreen(
                                 }
                             }
                         )
+                    }
+                }
+            }
+
+            if (isLoadingMore) {
+                item {
+                    Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(modifier = Modifier.size(32.dp), color = accentColor)
                     }
                 }
             }

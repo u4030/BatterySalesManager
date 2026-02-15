@@ -6,12 +6,14 @@ import com.batterysales.data.models.OldBatteryTransaction
 import com.batterysales.data.models.OldBatteryTransactionType
 import com.batterysales.data.models.Transaction
 import com.batterysales.data.models.TransactionType
+import com.google.firebase.firestore.DocumentSnapshot
 import com.batterysales.data.repositories.AccountingRepository
 import com.batterysales.data.repositories.InvoiceRepository
 import com.batterysales.data.repositories.OldBatteryRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.*
 import javax.inject.Inject
@@ -43,16 +45,33 @@ class OldBatteryViewModel @Inject constructor(
     private val _userWarehouseId = MutableStateFlow<String?>(null)
     val userWarehouseId = _userWarehouseId.asStateFlow()
 
+    private val _selectedWarehouseId = MutableStateFlow<String?>(null)
+    val selectedWarehouseId = _selectedWarehouseId.asStateFlow()
+
+    private val _startDate = MutableStateFlow<Long?>(null)
+    private val _endDate = MutableStateFlow<Long?>(null)
+
     private var currentUser: com.batterysales.data.models.User? = null
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading = _isLoading.asStateFlow()
 
+    private val _isLoadingMore = MutableStateFlow(false)
+    val isLoadingMore = _isLoadingMore.asStateFlow()
+
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    val errorMessage = _errorMessage.asStateFlow()
+
+    private val _isLastPage = MutableStateFlow(false)
+    val isLastPage = _isLastPage.asStateFlow()
+
+    private var lastDocument: DocumentSnapshot? = null
+
     init {
-        loadData()
+        loadInitialData()
     }
 
-    fun loadData() {
+    fun loadInitialData() {
         viewModelScope.launch {
             _isLoading.value = true
             try {
@@ -61,26 +80,75 @@ class OldBatteryViewModel @Inject constructor(
                 _userWarehouseId.value = currentUser?.warehouseId
 
                 launch {
-                    warehouseRepository.getWarehouses().collect { _warehouses.value = it }
-                }
-
-                launch {
-                    repository.getAllTransactionsFlow().collect { allTransactions ->
-                        val filtered = if (_isSeller.value) {
-                            allTransactions.filter { it.warehouseId == _userWarehouseId.value }
-                        } else {
-                            allTransactions
-                        }
-                        _transactions.value = filtered.sortedByDescending { t -> t.date }
-                        _summary.value = calculateSummary(filtered)
-                        _warehouseSummary.value = allTransactions.groupBy { it.warehouseId }.mapValues { calculateSummary(it.value) }
-                        _isLoading.value = false
+                    warehouseRepository.getWarehouses().collect { allWh ->
+                        _warehouses.value = allWh.filter { it.isActive }
                     }
                 }
+                
+                loadTransactions(reset = true)
             } catch (e: Exception) {
                 _isLoading.value = false
             }
         }
+    }
+
+    fun loadTransactions(
+        reset: Boolean = false, 
+        warehouseId: String? = _selectedWarehouseId.value,
+        startDate: Long? = _startDate.value,
+        endDate: Long? = _endDate.value
+    ) {
+        if (reset) {
+            _selectedWarehouseId.value = warehouseId
+            _startDate.value = startDate
+            _endDate.value = endDate
+            lastDocument = null
+            _transactions.value = emptyList()
+            _isLastPage.value = false
+            _isLoading.value = true
+        }
+
+        if (_isLastPage.value || _isLoadingMore.value) return
+
+        viewModelScope.launch {
+            try {
+                if (!reset) _isLoadingMore.value = true
+                
+                val warehouseFilter = if (_isSeller.value) _userWarehouseId.value else warehouseId
+                
+                val result = repository.getTransactionsPaginated(
+                    warehouseId = warehouseFilter,
+                    startDate = _startDate.value,
+                    endDate = _endDate.value,
+                    lastDocument = lastDocument,
+                    limit = 20
+                )
+
+                val newTransactions = result.first
+                lastDocument = result.second
+
+                _transactions.update { current -> if (reset) newTransactions else current + newTransactions }
+                _isLastPage.value = newTransactions.size < 20
+                
+                _isLoading.value = false
+                _isLoadingMore.value = false
+                
+                // Load summary via aggregation
+                val summ = repository.getStockSummary(warehouseFilter)
+                _summary.value = summ
+
+            } catch (e: Exception) {
+                _isLoading.value = false
+                _isLoadingMore.value = false
+                _errorMessage.value = "خطأ في تحميل البيانات: ${e.message}"
+            }
+        }
+    }
+
+    fun loadData() = loadInitialData()
+
+    fun clearError() {
+        _errorMessage.value = null
     }
 
     private fun calculateSummary(transactions: List<OldBatteryTransaction>): Pair<Int, Double> {

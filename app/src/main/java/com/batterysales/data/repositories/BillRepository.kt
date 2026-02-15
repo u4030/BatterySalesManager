@@ -2,7 +2,11 @@ package com.batterysales.data.repositories
 
 import com.batterysales.data.models.Bill
 import com.batterysales.data.models.BillStatus
+import com.google.firebase.firestore.AggregateField
+import com.google.firebase.firestore.AggregateSource
+import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Query
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -88,6 +92,36 @@ class BillRepository @Inject constructor(
             .document(billId)
             .delete()
             .await()
+    }
+
+    suspend fun getBillsPaginated(
+        lastDocument: DocumentSnapshot? = null,
+        limit: Long = 20
+    ): Pair<List<Bill>, DocumentSnapshot?> {
+        var query = firestore.collection(Bill.COLLECTION_NAME)
+            .orderBy("dueDate", Query.Direction.ASCENDING)
+
+        if (lastDocument != null) {
+            query = query.startAfter(lastDocument)
+        }
+
+        val snapshot = query.limit(limit).get().await()
+        val bills = snapshot.documents.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) }
+        val lastDoc = snapshot.documents.lastOrNull()
+
+        return Pair(bills, lastDoc)
+    }
+
+    suspend fun getSupplierCredit(supplierId: String, resetDate: java.util.Date? = null, startDate: Long? = null, endDate: Long? = null): Double {
+        var query = firestore.collection(Bill.COLLECTION_NAME)
+            .whereEqualTo("supplierId", supplierId)
+
+        resetDate?.let { query = query.whereGreaterThan("createdAt", it) }
+        startDate?.let { query = query.whereGreaterThanOrEqualTo("dueDate", java.util.Date(it)) }
+        endDate?.let { query = query.whereLessThanOrEqualTo("dueDate", java.util.Date(it + 86400000)) }
+
+        val snapshot = query.aggregate(AggregateField.sum("paidAmount")).get(AggregateSource.SERVER).await()
+        return snapshot.getDouble(AggregateField.sum("paidAmount")) ?: 0.0
     }
 
     suspend fun updateBill(bill: Bill) {

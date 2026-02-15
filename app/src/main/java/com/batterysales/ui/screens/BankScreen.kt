@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -39,7 +40,11 @@ fun BankScreen(
 ) {
     val transactions by viewModel.transactions.collectAsState()
     val balance by viewModel.balance.collectAsState()
+    val totalWithdrawals by viewModel.totalWithdrawals.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val isLoadingMore by viewModel.isLoadingMore.collectAsState()
+    val isLastPage by viewModel.isLastPage.collectAsState()
+    val listState = rememberLazyListState()
     var showAddDialog by remember { mutableStateOf(false) }
     var selectedType by remember { mutableStateOf(com.batterysales.data.models.BankTransactionType.DEPOSIT) }
 
@@ -49,21 +54,31 @@ fun BankScreen(
 
     var searchQuery by remember { mutableStateOf("") }
 
-    val filteredTransactions = remember(transactions, selectedTab, dateRangePickerState.selectedStartDateMillis, dateRangePickerState.selectedEndDateMillis, searchQuery) {
+    val filteredTransactions = remember(transactions, selectedTab, searchQuery) {
         transactions.filter { transaction ->
             val matchesTab = when (selectedTab) {
                 0 -> true // All
                 1 -> transaction.type == com.batterysales.data.models.BankTransactionType.WITHDRAWAL // Withdrawals
                 else -> true
             }
-            val matchesDateRange = if (dateRangePickerState.selectedStartDateMillis != null && dateRangePickerState.selectedEndDateMillis != null) {
-                transaction.date.time >= dateRangePickerState.selectedStartDateMillis!! &&
-                        transaction.date.time <= dateRangePickerState.selectedEndDateMillis!! + 86400000 // End of day
-            } else true
             val matchesSearch = transaction.description.contains(searchQuery, ignoreCase = true) || 
                                transaction.referenceNumber.contains(searchQuery, ignoreCase = true)
-            matchesTab && matchesDateRange && matchesSearch
-        }.sortedByDescending { it.date }
+            matchesTab && matchesSearch
+        }
+    }
+
+    // Load more when reaching the end
+    val shouldLoadMore = remember {
+        derivedStateOf {
+            val lastVisibleItem = listState.layoutInfo.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf false
+            lastVisibleItem.index >= listState.layoutInfo.totalItemsCount - 5
+        }
+    }
+
+    LaunchedEffect(shouldLoadMore.value) {
+        if (shouldLoadMore.value && !isLoading && !isLoadingMore && !isLastPage) {
+            viewModel.loadData()
+        }
     }
 
     val bgColor = MaterialTheme.colorScheme.background
@@ -107,6 +122,7 @@ fun BankScreen(
         }
     ) { paddingValues ->
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
@@ -114,26 +130,52 @@ fun BankScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
             contentPadding = PaddingValues(bottom = 80.dp)
         ) {
-            // Gradient Header
+            // Gradient Header with Balance
             item {
-                SharedHeader(
-                    title = "البنك والشيكات",
-                    onBackClick = { navController.popBackStack() },
-                    actions = {
-                        HeaderIconButton(
-                            icon = Icons.Default.CalendarMonth,
-                            onClick = { showDateRangePicker = true },
-                            contentDescription = "Date Range"
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                                colors = listOf(Color(0xFFE53935), Color(0xFFFB8C00))
+                            ),
+                            shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
                         )
-                    }
-                )
+                        .padding(bottom = 24.dp)
+                        .statusBarsPadding()
+                ) {
+                    Column {
+                        Row(
+                            modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                HeaderIconButton(
+                                    icon = Icons.AutoMirrored.Filled.ArrowBack,
+                                    onClick = { navController.popBackStack() },
+                                    contentDescription = "Back"
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = "البنك والشيكات",
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            HeaderIconButton(
+                                icon = Icons.Default.CalendarMonth,
+                                onClick = { showDateRangePicker = true },
+                                contentDescription = "Date Range"
+                            )
+                        }
 
-                Column(modifier = Modifier.padding(16.dp)) {
-                    // Balance Card inside header
+                        // Balance Card inside the gradient
                         Card(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
                             shape = RoundedCornerShape(20.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.15f))
+                            colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.2f))
                         ) {
                             Column(
                                 modifier = Modifier.padding(20.dp).fillMaxWidth(),
@@ -142,19 +184,38 @@ fun BankScreen(
                                 Text(
                                     "إجمالي رصيد الشيكات في البنك",
                                     style = MaterialTheme.typography.bodyMedium,
-                                    color = Color.White.copy(alpha = 0.7f)
+                                    color = Color.White.copy(alpha = 0.9f)
                                 )
-                                Spacer(modifier = Modifier.height(4.dp))
                                 Text(
                                     "JD ${String.format("%.3f", balance)}",
                                     style = MaterialTheme.typography.headlineMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = Color.White
                                 )
+                                
+                                Spacer(modifier = Modifier.height(12.dp))
+                                HorizontalDivider(color = Color.White.copy(alpha = 0.2f))
+                                Spacer(modifier = Modifier.height(12.dp))
+                                
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("إجمالي المسحوبات", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
+                                        Text("JD ${String.format("%.3f", totalWithdrawals)}", color = Color.White, fontWeight = FontWeight.Bold)
+                                    }
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("حالة الرصيد", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
+                                        Text(
+                                            if (balance >= 0) "إيجابي" else "مدين",
+                                            color = if (balance >= 0) Color(0xFF10B981) else Color(0xFFEF4444),
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
                 }
+            }
 
             item {
                 Column(modifier = Modifier.padding(horizontal = 16.dp)) {
@@ -237,7 +298,13 @@ fun BankScreen(
         com.batterysales.ui.components.AppDateRangePickerDialog(
             state = dateRangePickerState,
             onDismiss = { showDateRangePicker = false },
-            onConfirm = { showDateRangePicker = false }
+            onConfirm = {
+                viewModel.onDateRangeSelected(
+                    dateRangePickerState.selectedStartDateMillis,
+                    dateRangePickerState.selectedEndDateMillis
+                )
+                showDateRangePicker = false
+            }
         )
     }
 

@@ -32,6 +32,7 @@ data class ProductVariant(
     val minQuantities: Map<String, Int> = emptyMap(), // Per-warehouse minimum quantities: WarehouseId -> MinQuantity
     @get:PropertyName("notes")
     @set:PropertyName("notes")
+    @field:PropertyName("notes")
     var specification: String = "",
     val createdAt: Date = Date(),
     val updatedAt: Date = Date(),

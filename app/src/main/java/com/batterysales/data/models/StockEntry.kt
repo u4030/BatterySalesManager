@@ -7,6 +7,8 @@ data class StockEntry(
 //    @DocumentId
     val id: String = "",
     val productVariantId: String = "",
+    val productName: String = "", // Denormalized product name
+    val capacity: Int = 0, // Denormalized capacity
     val warehouseId: String = "",
     val quantity: Int = 0,
     val costPrice: Double = 0.0, // Cost per item
@@ -19,6 +21,7 @@ data class StockEntry(
     val supplier: String = "", // Legacy supplier name
     val supplierId: String = "", // Link to Supplier model
     val invoiceId: String? = null, // Link to invoice for sales entries
+    val invoiceNumber: String = "", // Purchase invoice number or reference
     val status: String = "approved", // approved, pending
     val createdBy: String = "",
     val createdByUserName: String = "",

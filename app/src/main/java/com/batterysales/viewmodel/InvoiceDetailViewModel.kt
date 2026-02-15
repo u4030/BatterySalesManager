@@ -51,6 +51,9 @@ class InvoiceDetailViewModel @Inject constructor(
                     return@launch
                 }
 
+                // Update UI state with invoice details first
+                _uiState.update { it.copy(invoice = invoice, isLoading = false) }
+
                 // Then, start listening for real-time payment updates
                 paymentRepository.getPaymentsForInvoice(id)
                     .collect { payments ->
@@ -84,11 +87,18 @@ class InvoiceDetailViewModel @Inject constructor(
         }
     }
 
-    fun addPayment(amount: Double) {
+    fun addPayment(amount: Double, paymentMethod: String = "cash") {
         viewModelScope.launch {
             if (amount <= 0) return@launch
             try {
-                val payment = Payment(invoiceId = invoiceId, amount = amount, timestamp = Date())
+                val currentInvoice = _uiState.value.invoice
+                val payment = Payment(
+                    invoiceId = invoiceId, 
+                    warehouseId = currentInvoice?.warehouseId ?: "",
+                    amount = amount, 
+                    paymentMethod = paymentMethod,
+                    timestamp = Date()
+                )
                 val paymentId = paymentRepository.addPayment(payment)
 
                 // Record in treasury
@@ -96,8 +106,10 @@ class InvoiceDetailViewModel @Inject constructor(
                 val transaction = Transaction(
                     type = TransactionType.PAYMENT,
                     amount = amount,
-                    description = "دفعة فاتورة: ${invoice?.customerName ?: ""}",
-                    relatedId = paymentId // Use paymentId instead of invoiceId for granular tracking
+                    description = "دفعة فاتورة: ${invoice?.customerName ?: ""} (رقم: ${invoice?.invoiceNumber ?: ""})",
+                    relatedId = paymentId, // Use paymentId instead of invoiceId for granular tracking
+                    warehouseId = currentInvoice?.warehouseId,
+                    paymentMethod = paymentMethod
                 )
                 accountingRepository.addTransaction(transaction)
             } catch (e: Exception) {

@@ -1,6 +1,8 @@
 package com.batterysales.data.repositories
 
 import com.batterysales.data.models.Payment
+import com.google.firebase.firestore.AggregateField
+import com.google.firebase.firestore.AggregateSource
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import kotlinx.coroutines.channels.awaitClose
@@ -58,5 +60,33 @@ class PaymentRepository @Inject constructor(
 
     suspend fun deletePayment(paymentId: String) {
         firestore.collection(Payment.COLLECTION_NAME).document(paymentId).delete().await()
+    }
+
+    suspend fun getTodayCollection(startDate: java.util.Date, warehouseId: String? = null): Double {
+        var query: Query = firestore.collection(Payment.COLLECTION_NAME)
+            .whereGreaterThanOrEqualTo("timestamp", startDate)
+        
+        if (warehouseId != null) {
+            query = query.whereEqualTo("warehouseId", warehouseId)
+        }
+
+        val snapshot = query.aggregate(AggregateField.sum("amount"))
+            .get(AggregateSource.SERVER)
+            .await()
+        return snapshot.getDouble(AggregateField.sum("amount")) ?: 0.0
+    }
+
+    suspend fun getTodayCollectionCount(startDate: java.util.Date, warehouseId: String? = null): Int {
+        var query: Query = firestore.collection(Payment.COLLECTION_NAME)
+            .whereGreaterThanOrEqualTo("timestamp", startDate)
+        
+        if (warehouseId != null) {
+            query = query.whereEqualTo("warehouseId", warehouseId)
+        }
+
+        val snapshot = query.count()
+            .get(AggregateSource.SERVER)
+            .await()
+        return snapshot.count.toInt()
     }
 }

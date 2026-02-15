@@ -4,9 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.batterysales.data.models.*
 import com.batterysales.data.repositories.*
+import com.google.firebase.firestore.DocumentSnapshot
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.Date
 import javax.inject.Inject
@@ -32,23 +34,54 @@ class BillViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(false)
     val isLoading = _isLoading.asStateFlow()
 
+    private val _isLoadingMore = MutableStateFlow(false)
+    val isLoadingMore = _isLoadingMore.asStateFlow()
+
+    private val _isLastPage = MutableStateFlow(false)
+    val isLastPage = _isLastPage.asStateFlow()
+
+    private var lastDocument: DocumentSnapshot? = null
+
     init {
-        loadData()
+        loadInitialData()
     }
 
-    fun loadData() {
-        loadBills()
+    fun loadInitialData() {
+        loadBills(reset = true)
         loadSuppliers()
         loadPendingPurchases()
     }
 
-    fun loadBills() {
-        viewModelScope.launch {
+    fun loadData() = loadInitialData()
+
+    fun loadBills(reset: Boolean = false) {
+        if (reset) {
+            lastDocument = null
+            _bills.value = emptyList()
+            _isLastPage.value = false
             _isLoading.value = true
+        }
+
+        if (_isLastPage.value || _isLoadingMore.value) return
+
+        viewModelScope.launch {
             try {
-                _bills.value = repository.getAllBills()
+                if (!reset) _isLoadingMore.value = true
+
+                val result = repository.getBillsPaginated(
+                    lastDocument = lastDocument,
+                    limit = 20
+                )
+
+                val newBills = result.first
+                lastDocument = result.second
+
+                _bills.update { current -> if (reset) newBills else current + newBills }
+                _isLastPage.value = newBills.size < 20
+
             } finally {
                 _isLoading.value = false
+                _isLoadingMore.value = false
             }
         }
     }
@@ -63,9 +96,9 @@ class BillViewModel @Inject constructor(
 
     fun loadPendingPurchases() {
         viewModelScope.launch {
-            stockEntryRepository.getAllStockEntriesFlow().collect { entries ->
-                _pendingPurchases.value = entries.filter { it.status == "approved" && it.totalCost > 0 }
-            }
+            // Fetch only last 100 approved purchases instead of all history
+            val entries = stockEntryRepository.getRecentApprovedPurchases(100)
+            _pendingPurchases.value = entries
         }
     }
 
@@ -73,6 +106,10 @@ class BillViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoading.value = true
             try {
+                val warehouseId = if (relatedEntryId != null) {
+                    _pendingPurchases.value.find { it.id == relatedEntryId }?.warehouseId
+                } else null
+
                 val bill = Bill(
                     description = description,
                     amount = amount,
@@ -80,10 +117,11 @@ class BillViewModel @Inject constructor(
                     billType = billType,
                     referenceNumber = referenceNumber,
                     supplierId = supplierId,
-                    relatedEntryId = relatedEntryId
+                    relatedEntryId = relatedEntryId,
+                    warehouseId = warehouseId
                 )
                 repository.addBill(bill)
-                loadBills()
+                loadBills(reset = true)
             } finally {
                 _isLoading.value = false
             }
@@ -105,7 +143,8 @@ class BillViewModel @Inject constructor(
                     amount = amount,
                     description = "تسديد ${if (amount >= (bill.amount - bill.paidAmount)) "كلي" else "جزئي"} ${if (bill.billType == BillType.CHECK) "لشيك" else "لكمبيالة"}: ${bill.description} (المورد: $supplierName)",
                     relatedId = billId,
-                    referenceNumber = bill.referenceNumber
+                    referenceNumber = bill.referenceNumber,
+                    warehouseId = bill.warehouseId
                 )
                 accountingRepository.addTransaction(transaction)
 
@@ -121,7 +160,7 @@ class BillViewModel @Inject constructor(
                     bankRepository.addTransaction(bankTransaction)
                 }
 
-                loadBills()
+                loadBills(reset = true)
             } catch (e: Exception) {
                 // Handle error
             }
@@ -135,7 +174,7 @@ class BillViewModel @Inject constructor(
                 // Also delete related treasury or bank transactions
                 accountingRepository.deleteTransactionsByRelatedId(billId)
                 bankRepository.deleteTransactionsByBillId(billId)
-                loadBills()
+                loadBills(reset = true)
             } catch (e: Exception) {
                 // Handle error
             }
@@ -152,7 +191,7 @@ class BillViewModel @Inject constructor(
                     relatedId = bill.id,
                     newDescription = "تسديد لكمبيالة: ${bill.description}"
                 )
-                loadBills()
+                loadBills(reset = true)
             } catch (e: Exception) {
                 // Handle error
             }

@@ -13,7 +13,8 @@ import javax.inject.Inject
 
 @HiltViewModel
 class AuthViewModel @Inject constructor(
-    private val userRepository: UserRepository
+    private val userRepository: UserRepository,
+    private val warehouseRepository: com.batterysales.data.repositories.WarehouseRepository
 ) : ViewModel() {
 
     private val _currentUser = MutableStateFlow<User?>(null)
@@ -82,7 +83,18 @@ class AuthViewModel @Inject constructor(
     private fun fetchCurrentUser() {
         viewModelScope.launch {
             try {
-                _currentUser.value = userRepository.getCurrentUser()
+                val user = userRepository.getCurrentUser()
+                if (user != null && user.role == "seller" && user.warehouseId != null) {
+                    val warehouse = warehouseRepository.getWarehouse(user.warehouseId)
+                    if (warehouse != null && !warehouse.isActive) {
+                        _errorMessage.value = "عذراً، المستودع المرتبط بحسابك متوقف حالياً. يرجى مراجعة الإدارة."
+                        userRepository.logout()
+                        _currentUser.value = null
+                        _isLoggedIn.value = false
+                        return@launch
+                    }
+                }
+                _currentUser.value = user
                 _isLoggedIn.value = _currentUser.value != null
             } catch (e: Exception) {
                 // Handle error

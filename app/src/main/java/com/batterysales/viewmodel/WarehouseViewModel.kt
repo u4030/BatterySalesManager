@@ -11,6 +11,7 @@ import com.batterysales.data.repositories.StockEntryRepository
 import com.batterysales.data.repositories.WarehouseRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class WarehouseStockItem(
@@ -22,14 +23,17 @@ data class WarehouseStockItem(
 
 @HiltViewModel
 class WarehouseViewModel @Inject constructor(
-    productRepository: ProductRepository,
-    productVariantRepository: ProductVariantRepository,
-    warehouseRepository: WarehouseRepository,
-    stockEntryRepository: StockEntryRepository
+    private val productRepository: ProductRepository,
+    private val productVariantRepository: ProductVariantRepository,
+    private val warehouseRepository: WarehouseRepository,
+    private val stockEntryRepository: StockEntryRepository
 ) : ViewModel() {
 
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    val warehouses: StateFlow<List<Warehouse>> = warehouseRepository.getWarehouses()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val stockLevels: StateFlow<List<WarehouseStockItem>> = combine(
         productRepository.getProducts(),
@@ -69,4 +73,16 @@ class WarehouseViewModel @Inject constructor(
         _isLoading.value = false
         stockList.sortedWith(compareBy({ it.warehouse.name }, { it.product.name }))
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun toggleWarehouseStatus(warehouse: Warehouse) {
+        viewModelScope.launch {
+            warehouseRepository.updateWarehouse(warehouse.copy(isActive = !warehouse.isActive))
+        }
+    }
+
+    fun deleteWarehouse(warehouseId: String) {
+        viewModelScope.launch {
+            warehouseRepository.deleteWarehouse(warehouseId)
+        }
+    }
 }

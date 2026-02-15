@@ -40,4 +40,18 @@ class WarehouseRepository @Inject constructor(
             .await()
         return snapshot.toObject(Warehouse::class.java)?.copy(id = snapshot.id)
     }
+
+    suspend fun updateWarehouse(warehouse: Warehouse) {
+        firestore.collection(Warehouse.COLLECTION_NAME)
+            .document(warehouse.id)
+            .set(warehouse)
+            .await()
+    }
+
+    suspend fun deleteWarehouse(warehouseId: String) {
+        firestore.collection(Warehouse.COLLECTION_NAME)
+            .document(warehouseId)
+            .delete()
+            .await()
+    }
 }

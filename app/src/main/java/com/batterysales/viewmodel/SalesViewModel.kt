@@ -24,6 +24,7 @@ data class SalesUiState(
     val oldBatteriesQuantity: String = "0",
     val oldBatteriesTotalAmps: String = "0.0",
     val oldBatteriesValue: String = "0.0",
+    val paymentMethod: String = "cash",
     val isWarehouseFixed: Boolean = false,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
@@ -76,7 +77,7 @@ class SalesViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         products = products.filter { p -> !p.archived },
-                        warehouses = warehouses,
+                        warehouses = warehouses.filter { w -> w.isActive },
                         selectedWarehouse = if (user?.role == "seller") selectedWH else it.selectedWarehouse,
                         isWarehouseFixed = user?.role == "seller",
                         stockLevels = stockMap,
@@ -130,6 +131,10 @@ class SalesViewModel @Inject constructor(
         _uiState.update { it.copy(oldBatteriesValue = value) }
     }
 
+    fun onPaymentMethodChanged(method: String) {
+        _uiState.update { it.copy(paymentMethod = method) }
+    }
+
     fun createSale(customerName: String, customerPhone: String, paidAmount: Double) {
         viewModelScope.launch {
             val state = _uiState.value
@@ -158,14 +163,19 @@ class SalesViewModel @Inject constructor(
                 // First, create the invoice to get an ID
                 val total = qty * price
                 val oldBatteriesVal = state.oldBatteriesValue.toDoubleOrNull() ?: 0.0
-                val finalTotal = total - oldBatteriesVal
+                val finalTotal = (total - oldBatteriesVal).coerceAtLeast(0.0)
+
+                if (paidAmount > finalTotal) {
+                    _uiState.update { it.copy(errorMessage = "المبلغ المدفوع (JD $paidAmount) لا يمكن أن يتجاوز صافي الإجمالي (JD $finalTotal)", isLoading = false) }
+                    return@launch
+                }
 
                 val newInvoice = Invoice(
                     customerName = customerName,
                     customerPhone = customerPhone,
                     items = listOf(InvoiceItem(
                         productId = variant.id,
-                        productName = "${product.name} - ${variant.capacity} Amp",
+                        productName = "${product.name} - ${variant.capacity} Amp" + if(variant.specification.isNotEmpty()) " (${variant.specification})" else "",
                         quantity = qty,
                         price = price,
                         total = total,
@@ -181,6 +191,7 @@ class SalesViewModel @Inject constructor(
                     paidAmount = paidAmount,
                     remainingAmount = finalTotal - paidAmount,
                     status = if (paidAmount >= finalTotal) "paid" else "pending",
+                    paymentMethod = state.paymentMethod,
                     warehouseId = warehouse.id,
                     invoiceDate = Date()
                 )
@@ -205,9 +216,10 @@ class SalesViewModel @Inject constructor(
                 if (paidAmount > 0) {
                     val payment = Payment(
                         invoiceId = createdInvoice.id,
+                        warehouseId = warehouse.id,
                         amount = paidAmount,
                         timestamp = Date(),
-                        paymentMethod = "cash",
+                        paymentMethod = state.paymentMethod,
                         notes = "الدفعة الأولى عند البيع"
                     )
                     paymentRepository.addPayment(payment)
@@ -217,7 +229,9 @@ class SalesViewModel @Inject constructor(
                         type = TransactionType.INCOME,
                         amount = paidAmount,
                         description = "دفعة مبيعات: $customerName",
-                        relatedId = createdInvoice.id
+                        relatedId = createdInvoice.id,
+                        warehouseId = warehouse.id,
+                        paymentMethod = state.paymentMethod
                     )
                     accountingRepository.addTransaction(transaction)
                 }
@@ -225,6 +239,8 @@ class SalesViewModel @Inject constructor(
                 // Now, create a single stock entry linked to the new invoice
                 val stockEntry = StockEntry(
                     productVariantId = variant.id,
+                    productName = product.name,
+                    capacity = variant.capacity,
                     warehouseId = warehouse.id,
                     quantity = -qty,
                     costPrice = weightedAverageCost,

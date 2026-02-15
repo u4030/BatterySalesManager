@@ -2,6 +2,9 @@ package com.batterysales.data.repositories
 
 import com.batterysales.data.models.Invoice
 import com.batterysales.data.models.Payment
+import com.google.firebase.firestore.AggregateField
+import com.google.firebase.firestore.AggregateSource
+import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import kotlinx.coroutines.channels.awaitClose
@@ -23,11 +26,11 @@ class InvoiceRepository @Inject constructor(
     }
 
     suspend fun getInvoice(invoiceId: String): Invoice? {
-        return firestore.collection(Invoice.COLLECTION_NAME)
+        val snapshot = firestore.collection(Invoice.COLLECTION_NAME)
             .document(invoiceId)
             .get()
             .await()
-            .toObject(Invoice::class.java)
+        return snapshot.toObject(Invoice::class.java)?.copy(id = snapshot.id)
     }
 
     fun getAllInvoices(): Flow<List<Invoice>> = callbackFlow {
@@ -49,6 +52,56 @@ class InvoiceRepository @Inject constructor(
     suspend fun updateInvoice(invoice: Invoice) {
         val updatedInvoice = invoice.copy(updatedAt = Date())
         firestore.collection(Invoice.COLLECTION_NAME).document(invoice.id).set(updatedInvoice).await()
+    }
+
+    suspend fun getTotalDebtForWarehouse(warehouseId: String): Double {
+        val query = firestore.collection(Invoice.COLLECTION_NAME)
+            .whereEqualTo("warehouseId", warehouseId)
+            .whereEqualTo("status", "pending")
+
+        val aggregateQuery = query.aggregate(AggregateField.sum("remainingAmount"))
+        val snapshot = aggregateQuery.get(AggregateSource.SERVER).await()
+        return snapshot.getDouble(AggregateField.sum("remainingAmount")) ?: 0.0
+    }
+
+    suspend fun getInvoicesPaginated(
+        warehouseId: String,
+        status: String? = null,
+        startDate: Long? = null,
+        endDate: Long? = null,
+        searchQuery: String? = null,
+        lastDocument: DocumentSnapshot? = null,
+        limit: Long = 20
+    ): Pair<List<Invoice>, DocumentSnapshot?> {
+        var query: Query = firestore.collection(Invoice.COLLECTION_NAME)
+            .whereEqualTo("warehouseId", warehouseId)
+
+        if (status != null) {
+            query = query.whereEqualTo("status", status)
+        }
+
+        if (startDate != null && endDate != null) {
+            query = query.whereGreaterThanOrEqualTo("invoiceDate", Date(startDate))
+                .whereLessThanOrEqualTo("invoiceDate", Date(endDate + 86400000))
+        }
+
+        if (!searchQuery.isNullOrBlank()) {
+            // Prefix search for invoiceNumber
+            query = query.whereGreaterThanOrEqualTo("invoiceNumber", searchQuery)
+                .whereLessThanOrEqualTo("invoiceNumber", searchQuery + "\uf8ff")
+        }
+
+        query = query.orderBy(if (!searchQuery.isNullOrBlank()) "invoiceNumber" else "invoiceDate", Query.Direction.DESCENDING)
+
+        if (lastDocument != null) {
+            query = query.startAfter(lastDocument)
+        }
+
+        val snapshot = query.limit(limit).get().await()
+        val invoices = snapshot.documents.mapNotNull { it.toObject(Invoice::class.java)?.copy(id = it.id) }
+        val lastDoc = snapshot.documents.lastOrNull()
+
+        return Pair(invoices, lastDoc)
     }
 
     suspend fun deleteInvoice(invoiceId: String) {

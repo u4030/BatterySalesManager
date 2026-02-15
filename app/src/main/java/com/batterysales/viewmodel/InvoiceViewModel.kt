@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.batterysales.data.models.Invoice
 import com.batterysales.data.models.Warehouse
+import com.google.firebase.firestore.DocumentSnapshot
 import com.batterysales.data.repositories.AccountingRepository
 import com.batterysales.data.repositories.InvoiceRepository
 import com.batterysales.data.repositories.PaymentRepository
@@ -28,7 +29,9 @@ data class InvoiceUiState(
     val startDate: Long? = null,
     val endDate: Long? = null,
     val searchQuery: String = "",
-    val isAdmin: Boolean = false
+    val isAdmin: Boolean = false,
+    val isLastPage: Boolean = false,
+    val isLoadingMore: Boolean = false
 )
 
 @HiltViewModel
@@ -44,9 +47,10 @@ class InvoiceViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(InvoiceUiState())
     val uiState: StateFlow<InvoiceUiState> = _uiState.asStateFlow()
 
+    private var lastDocument: DocumentSnapshot? = null
+
     init {
         checkRoleAndLoadWarehouses()
-        loadInvoices()
     }
 
     private fun checkRoleAndLoadWarehouses() {
@@ -54,80 +58,118 @@ class InvoiceViewModel @Inject constructor(
             val user = userRepository.getCurrentUser()
             val isAdmin = user?.role == "admin"
             
-            warehouseRepository.getWarehouses().collect { warehouses ->
-                _uiState.update { state ->
-                    val initialWarehouseId = if (isAdmin) {
-                        warehouses.firstOrNull()?.id ?: ""
-                    } else {
-                        user?.warehouseId ?: ""
+            launch {
+                warehouseRepository.getWarehouses().collect { allWh ->
+                    val warehouses = if (isAdmin) allWh else allWh.filter { it.isActive }
+                    
+                    val oldWhId = _uiState.value.selectedWarehouseId
+                    _uiState.update { state ->
+                        val initialWarehouseId = if (isAdmin) {
+                            state.selectedWarehouseId.ifBlank { allWh.firstOrNull()?.id ?: "" }
+                        } else {
+                            user?.warehouseId ?: ""
+                        }
+                        
+                        state.copy(
+                            warehouses = warehouses,
+                            isAdmin = isAdmin,
+                            selectedWarehouseId = initialWarehouseId
+                        )
                     }
                     
-                    state.copy(
-                        warehouses = warehouses,
-                        isAdmin = isAdmin,
-                        selectedWarehouseId = initialWarehouseId
-                    )
+                    val newWhId = _uiState.value.selectedWarehouseId
+                    // Trigger load if warehouse ID was empty and now it's not, or if it changed (though it shouldn't normally change here for non-admins)
+                    if (newWhId.isNotBlank() && (oldWhId.isBlank() || _uiState.value.invoices.isEmpty())) {
+                        loadInvoices(reset = true)
+                    }
                 }
             }
         }
     }
 
-    fun loadInvoices() {
+    fun loadInvoices(reset: Boolean = false) {
+        if (reset) {
+            lastDocument = null
+            _uiState.update { it.copy(invoices = emptyList(), isLastPage = false, isLoading = true) }
+        }
+
+        if (_uiState.value.isLastPage || _uiState.value.isLoadingMore) return
+
         viewModelScope.launch {
-            combine(
-                invoiceRepository.getAllInvoices(),
-                _uiState
-            ) { invoices, state ->
-                val filtered = invoices
-                    .filter { invoice ->
-                        // Filter by warehouse
-                        val matchesWarehouse = invoice.warehouseId == state.selectedWarehouseId
-                        
-                        // Filter by tab (All or Pending)
-                        val matchesTab = if (state.selectedTab == 1) invoice.status == "pending" else true
+            try {
+                if (!reset) _uiState.update { it.copy(isLoadingMore = true) }
 
-                        // Search filter
-                        val matchesSearch = invoice.invoiceNumber.contains(state.searchQuery, ignoreCase = true) ||
-                                invoice.customerName.contains(state.searchQuery, ignoreCase = true)
-                        
-                        // Date filter
-                        val matchesDate = if (state.startDate != null && state.endDate != null) {
-                            invoice.invoiceDate.time >= state.startDate && invoice.invoiceDate.time <= state.endDate + 86400000
-                        } else true
-
-                        matchesWarehouse && matchesTab && matchesSearch && matchesDate
-                    }
-                    .sortedByDescending { it.updatedAt } // Sort by updatedAt to show recent activity first
+                val state = _uiState.value
+                val statusFilter = if (state.selectedTab == 1) "pending" else null
                 
-                // Calculate total debt for the selected warehouse's pending invoices
-                val totalDebt = invoices
-                    .filter { it.warehouseId == state.selectedWarehouseId && it.status == "pending" }
-                    .sumOf { it.remainingAmount }
+                val result = invoiceRepository.getInvoicesPaginated(
+                    warehouseId = state.selectedWarehouseId,
+                    status = statusFilter,
+                    startDate = state.startDate,
+                    endDate = state.endDate,
+                    searchQuery = state.searchQuery.ifBlank { null },
+                    lastDocument = lastDocument,
+                    limit = 20
+                )
 
-                Pair(filtered, totalDebt)
-            }
-                .onStart { _uiState.update { it.copy(isLoading = true) } }
-                .catch { e -> _uiState.update { it.copy(isLoading = false, errorMessage = "Failed to load invoices") } }
-                .collect { (filteredInvoices, debt) ->
-                    _uiState.update { it.copy(invoices = filteredInvoices, totalDebt = debt, isLoading = false) }
+                val newInvoices = result.first
+                lastDocument = result.second
+
+                _uiState.update { currentState ->
+                    val combinedInvoices = if (reset) newInvoices else currentState.invoices + newInvoices
+                    
+                    currentState.copy(
+                        invoices = combinedInvoices,
+                        isLoading = false,
+                        isLoadingMore = false,
+                        isLastPage = newInvoices.size < 20
+                    )
                 }
+                
+                // Calculate debt (this should also be moved to server-side aggregation later)
+                calculateTotalDebt()
+
+            } catch (e: Exception) {
+                _uiState.update { it.copy(isLoading = false, isLoadingMore = false, errorMessage = "Failed to load invoices") }
+            }
+        }
+    }
+
+    private fun calculateTotalDebt() {
+        viewModelScope.launch {
+            try {
+                val warehouseId = _uiState.value.selectedWarehouseId
+                if (warehouseId.isNotBlank()) {
+                    val debt = invoiceRepository.getTotalDebtForWarehouse(warehouseId)
+                    _uiState.update { it.copy(totalDebt = debt) }
+                }
+            } catch (e: Exception) {
+                // Fallback or log error
+            }
         }
     }
 
     fun onWarehouseSelected(warehouseId: String) {
         _uiState.update { it.copy(selectedWarehouseId = warehouseId) }
+        loadInvoices(reset = true)
     }
 
     fun onTabSelected(tabIndex: Int) {
         _uiState.update { it.copy(selectedTab = tabIndex) }
+        loadInvoices(reset = true)
     }
 
     fun onSearchQueryChanged(query: String) {
         _uiState.update { it.copy(searchQuery = query) }
+        // For search, we might want to reload everything or just filter in-memory if the list is small.
+        // Given we are paginating, we should probably reset and load from server if searching is supported there,
+        // but since it's not well supported, we stay with current list or reset.
+        loadInvoices(reset = true)
     }
 
     fun onDateRangeSelected(start: Long?, end: Long?) {
         _uiState.update { it.copy(startDate = start, endDate = end) }
+        loadInvoices(reset = true)
     }
 
     fun onDismissDeleteDialog() {
