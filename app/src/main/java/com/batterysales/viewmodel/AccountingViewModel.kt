@@ -65,6 +65,16 @@ class AccountingViewModel @Inject constructor(
     private var currentEndDate: Long? = null
 
     init {
+        // Default to current year
+        val cal = Calendar.getInstance()
+        val year = cal.get(Calendar.YEAR)
+        _selectedYear.value = year
+
+        cal.set(year, Calendar.JANUARY, 1, 0, 0, 0)
+        currentStartDate = cal.timeInMillis
+        cal.set(year, Calendar.DECEMBER, 31, 23, 59, 59)
+        currentEndDate = cal.timeInMillis
+
         loadInitialData()
     }
 

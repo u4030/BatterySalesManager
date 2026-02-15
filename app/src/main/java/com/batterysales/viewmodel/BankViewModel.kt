@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.Calendar
 import javax.inject.Inject
 
 @HiltViewModel
@@ -43,6 +44,15 @@ class BankViewModel @Inject constructor(
     private var currentEndDate: Long? = null
 
     init {
+        // Default to current year
+        val cal = Calendar.getInstance()
+        val year = cal.get(Calendar.YEAR)
+
+        cal.set(year, Calendar.JANUARY, 1, 0, 0, 0)
+        currentStartDate = cal.timeInMillis
+        cal.set(year, Calendar.DECEMBER, 31, 23, 59, 59)
+        currentEndDate = cal.timeInMillis
+
         loadData(reset = true)
     }
 

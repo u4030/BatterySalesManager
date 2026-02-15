@@ -135,7 +135,8 @@ class ProductLedgerViewModel @Inject constructor(
             if (query.isBlank()) true
             else it.entry.supplier.contains(query, ignoreCase = true) ||
                     it.warehouseName.contains(query, ignoreCase = true) ||
-                    it.entry.createdByUserName.contains(query, ignoreCase = true)
+                    it.entry.createdByUserName.contains(query, ignoreCase = true) ||
+                    it.entry.invoiceNumber.contains(query, ignoreCase = true)
         }
 
         val filtered = when (category) {
