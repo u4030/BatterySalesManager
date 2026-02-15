@@ -39,12 +39,12 @@ class BankRepository @Inject constructor(
         // Sum DEPOSIT
         val depositQuery = baseQuery.whereEqualTo("type", BankTransactionType.DEPOSIT.name)
         val depositSnap = depositQuery.aggregate(AggregateField.sum("amount")).get(AggregateSource.SERVER).await()
-        val totalDeposit = depositSnap.getDouble(AggregateField.sum("amount")) ?: 0.0
+        val totalDeposit = (depositSnap.get(AggregateField.sum("amount")) as? Number)?.toDouble() ?: 0.0
 
         // Sum WITHDRAWAL
         val withdrawalQuery = baseQuery.whereEqualTo("type", BankTransactionType.WITHDRAWAL.name)
         val withdrawalSnap = withdrawalQuery.aggregate(AggregateField.sum("amount")).get(AggregateSource.SERVER).await()
-        val totalWithdrawal = withdrawalSnap.getDouble(AggregateField.sum("amount")) ?: 0.0
+        val totalWithdrawal = (withdrawalSnap.get(AggregateField.sum("amount")) as? Number)?.toDouble() ?: 0.0
 
         return totalDeposit - totalWithdrawal
     }
@@ -59,7 +59,7 @@ class BankRepository @Inject constructor(
         }
 
         val snapshot = baseQuery.aggregate(AggregateField.sum("amount")).get(AggregateSource.SERVER).await()
-        return snapshot.getDouble(AggregateField.sum("amount")) ?: 0.0
+        return (snapshot.get(AggregateField.sum("amount")) as? Number)?.toDouble() ?: 0.0
     }
 
     suspend fun getTransactionsPaginated(

@@ -125,8 +125,12 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
                         Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                             SalesDropdown(
                                 label = "اختر المنتج",
-                                selectedValue = uiState.selectedProduct?.name ?: "",
-                                options = uiState.products.map { it.name },
+                                selectedValue = uiState.selectedProduct?.let { p ->
+                                    p.name + if (p.specification.isNotEmpty()) " (${p.specification})" else ""
+                                } ?: "",
+                                options = uiState.products.map { p ->
+                                    p.name + if (p.specification.isNotEmpty()) " (${p.specification})" else ""
+                                },
                                 onOptionSelected = { index -> viewModel.onProductSelected(uiState.products[index]) },
                                 icon = Icons.Default.Inventory2
                             )

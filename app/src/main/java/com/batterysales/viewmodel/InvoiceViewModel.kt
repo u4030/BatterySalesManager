@@ -65,7 +65,7 @@ class InvoiceViewModel @Inject constructor(
                     val oldWhId = _uiState.value.selectedWarehouseId
                     _uiState.update { state ->
                         val initialWarehouseId = if (isAdmin) {
-                            state.selectedWarehouseId.ifBlank { allWh.firstOrNull()?.id ?: "" }
+                            state.selectedWarehouseId.ifBlank { "all" }
                         } else {
                             user?.warehouseId ?: ""
                         }
@@ -103,7 +103,7 @@ class InvoiceViewModel @Inject constructor(
                 val statusFilter = if (state.selectedTab == 1) "pending" else null
                 
                 val result = invoiceRepository.getInvoicesPaginated(
-                    warehouseId = state.selectedWarehouseId,
+                    warehouseId = if (state.selectedWarehouseId == "all") null else state.selectedWarehouseId,
                     status = statusFilter,
                     startDate = state.startDate,
                     endDate = state.endDate,
@@ -126,7 +126,7 @@ class InvoiceViewModel @Inject constructor(
                     )
                 }
                 
-                // Calculate debt (this should also be moved to server-side aggregation later)
+                // Calculate debt
                 calculateTotalDebt()
 
             } catch (e: Exception) {
@@ -139,10 +139,8 @@ class InvoiceViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val warehouseId = _uiState.value.selectedWarehouseId
-                if (warehouseId.isNotBlank()) {
-                    val debt = invoiceRepository.getTotalDebtForWarehouse(warehouseId)
-                    _uiState.update { it.copy(totalDebt = debt) }
-                }
+                val debt = invoiceRepository.getTotalDebtForWarehouse(if (warehouseId == "all") null else warehouseId)
+                _uiState.update { it.copy(totalDebt = debt) }
             } catch (e: Exception) {
                 // Fallback or log error
             }

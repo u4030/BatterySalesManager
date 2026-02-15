@@ -22,8 +22,6 @@ data class Product(
 //    @DocumentId
     val id: String = "",
     val name: String = "", // اسم المنتج العام، مثال: "بطاريات بوش"
-    @get:PropertyName("notes")
-    @set:PropertyName("notes")
     var specification: String = "",
     val createdAt: Date = Date(),
     val updatedAt: Date = Date(),

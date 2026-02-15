@@ -52,7 +52,7 @@ fun AccountingScreen(
     var transactionToEdit by remember { mutableStateOf<Transaction?>(null) }
     var showDeleteConfirm by remember { mutableStateOf<Transaction?>(null) }
 
-    var selectedTab by remember { mutableIntStateOf(0) }
+    val selectedTab by viewModel.selectedTab.collectAsState()
     var showDateRangePicker by remember { mutableStateOf(false) }
     val dateRangePickerState = rememberDateRangePickerState()
 
@@ -177,16 +177,19 @@ fun AccountingScreen(
 
                         // Warehouse selection for admins
                         if (currentUser?.role == "admin" && warehouses.isNotEmpty()) {
+                            val warehouseTabs = remember(warehouses) {
+                                listOf(com.batterysales.data.models.Warehouse(id = "all", name = "الكل")) + warehouses
+                            }
                             androidx.compose.foundation.lazy.LazyRow(
                                 modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
                                 contentPadding = PaddingValues(horizontal = 16.dp),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                items(warehouses) { warehouse ->
+                                items(warehouseTabs) { warehouse ->
                                     FilterChip(
-                                        selected = selectedWarehouseId == warehouse.id,
+                                        selected = (selectedWarehouseId ?: "all") == warehouse.id,
                                         onClick = { viewModel.onWarehouseSelected(warehouse.id) },
-                                        label = { Text(warehouse.name, color = if(selectedWarehouseId == warehouse.id) Color.Black else Color.White) },
+                                        label = { Text(warehouse.name, color = if((selectedWarehouseId ?: "all") == warehouse.id) Color.Black else Color.White) },
                                         colors = FilterChipDefaults.filterChipColors(
                                             selectedContainerColor = Color.White,
                                             containerColor = Color.White.copy(alpha = 0.2f),
@@ -208,7 +211,7 @@ fun AccountingScreen(
                                 modifier = Modifier.padding(20.dp).fillMaxWidth(),
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                val currentWhName = warehouses.find { it.id == selectedWarehouseId }?.name ?: "الخزينة العامة"
+                                val currentWhName = if (selectedWarehouseId == "all") "الخزينة العامة" else (warehouses.find { it.id == selectedWarehouseId }?.name ?: "الخزينة")
                                 Text(
                                     "إجمالي الرصيد الحالي ($currentWhName)",
                                     style = MaterialTheme.typography.bodyMedium,
@@ -252,6 +255,28 @@ fun AccountingScreen(
 
             item {
                 Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                    TabRow(
+                        selectedTabIndex = selectedTab,
+                        containerColor = Color.Transparent,
+                        contentColor = accentColor,
+                        indicator = { tabPositions ->
+                            TabRowDefaults.SecondaryIndicator(
+                                modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
+                                color = accentColor
+                            )
+                        },
+                        divider = {}
+                    ) {
+                        Tab(selected = selectedTab == 0, onClick = { viewModel.onTabSelected(0) }) {
+                            Text("الكل", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleSmall, color = if(selectedTab == 0) accentColor else MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Tab(selected = selectedTab == 1, onClick = { viewModel.onTabSelected(1) }) {
+                            Text("المسحوبات", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleSmall, color = if(selectedTab == 1) accentColor else MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
                     // Year and Payment Method Filters
                     Row(
                         modifier = Modifier.fillMaxWidth(),
