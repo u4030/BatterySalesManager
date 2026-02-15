@@ -9,6 +9,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import android.util.Log
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import javax.inject.Inject
@@ -168,7 +169,7 @@ class ReportsViewModel @Inject constructor(
 
                 _inventoryReport.value = jobs.awaitAll().filterNotNull()
             } catch (e: Exception) {
-                // Log
+                Log.e("ReportsViewModel", "Error loading inventory report", e)
             } finally {
                 _isLoading.value = false
             }
@@ -258,7 +259,7 @@ class ReportsViewModel @Inject constructor(
                 }
                 _supplierReport.value = report
             } catch (e: Exception) {
-                // Log
+                Log.e("ReportsViewModel", "Error loading supplier report", e)
             }
         }
     }

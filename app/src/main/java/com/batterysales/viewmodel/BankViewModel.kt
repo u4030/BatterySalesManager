@@ -8,6 +8,7 @@ import com.batterysales.data.repositories.BankRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import android.util.Log
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.Calendar
@@ -91,6 +92,7 @@ class BankViewModel @Inject constructor(
                 _isLoading.value = false
                 _isLoadingMore.value = false
             } catch (e: Exception) {
+                Log.e("BankViewModel", "Error loading data", e)
                 _isLoading.value = false
                 _isLoadingMore.value = false
                 _errorMessage.value = "خطأ في تحميل البيانات: ${e.message}"

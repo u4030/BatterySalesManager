@@ -9,6 +9,7 @@ import com.batterysales.data.repositories.AccountingRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import android.util.Log
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.*
@@ -174,6 +175,7 @@ class AccountingViewModel @Inject constructor(
                     _expenses.value = repository.getAllExpenses() // Expenses are fewer, keep for now
                 }
             } catch (e: Exception) {
+                Log.e("AccountingViewModel", "Error loading data", e)
                 _errorMessage.value = "خطأ في تحميل البيانات: ${e.message}"
             } finally {
                 _isLoading.value = false
@@ -251,7 +253,7 @@ class AccountingViewModel @Inject constructor(
                 repository.deleteTransaction(id)
                 loadData(reset = true)
             } catch (e: Exception) {
-                // Handle error
+                Log.e("AccountingViewModel", "Error deleting transaction", e)
             }
         }
     }
@@ -262,7 +264,7 @@ class AccountingViewModel @Inject constructor(
                 repository.updateTransaction(transaction)
                 loadData(reset = true)
             } catch (e: Exception) {
-                // Handle error
+                Log.e("AccountingViewModel", "Error updating transaction", e)
             }
         }
     }

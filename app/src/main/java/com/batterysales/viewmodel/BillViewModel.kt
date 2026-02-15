@@ -8,6 +8,7 @@ import com.google.firebase.firestore.DocumentSnapshot
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import android.util.Log
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.Date
@@ -162,7 +163,7 @@ class BillViewModel @Inject constructor(
 
                 loadBills(reset = true)
             } catch (e: Exception) {
-                // Handle error
+                Log.e("BillViewModel", "Error recording payment", e)
             }
         }
     }
@@ -176,7 +177,7 @@ class BillViewModel @Inject constructor(
                 bankRepository.deleteTransactionsByBillId(billId)
                 loadBills(reset = true)
             } catch (e: Exception) {
-                // Handle error
+                Log.e("BillViewModel", "Error deleting bill", e)
             }
         }
     }
@@ -193,7 +194,7 @@ class BillViewModel @Inject constructor(
                 )
                 loadBills(reset = true)
             } catch (e: Exception) {
-                // Handle error
+                Log.e("BillViewModel", "Error updating bill", e)
             }
         }
     }

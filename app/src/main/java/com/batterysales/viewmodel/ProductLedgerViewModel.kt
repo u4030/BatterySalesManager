@@ -8,6 +8,7 @@ import com.batterysales.data.models.Warehouse
 import com.google.firebase.firestore.DocumentSnapshot
 import com.batterysales.data.repositories.StockEntryRepository
 import com.batterysales.data.repositories.UserRepository
+import android.util.Log
 import com.batterysales.data.repositories.WarehouseRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
@@ -111,7 +112,7 @@ class ProductLedgerViewModel @Inject constructor(
                 applyFilters()
 
             } catch (e: Exception) {
-                // error
+                Log.e("ProductLedgerViewModel", "Error loading ledger data", e)
             } finally {
                 _isLoading.value = false
                 _isLoadingMore.value = false
@@ -174,7 +175,7 @@ class ProductLedgerViewModel @Inject constructor(
                 stockEntryRepository.deleteStockEntry(entryId)
                 loadData(reset = true)
             } catch (e: Exception) {
-                // Handle error (e.g., show a snackbar)
+                Log.e("ProductLedgerViewModel", "Error deleting stock entry", e)
             }
         }
     }

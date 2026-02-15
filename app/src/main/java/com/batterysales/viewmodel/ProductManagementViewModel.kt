@@ -10,6 +10,7 @@ import com.batterysales.data.repositories.ProductVariantRepository
 import com.batterysales.data.repositories.WarehouseRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import android.util.Log
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -88,6 +89,7 @@ class ProductManagementViewModel @Inject constructor(
                     _errorMessage.value = product.getValidationError()
                 }
             } catch (e: Exception) {
+                Log.e("ProductMgmtVM", "Error adding product", e)
                 _errorMessage.value = "Failed to add product: ${e.message}"
             }
         }
@@ -112,6 +114,7 @@ class ProductManagementViewModel @Inject constructor(
                         _errorMessage.value = variant.getValidationError()
                     }
                 } catch (e: Exception) {
+                    Log.e("ProductMgmtVM", "Error adding variant", e)
                     _errorMessage.value = "Failed to add variant: ${e.message}"
                 }
             }
@@ -127,6 +130,7 @@ class ProductManagementViewModel @Inject constructor(
                     _errorMessage.value = product.getValidationError()
                 }
             } catch (e: Exception) {
+                Log.e("ProductMgmtVM", "Error updating product", e)
                 _errorMessage.value = "Failed to update product: ${e.message}"
             }
         }
@@ -139,6 +143,7 @@ class ProductManagementViewModel @Inject constructor(
                 productRepository.updateProduct(archivedProduct)
                 _selectedProduct.value = null // Deselect after archiving
             } catch (e: Exception) {
+                Log.e("ProductMgmtVM", "Error archiving product", e)
                 _errorMessage.value = "Failed to archive product: ${e.message}"
             }
         }
@@ -153,6 +158,7 @@ class ProductManagementViewModel @Inject constructor(
                     _errorMessage.value = variant.getValidationError()
                 }
             } catch (e: Exception) {
+                Log.e("ProductMgmtVM", "Error updating variant", e)
                 _errorMessage.value = "Failed to update variant: ${e.message}"
             }
         }
@@ -164,6 +170,7 @@ class ProductManagementViewModel @Inject constructor(
                 val archivedVariant = variant.copy(archived = true)
                 productVariantRepository.updateVariant(archivedVariant)
             } catch (e: Exception) {
+                Log.e("ProductMgmtVM", "Error archiving variant", e)
                 _errorMessage.value = "Failed to archive variant: ${e.message}"
             }
         }
