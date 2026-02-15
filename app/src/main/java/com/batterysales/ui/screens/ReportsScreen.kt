@@ -611,6 +611,13 @@ fun SupplierCardRedesigned(item: com.batterysales.viewmodel.SupplierReportItem) 
                         Icon(Icons.Default.Print, contentDescription = "طباعة", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                     }
                     Spacer(modifier = Modifier.width(8.dp))
+                    IconButton(
+                        onClick = { com.batterysales.utils.PrintUtils.shareSupplierReport(context, item) },
+                        modifier = Modifier.size(36.dp).background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.1f), CircleShape)
+                    ) {
+                        Icon(Icons.Default.Share, contentDescription = "مشاركة", tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(18.dp))
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
                     IconButton(onClick = { expanded = !expanded }, modifier = Modifier.size(24.dp)) {
                         Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, contentDescription = null)
                     }

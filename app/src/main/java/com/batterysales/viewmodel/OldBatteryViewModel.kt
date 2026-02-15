@@ -48,6 +48,9 @@ class OldBatteryViewModel @Inject constructor(
     private val _selectedWarehouseId = MutableStateFlow<String?>(null)
     val selectedWarehouseId = _selectedWarehouseId.asStateFlow()
 
+    private val _startDate = MutableStateFlow<Long?>(null)
+    private val _endDate = MutableStateFlow<Long?>(null)
+
     private var currentUser: com.batterysales.data.models.User? = null
 
     private val _isLoading = MutableStateFlow(false)
@@ -55,6 +58,9 @@ class OldBatteryViewModel @Inject constructor(
 
     private val _isLoadingMore = MutableStateFlow(false)
     val isLoadingMore = _isLoadingMore.asStateFlow()
+
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    val errorMessage = _errorMessage.asStateFlow()
 
     private val _isLastPage = MutableStateFlow(false)
     val isLastPage = _isLastPage.asStateFlow()
@@ -86,9 +92,16 @@ class OldBatteryViewModel @Inject constructor(
         }
     }
 
-    fun loadTransactions(reset: Boolean = false, warehouseId: String? = _selectedWarehouseId.value) {
+    fun loadTransactions(
+        reset: Boolean = false,
+        warehouseId: String? = _selectedWarehouseId.value,
+        startDate: Long? = _startDate.value,
+        endDate: Long? = _endDate.value
+    ) {
         if (reset) {
             _selectedWarehouseId.value = warehouseId
+            _startDate.value = startDate
+            _endDate.value = endDate
             lastDocument = null
             _transactions.value = emptyList()
             _isLastPage.value = false
@@ -105,6 +118,8 @@ class OldBatteryViewModel @Inject constructor(
 
                 val result = repository.getTransactionsPaginated(
                     warehouseId = warehouseFilter,
+                    startDate = _startDate.value,
+                    endDate = _endDate.value,
                     lastDocument = lastDocument,
                     limit = 20
                 )
@@ -125,11 +140,16 @@ class OldBatteryViewModel @Inject constructor(
             } catch (e: Exception) {
                 _isLoading.value = false
                 _isLoadingMore.value = false
+                _errorMessage.value = "خطأ في تحميل البيانات: ${e.message}"
             }
         }
     }
 
     fun loadData() = loadInitialData()
+
+    fun clearError() {
+        _errorMessage.value = null
+    }
 
     private fun calculateSummary(transactions: List<OldBatteryTransaction>): Pair<Int, Double> {
         var totalQty = 0

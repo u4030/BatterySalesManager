@@ -50,6 +50,7 @@ fun OldBatteryLedgerScreen(
     val userWarehouseId by viewModel.userWarehouseId.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
+    val errorMessage by viewModel.errorMessage.collectAsState()
     val isLastPage by viewModel.isLastPage.collectAsState()
     val listState = rememberLazyListState()
     
@@ -96,6 +97,17 @@ fun OldBatteryLedgerScreen(
             }
         }
     ) { paddingValues ->
+        errorMessage?.let { error ->
+            AlertDialog(
+                onDismissRequest = { /* Handle if needed */ },
+                title = { Text("خطأ") },
+                text = { Text(error) },
+                confirmButton = {
+                    Button(onClick = { viewModel.clearError() }) { Text("موافق") }
+                }
+            )
+        }
+
         LazyColumn(
             state = listState,
             modifier = Modifier.padding(paddingValues).fillMaxSize(),
@@ -162,7 +174,10 @@ fun OldBatteryLedgerScreen(
                         com.batterysales.ui.components.DateRangeInfo(
                             startDate = dateRangePickerState.selectedStartDateMillis,
                             endDate = dateRangePickerState.selectedEndDateMillis,
-                            onClear = { dateRangePickerState.setSelection(null, null) }
+                            onClear = {
+                                dateRangePickerState.setSelection(null, null)
+                                viewModel.loadTransactions(reset = true, startDate = null, endDate = null)
+                            }
                         )
                     }
                 }
@@ -297,7 +312,14 @@ fun OldBatteryLedgerScreen(
         com.batterysales.ui.components.AppDateRangePickerDialog(
             state = dateRangePickerState,
             onDismiss = { showDateRangePicker = false },
-            onConfirm = { showDateRangePicker = false }
+            onConfirm = {
+                showDateRangePicker = false
+                viewModel.loadTransactions(
+                    reset = true,
+                    startDate = dateRangePickerState.selectedStartDateMillis,
+                    endDate = dateRangePickerState.selectedEndDateMillis
+                )
+            }
         )
     }
 }

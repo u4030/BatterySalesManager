@@ -32,7 +32,6 @@ class AccountingRepository @Inject constructor(
     suspend fun getCurrentBalance(
         warehouseId: String? = null,
         paymentMethod: String? = null,
-        startDate: Long? = null,
         endDate: Long? = null
     ): Double {
         var baseQuery: Query = firestore.collection(Transaction.COLLECTION_NAME)
@@ -42,9 +41,8 @@ class AccountingRepository @Inject constructor(
         if (paymentMethod != null) {
             baseQuery = baseQuery.whereEqualTo("paymentMethod", paymentMethod)
         }
-        if (startDate != null && endDate != null) {
-            baseQuery = baseQuery.whereGreaterThanOrEqualTo("createdAt", java.util.Date(startDate))
-                .whereLessThanOrEqualTo("createdAt", java.util.Date(endDate + 86400000))
+        if (endDate != null) {
+            baseQuery = baseQuery.whereLessThanOrEqualTo("createdAt", java.util.Date(endDate + 86400000))
         }
 
         // Sum INCOME & PAYMENT

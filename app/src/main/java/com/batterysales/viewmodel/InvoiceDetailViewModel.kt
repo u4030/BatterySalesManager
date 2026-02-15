@@ -51,6 +51,9 @@ class InvoiceDetailViewModel @Inject constructor(
                     return@launch
                 }
 
+                // Update UI state with invoice details first
+                _uiState.update { it.copy(invoice = invoice, isLoading = false) }
+
                 // Then, start listening for real-time payment updates
                 paymentRepository.getPaymentsForInvoice(id)
                     .collect { payments ->

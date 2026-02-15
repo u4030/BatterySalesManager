@@ -144,7 +144,7 @@ class AccountingViewModel @Inject constructor(
                 _isLastPage.value = newTransactions.size < 20
 
                 if (reset) {
-                    _balance.value = repository.getCurrentBalance(warehouseId, paymentMethod, currentStartDate, currentEndDate)
+                    _balance.value = repository.getCurrentBalance(warehouseId, paymentMethod, currentEndDate)
                     _totalExpenses.value = repository.getTotalExpenses(warehouseId, paymentMethod, currentStartDate, currentEndDate)
                     _expenses.value = repository.getAllExpenses() // Expenses are fewer, keep for now
                 }

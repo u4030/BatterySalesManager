@@ -71,7 +71,7 @@ class BankViewModel @Inject constructor(
                 _isLastPage.value = newTransactions.size < 20
 
                 if (reset) {
-                    _balance.value = repository.getCurrentBalance(currentStartDate, currentEndDate)
+                    _balance.value = repository.getCurrentBalance(currentEndDate)
                     _totalWithdrawals.value = repository.getTotalWithdrawals(currentStartDate, currentEndDate)
                 }
 

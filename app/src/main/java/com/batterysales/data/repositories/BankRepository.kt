@@ -30,11 +30,10 @@ class BankRepository @Inject constructor(
         docRef.set(finalTransaction).await()
     }
 
-    suspend fun getCurrentBalance(startDate: Long? = null, endDate: Long? = null): Double {
+    suspend fun getCurrentBalance(endDate: Long? = null): Double {
         var baseQuery: Query = firestore.collection(BankTransaction.COLLECTION_NAME)
-        if (startDate != null && endDate != null) {
-            baseQuery = baseQuery.whereGreaterThanOrEqualTo("date", java.util.Date(startDate))
-                .whereLessThanOrEqualTo("date", java.util.Date(endDate + 86400000))
+        if (endDate != null) {
+            baseQuery = baseQuery.whereLessThanOrEqualTo("date", java.util.Date(endDate + 86400000))
         }
 
         // Sum DEPOSIT

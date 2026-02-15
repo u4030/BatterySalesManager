@@ -1,20 +1,42 @@
 package com.batterysales.utils
 
 import android.content.Context
+import android.content.Intent
 import android.print.PrintAttributes
 import android.print.PrintManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.core.content.FileProvider
 import com.batterysales.viewmodel.SupplierReportItem
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
 object PrintUtils {
 
-    fun printSupplierReport(context: Context, item: SupplierReportItem) {
-        val webView = WebView(context)
+    fun shareSupplierReport(context: Context, item: SupplierReportItem) {
         val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
+        val fileName = "SupplierReport_${item.supplier.name.replace(" ", "_")}_${System.currentTimeMillis()}.html"
+        val file = File(context.cacheDir, fileName)
 
+        val htmlContent = generateSupplierHtml(item, dateFormatter)
+
+        try {
+            file.writeText(htmlContent)
+            val contentUri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/html"
+                putExtra(Intent.EXTRA_STREAM, contentUri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(Intent.createChooser(shareIntent, "مشاركة التقرير"))
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun generateSupplierHtml(item: SupplierReportItem, dateFormatter: SimpleDateFormat): String {
         val htmlContent = StringBuilder()
         htmlContent.append("""
             <html dir="rtl" lang="ar">
@@ -30,9 +52,6 @@ object PrintUtils {
                     th { background-color: #f2f2f2; }
                     .total-row { font-weight: bold; background-color: #eee; }
                     .footer { margin-top: 30px; text-align: center; font-size: 12px; color: #666; }
-                    .badge { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
-                    .badge-red { background-color: #ffebee; color: #c62828; }
-                    .badge-green { background-color: #e8f5e9; color: #2e7d32; }
                 </style>
             </head>
             <body>
@@ -93,6 +112,13 @@ object PrintUtils {
             </body>
             </html>
         """.trimIndent())
+        return htmlContent.toString()
+    }
+
+    fun printSupplierReport(context: Context, item: SupplierReportItem) {
+        val webView = WebView(context)
+        val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
+        val htmlContent = generateSupplierHtml(item, dateFormatter)
 
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView, url: String) {

@@ -21,6 +21,7 @@ data class StockEntry(
     val supplier: String = "", // Legacy supplier name
     val supplierId: String = "", // Link to Supplier model
     val invoiceId: String? = null, // Link to invoice for sales entries
+    val invoiceNumber: String = "", // Purchase invoice number or reference
     val status: String = "approved", // approved, pending
     val createdBy: String = "",
     val createdByUserName: String = "",

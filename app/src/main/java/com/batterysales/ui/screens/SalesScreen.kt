@@ -276,7 +276,7 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
                     }
                 }
 
-                // Payment Method & Invoice Number
+                // Payment Method
                 item {
                     Card(
                         colors = CardDefaults.cardColors(containerColor = cardBgColor),
@@ -284,17 +284,8 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Text("رقم الفاتورة وطريقة الدفع", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                            Text("طريقة الدفع", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
 
-                            CustomKeyboardTextField(
-                                value = uiState.invoiceNumber,
-                                onValueChange = viewModel::onInvoiceNumberChanged,
-                                label = "رقم الفاتورة",
-                                modifier = Modifier.fillMaxWidth(),
-                                keyboardType = KeyboardLanguage.NUMERIC
-                            )
-
-                            Text("طريقة الدفع:", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             FlowRow(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)

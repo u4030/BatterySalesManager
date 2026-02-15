@@ -25,7 +25,6 @@ data class SalesUiState(
     val oldBatteriesTotalAmps: String = "0.0",
     val oldBatteriesValue: String = "0.0",
     val paymentMethod: String = "cash",
-    val invoiceNumber: String = "",
     val isWarehouseFixed: Boolean = false,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
@@ -136,10 +135,6 @@ class SalesViewModel @Inject constructor(
         _uiState.update { it.copy(paymentMethod = method) }
     }
 
-    fun onInvoiceNumberChanged(number: String) {
-        _uiState.update { it.copy(invoiceNumber = number) }
-    }
-
     fun createSale(customerName: String, customerPhone: String, paidAmount: Double) {
         viewModelScope.launch {
             val state = _uiState.value
@@ -168,10 +163,14 @@ class SalesViewModel @Inject constructor(
                 // First, create the invoice to get an ID
                 val total = qty * price
                 val oldBatteriesVal = state.oldBatteriesValue.toDoubleOrNull() ?: 0.0
-                val finalTotal = total - oldBatteriesVal
+                val finalTotal = (total - oldBatteriesVal).coerceAtLeast(0.0)
+
+                if (paidAmount > finalTotal) {
+                    _uiState.update { it.copy(errorMessage = "المبلغ المدفوع (JD $paidAmount) لا يمكن أن يتجاوز صافي الإجمالي (JD $finalTotal)", isLoading = false) }
+                    return@launch
+                }
 
                 val newInvoice = Invoice(
-                    invoiceNumber = state.invoiceNumber,
                     customerName = customerName,
                     customerPhone = customerPhone,
                     items = listOf(InvoiceItem(
@@ -229,7 +228,7 @@ class SalesViewModel @Inject constructor(
                     val transaction = Transaction(
                         type = TransactionType.INCOME,
                         amount = paidAmount,
-                        description = "دفعة مبيعات: $customerName (فاتورة رقم: ${createdInvoice.invoiceNumber})",
+                        description = "دفعة مبيعات: $customerName",
                         relatedId = createdInvoice.id,
                         warehouseId = warehouse.id,
                         paymentMethod = state.paymentMethod

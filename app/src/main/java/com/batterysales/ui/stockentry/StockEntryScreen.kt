@@ -179,6 +179,19 @@ fun StockEntryContent(
                         }
                     }
                 }
+
+                OutlinedTextField(
+                    value = uiState.invoiceNumber,
+                    onValueChange = viewModel::onInvoiceNumberChanged,
+                    label = { Text("رقم الفاتورة / المرجع") },
+                    modifier = Modifier.fillMaxWidth(),
+                    textStyle = LocalInputTextStyle.current,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color(0xFFFB8C00),
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                    )
+                )
             }
         }
 

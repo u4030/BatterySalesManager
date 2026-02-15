@@ -59,7 +59,7 @@ fun DashboardScreen(
         colors = listOf(Color(0xFFE53935), Color(0xFFFB8C00))
     )
 
-    val items = remember(isAdmin) {
+    val items = remember(isAdmin, currentUser) {
         val list = mutableListOf(
             DashboardItem("المبيعات", Icons.Default.ShoppingCart, "sales", Color(0xFFEF4444)),
             DashboardItem("الفواتير", Icons.Default.ReceiptLong, "invoices", Color(0xFFF59E0B)),
@@ -69,8 +69,12 @@ fun DashboardScreen(
             DashboardItem("ترحيل مخزون", Icons.Default.LocalShipping, "stock_transfer", Color(0xFF3B82F6))
         )
 
-        if (isAdmin) {
+        val canViewTreasury = isAdmin || currentUser?.permissions?.contains("view_treasury") == true
+        if (canViewTreasury) {
             list.add(DashboardItem("الخزينة", Icons.Default.AccountBalance, "accounting", Color(0xFF8B5CF6)))
+        }
+
+        if (isAdmin) {
             list.add(DashboardItem("البنك", Icons.Default.Savings, "bank", Color(0xFF06B6D4)))
             list.add(DashboardItem("الكمبيالات", Icons.Default.Description, "bills", Color(0xFFF97316)))
             list.add(DashboardItem("الموردين", Icons.Default.LocalShipping, "suppliers", Color(0xFF64748B)))
