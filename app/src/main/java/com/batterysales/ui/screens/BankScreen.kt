@@ -44,6 +44,7 @@ fun BankScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
     val isLastPage by viewModel.isLastPage.collectAsState()
+    val errorMessage by viewModel.errorMessage.collectAsState()
     val listState = rememberLazyListState()
     var showAddDialog by remember { mutableStateOf(false) }
     var selectedType by remember { mutableStateOf(com.batterysales.data.models.BankTransactionType.DEPOSIT) }
@@ -87,6 +88,17 @@ fun BankScreen(
     val headerGradient = androidx.compose.ui.graphics.Brush.verticalGradient(
         colors = listOf(Color(0xFFE53935), Color(0xFFFB8C00))
     )
+
+    errorMessage?.let { error ->
+        AlertDialog(
+            onDismissRequest = { viewModel.clearError() },
+            title = { Text("خطأ") },
+            text = { Text(error) },
+            confirmButton = {
+                Button(onClick = { viewModel.clearError() }) { Text("موافق") }
+            }
+        )
+    }
 
     Scaffold(
         containerColor = bgColor,

@@ -54,10 +54,13 @@ class InvoiceRepository @Inject constructor(
         firestore.collection(Invoice.COLLECTION_NAME).document(invoice.id).set(updatedInvoice).await()
     }
 
-    suspend fun getTotalDebtForWarehouse(warehouseId: String): Double {
-        val query = firestore.collection(Invoice.COLLECTION_NAME)
-            .whereEqualTo("warehouseId", warehouseId)
+    suspend fun getTotalDebtForWarehouse(warehouseId: String?): Double {
+        var query = firestore.collection(Invoice.COLLECTION_NAME)
             .whereEqualTo("status", "pending")
+
+        if (!warehouseId.isNullOrBlank()) {
+            query = query.whereEqualTo("warehouseId", warehouseId)
+        }
 
         val aggregateQuery = query.aggregate(AggregateField.sum("remainingAmount"))
         val snapshot = aggregateQuery.get(AggregateSource.SERVER).await()
@@ -65,7 +68,7 @@ class InvoiceRepository @Inject constructor(
     }
 
     suspend fun getInvoicesPaginated(
-        warehouseId: String,
+        warehouseId: String?,
         status: String? = null,
         startDate: Long? = null,
         endDate: Long? = null,
@@ -74,7 +77,10 @@ class InvoiceRepository @Inject constructor(
         limit: Long = 20
     ): Pair<List<Invoice>, DocumentSnapshot?> {
         var query: Query = firestore.collection(Invoice.COLLECTION_NAME)
-            .whereEqualTo("warehouseId", warehouseId)
+
+        if (!warehouseId.isNullOrBlank()) {
+            query = query.whereEqualTo("warehouseId", warehouseId)
+        }
 
         if (status != null) {
             query = query.whereEqualTo("status", status)

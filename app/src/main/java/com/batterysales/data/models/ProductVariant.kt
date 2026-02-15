@@ -30,9 +30,6 @@ data class ProductVariant(
     val barcode: String = "",
     val minQuantity: Int = 0, // Default/Legacy minimum quantity
     val minQuantities: Map<String, Int> = emptyMap(), // Per-warehouse minimum quantities: WarehouseId -> MinQuantity
-    @get:PropertyName("notes")
-    @set:PropertyName("notes")
-    @field:PropertyName("notes")
     var specification: String = "",
     val createdAt: Date = Date(),
     val updatedAt: Date = Date(),

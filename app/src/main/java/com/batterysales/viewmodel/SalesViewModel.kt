@@ -175,7 +175,7 @@ class SalesViewModel @Inject constructor(
                     customerPhone = customerPhone,
                     items = listOf(InvoiceItem(
                         productId = variant.id,
-                        productName = "${product.name} - ${variant.capacity} Amp" + if(variant.specification.isNotEmpty()) " (${variant.specification})" else "",
+                        productName = "${product.name}${if(product.specification.isNotEmpty()) " (${product.specification})" else ""} - ${variant.capacity}A${if(variant.specification.isNotEmpty()) " (${variant.specification})" else ""}",
                         quantity = qty,
                         price = price,
                         total = total,

@@ -81,11 +81,23 @@ class OldBatteryViewModel @Inject constructor(
 
                 launch {
                     warehouseRepository.getWarehouses().collect { allWh ->
-                        _warehouses.value = allWh.filter { it.isActive }
+                        val active = allWh.filter { it.isActive }
+                        _warehouses.value = active
+
+                        // If admin and no warehouse selected, default to first active one
+                        if (currentUser?.role == "admin" && _selectedWarehouseId.value == null) {
+                            active.firstOrNull()?.let {
+                                _selectedWarehouseId.value = it.id
+                                loadTransactions(reset = true, warehouseId = it.id)
+                            }
+                        }
                     }
                 }
                 
-                loadTransactions(reset = true)
+                if (_isSeller.value) {
+                    loadTransactions(reset = true, warehouseId = _userWarehouseId.value)
+                }
+
             } catch (e: Exception) {
                 _isLoading.value = false
             }

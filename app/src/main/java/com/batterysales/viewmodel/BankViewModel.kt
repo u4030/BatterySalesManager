@@ -35,6 +35,9 @@ class BankViewModel @Inject constructor(
     private val _isLastPage = MutableStateFlow(false)
     val isLastPage = _isLastPage.asStateFlow()
 
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    val errorMessage = _errorMessage.asStateFlow()
+
     private var lastDocument: DocumentSnapshot? = null
     private var currentStartDate: Long? = null
     private var currentEndDate: Long? = null
@@ -80,8 +83,13 @@ class BankViewModel @Inject constructor(
             } catch (e: Exception) {
                 _isLoading.value = false
                 _isLoadingMore.value = false
+                _errorMessage.value = "خطأ في تحميل البيانات: ${e.message}"
             }
         }
+    }
+
+    fun clearError() {
+        _errorMessage.value = null
     }
 
     fun onDateRangeSelected(start: Long?, end: Long?) {

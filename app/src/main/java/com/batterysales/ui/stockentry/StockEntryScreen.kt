@@ -212,8 +212,12 @@ fun StockEntryContent(
                 ) {
                     Dropdown(
                         label = "المنتج",
-                        selectedValue = uiState.selectedProduct?.name ?: "",
-                        options = uiState.products.map { it.name },
+                        selectedValue = uiState.selectedProduct?.let { p ->
+                            p.name + if (p.specification.isNotEmpty()) " (${p.specification})" else ""
+                        } ?: "",
+                        options = uiState.products.map { p ->
+                            p.name + if (p.specification.isNotEmpty()) " (${p.specification})" else ""
+                        },
                         onOptionSelected = { index -> viewModel.onProductSelected(uiState.products[index]) },
                         enabled = !uiState.isEditMode,
                         modifier = Modifier.weight(1f).widthIn(min = 150.dp)

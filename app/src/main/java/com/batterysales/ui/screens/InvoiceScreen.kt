@@ -98,6 +98,11 @@ fun InvoiceScreen(
         }
     }
 
+    // Refresh data when screen is focused to update invoice status after payments
+    LaunchedEffect(Unit) {
+        viewModel.loadInvoices(reset = true)
+    }
+
     Scaffold(
         containerColor = bgColor
     ) { paddingValues ->
@@ -124,18 +129,22 @@ fun InvoiceScreen(
 
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (uiState.isAdmin && uiState.warehouses.isNotEmpty()) {
+                            val warehouseTabs = remember(uiState.warehouses) {
+                                listOf(com.batterysales.data.models.Warehouse(id = "all", name = "الكل")) + uiState.warehouses
+                            }
+                            val selectedIndex = warehouseTabs.indexOfFirst { it.id == uiState.selectedWarehouseId }.coerceAtLeast(0)
+
                             ScrollableTabRow(
-                                selectedTabIndex = uiState.warehouses.indexOfFirst { it.id == uiState.selectedWarehouseId }.coerceAtLeast(0),
+                                selectedTabIndex = selectedIndex,
                                 containerColor = Color.Black.copy(alpha = 0.2f),
                                 contentColor = Color.White,
                                 edgePadding = 16.dp,
                                 divider = {},
                                 indicator = { tabPositions ->
                                     if (tabPositions.isNotEmpty()) {
-                                        val index = uiState.warehouses.indexOfFirst { it.id == uiState.selectedWarehouseId }.coerceAtLeast(0)
                                         Box(
                                             Modifier
-                                                .tabIndicatorOffset(tabPositions[index])
+                                                .tabIndicatorOffset(tabPositions[selectedIndex])
                                                 .height(4.dp)
                                                 .padding(horizontal = 16.dp)
                                                 .background(Color.White, RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
@@ -144,7 +153,7 @@ fun InvoiceScreen(
                                 },
                                 modifier = Modifier.background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
                             ) {
-                                uiState.warehouses.forEach { warehouse ->
+                                warehouseTabs.forEach { warehouse ->
                                     Tab(
                                         selected = uiState.selectedWarehouseId == warehouse.id,
                                         onClick = { viewModel.onWarehouseSelected(warehouse.id) },

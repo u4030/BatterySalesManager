@@ -54,6 +54,9 @@ class AccountingViewModel @Inject constructor(
     private val _selectedPaymentMethod = MutableStateFlow<String?>(null) // null means "All"
     val selectedPaymentMethod = _selectedPaymentMethod.asStateFlow()
 
+    private val _selectedTab = MutableStateFlow(0) // 0: All, 1: Withdrawals
+    val selectedTab = _selectedTab.asStateFlow()
+
     private val _selectedYear = MutableStateFlow<Int?>(null)
     val selectedYear = _selectedYear.asStateFlow()
 
@@ -75,7 +78,7 @@ class AccountingViewModel @Inject constructor(
                     val active = allWh.filter { it.isActive }
                     _warehouses.value = active
                     if (_selectedWarehouseId.value == null) {
-                        _selectedWarehouseId.value = active.firstOrNull()?.id
+                        _selectedWarehouseId.value = "all"
                         loadData(reset = true)
                     }
                 }
@@ -88,6 +91,11 @@ class AccountingViewModel @Inject constructor(
 
     fun onWarehouseSelected(id: String) {
         _selectedWarehouseId.value = id
+        loadData(reset = true)
+    }
+
+    fun onTabSelected(index: Int) {
+        _selectedTab.value = index
         loadData(reset = true)
     }
 
@@ -125,12 +133,16 @@ class AccountingViewModel @Inject constructor(
             try {
                 if (!reset) _isLoadingMore.value = true
 
-                val warehouseId = _selectedWarehouseId.value
+                val warehouseId = if (_selectedWarehouseId.value == "all") null else _selectedWarehouseId.value
                 val paymentMethod = _selectedPaymentMethod.value
+                val typesFilter = if (_selectedTab.value == 1) {
+                    listOf(com.batterysales.data.models.TransactionType.EXPENSE.name, com.batterysales.data.models.TransactionType.REFUND.name)
+                } else null
                 
                 val result = repository.getTransactionsPaginated(
                     warehouseId = warehouseId,
                     paymentMethod = paymentMethod,
+                    types = typesFilter,
                     startDate = currentStartDate,
                     endDate = currentEndDate,
                     lastDocument = lastDocument,

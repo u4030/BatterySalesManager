@@ -85,6 +85,7 @@ class AccountingRepository @Inject constructor(
     suspend fun getTransactionsPaginated(
         warehouseId: String? = null,
         paymentMethod: String? = null,
+        types: List<String>? = null,
         startDate: Long? = null,
         endDate: Long? = null,
         lastDocument: DocumentSnapshot? = null,
@@ -97,6 +98,9 @@ class AccountingRepository @Inject constructor(
         }
         if (paymentMethod != null) {
             query = query.whereEqualTo("paymentMethod", paymentMethod)
+        }
+        if (types != null && types.isNotEmpty()) {
+            query = query.whereIn("type", types)
         }
 
         if (startDate != null && endDate != null) {
