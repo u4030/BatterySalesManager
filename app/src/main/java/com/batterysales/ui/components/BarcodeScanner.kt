@@ -5,10 +5,13 @@ import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.OptIn
+import android.util.Size
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
+import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.Box
@@ -84,14 +87,26 @@ fun BarcodeScanner(
             AndroidView(
                 factory = { context ->
                     val previewView = PreviewView(context)
-                    val preview = Preview.Builder().build()
+                    val resolutionSelector = ResolutionSelector.Builder()
+                        .setResolutionStrategy(
+                            ResolutionStrategy(
+                                Size(1920, 1080),
+                                ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER
+                            )
+                        )
+                        .build()
+
+                    val preview = Preview.Builder()
+                        .setResolutionSelector(resolutionSelector)
+                        .build()
                     val selector = CameraSelector.Builder()
                         .requireLensFacing(CameraSelector.LENS_FACING_BACK)
                         .build()
                     preview.setSurfaceProvider(previewView.surfaceProvider)
+
                     val imageAnalysis = ImageAnalysis.Builder()
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                        .setTargetResolution(android.util.Size(1280, 720)) // Increased resolution for Data Matrix
+                        .setResolutionSelector(resolutionSelector)
                         .build()
 
                     val options = BarcodeScannerOptions.Builder()
