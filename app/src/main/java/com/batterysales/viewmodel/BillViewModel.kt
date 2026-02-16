@@ -6,10 +6,8 @@ import com.batterysales.data.models.*
 import com.batterysales.data.repositories.*
 import com.google.firebase.firestore.DocumentSnapshot
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.*
 import android.util.Log
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.Date
 import javax.inject.Inject
@@ -29,8 +27,14 @@ class BillViewModel @Inject constructor(
     private val _suppliers = MutableStateFlow<List<Supplier>>(emptyList())
     val suppliers = _suppliers.asStateFlow()
 
-    private val _pendingPurchases = MutableStateFlow<List<StockEntry>>(emptyList())
-    val pendingPurchases = _pendingPurchases.asStateFlow()
+    private val _allRecentPurchases = MutableStateFlow<List<StockEntry>>(emptyList())
+    val pendingPurchases: StateFlow<List<StockEntry>> = combine(
+        _allRecentPurchases,
+        _bills
+    ) { entries, allBills ->
+        val linkedIds = allBills.mapNotNull { it.relatedEntryId }.toSet()
+        entries.filter { it.id !in linkedIds }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading = _isLoading.asStateFlow()
@@ -99,7 +103,7 @@ class BillViewModel @Inject constructor(
         viewModelScope.launch {
             // Fetch only last 100 approved purchases instead of all history
             val entries = stockEntryRepository.getRecentApprovedPurchases(100)
-            _pendingPurchases.value = entries
+            _allRecentPurchases.value = entries
         }
     }
 
@@ -108,7 +112,7 @@ class BillViewModel @Inject constructor(
             _isLoading.value = true
             try {
                 val warehouseId = if (relatedEntryId != null) {
-                    _pendingPurchases.value.find { it.id == relatedEntryId }?.warehouseId
+                    _allRecentPurchases.value.find { it.id == relatedEntryId }?.warehouseId
                 } else null
 
                 val bill = Bill(
@@ -154,9 +158,10 @@ class BillViewModel @Inject constructor(
                     val bankTransaction = com.batterysales.data.models.BankTransaction(
                         type = com.batterysales.data.models.BankTransactionType.WITHDRAWAL,
                         amount = amount,
-                        description = "تسديد لشيك: ${bill.description} (المورد: $supplierName)",
+                        description = "تسديد لشيك: ${bill.description}",
                         billId = billId,
-                        referenceNumber = bill.referenceNumber
+                        referenceNumber = bill.referenceNumber,
+                        supplierName = supplierName
                     )
                     bankRepository.addTransaction(bankTransaction)
                 }

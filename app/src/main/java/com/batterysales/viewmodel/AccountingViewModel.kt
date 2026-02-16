@@ -10,6 +10,8 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import android.util.Log
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.*
@@ -85,14 +87,14 @@ class AccountingViewModel @Inject constructor(
             _currentUser.value = user
             
             if (user?.role == "admin") {
-                warehouseRepository.getWarehouses().collect { allWh ->
+                warehouseRepository.getWarehouses().onEach { allWh ->
                     val active = allWh.filter { it.isActive }
                     _warehouses.value = active
                     if (_selectedWarehouseId.value == null) {
                         _selectedWarehouseId.value = active.firstOrNull()?.id
                         loadData(reset = true)
                     }
-                }
+                }.launchIn(viewModelScope)
             } else {
                 _selectedWarehouseId.value = user?.warehouseId
                 loadData(reset = true)
@@ -153,6 +155,13 @@ class AccountingViewModel @Inject constructor(
                     listOf(com.batterysales.data.models.TransactionType.EXPENSE.name, com.batterysales.data.models.TransactionType.REFUND.name)
                 } else null
                 
+                if (reset) {
+                    // Load totals in parallel for speed
+                    launch { _balance.value = repository.getCurrentBalance(warehouseId, paymentMethod, currentEndDate) }
+                    launch { _totalExpenses.value = repository.getTotalExpenses(warehouseId, paymentMethod, currentStartDate, currentEndDate) }
+                    launch { _expenses.value = repository.getAllExpenses() }
+                }
+
                 val result = repository.getTransactionsPaginated(
                     warehouseId = warehouseId,
                     paymentMethod = paymentMethod,
@@ -168,12 +177,6 @@ class AccountingViewModel @Inject constructor(
 
                 _transactions.update { current -> if (reset) newTransactions else current + newTransactions }
                 _isLastPage.value = newTransactions.size < 20
-
-                if (reset) {
-                    _balance.value = repository.getCurrentBalance(warehouseId, paymentMethod, currentEndDate)
-                    _totalExpenses.value = repository.getTotalExpenses(warehouseId, paymentMethod, currentStartDate, currentEndDate)
-                    _expenses.value = repository.getAllExpenses() // Expenses are fewer, keep for now
-                }
             } catch (e: Exception) {
                 Log.e("AccountingViewModel", "Error loading data", e)
                 _errorMessage.value = "خطأ في تحميل البيانات: ${e.message}"

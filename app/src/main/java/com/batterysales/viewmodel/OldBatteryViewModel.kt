@@ -14,6 +14,8 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import android.util.Log
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.*
@@ -80,21 +82,19 @@ class OldBatteryViewModel @Inject constructor(
                 _isSeller.value = currentUser?.role == "seller"
                 _userWarehouseId.value = currentUser?.warehouseId
 
-                launch {
-                    warehouseRepository.getWarehouses().collect { allWh ->
-                        val active = allWh.filter { it.isActive }
-                        _warehouses.value = active
+                warehouseRepository.getWarehouses().onEach { allWh ->
+                    val active = allWh.filter { it.isActive }
+                    _warehouses.value = active
 
-                        // If admin and no warehouse selected, default to first active one
-                        if (currentUser?.role == "admin" && _selectedWarehouseId.value == null) {
-                            active.firstOrNull()?.let {
-                                _selectedWarehouseId.value = it.id
-                                loadTransactions(reset = true, warehouseId = it.id)
-                            }
+                    // If admin and no warehouse selected, default to first active one
+                    if (currentUser?.role == "admin" && _selectedWarehouseId.value == null) {
+                        active.firstOrNull()?.let {
+                            _selectedWarehouseId.value = it.id
+                            loadTransactions(reset = true, warehouseId = it.id)
                         }
                     }
-                }
-                
+                }.launchIn(viewModelScope)
+
                 if (_isSeller.value) {
                     loadTransactions(reset = true, warehouseId = _userWarehouseId.value)
                 }
