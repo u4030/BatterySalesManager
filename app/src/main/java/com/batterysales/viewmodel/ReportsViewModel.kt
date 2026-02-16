@@ -130,6 +130,11 @@ class ReportsViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoading.value = true
             try {
+                // Ensure filteredWarehouses has data
+                if (filteredWarehouses.value.isEmpty()) {
+                    filteredWarehouses.filter { it.isNotEmpty() }.first()
+                }
+
                 val products = productRepository.getProducts().first()
                 val allVariants = productVariantRepository.getAllVariantsFlow().first()
                 val warehouseList = filteredWarehouses.value
@@ -205,20 +210,22 @@ class ReportsViewModel @Inject constructor(
                 val suppliers = supplierRepository.getSuppliers().first()
                 val start = _startDate.value
                 val end = _endDate.value
-                val allStockEntries = stockEntryRepository.getAllStockEntriesFlow().first()
-                val allBills = billRepository.getAllBillsFlow().first()
+
+                // Use suspend fetch instead of .first() on flow to ensure we wait for fresh data
+                val allStockEntries = stockEntryRepository.getAllStockEntries()
+                val allBills = billRepository.getAllBills()
 
                 val report = suppliers.map { supplier ->
                     val supplierEntries = allStockEntries.filter {
                         it.supplierId == supplier.id &&
                                 it.status == "approved" &&
-                                (supplier.resetDate == null || it.timestamp.after(supplier.resetDate)) &&
+                                (supplier.resetDate == null || !it.timestamp.before(supplier.resetDate)) &&
                                 (start == null || it.timestamp.time >= start) &&
                                 (end == null || it.timestamp.time <= end)
                     }
                     val supplierBills = allBills.filter {
                         it.supplierId == supplier.id &&
-                                (supplier.resetDate == null || it.createdAt.after(supplier.resetDate)) &&
+                                (supplier.resetDate == null || !it.createdAt.before(supplier.resetDate)) &&
                                 (start == null || it.dueDate.time >= start) &&
                                 (end == null || it.dueDate.time <= end)
                     }

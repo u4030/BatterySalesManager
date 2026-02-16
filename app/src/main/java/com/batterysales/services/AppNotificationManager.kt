@@ -4,6 +4,7 @@ import android.content.Context
 import com.batterysales.data.models.*
 import com.batterysales.data.repositories.*
 import com.batterysales.ui.components.NotificationHelper
+import android.util.Log
 import com.google.firebase.firestore.FirebaseFirestore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -38,9 +39,11 @@ class AppNotificationManager @Inject constructor(
     fun startListening() {
         if (isInitialized) return
         isInitialized = true
+        Log.d("AppNotificationManager", "Starting notification listeners")
 
         userRepository.getCurrentUserFlow()
             .onEach { user ->
+                Log.d("AppNotificationManager", "User changed: ${user?.displayName}, role: ${user?.role}")
                 pendingEntriesListener?.remove()
                 upcomingBillsListener?.remove()
                 lowStockJob?.cancel()
