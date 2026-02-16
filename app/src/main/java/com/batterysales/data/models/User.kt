@@ -1,6 +1,7 @@
 package com.batterysales.data.models
 
 import com.google.firebase.firestore.DocumentId
+import com.google.firebase.firestore.PropertyName
 import java.util.Date
 
 /**
@@ -108,7 +109,9 @@ data class User(
      * true = المستخدم يمكنه تسجيل الدخول
      * false = المستخدم محظور (حذف منطقي)
      */
-    val isActive: Boolean = true,
+    @get:PropertyName("isActive")
+    @set:PropertyName("isActive")
+    var isActive: Boolean = true,
 
     /**
      * هل تم التحقق من البريد الإلكتروني؟

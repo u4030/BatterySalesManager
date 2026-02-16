@@ -139,4 +139,12 @@ class BillRepository @Inject constructor(
             .update(updates)
             .await()
     }
+
+    suspend fun getLinkedEntryIds(): Set<String> {
+        val snapshot = firestore.collection(Bill.COLLECTION_NAME)
+            .whereNotEqualTo("relatedEntryId", null)
+            .get()
+            .await()
+        return snapshot.documents.mapNotNull { it.getString("relatedEntryId") }.toSet()
+    }
 }

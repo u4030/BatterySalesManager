@@ -28,11 +28,12 @@ class BillViewModel @Inject constructor(
     val suppliers = _suppliers.asStateFlow()
 
     private val _allRecentPurchases = MutableStateFlow<List<StockEntry>>(emptyList())
+    private val _linkedEntryIds = MutableStateFlow<Set<String>>(emptySet())
+
     val pendingPurchases: StateFlow<List<StockEntry>> = combine(
         _allRecentPurchases,
-        _bills
-    ) { entries, allBills ->
-        val linkedIds = allBills.mapNotNull { it.relatedEntryId }.toSet()
+        _linkedEntryIds
+    ) { entries, linkedIds ->
         entries.filter { it.id !in linkedIds }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -55,6 +56,17 @@ class BillViewModel @Inject constructor(
         loadBills(reset = true)
         loadSuppliers()
         loadPendingPurchases()
+        loadLinkedIds()
+    }
+
+    private fun loadLinkedIds() {
+        viewModelScope.launch {
+            try {
+                _linkedEntryIds.value = repository.getLinkedEntryIds()
+            } catch (e: Exception) {
+                Log.e("BillViewModel", "Error loading linked IDs", e)
+            }
+        }
     }
 
     fun loadData() = loadInitialData()
@@ -127,6 +139,7 @@ class BillViewModel @Inject constructor(
                 )
                 repository.addBill(bill)
                 loadBills(reset = true)
+                loadLinkedIds() // Refresh linked IDs after adding a bill
             } finally {
                 _isLoading.value = false
             }

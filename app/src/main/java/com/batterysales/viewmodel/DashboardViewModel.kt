@@ -198,20 +198,23 @@ class DashboardViewModel @Inject constructor(
 
         val productMap = products.associateBy { it.id }
         val lowStock = mutableListOf<LowStockItem>()
-        val activeVariants = variants.filter { !it.archived && it.minQuantity > 0 }
+        val activeVariants = variants.filter { !it.archived }
 
         for (variant in activeVariants) {
             val product = productMap[variant.productId] ?: continue
             for (warehouse in warehouses) {
+                val threshold = variant.minQuantities[warehouse.id] ?: variant.minQuantity
+                if (threshold <= 0) continue
+
                 val currentQty = stockMap[Pair(variant.id, warehouse.id)] ?: 0
-                if (currentQty <= variant.minQuantity) {
+                if (currentQty <= threshold) {
                     lowStock.add(
                         LowStockItem(
                             variantId = variant.id,
                             productName = product.name,
                             capacity = variant.capacity,
                             currentQuantity = currentQty,
-                            minQuantity = variant.minQuantity,
+                            minQuantity = threshold,
                             warehouseName = warehouse.name
                         )
                     )

@@ -13,6 +13,9 @@ import android.util.Log
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import java.util.*
 import javax.inject.Inject
@@ -156,10 +159,15 @@ class AccountingViewModel @Inject constructor(
                 } else null
                 
                 if (reset) {
-                    // Load totals in parallel for speed
-                    launch { _balance.value = repository.getCurrentBalance(warehouseId, paymentMethod, currentEndDate) }
-                    launch { _totalExpenses.value = repository.getTotalExpenses(warehouseId, paymentMethod, currentStartDate, currentEndDate) }
-                    launch { _expenses.value = repository.getAllExpenses() }
+                    coroutineScope {
+                        val balanceJob = async { repository.getCurrentBalance(warehouseId, paymentMethod, currentEndDate) }
+                        val totalExpensesJob = async { repository.getTotalExpenses(warehouseId, paymentMethod, currentStartDate, currentEndDate) }
+                        val expensesJob = async { repository.getAllExpenses() }
+
+                        _balance.value = balanceJob.await()
+                        _totalExpenses.value = totalExpensesJob.await()
+                        _expenses.value = expensesJob.await()
+                    }
                 }
 
                 val result = repository.getTransactionsPaginated(
