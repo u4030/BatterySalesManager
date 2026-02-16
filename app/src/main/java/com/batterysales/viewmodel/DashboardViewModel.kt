@@ -119,7 +119,7 @@ class DashboardViewModel @Inject constructor(
 
                 val warehouseStatsList = relevantWarehouses.map { warehouse ->
                     val collection = paymentRepository.getTodayCollection(startOfToday, warehouse.id)
-                    val count = paymentRepository.getTodayCollectionCount(startOfToday, warehouse.id)
+                    val count = paymentRepository.getTodayCollectedInvoicesCount(startOfToday, warehouse.id)
 
                     WarehouseStats(
                         warehouseId = warehouse.id,

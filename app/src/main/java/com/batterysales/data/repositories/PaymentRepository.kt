@@ -76,7 +76,7 @@ class PaymentRepository @Inject constructor(
         return snapshot.getDouble(AggregateField.sum("amount")) ?: 0.0
     }
 
-    suspend fun getTodayCollectionCount(startDate: java.util.Date, warehouseId: String? = null): Int {
+    suspend fun getTodayCollectedInvoicesCount(startDate: java.util.Date, warehouseId: String? = null): Int {
         var query: Query = firestore.collection(Payment.COLLECTION_NAME)
             .whereGreaterThanOrEqualTo("timestamp", startDate)
         
@@ -84,9 +84,8 @@ class PaymentRepository @Inject constructor(
             query = query.whereEqualTo("warehouseId", warehouseId)
         }
 
-        val snapshot = query.count()
-            .get(AggregateSource.SERVER)
-            .await()
-        return snapshot.count.toInt()
+        // We fetch the documents to count unique invoiceIds
+        val snapshot = query.get().await()
+        return snapshot.documents.mapNotNull { it.getString("invoiceId") }.distinct().size
     }
 }

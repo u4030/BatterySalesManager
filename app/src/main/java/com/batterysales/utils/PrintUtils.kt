@@ -2,7 +2,14 @@ package com.batterysales.utils
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Canvas
+import android.graphics.pdf.PdfDocument
+import android.os.Bundle
+import android.os.CancellationSignal
+import android.os.ParcelFileDescriptor
+import android.print.PageRange
 import android.print.PrintAttributes
+import android.print.PrintDocumentAdapter
 import android.print.PrintManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -10,28 +17,80 @@ import android.widget.Toast
 import androidx.core.content.FileProvider
 import com.batterysales.viewmodel.SupplierReportItem
 import java.io.File
+import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.*
 
 object PrintUtils {
 
     fun shareSupplierReport(context: Context, item: SupplierReportItem) {
-        val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
-        val fileName = "SupplierReport_${item.supplier.name.replace(" ", "_")}_${System.currentTimeMillis()}.html"
-        val reportsDir = File(context.cacheDir, "reports")
-        if (!reportsDir.exists()) reportsDir.mkdirs()
-        val file = File(reportsDir, fileName)
+        // Enable drawing the whole document for high-quality PDF
+        WebView.enableSlowWholeDocumentDraw()
         
+        val webView = WebView(context)
+        val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
         val htmlContent = generateSupplierHtml(item, dateFormatter)
         
-        try {
-            file.writeText(htmlContent)
+        Toast.makeText(context, "جاري تحضير ملف PDF للمشاركة...", Toast.LENGTH_SHORT).show()
 
-            // Dynamic authority based on package name
+        // Important: WebView needs to be laid out to have a size for drawing
+        webView.layout(0, 0, 1200, 1800)
+
+        webView.webViewClient = object : WebViewClient() {
+            override fun onPageFinished(view: WebView, url: String) {
+                val reportsDir = File(context.cacheDir, "reports")
+                if (!reportsDir.exists()) reportsDir.mkdirs()
+                val fileName = "SupplierReport_${item.supplier.name.replace(" ", "_")}_${System.currentTimeMillis()}.pdf"
+                val file = File(reportsDir, fileName)
+
+                try {
+                    // Give it a tiny bit of time to render
+                    view.postDelayed({
+                        generatePdfFromWebView(view, file, context)
+                    }, 500)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    Toast.makeText(context, "فشل في إنشاء ملف PDF: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+        webView.loadDataWithBaseURL(null, htmlContent, "text/html", "utf-8", null)
+    }
+
+    private fun generatePdfFromWebView(webView: WebView, file: File, context: Context) {
+        val pdfDocument = PdfDocument()
+
+        // A4 size in points (1/72 inch)
+        val width = 595
+        val height = (webView.contentHeight * 595 / webView.width).coerceAtLeast(842)
+
+        val pageInfo = PdfDocument.PageInfo.Builder(width, height, 1).create()
+        val page = pdfDocument.startPage(pageInfo)
+
+        val canvas = page.canvas
+        val scale = width.toFloat() / webView.width.toFloat()
+        canvas.scale(scale, scale)
+
+        webView.draw(canvas)
+        pdfDocument.finishPage(page)
+
+        try {
+            val fos = FileOutputStream(file)
+            pdfDocument.writeTo(fos)
+            fos.close()
+            pdfDocument.close()
+            sharePdfFile(context, file)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Toast.makeText(context, "فشل في حفظ ملف PDF", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun sharePdfFile(context: Context, file: File) {
+        try {
             val contentUri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-            
             val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                type = "text/html"
+                type = "application/pdf"
                 putExtra(Intent.EXTRA_STREAM, contentUri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -41,7 +100,6 @@ object PrintUtils {
             chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(chooser)
-            Toast.makeText(context, "جاري تحضير ملف المشاركة...", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             e.printStackTrace()
             Toast.makeText(context, "فشل في مشاركة الملف: ${e.message}", Toast.LENGTH_LONG).show()
