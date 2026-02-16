@@ -22,12 +22,15 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 object PrintUtils {
+    private var activeWebView: WebView? = null // Prevent GC during PDF generation
 
     fun shareSupplierReport(context: Context, item: SupplierReportItem) {
         // Enable drawing the whole document for high-quality PDF
         WebView.enableSlowWholeDocumentDraw()
         
         val webView = WebView(context)
+        activeWebView = webView
+
         val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
         val htmlContent = generateSupplierHtml(item, dateFormatter)
         
@@ -35,6 +38,7 @@ object PrintUtils {
 
         // Important: WebView needs to be laid out to have a size for drawing
         webView.layout(0, 0, 1200, 1800) 
+        webView.setBackgroundColor(android.graphics.Color.WHITE)
 
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView, url: String) {
@@ -43,15 +47,17 @@ object PrintUtils {
                 val fileName = "SupplierReport_${item.supplier.name.replace(" ", "_")}_${System.currentTimeMillis()}.pdf"
                 val file = File(reportsDir, fileName)
                 
-                try {
-                    // Give it a tiny bit of time to render
-                    view.postDelayed({
+                // Use a slightly longer delay and ensure view is still valid
+                view.postDelayed({
+                    try {
                         generatePdfFromWebView(view, file, context)
-                    }, 500)
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                    Toast.makeText(context, "فشل في إنشاء ملف PDF: ${e.message}", Toast.LENGTH_SHORT).show()
-                }
+                        activeWebView = null // Clear reference after success
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        Toast.makeText(context, "فشل في إنشاء ملف PDF: ${e.message}", Toast.LENGTH_SHORT).show()
+                        activeWebView = null
+                    }
+                }, 1000)
             }
         }
         webView.loadDataWithBaseURL(null, htmlContent, "text/html", "utf-8", null)
