@@ -248,6 +248,11 @@ class StockEntryViewModel @Inject constructor(
                 return@launch
             }
             try {
+                if (state.selectedWarehouse?.isActive == false) {
+                    _uiState.update { it.copy(errorMessage = "عذراً، هذا المستودع متوقف حالياً ولا يمكن إجراء عمليات عليه.") }
+                    return@launch
+                }
+
                 if (state.isEditMode) {
                     val originalEntry = stockEntryRepository.getStockEntryById(editingEntryId!!)!!
                     val updatedItem = calculateItemFromState(state, state.selectedVariant!!)

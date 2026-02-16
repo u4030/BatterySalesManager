@@ -37,27 +37,33 @@ object PrintUtils {
         Toast.makeText(context, "جاري تحضير ملف PDF للمشاركة...", Toast.LENGTH_SHORT).show()
 
         // Important: WebView needs to be laid out to have a size for drawing
-        webView.layout(0, 0, 1200, 1800) 
+        webView.measure(
+            android.view.View.MeasureSpec.makeMeasureSpec(1200, android.view.View.MeasureSpec.EXACTLY),
+            android.view.View.MeasureSpec.makeMeasureSpec(0, android.view.View.MeasureSpec.UNSPECIFIED)
+        )
+        webView.layout(0, 0, 1200, webView.measuredHeight.coerceAtLeast(1800))
         webView.setBackgroundColor(android.graphics.Color.WHITE)
 
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView, url: String) {
+                android.util.Log.d("PrintUtils", "Page finished loading, starting PDF generation")
                 val reportsDir = File(context.cacheDir, "reports")
                 if (!reportsDir.exists()) reportsDir.mkdirs()
                 val fileName = "SupplierReport_${item.supplier.name.replace(" ", "_")}_${System.currentTimeMillis()}.pdf"
                 val file = File(reportsDir, fileName)
                 
-                // Use a slightly longer delay and ensure view is still valid
+                // Use a longer delay to ensure complete rendering on all devices
                 view.postDelayed({
                     try {
+                        android.util.Log.d("PrintUtils", "Delayed block executing. WebView height: ${view.contentHeight}")
                         generatePdfFromWebView(view, file, context)
                         activeWebView = null // Clear reference after success
                     } catch (e: Exception) {
-                        e.printStackTrace()
+                        android.util.Log.e("PrintUtils", "Error in delayed block", e)
                         Toast.makeText(context, "فشل في إنشاء ملف PDF: ${e.message}", Toast.LENGTH_SHORT).show()
                         activeWebView = null
                     }
-                }, 1000)
+                }, 2000)
             }
         }
         webView.loadDataWithBaseURL(null, htmlContent, "text/html", "utf-8", null)
