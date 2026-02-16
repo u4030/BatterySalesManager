@@ -283,6 +283,8 @@ class StockEntryViewModel @Inject constructor(
                 } else {
                     val grandTotalAmperes = state.stockItems.sumOf { it.totalAmperes }
                     val grandTotalCost = state.stockItems.sumOf { it.totalCost }
+                    val orderId = UUID.randomUUID().toString()
+                    val now = Date()
                     val entries = state.stockItems.map { item ->
                         StockEntry(
                             productVariantId = item.productVariant.id,
@@ -296,10 +298,11 @@ class StockEntryViewModel @Inject constructor(
                             totalCost = item.totalCost,
                             grandTotalAmperes = grandTotalAmperes,
                             grandTotalCost = grandTotalCost,
-                            timestamp = Date(),
+                            timestamp = now,
                             supplier = state.supplierName,
                             supplierId = state.selectedSupplier?.id ?: "",
                             invoiceNumber = state.invoiceNumber,
+                            orderId = orderId,
                             status = if (currentUser?.role == "seller") "pending" else "approved",
                             createdBy = currentUser?.id ?: "",
                             createdByUserName = currentUser?.displayName ?: ""
