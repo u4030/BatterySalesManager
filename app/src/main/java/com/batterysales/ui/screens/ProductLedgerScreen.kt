@@ -372,6 +372,13 @@ fun LedgerItemCard(
                         color = Color(0xFF3B82F6)
                     )
                 }
+                if (entry.invoiceNumber.isNotEmpty()) {
+                    InfoBadge(
+                        label = "رقم الفاتورة/المرجع",
+                        value = entry.invoiceNumber,
+                        color = Color(0xFF8B5CF6)
+                    )
+                }
             }
             if (entry.returnedQuantity > 0) {
                 val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())

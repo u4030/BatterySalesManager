@@ -190,17 +190,6 @@ fun OldBatteryLedgerScreen(
                         contentPadding = PaddingValues(horizontal = 16.dp),
                         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
                     ) {
-                        item {
-                            FilterChip(
-                                selected = selectedFilterWH == null,
-                                onClick = { 
-                                    selectedFilterWH = null
-                                    viewModel.loadTransactions(reset = true, warehouseId = null)
-                                },
-                                label = { Text("الكل") },
-                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = accentColor, selectedLabelColor = Color.White)
-                            )
-                        }
                         items(warehouses) { warehouse ->
                             FilterChip(
                                 selected = selectedFilterWH == warehouse.id,

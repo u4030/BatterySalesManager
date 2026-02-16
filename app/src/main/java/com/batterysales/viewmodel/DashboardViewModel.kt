@@ -74,19 +74,29 @@ class DashboardViewModel @Inject constructor(
 
     private fun loadDashboardData() {
         combine(
-                warehouseRepository.getWarehouses(),
-                userRepository.getCurrentUserFlow(),
-                billRepository.getAllBillsFlow(),
-                productVariantRepository.getAllVariantsFlow(),
-                productRepository.getProducts()
-            ) { warehouses, user, bills, variants, products ->
-                val isAdmin = user?.role == "admin"
-                val userWarehouseId = user?.warehouseId
+            warehouseRepository.getWarehouses(),
+            userRepository.getCurrentUserFlow(),
+            billRepository.getAllBillsFlow(),
+            productVariantRepository.getAllVariantsFlow(),
+            productRepository.getProducts(),
+            stockEntryRepository.getPendingEntriesFlow(),
+            stockEntryRepository.getAllStockEntriesFlow()
+        ) { array ->
+            val warehouses = array[0] as List<com.batterysales.data.models.Warehouse>
+            val user = array[1] as com.batterysales.data.models.User?
+            val bills = array[2] as List<com.batterysales.data.models.Bill>
+            val variants = array[3] as List<ProductVariant>
+            val products = array[4] as List<com.batterysales.data.models.Product>
+            val pendingEntries = array[5] as List<StockEntry>
+            val allStockEntries = array[6] as List<StockEntry>
 
-                // 1. Pending Approvals Count (Optimized)
-                val pendingCount = stockEntryRepository.getPendingCount()
+            val isAdmin = user?.role == "admin"
+            val userWarehouseId = user?.warehouseId
 
-                // 2. Upcoming Bills
+            // 1. Pending Approvals Count
+            val pendingCount = pendingEntries.size
+
+            // 2. Upcoming Bills
                 val today = Calendar.getInstance().apply {
                     set(Calendar.HOUR_OF_DAY, 0)
                     set(Calendar.MINUTE, 0)
@@ -119,7 +129,7 @@ class DashboardViewModel @Inject constructor(
 
                 val warehouseStatsList = relevantWarehouses.map { warehouse ->
                     val collection = paymentRepository.getTodayCollection(startOfToday, warehouse.id)
-                    val count = paymentRepository.getTodayCollectionCount(startOfToday, warehouse.id)
+                    val count = paymentRepository.getTodayCollectedInvoicesCount(startOfToday, warehouse.id)
 
                     WarehouseStats(
                         warehouseId = warehouse.id,
@@ -129,11 +139,10 @@ class DashboardViewModel @Inject constructor(
                     )
                 }.filter { if (isAdmin) it.todayCollection > 0 else true }
 
-                // 4. Low Stock (Still needs optimization, but we'll use a limited fetch if possible)
-                // For now, we still rely on full fetch but we should consider denormalizing 'currentStock'
-                val lowStock = calculateLowStock(variants, products, warehouses)
+            // 4. Low Stock
+            val lowStock = calculateLowStockFromData(variants, products, warehouses, allStockEntries)
 
-                val allNotifications = mutableListOf<AppNotification>()
+            val allNotifications = mutableListOf<AppNotification>()
                 
                 // Add Low Stock Notifications
                 lowStock.forEach { item ->
@@ -188,30 +197,35 @@ class DashboardViewModel @Inject constructor(
             }.launchIn(viewModelScope)
     }
 
-    private suspend fun calculateLowStock(variants: List<ProductVariant>, products: List<com.batterysales.data.models.Product>, warehouses: List<com.batterysales.data.models.Warehouse>): List<LowStockItem> {
-        // This is still heavy, but better than nothing.
-        // Ideally, we'd have a cloud function updating a 'stock_summary' document.
-        val allEntries = stockEntryRepository.getAllStockEntries() 
+    private fun calculateLowStockFromData(
+        variants: List<ProductVariant>,
+        products: List<com.batterysales.data.models.Product>,
+        warehouses: List<com.batterysales.data.models.Warehouse>,
+        allEntries: List<StockEntry>
+    ): List<LowStockItem> {
         val stockMap = allEntries.filter { it.status == StockEntry.STATUS_APPROVED }
             .groupBy { Pair(it.productVariantId, it.warehouseId) }
             .mapValues { entry -> entry.value.sumOf { it.quantity - it.returnedQuantity } }
 
         val productMap = products.associateBy { it.id }
         val lowStock = mutableListOf<LowStockItem>()
-        val activeVariants = variants.filter { !it.archived && it.minQuantity > 0 }
+        val activeVariants = variants.filter { !it.archived }
 
         for (variant in activeVariants) {
             val product = productMap[variant.productId] ?: continue
             for (warehouse in warehouses) {
+                val threshold = variant.minQuantities[warehouse.id] ?: variant.minQuantity
+                if (threshold <= 0) continue
+
                 val currentQty = stockMap[Pair(variant.id, warehouse.id)] ?: 0
-                if (currentQty <= variant.minQuantity) {
+                if (currentQty <= threshold) {
                     lowStock.add(
                         LowStockItem(
                             variantId = variant.id,
                             productName = product.name,
                             capacity = variant.capacity,
                             currentQuantity = currentQty,
-                            minQuantity = variant.minQuantity,
+                            minQuantity = threshold,
                             warehouseName = warehouse.name
                         )
                     )

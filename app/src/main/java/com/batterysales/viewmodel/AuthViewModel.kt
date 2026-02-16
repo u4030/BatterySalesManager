@@ -7,6 +7,7 @@ import com.batterysales.data.repositories.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import android.util.Log
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -42,7 +43,7 @@ class AuthViewModel @Inject constructor(
                     _isLoggedIn.value = false
                 }
             } catch (e: Exception) {
-                // Handle error
+                Log.e("AuthViewModel", "Error checking user status", e)
             }
         }
     }
@@ -56,6 +57,7 @@ class AuthViewModel @Inject constructor(
                 fetchCurrentUser()
                 _isLoggedIn.value = true
             } catch (e: Exception) {
+                Log.e("AuthViewModel", "Login error", e)
                 _errorMessage.value = e.message ?: "فشل تسجيل الدخول"
                 _isLoggedIn.value = false
             } finally {
@@ -73,6 +75,7 @@ class AuthViewModel @Inject constructor(
                 fetchCurrentUser()
                 _isLoggedIn.value = true
             } catch (e: Exception) {
+                Log.e("AuthViewModel", "Registration error", e)
                 _errorMessage.value = e.message ?: "فشل إنشاء الحساب"
             } finally {
                 _isLoading.value = false
@@ -97,7 +100,7 @@ class AuthViewModel @Inject constructor(
                 _currentUser.value = user
                 _isLoggedIn.value = _currentUser.value != null
             } catch (e: Exception) {
-                // Handle error
+                Log.e("AuthViewModel", "Error fetching current user", e)
             }
         }
     }

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.batterysales.data.models.*
 import com.batterysales.data.repositories.*
+import android.util.Log
 import com.batterysales.data.repositories.OldBatteryRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
@@ -97,6 +98,7 @@ class SalesViewModel @Inject constructor(
                     _uiState.update { it.copy(variants = variants, isLoading = false) }
                 }
                 .catch { e ->
+                    Log.e("SalesViewModel", "Error fetching variants", e)
                     _uiState.update { it.copy(errorMessage = "Failed to fetch variants", isLoading = false) }
                 }
                 .collect()
@@ -175,7 +177,7 @@ class SalesViewModel @Inject constructor(
                     customerPhone = customerPhone,
                     items = listOf(InvoiceItem(
                         productId = variant.id,
-                        productName = "${product.name} - ${variant.capacity} Amp" + if(variant.specification.isNotEmpty()) " (${variant.specification})" else "",
+                        productName = "${product.name}${if(product.specification.isNotEmpty()) " (${product.specification})" else ""} - ${variant.capacity}A${if(variant.specification.isNotEmpty()) " (${variant.specification})" else ""}",
                         quantity = qty,
                         price = price,
                         total = total,
@@ -254,6 +256,7 @@ class SalesViewModel @Inject constructor(
 
                 _uiState.update { it.copy(isFinished = true) }
             } catch (e: Exception) {
+                Log.e("SalesViewModel", "Error creating sale", e)
                 _uiState.update { it.copy(errorMessage = "Failed to create sale: ${e.message}", isLoading = false) }
             }
         }

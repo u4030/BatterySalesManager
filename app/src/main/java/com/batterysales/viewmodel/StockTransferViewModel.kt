@@ -11,6 +11,7 @@ import com.batterysales.data.repositories.StockEntryRepository
 import com.batterysales.data.repositories.UserRepository
 import com.batterysales.data.repositories.WarehouseRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import android.util.Log
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -86,6 +87,7 @@ class StockTransferViewModel @Inject constructor(
                     _uiState.update { it.copy(variants = variants, isLoading = false) }
                 }
                 .catch { e ->
+                    Log.e("StockTransferVM", "Error fetching variants", e)
                     _uiState.update { it.copy(errorMessage = "Failed to fetch variants", isLoading = false) }
                 }
                 .collect()
@@ -145,6 +147,7 @@ class StockTransferViewModel @Inject constructor(
                 )
                 _uiState.update { it.copy(isFinished = true) }
             } catch (e: Exception) {
+                Log.e("StockTransferVM", "Error transferring stock", e)
                 _uiState.update { it.copy(errorMessage = "Failed to transfer stock: ${e.message}", isLoading = false) }
             }
         }

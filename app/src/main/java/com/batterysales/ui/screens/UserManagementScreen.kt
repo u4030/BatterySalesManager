@@ -217,13 +217,25 @@ fun UserCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Row {
-                    IconButton(onClick = onStatusToggle) {
-                        Icon(
-                            if (user.isActive) Icons.Default.Block else Icons.Default.CheckCircle,
-                            contentDescription = "Status",
-                            tint = if (user.isActive) Color(0xFFFF9800) else Color(0xFF4CAF50)
-                        )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (!user.isActive) {
+                        Button(
+                            onClick = onStatusToggle,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                            modifier = Modifier.height(32.dp).padding(end = 8.dp),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("إعادة تفعيل", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    } else {
+                        IconButton(onClick = onStatusToggle) {
+                            Icon(
+                                Icons.Default.Block,
+                                contentDescription = "Deactivate",
+                                tint = Color(0xFFFF9800)
+                            )
+                        }
                     }
                     IconButton(onClick = onDelete) {
                         Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)

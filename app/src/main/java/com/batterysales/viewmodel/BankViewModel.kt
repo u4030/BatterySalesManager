@@ -8,8 +8,10 @@ import com.batterysales.data.repositories.BankRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import android.util.Log
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.Calendar
 import javax.inject.Inject
 
 @HiltViewModel
@@ -35,11 +37,23 @@ class BankViewModel @Inject constructor(
     private val _isLastPage = MutableStateFlow(false)
     val isLastPage = _isLastPage.asStateFlow()
 
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    val errorMessage = _errorMessage.asStateFlow()
+
     private var lastDocument: DocumentSnapshot? = null
     private var currentStartDate: Long? = null
     private var currentEndDate: Long? = null
 
     init {
+        // Default to current year
+        val cal = Calendar.getInstance()
+        val year = cal.get(Calendar.YEAR)
+        
+        cal.set(year, Calendar.JANUARY, 1, 0, 0, 0)
+        currentStartDate = cal.timeInMillis
+        cal.set(year, Calendar.DECEMBER, 31, 23, 59, 59)
+        currentEndDate = cal.timeInMillis
+
         loadData(reset = true)
     }
 
@@ -78,10 +92,16 @@ class BankViewModel @Inject constructor(
                 _isLoading.value = false
                 _isLoadingMore.value = false
             } catch (e: Exception) {
+                Log.e("BankViewModel", "Error loading data", e)
                 _isLoading.value = false
                 _isLoadingMore.value = false
+                _errorMessage.value = "خطأ في تحميل البيانات: ${e.message}"
             }
         }
+    }
+
+    fun clearError() {
+        _errorMessage.value = null
     }
 
     fun onDateRangeSelected(start: Long?, end: Long?) {
@@ -90,7 +110,7 @@ class BankViewModel @Inject constructor(
         loadData(reset = true)
     }
 
-    fun addManualTransaction(type: com.batterysales.data.models.BankTransactionType, amount: Double, description: String, referenceNumber: String = "") {
+    fun addManualTransaction(type: com.batterysales.data.models.BankTransactionType, amount: Double, description: String, referenceNumber: String = "", supplierName: String = "") {
         viewModelScope.launch {
             _isLoading.value = true
             try {
@@ -99,6 +119,7 @@ class BankViewModel @Inject constructor(
                     amount = amount,
                     description = description,
                     referenceNumber = referenceNumber,
+                    supplierName = supplierName,
                     date = java.util.Date()
                 )
                 repository.addTransaction(transaction)

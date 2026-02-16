@@ -11,6 +11,7 @@ data class BankTransaction(
     val type: BankTransactionType = BankTransactionType.DEPOSIT,
     val description: String = "",
     val referenceNumber: String = "",
+    val supplierName: String = "",
     val date: Date = Date(),
     val notes: String = ""
 ) {

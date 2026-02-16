@@ -9,7 +9,13 @@ import com.batterysales.data.repositories.AccountingRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import android.util.Log
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import java.util.*
 import javax.inject.Inject
@@ -54,6 +60,9 @@ class AccountingViewModel @Inject constructor(
     private val _selectedPaymentMethod = MutableStateFlow<String?>(null) // null means "All"
     val selectedPaymentMethod = _selectedPaymentMethod.asStateFlow()
 
+    private val _selectedTab = MutableStateFlow(0) // 0: All, 1: Withdrawals
+    val selectedTab = _selectedTab.asStateFlow()
+
     private val _selectedYear = MutableStateFlow<Int?>(null)
     val selectedYear = _selectedYear.asStateFlow()
 
@@ -62,6 +71,16 @@ class AccountingViewModel @Inject constructor(
     private var currentEndDate: Long? = null
 
     init {
+        // Default to current year
+        val cal = Calendar.getInstance()
+        val year = cal.get(Calendar.YEAR)
+        _selectedYear.value = year
+        
+        cal.set(year, Calendar.JANUARY, 1, 0, 0, 0)
+        currentStartDate = cal.timeInMillis
+        cal.set(year, Calendar.DECEMBER, 31, 23, 59, 59)
+        currentEndDate = cal.timeInMillis
+
         loadInitialData()
     }
 
@@ -71,14 +90,14 @@ class AccountingViewModel @Inject constructor(
             _currentUser.value = user
             
             if (user?.role == "admin") {
-                warehouseRepository.getWarehouses().collect { allWh ->
+                warehouseRepository.getWarehouses().onEach { allWh ->
                     val active = allWh.filter { it.isActive }
                     _warehouses.value = active
-                    if (_selectedWarehouseId.value == null) {
+                    if (active.isNotEmpty() && _selectedWarehouseId.value == null) {
                         _selectedWarehouseId.value = active.firstOrNull()?.id
                         loadData(reset = true)
                     }
-                }
+                }.launchIn(viewModelScope)
             } else {
                 _selectedWarehouseId.value = user?.warehouseId
                 loadData(reset = true)
@@ -88,6 +107,11 @@ class AccountingViewModel @Inject constructor(
 
     fun onWarehouseSelected(id: String) {
         _selectedWarehouseId.value = id
+        loadData(reset = true)
+    }
+
+    fun onTabSelected(index: Int) {
+        _selectedTab.value = index
         loadData(reset = true)
     }
 
@@ -111,7 +135,15 @@ class AccountingViewModel @Inject constructor(
         loadData(reset = true)
     }
 
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    val errorMessage = _errorMessage.asStateFlow()
+
     fun loadData(reset: Boolean = false) {
+        val warehouseId = _selectedWarehouseId.value
+        if (warehouseId == null) {
+            return
+        }
+
         if (reset) {
             lastDocument = null
             _transactions.value = emptyList()
@@ -127,10 +159,26 @@ class AccountingViewModel @Inject constructor(
 
                 val warehouseId = _selectedWarehouseId.value
                 val paymentMethod = _selectedPaymentMethod.value
+                val typesFilter = if (_selectedTab.value == 1) {
+                    listOf(com.batterysales.data.models.TransactionType.EXPENSE.name, com.batterysales.data.models.TransactionType.REFUND.name)
+                } else null
                 
+                if (reset) {
+                    coroutineScope {
+                        val balanceJob = async { repository.getCurrentBalance(warehouseId, paymentMethod, currentEndDate) }
+                        val totalExpensesJob = async { repository.getTotalExpenses(warehouseId, paymentMethod, currentStartDate, currentEndDate) }
+                        val expensesJob = async { repository.getAllExpenses() }
+                        
+                        _balance.value = balanceJob.await()
+                        _totalExpenses.value = totalExpensesJob.await()
+                        _expenses.value = expensesJob.await()
+                    }
+                }
+
                 val result = repository.getTransactionsPaginated(
                     warehouseId = warehouseId,
                     paymentMethod = paymentMethod,
+                    types = typesFilter,
                     startDate = currentStartDate,
                     endDate = currentEndDate,
                     lastDocument = lastDocument,
@@ -142,17 +190,18 @@ class AccountingViewModel @Inject constructor(
 
                 _transactions.update { current -> if (reset) newTransactions else current + newTransactions }
                 _isLastPage.value = newTransactions.size < 20
-
-                if (reset) {
-                    _balance.value = repository.getCurrentBalance(warehouseId, paymentMethod, currentEndDate)
-                    _totalExpenses.value = repository.getTotalExpenses(warehouseId, paymentMethod, currentStartDate, currentEndDate)
-                    _expenses.value = repository.getAllExpenses() // Expenses are fewer, keep for now
-                }
+            } catch (e: Exception) {
+                Log.e("AccountingViewModel", "Error loading data", e)
+                _errorMessage.value = "خطأ في تحميل البيانات: ${e.message}"
             } finally {
                 _isLoading.value = false
                 _isLoadingMore.value = false
             }
         }
+    }
+
+    fun clearError() {
+        _errorMessage.value = null
     }
 
     fun onDateRangeSelected(start: Long?, end: Long?) {
@@ -220,7 +269,7 @@ class AccountingViewModel @Inject constructor(
                 repository.deleteTransaction(id)
                 loadData(reset = true)
             } catch (e: Exception) {
-                // Handle error
+                Log.e("AccountingViewModel", "Error deleting transaction", e)
             }
         }
     }
@@ -231,7 +280,7 @@ class AccountingViewModel @Inject constructor(
                 repository.updateTransaction(transaction)
                 loadData(reset = true)
             } catch (e: Exception) {
-                // Handle error
+                Log.e("AccountingViewModel", "Error updating transaction", e)
             }
         }
     }

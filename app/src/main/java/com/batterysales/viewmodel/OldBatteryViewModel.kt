@@ -13,6 +13,9 @@ import com.batterysales.data.repositories.OldBatteryRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import android.util.Log
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.*
@@ -79,14 +82,25 @@ class OldBatteryViewModel @Inject constructor(
                 _isSeller.value = currentUser?.role == "seller"
                 _userWarehouseId.value = currentUser?.warehouseId
 
-                launch {
-                    warehouseRepository.getWarehouses().collect { allWh ->
-                        _warehouses.value = allWh.filter { it.isActive }
+                warehouseRepository.getWarehouses().onEach { allWh ->
+                    val active = allWh.filter { it.isActive }
+                    _warehouses.value = active
+                    
+                    // If admin and no warehouse selected, default to first active one
+                    if (currentUser?.role == "admin" && _selectedWarehouseId.value == null) {
+                        active.firstOrNull()?.let { 
+                            _selectedWarehouseId.value = it.id
+                            loadTransactions(reset = true, warehouseId = it.id)
+                        }
                     }
+                }.launchIn(viewModelScope)
+                
+                if (_isSeller.value) {
+                    loadTransactions(reset = true, warehouseId = _userWarehouseId.value)
                 }
                 
-                loadTransactions(reset = true)
             } catch (e: Exception) {
+                Log.e("OldBatteryViewModel", "Error loading initial data", e)
                 _isLoading.value = false
             }
         }
@@ -138,6 +152,7 @@ class OldBatteryViewModel @Inject constructor(
                 _summary.value = summ
 
             } catch (e: Exception) {
+                Log.e("OldBatteryViewModel", "Error loading transactions", e)
                 _isLoading.value = false
                 _isLoadingMore.value = false
                 _errorMessage.value = "خطأ في تحميل البيانات: ${e.message}"
@@ -183,7 +198,9 @@ class OldBatteryViewModel @Inject constructor(
                 transaction?.invoiceId?.let { invoiceId ->
                     updateInvoiceScrap(invoiceId, 0, 0.0, 0.0)
                 }
-            } catch (e: Exception) {}
+            } catch (e: Exception) {
+                Log.e("OldBatteryViewModel", "Error deleting transaction", e)
+            }
         }
     }
 
@@ -202,7 +219,9 @@ class OldBatteryViewModel @Inject constructor(
                         updateInvoiceScrap(invoiceId, transaction.quantity, transaction.totalAmperes, newValue)
                     }
                 }
-            } catch (e: Exception) {}
+            } catch (e: Exception) {
+                Log.e("OldBatteryViewModel", "Error updating transaction", e)
+            }
         }
     }
 
@@ -235,7 +254,9 @@ class OldBatteryViewModel @Inject constructor(
                     createdByUserName = currentUser?.displayName ?: ""
                 )
                 repository.addTransaction(transaction)
-            } catch (e: Exception) {}
+            } catch (e: Exception) {
+                Log.e("OldBatteryViewModel", "Error adding manual intake", e)
+            }
         }
     }
 
@@ -262,7 +283,9 @@ class OldBatteryViewModel @Inject constructor(
                     relatedId = null // Manual income in treasury
                 )
                 accountingRepository.addTransaction(treasuryTransaction)
-            } catch (e: Exception) {}
+            } catch (e: Exception) {
+                Log.e("OldBatteryViewModel", "Error selling batteries", e)
+            }
         }
     }
 }

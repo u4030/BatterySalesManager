@@ -44,6 +44,7 @@ fun BankScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
     val isLastPage by viewModel.isLastPage.collectAsState()
+    val errorMessage by viewModel.errorMessage.collectAsState()
     val listState = rememberLazyListState()
     var showAddDialog by remember { mutableStateOf(false) }
     var selectedType by remember { mutableStateOf(com.batterysales.data.models.BankTransactionType.DEPOSIT) }
@@ -62,7 +63,8 @@ fun BankScreen(
                 else -> true
             }
             val matchesSearch = transaction.description.contains(searchQuery, ignoreCase = true) || 
-                               transaction.referenceNumber.contains(searchQuery, ignoreCase = true)
+                               transaction.referenceNumber.contains(searchQuery, ignoreCase = true) ||
+                               transaction.supplierName.contains(searchQuery, ignoreCase = true)
             matchesTab && matchesSearch
         }
     }
@@ -87,6 +89,17 @@ fun BankScreen(
     val headerGradient = androidx.compose.ui.graphics.Brush.verticalGradient(
         colors = listOf(Color(0xFFE53935), Color(0xFFFB8C00))
     )
+
+    errorMessage?.let { error ->
+        AlertDialog(
+            onDismissRequest = { viewModel.clearError() },
+            title = { Text("خطأ") },
+            text = { Text(error) },
+            confirmButton = {
+                Button(onClick = { viewModel.clearError() }) { Text("موافق") }
+            }
+        )
+    }
 
     Scaffold(
         containerColor = bgColor,
@@ -312,8 +325,8 @@ fun BankScreen(
         AddBankTransactionDialog(
             type = selectedType,
             onDismiss = { showAddDialog = false },
-            onAdd = { type, desc, amount, ref ->
-                viewModel.addManualTransaction(type, amount, desc, ref)
+            onAdd = { type, desc, amount, ref, supplier ->
+                viewModel.addManualTransaction(type, amount, desc, ref, supplier)
                 showAddDialog = false
             }
         )
@@ -324,11 +337,12 @@ fun BankScreen(
 fun AddBankTransactionDialog(
     type: com.batterysales.data.models.BankTransactionType,
     onDismiss: () -> Unit,
-    onAdd: (com.batterysales.data.models.BankTransactionType, String, Double, String) -> Unit
+    onAdd: (com.batterysales.data.models.BankTransactionType, String, Double, String, String) -> Unit
 ) {
     var description by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
     var referenceNumber by remember { mutableStateOf("") }
+    var supplierName by remember { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -339,6 +353,11 @@ fun AddBankTransactionDialog(
                     value = description,
                     onValueChange = { description = it },
                     label = "الوصف"
+                )
+                com.batterysales.ui.components.CustomKeyboardTextField(
+                    value = supplierName,
+                    onValueChange = { supplierName = it },
+                    label = "اسم المورد (اختياري)"
                 )
                 com.batterysales.ui.components.CustomKeyboardTextField(
                     value = referenceNumber,
@@ -356,7 +375,7 @@ fun AddBankTransactionDialog(
         confirmButton = {
             Button(onClick = {
                 val amt = amount.toDoubleOrNull() ?: 0.0
-                if (description.isNotEmpty() && amt > 0) onAdd(type, description, amt, referenceNumber)
+                if (description.isNotEmpty() && amt > 0) onAdd(type, description, amt, referenceNumber, supplierName)
             }, colors = ButtonDefaults.buttonColors(
                 containerColor = if (type == com.batterysales.data.models.BankTransactionType.DEPOSIT) Color(0xFF4CAF50) else Color(0xFFF44336)
             )) { Text("موافق") }
@@ -422,6 +441,16 @@ fun BankTransactionItemCard(transaction: BankTransaction) {
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface
             )
+
+            if (transaction.supplierName.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "المورد: ${transaction.supplierName}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color(0xFF3B82F6),
+                    fontWeight = FontWeight.Medium
+                )
+            }
 
             if (transaction.referenceNumber.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(4.dp))

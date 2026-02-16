@@ -24,6 +24,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.navigation.NavHostController
 import com.batterysales.data.models.Invoice
 import com.batterysales.viewmodel.InvoiceViewModel
@@ -84,6 +87,17 @@ fun InvoiceScreen(
         )
     }
 
+    uiState.errorMessage?.let { error ->
+        AlertDialog(
+            onDismissRequest = { viewModel.onDismissError() },
+            title = { Text("خطأ") },
+            text = { Text(error) },
+            confirmButton = {
+                Button(onClick = { viewModel.onDismissError() }) { Text("موافق") }
+            }
+        )
+    }
+
     // Load more when reaching the end
     val shouldLoadMore = remember {
         derivedStateOf {
@@ -95,6 +109,20 @@ fun InvoiceScreen(
     LaunchedEffect(shouldLoadMore.value) {
         if (shouldLoadMore.value && !uiState.isLoading && !uiState.isLoadingMore && !uiState.isLastPage) {
             viewModel.loadInvoices()
+        }
+    }
+
+    // Refresh data when screen is focused to update invoice status after payments
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.loadInvoices(reset = true)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }
 
@@ -124,25 +152,26 @@ fun InvoiceScreen(
 
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (uiState.isAdmin && uiState.warehouses.isNotEmpty()) {
+                            val selectedIndex = uiState.warehouses.indexOfFirst { it.id == uiState.selectedWarehouseId }.coerceAtLeast(0)
+
                             ScrollableTabRow(
-                                selectedTabIndex = uiState.warehouses.indexOfFirst { it.id == uiState.selectedWarehouseId }.coerceAtLeast(0),
-                                containerColor = Color.Black.copy(alpha = 0.2f),
+                                selectedTabIndex = selectedIndex,
+                                containerColor = Color.Transparent,
                                 contentColor = Color.White,
                                 edgePadding = 16.dp,
                                 divider = {},
                                 indicator = { tabPositions ->
                                     if (tabPositions.isNotEmpty()) {
-                                        val index = uiState.warehouses.indexOfFirst { it.id == uiState.selectedWarehouseId }.coerceAtLeast(0)
                                         Box(
                                             Modifier
-                                                .tabIndicatorOffset(tabPositions[index])
+                                                .tabIndicatorOffset(tabPositions[selectedIndex])
                                                 .height(4.dp)
                                                 .padding(horizontal = 16.dp)
                                                 .background(Color.White, RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
                                         )
                                     }
                                 },
-                                modifier = Modifier.background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
                             ) {
                                 uiState.warehouses.forEach { warehouse ->
                                     Tab(
@@ -151,7 +180,7 @@ fun InvoiceScreen(
                                         text = {
                                             Text(
                                                 warehouse.name,
-                                                style = MaterialTheme.typography.labelLarge,
+                                                style = MaterialTheme.typography.titleSmall,
                                                 fontWeight = if (uiState.selectedWarehouseId == warehouse.id) FontWeight.Bold else FontWeight.Medium
                                             )
                                         },
@@ -162,24 +191,20 @@ fun InvoiceScreen(
                             }
                     }
 
-                    // All / Pending Tabs
+                    // Secondary filters as Chips
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
-                            .padding(4.dp)
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        TabItem(
-                            title = "الكل",
-                            isSelected = uiState.selectedTab == 0,
-                            modifier = Modifier.weight(1f),
-                            onClick = { viewModel.onTabSelected(0) }
+                        FilterChip(
+                            selected = uiState.selectedTab == 0,
+                            onClick = { viewModel.onTabSelected(0) },
+                            label = { Text("كافة الفواتير") }
                         )
-                        TabItem(
-                            title = "المعلقة",
-                            isSelected = uiState.selectedTab == 1,
-                            modifier = Modifier.weight(1f),
-                            onClick = { viewModel.onTabSelected(1) }
+                        FilterChip(
+                            selected = uiState.selectedTab == 1,
+                            onClick = { viewModel.onTabSelected(1) },
+                            label = { Text("الذمم فقط") }
                         )
                     }
 

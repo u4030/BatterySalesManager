@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.batterysales.data.models.*
 import com.batterysales.data.repositories.*
+import android.util.Log
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -169,6 +170,7 @@ class StockEntryViewModel @Inject constructor(
                 val variants = productVariantRepository.getVariantsForProduct(product.id).filter { !it.archived }
                 _uiState.update { it.copy(variants = variants, isLoading = false) }
             } catch (e: Exception) {
+                Log.e("StockEntryViewModel", "Error fetching variants", e)
                 _uiState.update { it.copy(errorMessage = "فشل تحميل السعات", isLoading = false) }
             }
         }
@@ -315,6 +317,7 @@ class StockEntryViewModel @Inject constructor(
                 }
                 _uiState.update { it.copy(isFinished = true) }
             } catch (e: Exception) {
+                Log.e("StockEntryViewModel", "Error saving stock data", e)
                 _uiState.update { it.copy(errorMessage = "فشل حفظ البيانات: ${e.message}") }
             }
         }
@@ -351,6 +354,7 @@ class StockEntryViewModel @Inject constructor(
             try {
                 warehouseRepository.addWarehouse(Warehouse(name = name, location = ""))
             } catch (e: Exception) {
+                Log.e("StockEntryViewModel", "Error adding warehouse", e)
                 _uiState.update { it.copy(errorMessage = "فشل إضافة المستودع") }
             }
         }
@@ -361,6 +365,7 @@ class StockEntryViewModel @Inject constructor(
             try {
                 supplierRepository.addSupplier(Supplier(name = name, yearlyTarget = target))
             } catch (e: Exception) {
+                Log.e("StockEntryViewModel", "Error adding supplier", e)
                 _uiState.update { it.copy(errorMessage = "فشل إضافة المورد") }
             }
         }

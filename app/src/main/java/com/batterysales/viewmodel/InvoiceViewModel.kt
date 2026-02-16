@@ -12,6 +12,7 @@ import com.batterysales.data.repositories.StockEntryRepository
 import com.batterysales.data.repositories.WarehouseRepository
 import com.batterysales.data.repositories.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import android.util.Log
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -103,7 +104,7 @@ class InvoiceViewModel @Inject constructor(
                 val statusFilter = if (state.selectedTab == 1) "pending" else null
                 
                 val result = invoiceRepository.getInvoicesPaginated(
-                    warehouseId = state.selectedWarehouseId,
+                    warehouseId = if (state.selectedWarehouseId == "all") null else state.selectedWarehouseId,
                     status = statusFilter,
                     startDate = state.startDate,
                     endDate = state.endDate,
@@ -126,10 +127,11 @@ class InvoiceViewModel @Inject constructor(
                     )
                 }
                 
-                // Calculate debt (this should also be moved to server-side aggregation later)
+                // Calculate debt
                 calculateTotalDebt()
 
             } catch (e: Exception) {
+                Log.e("InvoiceViewModel", "Error loading invoices", e)
                 _uiState.update { it.copy(isLoading = false, isLoadingMore = false, errorMessage = "Failed to load invoices") }
             }
         }
@@ -139,12 +141,11 @@ class InvoiceViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val warehouseId = _uiState.value.selectedWarehouseId
-                if (warehouseId.isNotBlank()) {
-                    val debt = invoiceRepository.getTotalDebtForWarehouse(warehouseId)
-                    _uiState.update { it.copy(totalDebt = debt) }
-                }
+                val debt = invoiceRepository.getTotalDebtForWarehouse(if (warehouseId == "all") null else warehouseId)
+                _uiState.update { it.copy(totalDebt = debt) }
             } catch (e: Exception) {
-                // Fallback or log error
+                Log.e("InvoiceViewModel", "Error calculating debt", e)
+                _uiState.update { it.copy(errorMessage = "خطأ في حساب الذمم: ${e.message}") }
             }
         }
     }
@@ -207,6 +208,7 @@ class InvoiceViewModel @Inject constructor(
                     invoiceRepository.deleteInvoice(invoice.id)
 
                 } catch (e: Exception) {
+                    Log.e("InvoiceViewModel", "Error confirming delete", e)
                     _uiState.update { it.copy(errorMessage = "Failed to delete invoice") }
                 } finally {
                     onDismissDeleteDialog()
@@ -239,6 +241,7 @@ class InvoiceViewModel @Inject constructor(
                 ) }
 
             } catch (e: Exception) {
+                Log.e("InvoiceViewModel", "Error preparing for deletion", e)
                 _uiState.update { it.copy(errorMessage = "Failed to prepare for deletion") }
             }
         }
@@ -250,6 +253,7 @@ class InvoiceViewModel @Inject constructor(
                 val updatedInvoice = invoice.copy(customerName = newName, customerPhone = newPhone)
                 invoiceRepository.updateInvoice(updatedInvoice)
             } catch (e: Exception) {
+                Log.e("InvoiceViewModel", "Error updating customer info", e)
                 _uiState.update { it.copy(errorMessage = "Failed to update customer info") }
             }
         }

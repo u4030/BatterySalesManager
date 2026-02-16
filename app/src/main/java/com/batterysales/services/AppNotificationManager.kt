@@ -4,6 +4,7 @@ import android.content.Context
 import com.batterysales.data.models.*
 import com.batterysales.data.repositories.*
 import com.batterysales.ui.components.NotificationHelper
+import android.util.Log
 import com.google.firebase.firestore.FirebaseFirestore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -38,9 +39,11 @@ class AppNotificationManager @Inject constructor(
     fun startListening() {
         if (isInitialized) return
         isInitialized = true
+        Log.d("AppNotificationManager", "Starting notification listeners")
 
         userRepository.getCurrentUserFlow()
             .onEach { user ->
+                Log.d("AppNotificationManager", "User changed: ${user?.displayName}, role: ${user?.role}")
                 pendingEntriesListener?.remove()
                 upcomingBillsListener?.remove()
                 lowStockJob?.cancel()
@@ -184,7 +187,7 @@ class AppNotificationManager @Inject constructor(
             // Group entries to optimize calculation by Pair(variantId, warehouseId)
             val stockMap = allEntries.filter { it.status == StockEntry.STATUS_APPROVED }
                 .groupBy { Pair(it.productVariantId, it.warehouseId) }
-                .mapValues { it.value.sumOf { entry -> entry.quantity } }
+                .mapValues { it.value.sumOf { entry -> entry.quantity - entry.returnedQuantity } }
 
             val lowStockItems = mutableListOf<Pair<ProductVariant, Warehouse>>()
             allVariants.filter { !it.archived }.forEach { variant ->
@@ -200,10 +203,11 @@ class AppNotificationManager @Inject constructor(
             }
 
             if (!hasEmittedData) {
-                // Wait for all data to load
+                // Wait for all data to load (avoid false positives on partial load)
                 if (allProducts.isNotEmpty() && allVariants.isEmpty()) return@combine
 
                 hasEmittedData = true
+                
                 if (lowStockItems.isNotEmpty()) {
                     NotificationHelper.showNotification(
                         context,
@@ -211,7 +215,7 @@ class AppNotificationManager @Inject constructor(
                         "يوجد عدد ${lowStockItems.size} أصناف وصلت للحد الأدنى للمخزون في المستودعات"
                     )
                 }
-                // Mark existing low stock as notified
+                
                 lowStockItems.forEach { (variant, warehouse) ->
                     notifiedLowStockKeys.add("${variant.id}:${warehouse.id}")
                 }
