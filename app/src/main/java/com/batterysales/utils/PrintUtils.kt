@@ -206,6 +206,8 @@ object PrintUtils {
 
     fun printSupplierReport(context: Context, item: SupplierReportItem) {
         val webView = WebView(context)
+        activeWebView = webView // Prevent GC
+
         val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
         val htmlContent = generateSupplierHtml(item, dateFormatter)
 
@@ -215,6 +217,7 @@ object PrintUtils {
                 val printAdapter = webView.createPrintDocumentAdapter("تقرير المورد - ${item.supplier.name}")
                 val jobName = "SupplierReport_${item.supplier.name}"
                 printManager.print(jobName, printAdapter, PrintAttributes.Builder().build())
+                // activeWebView remains set until next call or could be cleared after a delay
             }
         }
 

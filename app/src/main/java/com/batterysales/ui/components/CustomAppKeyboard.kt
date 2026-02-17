@@ -29,8 +29,9 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupProperties
 import android.view.Gravity
+import android.view.ViewGroup
+import android.view.WindowManager
 import android.graphics.drawable.ColorDrawable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -59,11 +60,18 @@ fun CustomAppKeyboard(
 
     var language by remember { mutableStateOf(initialLanguage) }
 
-    Popup(
-        alignment = Alignment.BottomCenter,
+    Dialog(
         onDismissRequest = onDone,
-        properties = PopupProperties(focusable = false)
+        properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
+        val window = (LocalView.current.parent as? DialogWindowProvider)?.window
+        window?.let {
+            it.setGravity(Gravity.BOTTOM)
+            it.setDimAmount(0f)
+            it.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
+            it.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            it.addFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL)
+        }
 
         // <<<=== 1. تم تعديل الصفوف لتقليل عدد الأزرار في كل صف
         val arabicRows = listOf(
@@ -227,11 +235,11 @@ fun CustomAppKeyboard(
                             color = if (onSearch != null) Color(0xFFFB8C00) else MaterialTheme.colorScheme.primary
                         ) {
                             Box(contentAlignment = Alignment.Center) {
-                                if (onSearch != null) {
-                                    Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.White)
-                                } else {
-                                    Text("تم", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold)
-                                }
+                                Text(
+                                    text = "تم",
+                                    color = if (onSearch != null) Color.White else MaterialTheme.colorScheme.onPrimary,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
                         }
                     }

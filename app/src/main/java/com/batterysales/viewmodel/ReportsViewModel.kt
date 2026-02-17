@@ -248,7 +248,9 @@ class ReportsViewModel @Inject constructor(
                             entry = representative.copy(totalCost = totalOrderCost),
                             linkedPaidAmount = linkedPaid,
                             remainingBalance = totalOrderCost - linkedPaid,
-                            referenceNumbers = linkedBills.filter { it.referenceNumber.isNotEmpty() }.map { bill ->
+                            referenceNumbers = linkedBills.filter {
+                                it.referenceNumber.isNotEmpty() && it.status == BillStatus.PAID
+                            }.map { bill ->
                                 val typeStr = when (bill.billType) {
                                     BillType.CHECK -> "شيك"
                                     BillType.BILL -> "كمبيالة"

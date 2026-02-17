@@ -11,8 +11,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import android.util.Log
 import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -81,15 +83,27 @@ class AccountingViewModel @Inject constructor(
         cal.set(year, Calendar.DECEMBER, 31, 23, 59, 59)
         currentEndDate = cal.timeInMillis
 
+        setupFiltersTrigger()
         loadInitialData()
-        _selectedWarehouseId
-            .onEach { id ->
-                if (id != null) {
-                    loadData(reset = true)
-                }
-            }
-            .launchIn(viewModelScope)
+    }
 
+    private fun setupFiltersTrigger() {
+        combine(
+            _selectedWarehouseId,
+            _selectedTab,
+            _selectedPaymentMethod,
+            _selectedYear
+        ) { w, t, p, y ->
+            // Trigger parameters
+            Triple(w, t, p) to y
+        }
+        .distinctUntilChanged()
+        .onEach { (triple, year) ->
+            if (triple.first != null) {
+                loadData(reset = true)
+            }
+        }
+        .launchIn(viewModelScope)
     }
 
     private fun loadInitialData() {
@@ -98,37 +112,34 @@ class AccountingViewModel @Inject constructor(
             _currentUser.value = user
             
             if (user?.role == "admin") {
-                warehouseRepository.getWarehouses().onEach { allWh ->
+                // Listen to warehouses once to get initial selection
+                val allWh = warehouseRepository.getWarehouses().onEach { allWh ->
                     val active = allWh.filter { it.isActive }
                     _warehouses.value = active
-                    if (active.isNotEmpty() ) {
+                    if (_selectedWarehouseId.value == null && active.isNotEmpty()) {
                         _selectedWarehouseId.value = active.firstOrNull()?.id
                     }
                 }.launchIn(viewModelScope)
             } else {
                 _selectedWarehouseId.value = user?.warehouseId
-                loadData(reset = true)
+                // No need to call loadData here, it will be triggered by _selectedWarehouseId change
             }
         }
     }
 
     fun onWarehouseSelected(id: String) {
         _selectedWarehouseId.value = id
-        loadData(reset = true)
     }
 
     fun onTabSelected(index: Int) {
         _selectedTab.value = index
-        loadData(reset = true)
     }
 
     fun onPaymentMethodSelected(method: String?) {
         _selectedPaymentMethod.value = method
-        loadData(reset = true)
     }
 
     fun onYearSelected(year: Int?) {
-        _selectedYear.value = year
         if (year != null) {
             val cal = Calendar.getInstance()
             cal.set(year, Calendar.JANUARY, 1, 0, 0, 0)
@@ -139,7 +150,7 @@ class AccountingViewModel @Inject constructor(
             currentStartDate = null
             currentEndDate = null
         }
-        loadData(reset = true)
+        _selectedYear.value = year
     }
 
     private val _errorMessage = MutableStateFlow<String?>(null)
