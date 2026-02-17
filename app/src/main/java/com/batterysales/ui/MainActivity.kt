@@ -85,7 +85,8 @@ class MainActivity : ComponentActivity() {
                         currentValue = keyboardController.currentValue.value,
                         isVisible = keyboardController.isVisible.value,
                         initialLanguage = keyboardController.keyboardType.value,
-                        onDone = { keyboardController.hideKeyboard() }
+                        onDone = { keyboardController.hideKeyboard() },
+                        onSearch = { keyboardController.onSearchClicked() }
                     )
                 }
             }
