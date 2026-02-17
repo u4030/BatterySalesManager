@@ -166,7 +166,7 @@ class AccountingViewModel @Inject constructor(
         if (reset) {
             loadJob?.cancel()
             lastDocument = null
-            _transactions.value = emptyList()
+            // Don't clear transactions immediately to avoid flickering
             _isLastPage.value = false
             _isLoading.value = true
         }
@@ -208,7 +208,11 @@ class AccountingViewModel @Inject constructor(
                 val newTransactions = result.first
                 lastDocument = result.second
 
-                _transactions.update { current -> if (reset) newTransactions else current + newTransactions }
+                if (reset) {
+                    _transactions.value = newTransactions
+                } else {
+                    _transactions.update { it + newTransactions }
+                }
                 _isLastPage.value = newTransactions.size < 20
             } catch (e: Exception) {
                 Log.e("AccountingViewModel", "Error loading data", e)

@@ -59,10 +59,17 @@ fun CustomAppKeyboard(
     if (!isVisible) return
 
     var language by remember { mutableStateOf(initialLanguage) }
+    val currentOnValueChange by rememberUpdatedState(onValueChange)
+    val currentVal by rememberUpdatedState(currentValue)
 
     Dialog(
         onDismissRequest = onDone,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnBackPress = true,
+            dismissOnClickOutside = false,
+            decorFitsSystemWindows = false
+        )
     ) {
         val window = (LocalView.current.parent as? DialogWindowProvider)?.window
         window?.let {
@@ -180,9 +187,9 @@ fun CustomAppKeyboard(
                         // Continuous delete on long press
                         LaunchedEffect(isPressed) {
                             if (isPressed) {
-                                while (currentTextState.value.isNotEmpty()) {
-                                    onValueChange(currentTextState.value.dropLast(1))
-                                    delay(100) // Adjust delay for deletion speed
+                                while (currentVal.isNotEmpty()) {
+                                    currentOnValueChange(currentVal.dropLast(1))
+                                    delay(100)
                                 }
                             }
                         }
@@ -192,15 +199,20 @@ fun CustomAppKeyboard(
                             modifier = Modifier
                                 .height(55.dp)
                                 .weight(1.5f)
+                                .pointerInput(Unit) {
+                                    detectTapGestures(
+                                        onTap = {
+                                            if (currentVal.isNotEmpty()) {
+                                                currentOnValueChange(currentVal.dropLast(1))
+                                            }
+                                        }
+                                    )
+                                }
                                 .combinedClickable(
                                     interactionSource = interactionSource,
-                                    indication = null, // Disable ripple for custom feedback
-                                    onClick = {
-                                        if (currentValue.isNotEmpty()) {
-                                            onValueChange(currentValue.dropLast(1))
-                                        }
-                                    },
-                                    onLongClick = {} // Handled by LaunchedEffect
+                                    indication = null,
+                                    onClick = {},
+                                    onLongClick = {}
                                 ),
                             shape = RoundedCornerShape(8.dp),
                             color = MaterialTheme.colorScheme.errorContainer
@@ -212,10 +224,12 @@ fun CustomAppKeyboard(
 
                         // SPACE BAR (Centered and Longer)
                         Surface(
-                            onClick = { onValueChange(currentValue + " ") },
                             modifier = Modifier
                                 .height(55.dp)
-                                .weight(4f),
+                                .weight(4f)
+                                .pointerInput(Unit) {
+                                    detectTapGestures(onTap = { currentOnValueChange(currentVal + " ") })
+                                },
                             shape = RoundedCornerShape(8.dp),
                             color = MaterialTheme.colorScheme.surface
                         ) {
@@ -235,11 +249,15 @@ fun CustomAppKeyboard(
                             color = if (onSearch != null) Color(0xFFFB8C00) else MaterialTheme.colorScheme.primary
                         ) {
                             Box(contentAlignment = Alignment.Center) {
-                                Text(
-                                    text = "تم",
-                                    color = if (onSearch != null) Color.White else MaterialTheme.colorScheme.onPrimary,
-                                    fontWeight = FontWeight.Bold
-                                )
+                                if (onSearch != null) {
+                                    Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.White)
+                                } else {
+                                    Text(
+                                        text = "تم",
+                                        color = MaterialTheme.colorScheme.onPrimary,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
                             }
                         }
                     }
@@ -257,6 +275,8 @@ fun KeyboardKey(
     onClick: () -> Unit,
     onAltClick: (String) -> Unit
 ) {
+    val currentOnClick by rememberUpdatedState(onClick)
+    val currentOnAltClick by rememberUpdatedState(onAltClick)
     var showAlternatives by remember { mutableStateOf(false) }
     val alternatives = when (text) {
         "ا" -> listOf("أ", "إ", "آ")
@@ -302,9 +322,9 @@ fun KeyboardKey(
             modifier = Modifier
                 .height(55.dp)
                 .fillMaxWidth()
-                .pointerInput(onClick, onAltClick) {
+                .pointerInput(text) {
                     detectTapGestures(
-                        onTap = { onClick() },
+                        onTap = { currentOnClick() },
                         onLongPress = { if (alternatives.isNotEmpty()) showAlternatives = true }
                     )
                 },

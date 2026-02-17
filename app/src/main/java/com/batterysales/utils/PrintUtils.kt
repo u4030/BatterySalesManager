@@ -50,7 +50,10 @@ object PrintUtils {
                 val reportsDir = File(context.cacheDir, "reports")
                 if (!reportsDir.exists()) {
                     val created = reportsDir.mkdirs()
-                    android.util.Log.d("PrintUtils", "Creating reports directory: $created")
+                    android.util.Log.d("PrintUtils", "Creating reports directory: $created at ${reportsDir.absolutePath}")
+                    // Ensure directory is accessible
+                    reportsDir.setReadable(true, false)
+                    reportsDir.setWritable(true, false)
                 }
 
                 val fileName = "SupplierReport_${item.supplier.name.replace(" ", "_")}_${System.currentTimeMillis()}.pdf"
@@ -106,22 +109,27 @@ object PrintUtils {
     private fun sharePdfFile(context: Context, file: File) {
         try {
             if (!file.exists()) {
+                android.util.Log.e("PrintUtils", "File does not exist: ${file.absolutePath}")
                 Toast.makeText(context, "الملف غير موجود للمشاركة", Toast.LENGTH_SHORT).show()
                 return
             }
 
-            val contentUri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+            val authority = "${context.packageName}.fileprovider"
+            android.util.Log.d("PrintUtils", "Getting URI for file: ${file.absolutePath} with authority: $authority")
+            val contentUri = FileProvider.getUriForFile(context, authority, file)
+
             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                 type = "application/pdf"
                 putExtra(Intent.EXTRA_STREAM, contentUri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
             }
             
-            val chooser = Intent.createChooser(shareIntent, "مشاركة التقرير")
-            chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            val chooser = Intent.createChooser(shareIntent, "مشاركة التقرير").apply {
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
             context.startActivity(chooser)
+            android.util.Log.d("PrintUtils", "Share intent started successfully")
         } catch (e: Exception) {
             android.util.Log.e("PrintUtils", "Error sharing PDF", e)
             Toast.makeText(context, "فشل في مشاركة الملف: ${e.message}", Toast.LENGTH_LONG).show()
