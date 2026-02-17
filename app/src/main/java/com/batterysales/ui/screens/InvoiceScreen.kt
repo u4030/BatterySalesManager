@@ -31,10 +31,12 @@ import androidx.navigation.NavHostController
 import com.batterysales.data.models.Invoice
 import com.batterysales.viewmodel.InvoiceViewModel
 import com.batterysales.ui.components.TabItem
+import com.batterysales.ui.components.CustomKeyboardTextField
 import java.text.SimpleDateFormat
 import java.util.*
 import com.batterysales.ui.components.SharedHeader
 import com.batterysales.ui.components.HeaderIconButton
+import com.batterysales.ui.components.AppDialog
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -230,24 +232,14 @@ fun InvoiceScreen(
 
             // Search Bar
             item {
-                OutlinedTextField(
-                    value = uiState.searchQuery,
-                    onValueChange = { viewModel.onSearchQueryChanged(it) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                    placeholder = { Text("...بحث برقم الفاتورة أو اسم العميل", color = Color.Gray) },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.Gray) },
-                    shape = RoundedCornerShape(16.dp),
-                    singleLine = true,
-                    textStyle = com.batterysales.ui.theme.LocalInputTextStyle.current.copy(color = MaterialTheme.colorScheme.onSurface),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = cardBgColor,
-                        unfocusedContainerColor = cardBgColor,
-                        focusedBorderColor = MaterialTheme.colorScheme.outline,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                    CustomKeyboardTextField(
+                        value = uiState.searchQuery,
+                        onValueChange = { viewModel.onSearchQueryChanged(it) },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = "بحث برقم الفاتورة أو اسم العميل"
                     )
-                )
+                }
             }
 
             if (uiState.startDate != null) {
@@ -311,30 +303,23 @@ fun EditCustomerDialog(invoice: Invoice, onDismiss: () -> Unit, onConfirm: (Invo
     var customerName by remember { mutableStateOf(invoice.customerName) }
     var customerPhone by remember { mutableStateOf(invoice.customerPhone) }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("تعديل معلومات العميل") },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                com.batterysales.ui.components.CustomKeyboardTextField(
-                    value = customerName,
-                    onValueChange = { customerName = it },
-                    label = "اسم العميل"
-                )
-                com.batterysales.ui.components.CustomKeyboardTextField(
-                    value = customerPhone,
-                    onValueChange = { customerPhone = it },
-                    label = "رقم الهاتف"
-                )
-                Spacer(modifier = Modifier.height(com.batterysales.ui.components.LocalCustomKeyboardController.current.keyboardHeight.value))
-            }
-        },
+    AppDialog(
+        onDismiss = onDismiss,
+        title = "تعديل معلومات العميل",
         confirmButton = { Button(onClick = { onConfirm(invoice, customerName, customerPhone); onDismiss() }) { Text("حفظ") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
-    )
+    ) {
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = customerName,
+            onValueChange = { customerName = it },
+            label = "اسم العميل"
+        )
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = customerPhone,
+            onValueChange = { customerPhone = it },
+            label = "رقم الهاتف"
+        )
+    }
 }
 
 @Composable

@@ -153,7 +153,7 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                         item {
                             SearchBarRedesigned(
                                 barcodeFilter = barcodeFilter,
-                                onClear = { viewModel.onBarcodeScanned(null) },
+                                onValueChange = { viewModel.onBarcodeScanned(it.ifEmpty { null }) },
                                 onScan = { showScanner = true }
                             )
                         }
@@ -207,7 +207,7 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
 @Composable
 fun SearchBarRedesigned(
     barcodeFilter: String?,
-    onClear: () -> Unit,
+    onValueChange: (String) -> Unit,
     onScan: () -> Unit
 ) {
     Row(
@@ -217,37 +217,20 @@ fun SearchBarRedesigned(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Surface(
-            modifier = Modifier.weight(1f),
-            color = MaterialTheme.colorScheme.surface,
-            shape = RoundedCornerShape(16.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
-                Spacer(modifier = Modifier.width(12.dp))
-                Text(
-                    text = barcodeFilter ?: "تصفية حسب الباركود...",
-                    color = if (barcodeFilter == null) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onSurface,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.weight(1f)
-                )
-                if (!barcodeFilter.isNullOrBlank()) {
-                    IconButton(onClick = onClear, modifier = Modifier.size(24.dp)) {
-                        Icon(Icons.Default.Clear, contentDescription = "مسح الفلتر", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
+        Box(modifier = Modifier.weight(1f)) {
+            CustomKeyboardTextField(
+                value = barcodeFilter ?: "",
+                onValueChange = onValueChange,
+                modifier = Modifier.fillMaxWidth(),
+                label = "تصفية حسب الباركود..."
+            )
         }
         
         IconButton(
             onClick = onScan,
             modifier = Modifier
-                .size(48.dp)
-                .background(Color(0xFFFB8C00), RoundedCornerShape(16.dp))
+                .size(56.dp)
+                .background(Color(0xFFFB8C00), RoundedCornerShape(12.dp))
         ) {
             Icon(Icons.Default.PhotoCamera, contentDescription = "مسح الباركود", tint = Color.White)
         }

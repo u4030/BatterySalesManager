@@ -34,6 +34,7 @@ import com.batterysales.viewmodel.ProductManagementViewModel
 import com.batterysales.ui.components.SharedHeader
 import com.batterysales.ui.components.HeaderIconButton
 import com.batterysales.ui.components.AppDialog
+import com.batterysales.ui.components.CustomKeyboardTextField
 
 @Composable
 fun ProductManagementScreen(navController: NavHostController, viewModel: ProductManagementViewModel = hiltViewModel()) {
@@ -156,32 +157,23 @@ fun ProductManagementScreen(navController: NavHostController, viewModel: Product
                             }
                         }
 
-                        OutlinedTextField(
-                            value = searchQuery,
-                            onValueChange = {
-                                searchQuery = it
-                                viewModel.onBarcodeFilterChanged(it)
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            placeholder = { Text("...بحث بالاسم أو الباركود", color = Color.White.copy(alpha = 0.6f)) },
-                            leadingIcon = {
-                                IconButton(onClick = { showSearchScanner = true }) {
-                                    Icon(Icons.Default.PhotoCamera, contentDescription = "Scan", tint = Color.White.copy(alpha = 0.7f))
-                                }
-                            },
-                            trailingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.White.copy(alpha = 0.7f)) },
-                            shape = RoundedCornerShape(16.dp),
-                            singleLine = true,
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedContainerColor = Color.Black.copy(alpha = 0.2f),
-                                unfocusedContainerColor = Color.Black.copy(alpha = 0.2f),
-                                focusedBorderColor = Color.Transparent,
-                                unfocusedBorderColor = Color.Transparent,
-                                cursorColor = Color.White,
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            CustomKeyboardTextField(
+                                value = searchQuery,
+                                onValueChange = {
+                                    searchQuery = it
+                                    viewModel.onBarcodeFilterChanged(it)
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = "بحث بالاسم أو الباركود"
                             )
-                        )
+                            IconButton(
+                                onClick = { showSearchScanner = true },
+                                modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp)
+                            ) {
+                                Icon(Icons.Default.PhotoCamera, contentDescription = "Scan", tint = accentColor)
+                            }
+                        }
                     }
                 }
 

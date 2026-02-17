@@ -31,6 +31,8 @@ import java.text.SimpleDateFormat
 import java.util.*
 import com.batterysales.ui.components.SharedHeader
 import com.batterysales.ui.components.HeaderIconButton
+import com.batterysales.ui.components.CustomKeyboardTextField
+import com.batterysales.ui.components.AppDialog
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -255,19 +257,11 @@ fun BankScreen(
                     Spacer(modifier = Modifier.height(16.dp))
 
                     // Search Bar
-                    OutlinedTextField(
+                    CustomKeyboardTextField(
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
                         modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("بحث بالوصف أو الرقم المرجعي...", style = MaterialTheme.typography.bodyMedium) },
-                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = accentColor) },
-                        shape = RoundedCornerShape(16.dp),
-                        singleLine = true,
-                        textStyle = com.batterysales.ui.theme.LocalInputTextStyle.current.copy(color = MaterialTheme.colorScheme.onSurface),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = accentColor,
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
-                        )
+                        label = "بحث بالوصف أو الرقم المرجعي..."
                     )
 
                     if (dateRangePickerState.selectedStartDateMillis != null) {
@@ -344,34 +338,9 @@ fun AddBankTransactionDialog(
     var referenceNumber by remember { mutableStateOf("") }
     var supplierName by remember { mutableStateOf("") }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (type == com.batterysales.data.models.BankTransactionType.DEPOSIT) "إيداع في البنك" else "سحب من البنك") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                com.batterysales.ui.components.CustomKeyboardTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    label = "الوصف"
-                )
-                com.batterysales.ui.components.CustomKeyboardTextField(
-                    value = supplierName,
-                    onValueChange = { supplierName = it },
-                    label = "اسم المورد (اختياري)"
-                )
-                com.batterysales.ui.components.CustomKeyboardTextField(
-                    value = referenceNumber,
-                    onValueChange = { referenceNumber = it },
-                    label = "رقم الشيك/السند (اختياري)"
-                )
-                com.batterysales.ui.components.CustomKeyboardTextField(
-                    value = amount,
-                    onValueChange = { amount = it },
-                    label = "المبلغ"
-                )
-                Spacer(modifier = Modifier.height(com.batterysales.ui.components.LocalCustomKeyboardController.current.keyboardHeight.value))
-            }
-        },
+    AppDialog(
+        onDismiss = onDismiss,
+        title = if (type == com.batterysales.data.models.BankTransactionType.DEPOSIT) "إيداع في البنك" else "سحب من البنك",
         confirmButton = {
             Button(onClick = {
                 val amt = amount.toDoubleOrNull() ?: 0.0
@@ -383,7 +352,28 @@ fun AddBankTransactionDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("إلغاء") }
         }
-    )
+    ) {
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = description,
+            onValueChange = { description = it },
+            label = "الوصف"
+        )
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = supplierName,
+            onValueChange = { supplierName = it },
+            label = "اسم المورد (اختياري)"
+        )
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = referenceNumber,
+            onValueChange = { referenceNumber = it },
+            label = "رقم الشيك/السند (اختياري)"
+        )
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = amount,
+            onValueChange = { amount = it },
+            label = "المبلغ"
+        )
+    }
 }
 
 @Composable

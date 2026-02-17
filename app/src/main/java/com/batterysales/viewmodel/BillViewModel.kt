@@ -22,10 +22,27 @@ class BillViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val _bills = MutableStateFlow<List<Bill>>(emptyList())
-    val bills = _bills.asStateFlow()
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery = _searchQuery.asStateFlow()
 
     private val _suppliers = MutableStateFlow<List<Supplier>>(emptyList())
     val suppliers = _suppliers.asStateFlow()
+
+    val filteredBills: StateFlow<List<Bill>> = combine(
+        _bills,
+        _suppliers,
+        _searchQuery
+    ) { bills, suppliers, query ->
+        if (query.isBlank()) return@combine bills
+
+        val suppliersMap = suppliers.associateBy { it.id }
+        bills.filter { bill ->
+            val supplierName = suppliersMap[bill.supplierId]?.name ?: ""
+            bill.referenceNumber.contains(query, ignoreCase = true) ||
+            supplierName.contains(query, ignoreCase = true) ||
+            bill.description.contains(query, ignoreCase = true)
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _allRecentPurchases = MutableStateFlow<List<StockEntry>>(emptyList())
     private val _linkedAmounts = MutableStateFlow<Map<String, Double>>(emptyMap())
@@ -84,6 +101,10 @@ class BillViewModel @Inject constructor(
                 Log.e("BillViewModel", "Error loading linked amounts", e)
             }
         }
+    }
+
+    fun onSearchQueryChanged(query: String) {
+        _searchQuery.value = query
     }
 
     fun loadData() = loadInitialData()
