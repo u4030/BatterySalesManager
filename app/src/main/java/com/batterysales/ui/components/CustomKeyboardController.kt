@@ -19,18 +19,26 @@ class CustomKeyboardController {
     val keyboardType: State<KeyboardLanguage> = _keyboardType
 
     private var onValueChange: ((String) -> Unit)? = null
+    private var onSearch: (() -> Unit)? = null
 
     fun showKeyboard(
         initialValue: String,
         label: String,
         keyboardType: KeyboardLanguage,
-        onValueChange: (String) -> Unit
+        onValueChange: (String) -> Unit,
+        onSearch: (() -> Unit)? = null
     ) {
         _currentValue.value = initialValue
         _label.value = label
         _keyboardType.value = keyboardType
         this.onValueChange = onValueChange
+        this.onSearch = onSearch
         _isVisible.value = true
+    }
+
+    fun onSearchClicked() {
+        onSearch?.invoke()
+        hideKeyboard()
     }
 
     fun hideKeyboard() {

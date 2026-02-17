@@ -27,6 +27,7 @@ import com.batterysales.viewmodel.SupplierViewModel
 import com.batterysales.ui.components.CustomKeyboardTextField
 import com.batterysales.ui.components.SharedHeader
 import com.batterysales.ui.components.HeaderIconButton
+import com.batterysales.ui.components.AppDialog
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -286,22 +287,9 @@ fun SupplierDialog(
     var address by remember { mutableStateOf(supplier?.address ?: "") }
     var target by remember { mutableStateOf(supplier?.yearlyTarget?.toString() ?: "") }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (supplier == null) "إضافة مورد جديد" else "تعديل بيانات المورد") },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                CustomKeyboardTextField(value = name, onValueChange = { name = it }, label = "اسم المورد")
-                CustomKeyboardTextField(value = phone, onValueChange = { phone = it }, label = "رقم الهاتف")
-                CustomKeyboardTextField(value = email, onValueChange = { email = it }, label = "البريد الإلكتروني")
-                CustomKeyboardTextField(value = address, onValueChange = { address = it }, label = "العنوان")
-                CustomKeyboardTextField(value = target, onValueChange = { target = it }, label = "الهدف السنوي (Target)")
-                Spacer(modifier = Modifier.height(com.batterysales.ui.components.LocalCustomKeyboardController.current.keyboardHeight.value))
-            }
-        },
+    AppDialog(
+        onDismiss = onDismiss,
+        title = if (supplier == null) "إضافة مورد جديد" else "تعديل بيانات المورد",
         confirmButton = {
             Button(onClick = {
                 if (name.isNotBlank()) {
@@ -313,5 +301,11 @@ fun SupplierDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("إلغاء") }
         }
-    )
+    ) {
+        CustomKeyboardTextField(value = name, onValueChange = { name = it }, label = "اسم المورد")
+        CustomKeyboardTextField(value = phone, onValueChange = { phone = it }, label = "رقم الهاتف")
+        CustomKeyboardTextField(value = email, onValueChange = { email = it }, label = "البريد الإلكتروني")
+        CustomKeyboardTextField(value = address, onValueChange = { address = it }, label = "العنوان")
+        CustomKeyboardTextField(value = target, onValueChange = { target = it }, label = "الهدف السنوي (Target)")
+    }
 }
