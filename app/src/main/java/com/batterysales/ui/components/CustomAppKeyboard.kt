@@ -302,7 +302,7 @@ fun KeyboardKey(
             modifier = Modifier
                 .height(55.dp)
                 .fillMaxWidth()
-                .pointerInput(Unit) {
+                .pointerInput(onClick, onAltClick) {
                     detectTapGestures(
                         onTap = { onClick() },
                         onLongPress = { if (alternatives.isNotEmpty()) showAlternatives = true }

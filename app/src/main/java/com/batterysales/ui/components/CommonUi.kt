@@ -40,15 +40,14 @@ fun AppDialog(
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight()
                 .padding(16.dp),
             shape = RoundedCornerShape(24.dp),
             color = MaterialTheme.colorScheme.surface
         ) {
             Column(
                 modifier = Modifier
-                    .fillMaxSize()
                     .padding(20.dp)
+                    .wrapContentHeight()
             ) {
                 Text(
                     text = title,
@@ -59,7 +58,7 @@ fun AppDialog(
 
                 Column(
                     modifier = Modifier
-                        .weight(1f)
+                        .weight(1f, fill = false)
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {

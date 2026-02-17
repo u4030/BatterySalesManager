@@ -71,6 +71,7 @@ class AccountingViewModel @Inject constructor(
     private var lastDocument: DocumentSnapshot? = null
     private var currentStartDate: Long? = null
     private var currentEndDate: Long? = null
+    private var loadJob: kotlinx.coroutines.Job? = null
 
     init {
         // Default to current year
@@ -163,15 +164,16 @@ class AccountingViewModel @Inject constructor(
         }
 
         if (reset) {
+            loadJob?.cancel()
             lastDocument = null
             _transactions.value = emptyList()
             _isLastPage.value = false
             _isLoading.value = true
         }
 
-        if (_isLastPage.value || _isLoadingMore.value) return
+        if (_isLastPage.value || (loadJob?.isActive == true && !reset)) return
 
-        viewModelScope.launch {
+        loadJob = viewModelScope.launch {
             try {
                 if (!reset) _isLoadingMore.value = true
 

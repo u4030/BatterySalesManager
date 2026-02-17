@@ -105,12 +105,17 @@ object PrintUtils {
 
     private fun sharePdfFile(context: Context, file: File) {
         try {
+            if (!file.exists()) {
+                Toast.makeText(context, "الملف غير موجود للمشاركة", Toast.LENGTH_SHORT).show()
+                return
+            }
+
             val contentUri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                 type = "application/pdf"
                 putExtra(Intent.EXTRA_STREAM, contentUri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
             }
             
             val chooser = Intent.createChooser(shareIntent, "مشاركة التقرير")
@@ -118,7 +123,7 @@ object PrintUtils {
             chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(chooser)
         } catch (e: Exception) {
-            e.printStackTrace()
+            android.util.Log.e("PrintUtils", "Error sharing PDF", e)
             Toast.makeText(context, "فشل في مشاركة الملف: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
