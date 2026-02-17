@@ -123,7 +123,7 @@ class BankViewModel @Inject constructor(
                     date = java.util.Date()
                 )
                 repository.addTransaction(transaction)
-                // Flow will auto-update UI
+                loadData(reset = true)
             } finally {
                 _isLoading.value = false
             }

@@ -134,6 +134,11 @@ class StockTransferViewModel @Inject constructor(
 
             _uiState.update { it.copy(isLoading = true) }
             try {
+                if (!source.isActive || !dest.isActive) {
+                    _uiState.update { it.copy(errorMessage = "عذراً، أحد المستودعات المختارة متوقف حالياً ولا يمكن إجراء عمليات عليه.", isLoading = false) }
+                    return@launch
+                }
+
                 stockEntryRepository.transferStock(
                     productVariantId = variant.id,
                     productName = state.selectedProduct?.name ?: "",

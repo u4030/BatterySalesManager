@@ -82,6 +82,14 @@ class AccountingViewModel @Inject constructor(
         currentEndDate = cal.timeInMillis
 
         loadInitialData()
+        _selectedWarehouseId
+            .onEach { id ->
+                if (id != null) {
+                    loadData(reset = true)
+                }
+            }
+            .launchIn(viewModelScope)
+
     }
 
     private fun loadInitialData() {
@@ -93,9 +101,8 @@ class AccountingViewModel @Inject constructor(
                 warehouseRepository.getWarehouses().onEach { allWh ->
                     val active = allWh.filter { it.isActive }
                     _warehouses.value = active
-                    if (active.isNotEmpty() && _selectedWarehouseId.value == null) {
+                    if (active.isNotEmpty() ) {
                         _selectedWarehouseId.value = active.firstOrNull()?.id
-                        loadData(reset = true)
                     }
                 }.launchIn(viewModelScope)
             } else {

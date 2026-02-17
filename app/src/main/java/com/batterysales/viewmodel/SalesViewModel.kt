@@ -154,6 +154,11 @@ class SalesViewModel @Inject constructor(
 
             _uiState.update { it.copy(isLoading = true) }
             try {
+                if (!warehouse.isActive) {
+                    _uiState.update { it.copy(errorMessage = "عذراً، هذا المستودع متوقف حالياً ولا يمكن إجراء عمليات عليه.", isLoading = false) }
+                    return@launch
+                }
+
                 // --- Correct COGS Calculation ---
                 val positiveEntries = allStockEntries.filter {
                     it.productVariantId == variant.id && it.warehouseId == warehouse.id && it.quantity > 0

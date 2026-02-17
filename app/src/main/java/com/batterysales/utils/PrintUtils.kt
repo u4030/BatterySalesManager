@@ -22,36 +22,48 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 object PrintUtils {
+    private var activeWebView: WebView? = null // Prevent GC during PDF generation
 
     fun shareSupplierReport(context: Context, item: SupplierReportItem) {
         // Enable drawing the whole document for high-quality PDF
         WebView.enableSlowWholeDocumentDraw()
         
         val webView = WebView(context)
+        activeWebView = webView
+        
         val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
         val htmlContent = generateSupplierHtml(item, dateFormatter)
         
         Toast.makeText(context, "جاري تحضير ملف PDF للمشاركة...", Toast.LENGTH_SHORT).show()
 
         // Important: WebView needs to be laid out to have a size for drawing
-        webView.layout(0, 0, 1200, 1800) 
+        webView.measure(
+            android.view.View.MeasureSpec.makeMeasureSpec(1200, android.view.View.MeasureSpec.EXACTLY),
+            android.view.View.MeasureSpec.makeMeasureSpec(0, android.view.View.MeasureSpec.UNSPECIFIED)
+        )
+        webView.layout(0, 0, 1200, webView.measuredHeight.coerceAtLeast(1800))
+        webView.setBackgroundColor(android.graphics.Color.WHITE)
 
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView, url: String) {
+                android.util.Log.d("PrintUtils", "Page finished loading, starting PDF generation")
                 val reportsDir = File(context.cacheDir, "reports")
                 if (!reportsDir.exists()) reportsDir.mkdirs()
                 val fileName = "SupplierReport_${item.supplier.name.replace(" ", "_")}_${System.currentTimeMillis()}.pdf"
                 val file = File(reportsDir, fileName)
                 
-                try {
-                    // Give it a tiny bit of time to render
-                    view.postDelayed({
+                // Use a longer delay to ensure complete rendering on all devices
+                view.postDelayed({
+                    try {
+                        android.util.Log.d("PrintUtils", "Delayed block executing. WebView height: ${view.contentHeight}")
                         generatePdfFromWebView(view, file, context)
-                    }, 500)
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                    Toast.makeText(context, "فشل في إنشاء ملف PDF: ${e.message}", Toast.LENGTH_SHORT).show()
-                }
+                        activeWebView = null // Clear reference after success
+                    } catch (e: Exception) {
+                        android.util.Log.e("PrintUtils", "Error in delayed block", e)
+                        Toast.makeText(context, "فشل في إنشاء ملف PDF: ${e.message}", Toast.LENGTH_SHORT).show()
+                        activeWebView = null
+                    }
+                }, 2000)
             }
         }
         webView.loadDataWithBaseURL(null, htmlContent, "text/html", "utf-8", null)

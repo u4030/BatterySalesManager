@@ -147,4 +147,14 @@ class BillRepository @Inject constructor(
             .await()
         return snapshot.documents.mapNotNull { it.getString("relatedEntryId") }.toSet()
     }
+
+    suspend fun getLinkedAmounts(): Map<String, Double> {
+        val snapshot = firestore.collection(Bill.COLLECTION_NAME)
+            .whereNotEqualTo("relatedEntryId", null)
+            .get()
+            .await()
+        val bills = snapshot.documents.mapNotNull { it.toObject(Bill::class.java) }
+        return bills.groupBy { it.relatedEntryId!! }
+            .mapValues { entry -> entry.value.sumOf { it.amount } }
+    }
 }

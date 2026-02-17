@@ -32,7 +32,7 @@ class PaymentRepository @Inject constructor(
         awaitClose { listenerRegistration.remove() }
     }
 
-    fun getAllPayments(): Flow<List<Payment>> = callbackFlow {
+    fun getAllPaymentsFlow(): Flow<List<Payment>> = callbackFlow {
         val listenerRegistration = firestore.collection(Payment.COLLECTION_NAME)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {

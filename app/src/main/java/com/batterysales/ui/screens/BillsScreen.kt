@@ -465,18 +465,27 @@ fun AddBillDialog(
                     val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
                     com.batterysales.ui.stockentry.Dropdown(
                         label = "ربط بطلبية شراء (اختياري)",
-                        selectedValue = selectedPurchase?.let { "طلبية: ${dateFormatter.format(it.timestamp)} - JD ${it.totalCost}" } ?: "غير مرتبط",
-                        options = listOf("غير مرتبط") + supplierPurchases.map { "طلبية: ${dateFormatter.format(it.timestamp)} - JD ${it.totalCost}" },
+                        selectedValue = selectedPurchase?.let { "طلبية: ${dateFormatter.format(it.timestamp)} - المتبقي: JD ${String.format("%.3f", it.totalCost)}" } ?: "غير مرتبط",
+                        options = listOf("غير مرتبط") + supplierPurchases.map { "طلبية: ${dateFormatter.format(it.timestamp)} - المتبقي: JD ${String.format("%.3f", it.totalCost)}" },
                         onOptionSelected = { index ->
                             selectedPurchase = if (index == 0) null else supplierPurchases[index - 1]
                             // Auto-fill amount if linked
                             selectedPurchase?.let { 
-                                if (amount.isEmpty()) amount = it.totalCost.toString()
+                                amount = String.format("%.3f", it.totalCost)
                                 if (description.isEmpty()) description = "تسديد لطلبية شراء بتاريخ ${dateFormatter.format(it.timestamp)}"
                             }
                         },
                         enabled = true
                     )
+                    
+                    if (selectedPurchase != null) {
+                        Text(
+                            text = "إجمالي الطلبية: JD ${String.format("%.3f", selectedPurchase!!.grandTotalCost)} | المتبقي: JD ${String.format("%.3f", selectedPurchase!!.totalCost)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFFFB8C00),
+                            modifier = Modifier.padding(horizontal = 4.dp)
+                        )
+                    }
                 }
 
                 Text("نوع الالتزام:", fontSize = 14.sp, fontWeight = FontWeight.Medium)

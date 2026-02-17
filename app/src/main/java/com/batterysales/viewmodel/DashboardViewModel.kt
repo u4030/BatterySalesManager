@@ -80,7 +80,8 @@ class DashboardViewModel @Inject constructor(
             productVariantRepository.getAllVariantsFlow(),
             productRepository.getProducts(),
             stockEntryRepository.getPendingEntriesFlow(),
-            stockEntryRepository.getAllStockEntriesFlow()
+            stockEntryRepository.getAllStockEntriesFlow(),
+            paymentRepository.getAllPaymentsFlow()
         ) { array ->
             val warehouses = array[0] as List<com.batterysales.data.models.Warehouse>
             val user = array[1] as com.batterysales.data.models.User?
@@ -89,6 +90,7 @@ class DashboardViewModel @Inject constructor(
             val products = array[4] as List<com.batterysales.data.models.Product>
             val pendingEntries = array[5] as List<StockEntry>
             val allStockEntries = array[6] as List<StockEntry>
+            val allPayments = array[7] as List<com.batterysales.data.models.Payment>
 
             val isAdmin = user?.role == "admin"
             val userWarehouseId = user?.warehouseId

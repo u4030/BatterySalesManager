@@ -87,14 +87,24 @@ class AuthViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val user = userRepository.getCurrentUser()
-                if (user != null && user.role == "seller" && user.warehouseId != null) {
-                    val warehouse = warehouseRepository.getWarehouse(user.warehouseId)
-                    if (warehouse != null && !warehouse.isActive) {
-                        _errorMessage.value = "عذراً، المستودع المرتبط بحسابك متوقف حالياً. يرجى مراجعة الإدارة."
+                if (user != null) {
+                    if (!user.isActive) {
+                        _errorMessage.value = "عذراً، هذا الحساب موقوف حالياً. يرجى مراجعة الإدارة."
                         userRepository.logout()
                         _currentUser.value = null
                         _isLoggedIn.value = false
                         return@launch
+                    }
+
+                    if (user.role == "seller" && user.warehouseId != null) {
+                        val warehouse = warehouseRepository.getWarehouse(user.warehouseId)
+                        if (warehouse != null && !warehouse.isActive) {
+                            _errorMessage.value = "عذراً، المستودع المرتبط بحسابك متوقف حالياً. يرجى مراجعة الإدارة."
+                            userRepository.logout()
+                            _currentUser.value = null
+                            _isLoggedIn.value = false
+                            return@launch
+                        }
                     }
                 }
                 _currentUser.value = user

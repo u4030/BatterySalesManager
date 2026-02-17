@@ -234,13 +234,20 @@ class ReportsViewModel @Inject constructor(
                     val totalCredit = supplierBills.sumOf { it.paidAmount }
                     val balance = totalDebit - totalCredit
 
-                    val purchaseOrders = supplierEntries.filter { it.quantity > 0 }.map { entry ->
-                        val linkedBills = supplierBills.filter { it.relatedEntryId == entry.id }
+                    val groupedEntries = supplierEntries.filter { it.quantity > 0 }.groupBy { it.orderId.ifEmpty { it.id } }
+                    val purchaseOrders = groupedEntries.map { (key, group) ->
+                        val representative = group.first()
+                        val totalOrderCost = if (representative.grandTotalCost > 0) representative.grandTotalCost else group.sumOf { it.totalCost }
+                        
+                        val linkedBills = supplierBills.filter { 
+                            it.relatedEntryId == key || group.any { entry -> entry.id == it.relatedEntryId }
+                        }
                         val linkedPaid = linkedBills.sumOf { it.paidAmount }
+                        
                         PurchaseOrderItem(
-                            entry = entry,
+                            entry = representative.copy(totalCost = totalOrderCost),
                             linkedPaidAmount = linkedPaid,
-                            remainingBalance = entry.totalCost - linkedPaid,
+                            remainingBalance = totalOrderCost - linkedPaid,
                             referenceNumbers = linkedBills.filter { it.referenceNumber.isNotEmpty() }.map { bill ->
                                 val typeStr = when (bill.billType) {
                                     BillType.CHECK -> "شيك"
@@ -249,7 +256,7 @@ class ReportsViewModel @Inject constructor(
                                     BillType.OTHER -> "أخرى"
                                 }
                                 "$typeStr: ${bill.referenceNumber}"
-                            }
+                            }.distinct()
                         )
                     }
 
