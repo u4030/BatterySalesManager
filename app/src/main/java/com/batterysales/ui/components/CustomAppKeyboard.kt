@@ -30,6 +30,8 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.compose.ui.window.Popup
 import android.view.Gravity
+import android.view.ViewGroup
+import android.view.WindowManager
 import android.graphics.drawable.ColorDrawable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -37,6 +39,8 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.delay
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 
 enum class KeyboardLanguage {
     ARABIC, ENGLISH_UPPER, ENGLISH_LOWER, NUMERIC
@@ -49,7 +53,8 @@ fun CustomAppKeyboard(
     currentValue: String,
     isVisible: Boolean,
     initialLanguage: KeyboardLanguage = KeyboardLanguage.ARABIC,
-    onDone: () -> Unit
+    onDone: () -> Unit,
+    onSearch: (() -> Unit)? = null
 ) {
     if (!isVisible) return
 
@@ -64,6 +69,8 @@ fun CustomAppKeyboard(
             it.setGravity(Gravity.BOTTOM)
             it.setDimAmount(0f)
             it.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
+            it.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            it.addFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL)
         }
 
         // <<<=== 1. تم تعديل الصفوف لتقليل عدد الأزرار في كل صف
@@ -218,15 +225,21 @@ fun CustomAppKeyboard(
                         }
 
                         Surface(
-                            onClick = onDone,
+                            onClick = { 
+                                if (onSearch != null) onSearch() else onDone()
+                            },
                             modifier = Modifier
                                 .height(55.dp)
                                 .weight(1.5f),
                             shape = RoundedCornerShape(8.dp),
-                            color = MaterialTheme.colorScheme.primary
+                            color = if (onSearch != null) Color(0xFFFB8C00) else MaterialTheme.colorScheme.primary
                         ) {
                             Box(contentAlignment = Alignment.Center) {
-                                Text("تم", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold)
+                                Text(
+                                    text = "تم", 
+                                    color = if (onSearch != null) Color.White else MaterialTheme.colorScheme.onPrimary, 
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
                         }
                     }
@@ -289,16 +302,12 @@ fun KeyboardKey(
             modifier = Modifier
                 .height(55.dp)
                 .fillMaxWidth()
-                .then(
-                    if (alternatives.isEmpty()) {
-                        Modifier.clickable(onClick = onClick)
-                    } else {
-                        Modifier.combinedClickable(
-                            onClick = onClick,
-                            onLongClick = { showAlternatives = true }
-                        )
-                    }
-                ),
+                .pointerInput(onClick, onAltClick) {
+                    detectTapGestures(
+                        onTap = { onClick() },
+                        onLongPress = { if (alternatives.isNotEmpty()) showAlternatives = true }
+                    )
+                },
             shape = RoundedCornerShape(8.dp),
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 2.dp
@@ -349,14 +358,15 @@ fun KeyboardKey(
 
 @Composable
 fun KeyboardControlBtn(text: String, isSelected: Boolean, onClick: () -> Unit) {
-    TextButton(
+    Surface(
         onClick = onClick,
-        colors = ButtonDefaults.textButtonColors(
-            containerColor = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
-            contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary
-        ),
+        color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+        contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
+        shape = RoundedCornerShape(8.dp),
         modifier = Modifier.padding(horizontal = 2.dp)
     ) {
-        Text(text, fontWeight = FontWeight.Bold)
+        Box(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), contentAlignment = Alignment.Center) {
+            Text(text, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+        }
     }
 }

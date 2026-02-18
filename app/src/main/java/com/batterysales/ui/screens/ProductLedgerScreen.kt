@@ -28,6 +28,7 @@ import com.batterysales.viewmodel.LedgerItem
 import com.batterysales.viewmodel.ProductLedgerViewModel
 import com.batterysales.ui.components.SharedHeader
 import com.batterysales.ui.components.HeaderIconButton
+import com.batterysales.ui.components.CustomKeyboardTextField
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -163,27 +164,11 @@ fun ProductLedgerScreen(
                     Spacer(modifier = Modifier.height(16.dp))
 
                     // Search Bar
-                    OutlinedTextField(
+                    CustomKeyboardTextField(
                         value = searchQuery,
                         onValueChange = viewModel::onSearchQueryChanged,
                         modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("بحث في السجل...", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)) },
-                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)) },
-                        trailingIcon = {
-                            if (searchQuery.isNotEmpty()) {
-                                IconButton(onClick = { viewModel.onSearchQueryChanged("") }) {
-                                    Icon(Icons.Default.Clear, contentDescription = "مسح", tint = MaterialTheme.colorScheme.onSurface)
-                                }
-                            }
-                        },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = Color.Transparent
-                        ),
-                        shape = RoundedCornerShape(16.dp),
-                        singleLine = true
+                        label = "بحث في السجل..."
                     )
 
                     Spacer(modifier = Modifier.height(16.dp))

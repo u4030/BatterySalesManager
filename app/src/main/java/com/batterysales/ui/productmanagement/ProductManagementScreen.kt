@@ -33,6 +33,8 @@ import com.batterysales.ui.components.BarcodeScanner
 import com.batterysales.viewmodel.ProductManagementViewModel
 import com.batterysales.ui.components.SharedHeader
 import com.batterysales.ui.components.HeaderIconButton
+import com.batterysales.ui.components.AppDialog
+import com.batterysales.ui.components.CustomKeyboardTextField
 
 @Composable
 fun ProductManagementScreen(navController: NavHostController, viewModel: ProductManagementViewModel = hiltViewModel()) {
@@ -50,14 +52,16 @@ fun ProductManagementScreen(navController: NavHostController, viewModel: Product
     // Dialogs
     if (showAddProductDialog) {
         AddProductDialog(
+            suppliers = uiState.suppliers,
             onDismiss = { showAddProductDialog = false },
-            onAddProduct = { name -> viewModel.addProduct(name) }
+            onAddProduct = { name, supplierId -> viewModel.addProduct(name, supplierId) }
         )
     }
 
     productToEdit?.let { product ->
         EditProductDialog(
             product = product,
+            suppliers = uiState.suppliers,
             onDismiss = { productToEdit = null },
             onUpdateProduct = { updatedProduct -> viewModel.updateProduct(updatedProduct) }
         )
@@ -153,32 +157,23 @@ fun ProductManagementScreen(navController: NavHostController, viewModel: Product
                             }
                         }
 
-                        OutlinedTextField(
-                            value = searchQuery,
-                            onValueChange = {
-                                searchQuery = it
-                                viewModel.onBarcodeFilterChanged(it)
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            placeholder = { Text("...بحث بالاسم أو الباركود", color = Color.White.copy(alpha = 0.6f)) },
-                            leadingIcon = {
-                                IconButton(onClick = { showSearchScanner = true }) {
-                                    Icon(Icons.Default.PhotoCamera, contentDescription = "Scan", tint = Color.White.copy(alpha = 0.7f))
-                                }
-                            },
-                            trailingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.White.copy(alpha = 0.7f)) },
-                            shape = RoundedCornerShape(16.dp),
-                            singleLine = true,
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedContainerColor = Color.Black.copy(alpha = 0.2f),
-                                unfocusedContainerColor = Color.Black.copy(alpha = 0.2f),
-                                focusedBorderColor = Color.Transparent,
-                                unfocusedBorderColor = Color.Transparent,
-                                cursorColor = Color.White,
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            CustomKeyboardTextField(
+                                value = searchQuery,
+                                onValueChange = {
+                                    searchQuery = it
+                                    viewModel.onBarcodeFilterChanged(it)
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = "بحث بالاسم أو الباركود"
                             )
-                        )
+                            IconButton(
+                                onClick = { showSearchScanner = true },
+                                modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp)
+                            ) {
+                                Icon(Icons.Default.PhotoCamera, contentDescription = "Scan", tint = accentColor)
+                            }
+                        }
                     }
                 }
 
@@ -414,64 +409,76 @@ fun VariantItemRow(variant: ProductVariant, onEdit: () -> Unit, onDelete: () -> 
 
 @Composable
 fun AddProductDialog(
+    suppliers: List<com.batterysales.data.models.Supplier>,
     onDismiss: () -> Unit,
-    onAddProduct: (String) -> Unit
+    onAddProduct: (String, String) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
+    var selectedSupplier by remember { mutableStateOf<com.batterysales.data.models.Supplier?>(null) }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("إضافة منتج جديد") },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                com.batterysales.ui.components.CustomKeyboardTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = "اسم المنتج"
-                )
-                Spacer(modifier = Modifier.height(com.batterysales.ui.components.LocalCustomKeyboardController.current.keyboardHeight.value))
-            }
-        },
-        confirmButton = { Button(onClick = { if(name.isNotBlank()) onAddProduct(name); onDismiss() }) { Text("إضافة") } },
+    AppDialog(
+        onDismiss = onDismiss,
+        title = "إضافة منتج جديد",
+        confirmButton = { Button(onClick = { if(name.isNotBlank()) onAddProduct(name, selectedSupplier?.id ?: ""); onDismiss() }) { Text("إضافة") } },
         dismissButton = { Button(onClick = onDismiss) { Text("إلغاء") } }
-    )
+    ) {
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = name,
+            onValueChange = { name = it },
+            label = "اسم المنتج"
+        )
+        
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        com.batterysales.ui.stockentry.Dropdown(
+            label = "المورد",
+            selectedValue = selectedSupplier?.name ?: "",
+            options = suppliers.map { it.name },
+            onOptionSelected = { index -> selectedSupplier = suppliers[index] },
+            enabled = true
+        )
+    }
 }
 
 @Composable
 fun EditProductDialog(
     product: Product,
+    suppliers: List<com.batterysales.data.models.Supplier>,
     onDismiss: () -> Unit,
     onUpdateProduct: (Product) -> Unit
 ) {
     var name by remember { mutableStateOf(product.name) }
+    var selectedSupplier by remember { 
+        mutableStateOf(suppliers.find { it.id == product.supplierId }) 
+    }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("تعديل المنتج") },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                com.batterysales.ui.components.CustomKeyboardTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = "اسم المنتج"
-                )
-                Spacer(modifier = Modifier.height(com.batterysales.ui.components.LocalCustomKeyboardController.current.keyboardHeight.value))
-            }
-        },
+    AppDialog(
+        onDismiss = onDismiss,
+        title = "تعديل المنتج",
         confirmButton = {
             Button(onClick = {
-                if(name.isNotBlank()) onUpdateProduct(product.copy(name = name))
+                if(name.isNotBlank()) onUpdateProduct(product.copy(name = name, supplierId = selectedSupplier?.id ?: ""))
                 onDismiss()
             }) { Text("حفظ") }
         },
         dismissButton = { Button(onClick = onDismiss) { Text("إلغاء") } }
-    )
+    ) {
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = name,
+            onValueChange = { name = it },
+            label = "اسم المنتج"
+        )
+        
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        com.batterysales.ui.stockentry.Dropdown(
+            label = "المورد",
+            selectedValue = selectedSupplier?.name ?: "",
+            options = suppliers.map { it.name },
+            onOptionSelected = { index -> selectedSupplier = suppliers[index] },
+            enabled = true
+        )
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -508,83 +515,76 @@ fun AddVariantDialog(
         }
     }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("إضافة سعة جديدة") },
-            text = {
-                Column(
-                    modifier = Modifier.verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+    AppDialog(
+        onDismiss = onDismiss,
+        title = "إضافة سعة جديدة",
+        confirmButton = {
+            Button(onClick = {
+                onAddVariant(
+                    capacity.toIntOrNull() ?: 0,
+                    specification,
+                    barcode,
+                    minQuantity.toIntOrNull() ?: 0,
+                    minQuantities.mapValues { it.value.toIntOrNull() ?: 0 }
+                )
+                onDismiss()
+            }) { Text("إضافة") }
+        },
+        dismissButton = { Button(onClick = onDismiss) { Text("إلغاء") } }
+    ) {
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            maxItemsInEachRow = 2
+        ) {
+            com.batterysales.ui.components.CustomKeyboardTextField(
+                value = capacity,
+                onValueChange = { capacity = it },
+                label = "السعة (أمبير)",
+                modifier = Modifier.widthIn(min = 120.dp)
+            )
+            com.batterysales.ui.components.CustomKeyboardTextField(
+                value = specification,
+                onValueChange = { specification = it },
+                label = "المواصفة (مثال: Slim, Deep Cycle)",
+                modifier = Modifier.widthIn(min = 120.dp)
+            )
+            Box(modifier = Modifier.widthIn(min = 120.dp)) {
+                com.batterysales.ui.components.CustomKeyboardTextField(
+                    value = barcode,
+                    onValueChange = { barcode = it },
+                    label = "الباركود",
+                    modifier = Modifier.fillMaxWidth()
+                )
+                IconButton(
+                    onClick = { showScanner = true },
+                    modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp)
                 ) {
-                    FlowRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        maxItemsInEachRow = 2
-                    ) {
-                        com.batterysales.ui.components.CustomKeyboardTextField(
-                            value = capacity,
-                            onValueChange = { capacity = it },
-                            label = "السعة (أمبير)",
-                            modifier = Modifier.widthIn(min = 120.dp)
-                        )
-                        com.batterysales.ui.components.CustomKeyboardTextField(
-                            value = specification,
-                            onValueChange = { specification = it },
-                            label = "المواصفة (مثال: Slim, Deep Cycle)",
-                            modifier = Modifier.widthIn(min = 120.dp)
-                        )
-                        Box(modifier = Modifier.widthIn(min = 120.dp)) {
-                            com.batterysales.ui.components.CustomKeyboardTextField(
-                                value = barcode,
-                                onValueChange = { barcode = it },
-                                label = "الباركود",
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            IconButton(
-                                onClick = { showScanner = true },
-                                modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp)
-                            ) {
-                                Icon(Icons.Default.PhotoCamera, contentDescription = "مسح الباركود")
-                            }
-                        }
-                        com.batterysales.ui.components.CustomKeyboardTextField(
-                            value = minQuantity,
-                            onValueChange = { minQuantity = it },
-                            label = "الحد الأدنى العام",
-                            modifier = Modifier.widthIn(min = 120.dp)
-                        )
-
-                        warehouses.forEach { warehouse ->
-                            com.batterysales.ui.components.CustomKeyboardTextField(
-                                value = minQuantities[warehouse.id] ?: "",
-                                onValueChange = { newValue ->
-                                    val newMap = minQuantities.toMutableMap()
-                                    newMap[warehouse.id] = newValue
-                                    minQuantities = newMap
-                                },
-                                label = "الحد الأدنى (${warehouse.name})",
-                                modifier = Modifier.widthIn(min = 120.dp)
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(com.batterysales.ui.components.LocalCustomKeyboardController.current.keyboardHeight.value))
+                    Icon(Icons.Default.PhotoCamera, contentDescription = "مسح الباركود")
                 }
-            },
-            confirmButton = {
-                Button(onClick = {
-                    onAddVariant(
-                        capacity.toIntOrNull() ?: 0,
-                        specification,
-                        barcode,
-                        minQuantity.toIntOrNull() ?: 0,
-                        minQuantities.mapValues { it.value.toIntOrNull() ?: 0 }
-                    )
-                    onDismiss()
-                }) { Text("إضافة") }
-            },
-            dismissButton = { Button(onClick = onDismiss) { Text("إلغاء") } }
-        )
+            }
+            com.batterysales.ui.components.CustomKeyboardTextField(
+                value = minQuantity,
+                onValueChange = { minQuantity = it },
+                label = "الحد الأدنى العام",
+                modifier = Modifier.widthIn(min = 120.dp)
+            )
+
+            warehouses.forEach { warehouse ->
+                com.batterysales.ui.components.CustomKeyboardTextField(
+                    value = minQuantities[warehouse.id] ?: "",
+                    onValueChange = { newValue ->
+                        val newMap = minQuantities.toMutableMap()
+                        newMap[warehouse.id] = newValue
+                        minQuantities = newMap
+                    },
+                    label = "الحد الأدنى (${warehouse.name})",
+                    modifier = Modifier.widthIn(min = 120.dp)
+                )
+            }
+        }
+    }
 }
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -621,83 +621,76 @@ fun EditVariantDialog(
         }
     }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("تعديل السعة") },
-            text = {
-                Column(
-                    modifier = Modifier.verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+    AppDialog(
+        onDismiss = onDismiss,
+        title = "تعديل السعة",
+        confirmButton = {
+            Button(onClick = {
+                onUpdateVariant(variant.copy(
+                    capacity = capacity.toIntOrNull() ?: 0,
+                    specification = specification,
+                    barcode = barcode,
+                    minQuantity = minQuantity.toIntOrNull() ?: 0,
+                    minQuantities = minQuantities.mapValues { it.value.toIntOrNull() ?: 0 }
+                ))
+                onDismiss()
+            }) { Text("حفظ") }
+        },
+        dismissButton = { Button(onClick = onDismiss) { Text("إلغاء") } }
+    ) {
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            maxItemsInEachRow = 2
+        ) {
+            com.batterysales.ui.components.CustomKeyboardTextField(
+                value = capacity,
+                onValueChange = { capacity = it },
+                label = "السعة (أمبير)",
+                modifier = Modifier.widthIn(min = 120.dp)
+            )
+            com.batterysales.ui.components.CustomKeyboardTextField(
+                value = specification,
+                onValueChange = { specification = it },
+                label = "المواصفة",
+                modifier = Modifier.widthIn(min = 120.dp)
+            )
+            Box(modifier = Modifier.widthIn(min = 120.dp)) {
+                com.batterysales.ui.components.CustomKeyboardTextField(
+                    value = barcode,
+                    onValueChange = { barcode = it },
+                    label = "الباركود",
+                    modifier = Modifier.fillMaxWidth()
+                )
+                IconButton(
+                    onClick = { showScanner = true },
+                    modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp)
                 ) {
-                    FlowRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        maxItemsInEachRow = 2
-                    ) {
-                        com.batterysales.ui.components.CustomKeyboardTextField(
-                            value = capacity,
-                            onValueChange = { capacity = it },
-                            label = "السعة (أمبير)",
-                            modifier = Modifier.widthIn(min = 120.dp)
-                        )
-                        com.batterysales.ui.components.CustomKeyboardTextField(
-                            value = specification,
-                            onValueChange = { specification = it },
-                            label = "المواصفة",
-                            modifier = Modifier.widthIn(min = 120.dp)
-                        )
-                        Box(modifier = Modifier.widthIn(min = 120.dp)) {
-                            com.batterysales.ui.components.CustomKeyboardTextField(
-                                value = barcode,
-                                onValueChange = { barcode = it },
-                                label = "الباركود",
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            IconButton(
-                                onClick = { showScanner = true },
-                                modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp)
-                            ) {
-                                Icon(Icons.Default.PhotoCamera, contentDescription = "مسح الباركود")
-                            }
-                        }
-                        com.batterysales.ui.components.CustomKeyboardTextField(
-                            value = minQuantity,
-                            onValueChange = { minQuantity = it },
-                            label = "الحد الأدنى العام",
-                            modifier = Modifier.widthIn(min = 120.dp)
-                        )
-
-                        warehouses.forEach { warehouse ->
-                            com.batterysales.ui.components.CustomKeyboardTextField(
-                                value = minQuantities[warehouse.id] ?: "",
-                                onValueChange = { newValue ->
-                                    val newMap = minQuantities.toMutableMap()
-                                    newMap[warehouse.id] = newValue
-                                    minQuantities = newMap
-                                },
-                                label = "الحد الأدنى (${warehouse.name})",
-                                modifier = Modifier.widthIn(min = 120.dp)
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(com.batterysales.ui.components.LocalCustomKeyboardController.current.keyboardHeight.value))
+                    Icon(Icons.Default.PhotoCamera, contentDescription = "مسح الباركود")
                 }
-            },
-            confirmButton = {
-                Button(onClick = {
-                    onUpdateVariant(variant.copy(
-                        capacity = capacity.toIntOrNull() ?: 0,
-                        specification = specification,
-                        barcode = barcode,
-                        minQuantity = minQuantity.toIntOrNull() ?: 0,
-                        minQuantities = minQuantities.mapValues { it.value.toIntOrNull() ?: 0 }
-                    ))
-                    onDismiss()
-                }) { Text("حفظ") }
-            },
-            dismissButton = { Button(onClick = onDismiss) { Text("إلغاء") } }
-        )
+            }
+            com.batterysales.ui.components.CustomKeyboardTextField(
+                value = minQuantity,
+                onValueChange = { minQuantity = it },
+                label = "الحد الأدنى العام",
+                modifier = Modifier.widthIn(min = 120.dp)
+            )
+
+            warehouses.forEach { warehouse ->
+                com.batterysales.ui.components.CustomKeyboardTextField(
+                    value = minQuantities[warehouse.id] ?: "",
+                    onValueChange = { newValue ->
+                        val newMap = minQuantities.toMutableMap()
+                        newMap[warehouse.id] = newValue
+                        minQuantities = newMap
+                    },
+                    label = "الحد الأدنى (${warehouse.name})",
+                    modifier = Modifier.widthIn(min = 120.dp)
+                )
+            }
+        }
+    }
 }
 
 @Composable

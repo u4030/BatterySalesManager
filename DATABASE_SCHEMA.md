@@ -44,6 +44,7 @@ Collection: products
 ├── Document: {productId}
 │   ├── id: string
 │   ├── name: string
+│   ├── supplierId: string
 │   ├── brand: string
 │   ├── archived: boolean
 │   └── createdAt: timestamp

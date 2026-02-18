@@ -22,6 +22,7 @@ data class Product(
 //    @DocumentId
     val id: String = "",
     val name: String = "", // اسم المنتج العام، مثال: "بطاريات بوش"
+    val supplierId: String = "", // ربط المورد بالمنتج
     var specification: String = "",
     val createdAt: Date = Date(),
     val updatedAt: Date = Date(),

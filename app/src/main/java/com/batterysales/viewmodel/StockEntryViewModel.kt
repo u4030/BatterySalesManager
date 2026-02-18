@@ -72,6 +72,8 @@ class StockEntryViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(StockEntryUiState())
     val uiState: StateFlow<StockEntryUiState> = _uiState.asStateFlow()
 
+    private val _selectedSupplier = MutableStateFlow<Supplier?>(null)
+
     private val editingEntryId: String? = savedStateHandle.get<String>("entryId")
     private var currentUser: User? = null
 
@@ -86,20 +88,29 @@ class StockEntryViewModel @Inject constructor(
             combine(
                 productRepository.getProducts(),
                 warehouseRepository.getWarehouses(),
-                supplierRepository.getSuppliers()
-            ) { products, warehouses, suppliers ->
-                Triple(products, warehouses, suppliers)
-            }.collectLatest { (products, warehouses, suppliers) ->
+                supplierRepository.getSuppliers(),
+                _selectedSupplier
+            ) { products, warehouses, suppliers, selectedSupplier ->
                 val activeProducts = products.filter { !it.archived }
+
+                // If no supplier is selected, show all active products.
+                // If a supplier IS selected, show products linked to it OR products with NO supplier (for migration).
+                val filteredBySupplier = if (selectedSupplier != null) {
+                    activeProducts.filter { it.supplierId == selectedSupplier.id || it.supplierId.isBlank() }
+                } else {
+                    activeProducts
+                }
+
                 val selectedWH = warehouses.find { it.id == user?.warehouseId }
 
                 _uiState.update {
                     it.copy(
-                        products = activeProducts,
+                        products = filteredBySupplier,
                         warehouses = warehouses.filter { w -> w.isActive },
                         suppliers = suppliers,
                         userRole = user?.role ?: "seller",
-                        selectedWarehouse = if (user?.role == "seller") selectedWH else it.selectedWarehouse
+                        selectedWarehouse = if (user?.role == "seller") selectedWH else it.selectedWarehouse,
+                        selectedSupplier = selectedSupplier
                     )
                 }
 
@@ -108,7 +119,7 @@ class StockEntryViewModel @Inject constructor(
                 } else if (!isEditMode) {
                     _uiState.update { it.copy(isLoading = false) }
                 }
-            }
+            }.collect()
         }
     }
 
@@ -180,7 +191,17 @@ class StockEntryViewModel @Inject constructor(
         _uiState.update { it.copy(selectedVariant = variant, minQuantity = variant.minQuantity.toString()) }
     }
     fun onWarehouseSelected(warehouse: Warehouse) { _uiState.update { it.copy(selectedWarehouse = warehouse) } }
-    fun onSupplierSelected(supplier: Supplier) { _uiState.update { it.copy(selectedSupplier = supplier, supplierName = supplier.name) } }
+    fun onSupplierSelected(supplier: Supplier) {
+        _selectedSupplier.value = supplier
+        _uiState.update {
+            it.copy(
+                supplierName = supplier.name,
+                selectedProduct = null,
+                selectedVariant = null,
+                variants = emptyList()
+            )
+        }
+    }
     fun onQuantityChanged(quantity: String) { _uiState.update { it.copy(quantity = quantity) } }
     fun onReturnedQuantityChanged(qty: String) { _uiState.update { it.copy(returnedQuantity = qty) } }
     fun onMinQuantityChanged(minQty: String) { _uiState.update { it.copy(minQuantity = minQty) } }

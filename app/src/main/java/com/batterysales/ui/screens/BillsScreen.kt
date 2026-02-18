@@ -36,6 +36,8 @@ import java.text.SimpleDateFormat
 import java.util.*
 import com.batterysales.ui.components.SharedHeader
 import com.batterysales.ui.components.HeaderIconButton
+import com.batterysales.ui.components.CustomKeyboardTextField
+import com.batterysales.ui.components.AppDialog
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -43,7 +45,8 @@ fun BillsScreen(
     navController: NavHostController,
     viewModel: BillViewModel = hiltViewModel()
 ) {
-    val bills by viewModel.bills.collectAsState()
+    val bills by viewModel.filteredBills.collectAsState()
+    val searchQuery by viewModel.searchQuery.collectAsState()
     val suppliers by viewModel.suppliers.collectAsState()
     val pendingPurchases by viewModel.pendingPurchases.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -117,6 +120,15 @@ fun BillsScreen(
                         )
                     }
                 )
+
+                Column(modifier = Modifier.padding(16.dp)) {
+                    CustomKeyboardTextField(
+                        value = searchQuery,
+                        onValueChange = viewModel::onSearchQueryChanged,
+                        label = "بحث باسم المورد أو رقم السند...",
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
 
             item {
@@ -372,23 +384,9 @@ fun PaymentDialog(
 ) {
     var amount by remember { mutableStateOf((bill.amount - bill.paidAmount).toString()) }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("تسديد مبلغ") },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text("المبلغ المتبقي: JD ${String.format("%.3f", bill.amount - bill.paidAmount)}")
-                com.batterysales.ui.components.CustomKeyboardTextField(
-                    value = amount,
-                    onValueChange = { amount = it },
-                    label = "مبلغ الدفع"
-                )
-                Spacer(modifier = Modifier.height(com.batterysales.ui.components.LocalCustomKeyboardController.current.keyboardHeight.value))
-            }
-        },
+    AppDialog(
+        onDismiss = onDismiss,
+        title = "تسديد مبلغ",
         confirmButton = {
             Button(onClick = {
                 val amt = amount.toDoubleOrNull() ?: 0.0
@@ -398,7 +396,14 @@ fun PaymentDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("إلغاء") }
         }
-    )
+    ) {
+        Text("المبلغ المتبقي: JD ${String.format("%.3f", bill.amount - bill.paidAmount)}")
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = amount,
+            onValueChange = { amount = it },
+            label = "مبلغ الدفع"
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -424,120 +429,9 @@ fun AddBillDialog(
 
     val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("إضافة كمبيالة/شيك جديد") },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                com.batterysales.ui.components.CustomKeyboardTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    label = "الوصف"
-                )
-                com.batterysales.ui.stockentry.Dropdown(
-                    label = "المورد",
-                    selectedValue = selectedSupplier?.name ?: "",
-                    options = suppliers.map { it.name },
-                    onOptionSelected = { index ->
-                        selectedSupplier = suppliers[index]
-                        selectedPurchase = null // Reset purchase if supplier changes
-                    },
-                    enabled = true
-                )
-                com.batterysales.ui.components.CustomKeyboardTextField(
-                    value = amount,
-                    onValueChange = { amount = it },
-                    label = "المبلغ"
-                )
-                com.batterysales.ui.components.CustomKeyboardTextField(
-                    value = refNum,
-                    onValueChange = { refNum = it },
-                    label = "رقم السند / الشيك"
-                )
-
-                val supplierPurchases = pendingPurchases
-                    .filter { it.supplierId == selectedSupplier?.id }
-                    .sortedByDescending { it.timestamp }
-                if (supplierPurchases.isNotEmpty()) {
-                    val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
-                    com.batterysales.ui.stockentry.Dropdown(
-                        label = "ربط بطلبية شراء (اختياري)",
-                        selectedValue = selectedPurchase?.let { "طلبية: ${dateFormatter.format(it.timestamp)} - المتبقي: JD ${String.format("%.3f", it.totalCost)}" } ?: "غير مرتبط",
-                        options = listOf("غير مرتبط") + supplierPurchases.map { "طلبية: ${dateFormatter.format(it.timestamp)} - المتبقي: JD ${String.format("%.3f", it.totalCost)}" },
-                        onOptionSelected = { index ->
-                            selectedPurchase = if (index == 0) null else supplierPurchases[index - 1]
-                            // Auto-fill amount if linked
-                            selectedPurchase?.let { 
-                                amount = String.format("%.3f", it.totalCost)
-                                if (description.isEmpty()) description = "تسديد لطلبية شراء بتاريخ ${dateFormatter.format(it.timestamp)}"
-                            }
-                        },
-                        enabled = true
-                    )
-                    
-                    if (selectedPurchase != null) {
-                        Text(
-                            text = "إجمالي الطلبية: JD ${String.format("%.3f", selectedPurchase!!.grandTotalCost)} | المتبقي: JD ${String.format("%.3f", selectedPurchase!!.totalCost)}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFFFB8C00),
-                            modifier = Modifier.padding(horizontal = 4.dp)
-                        )
-                    }
-                }
-
-                Text("نوع الالتزام:", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    BillType.entries.forEach { type ->
-                        FilterChip(
-                            selected = selectedType == type,
-                            onClick = { selectedType = type },
-                            label = {
-                                Text(
-                                    when (type) {
-                                        BillType.CHECK -> "شيك"
-                                        BillType.BILL -> "كمبيالة"
-                                        BillType.TRANSFER -> "تحويل"
-                                        BillType.OTHER -> "أخرى"
-                                    }
-                                )
-                            }
-                        )
-                    }
-                }
-
-                Surface(
-                    onClick = { showDatePicker = true },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f))
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .padding(16.dp)
-                            .fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "تاريخ الاستحقاق: ${dateFormatter.format(selectedDate)}",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Icon(Icons.Default.DateRange, contentDescription = null, tint = Color(0xFFFB8C00))
-                    }
-                }
-                Spacer(modifier = Modifier.height(com.batterysales.ui.components.LocalCustomKeyboardController.current.keyboardHeight.value))
-            }
-        },
+    AppDialog(
+        onDismiss = onDismiss,
+        title = "إضافة كمبيالة/شيك جديد",
         confirmButton = {
             Button(onClick = {
                 val amt = amount.toDoubleOrNull() ?: 0.0
@@ -547,7 +441,111 @@ fun AddBillDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("إلغاء") }
         }
-    )
+    ) {
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = description,
+            onValueChange = { description = it },
+            label = "الوصف"
+        )
+        com.batterysales.ui.stockentry.Dropdown(
+            label = "المورد",
+            selectedValue = selectedSupplier?.name ?: "",
+            options = suppliers.map { it.name },
+            onOptionSelected = { index ->
+                selectedSupplier = suppliers[index]
+                selectedPurchase = null // Reset purchase if supplier changes
+            },
+            enabled = true
+        )
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = amount,
+            onValueChange = { amount = it },
+            label = "المبلغ"
+        )
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = refNum,
+            onValueChange = { refNum = it },
+            label = "رقم السند / الشيك"
+        )
+
+        val supplierPurchases = pendingPurchases
+            .filter { it.supplierId == selectedSupplier?.id }
+            .sortedByDescending { it.timestamp }
+        if (supplierPurchases.isNotEmpty()) {
+            val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
+            com.batterysales.ui.stockentry.Dropdown(
+                label = "ربط بطلبية شراء (اختياري)",
+                selectedValue = selectedPurchase?.let { "طلبية: ${dateFormatter.format(it.timestamp)} - المتبقي: JD ${String.format("%.3f", it.totalCost)}" } ?: "غير مرتبط",
+                options = listOf("غير مرتبط") + supplierPurchases.map { "طلبية: ${dateFormatter.format(it.timestamp)} - المتبقي: JD ${String.format("%.3f", it.totalCost)}" },
+                onOptionSelected = { index ->
+                    selectedPurchase = if (index == 0) null else supplierPurchases[index - 1]
+                    // Auto-fill amount if linked
+                    selectedPurchase?.let { 
+                        amount = String.format("%.3f", it.totalCost)
+                        if (description.isEmpty()) description = "تسديد لطلبية شراء بتاريخ ${dateFormatter.format(it.timestamp)}"
+                    }
+                },
+                enabled = true
+            )
+            
+            if (selectedPurchase != null) {
+                Text(
+                    text = "إجمالي الطلبية: JD ${String.format("%.3f", selectedPurchase!!.grandTotalCost)} | المتبقي: JD ${String.format("%.3f", selectedPurchase!!.totalCost)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFFFB8C00),
+                    modifier = Modifier.padding(horizontal = 4.dp)
+                )
+            }
+        }
+
+        Text("نوع الالتزام:", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            BillType.entries.forEach { type ->
+                FilterChip(
+                    selected = selectedType == type,
+                    onClick = { selectedType = type },
+                    label = {
+                        Text(
+                            when (type) {
+                                BillType.CHECK -> "شيك"
+                                BillType.BILL -> "كمبيالة"
+                                BillType.TRANSFER -> "تحويل"
+                                BillType.OTHER -> "أخرى"
+                            }
+                        )
+                    }
+                )
+            }
+        }
+
+        Surface(
+            onClick = { showDatePicker = true },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f))
+        ) {
+            Row(
+                modifier = Modifier
+                    .padding(16.dp)
+                    .fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "تاريخ الاستحقاق: ${dateFormatter.format(selectedDate)}",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Icon(Icons.Default.DateRange, contentDescription = null, tint = Color(0xFFFB8C00))
+            }
+        }
+    }
 
     if (showDatePicker) {
         DatePickerDialog(
@@ -598,89 +596,9 @@ fun EditBillDialog(
     val selectedDate = datePickerState.selectedDateMillis?.let { Date(it) } ?: bill.dueDate
     val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("تعديل كمبيالة/شيك") },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text("تنبيه: تعديل الوصف سيقوم بتعديل وصف العمليات المتعلقة في الخزينة.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                com.batterysales.ui.components.CustomKeyboardTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    label = "الوصف"
-                )
-                com.batterysales.ui.components.CustomKeyboardTextField(
-                    value = amount,
-                    onValueChange = { amount = it },
-                    label = "المبلغ الإجمالي"
-                )
-                com.batterysales.ui.components.CustomKeyboardTextField(
-                    value = refNum,
-                    onValueChange = { refNum = it },
-                    label = "رقم السند / الشيك"
-                )
-
-                com.batterysales.ui.stockentry.Dropdown(
-                    label = "المورد",
-                    selectedValue = selectedSupplier?.name ?: "",
-                    options = suppliers.map { it.name },
-                    onOptionSelected = { index -> selectedSupplier = suppliers[index] },
-                    enabled = true
-                )
-
-                Text("نوع الالتزام:", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    BillType.entries.forEach { type ->
-                        FilterChip(
-                            selected = selectedType == type,
-                            onClick = { selectedType = type },
-                            label = {
-                                Text(
-                                    when (type) {
-                                        BillType.CHECK -> "شيك"
-                                        BillType.BILL -> "كمبيالة"
-                                        BillType.TRANSFER -> "تحويل"
-                                        BillType.OTHER -> "أخرى"
-                                    }
-                                )
-                            }
-                        )
-                    }
-                }
-
-                Surface(
-                    onClick = { showDatePicker = true },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f))
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .padding(16.dp)
-                            .fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "تاريخ الاستحقاق: ${dateFormatter.format(selectedDate)}",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Icon(Icons.Default.DateRange, contentDescription = null, tint = Color(0xFFFB8C00))
-                    }
-                }
-                Spacer(modifier = Modifier.height(com.batterysales.ui.components.LocalCustomKeyboardController.current.keyboardHeight.value))
-            }
-        },
+    AppDialog(
+        onDismiss = onDismiss,
+        title = "تعديل كمبيالة/شيك",
         confirmButton = {
             Button(onClick = {
                 val amt = amount.toDoubleOrNull() ?: bill.amount
@@ -690,7 +608,80 @@ fun EditBillDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("إلغاء") }
         }
-    )
+    ) {
+        Text("تنبيه: تعديل الوصف سيقوم بتعديل وصف العمليات المتعلقة في الخزينة.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = description,
+            onValueChange = { description = it },
+            label = "الوصف"
+        )
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = amount,
+            onValueChange = { amount = it },
+            label = "المبلغ الإجمالي"
+        )
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = refNum,
+            onValueChange = { refNum = it },
+            label = "رقم السند / الشيك"
+        )
+
+        com.batterysales.ui.stockentry.Dropdown(
+            label = "المورد",
+            selectedValue = selectedSupplier?.name ?: "",
+            options = suppliers.map { it.name },
+            onOptionSelected = { index -> selectedSupplier = suppliers[index] },
+            enabled = true
+        )
+
+        Text("نوع الالتزام:", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            BillType.entries.forEach { type ->
+                FilterChip(
+                    selected = selectedType == type,
+                    onClick = { selectedType = type },
+                    label = {
+                        Text(
+                            when (type) {
+                                BillType.CHECK -> "شيك"
+                                BillType.BILL -> "كمبيالة"
+                                BillType.TRANSFER -> "تحويل"
+                                BillType.OTHER -> "أخرى"
+                            }
+                        )
+                    }
+                )
+            }
+        }
+
+        Surface(
+            onClick = { showDatePicker = true },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f))
+        ) {
+            Row(
+                modifier = Modifier
+                    .padding(16.dp)
+                    .fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "تاريخ الاستحقاق: ${dateFormatter.format(selectedDate)}",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Icon(Icons.Default.DateRange, contentDescription = null, tint = Color(0xFFFB8C00))
+            }
+        }
+    }
 
     if (showDatePicker) {
         DatePickerDialog(

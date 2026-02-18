@@ -37,6 +37,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import com.batterysales.ui.components.TabItem
+import com.batterysales.ui.components.CustomKeyboardTextField
+import com.batterysales.ui.components.KeyboardLanguage
 
 @Composable
 fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hiltViewModel()) {
@@ -151,7 +153,7 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                         item {
                             SearchBarRedesigned(
                                 barcodeFilter = barcodeFilter,
-                                onClear = { viewModel.onBarcodeScanned(null) },
+                                onValueChange = { viewModel.onBarcodeScanned(it.ifEmpty { null }) },
                                 onScan = { showScanner = true }
                             )
                         }
@@ -205,7 +207,7 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
 @Composable
 fun SearchBarRedesigned(
     barcodeFilter: String?,
-    onClear: () -> Unit,
+    onValueChange: (String) -> Unit,
     onScan: () -> Unit
 ) {
     Row(
@@ -215,37 +217,20 @@ fun SearchBarRedesigned(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Surface(
-            modifier = Modifier.weight(1f),
-            color = MaterialTheme.colorScheme.surface,
-            shape = RoundedCornerShape(16.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
-                Spacer(modifier = Modifier.width(12.dp))
-                Text(
-                    text = barcodeFilter ?: "تصفية حسب الباركود...",
-                    color = if (barcodeFilter == null) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onSurface,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.weight(1f)
-                )
-                if (!barcodeFilter.isNullOrBlank()) {
-                    IconButton(onClick = onClear, modifier = Modifier.size(24.dp)) {
-                        Icon(Icons.Default.Clear, contentDescription = "مسح الفلتر", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
+        Box(modifier = Modifier.weight(1f)) {
+            CustomKeyboardTextField(
+                value = barcodeFilter ?: "",
+                onValueChange = onValueChange,
+                modifier = Modifier.fillMaxWidth(),
+                label = "تصفية حسب الباركود..."
+            )
         }
         
         IconButton(
             onClick = onScan,
             modifier = Modifier
-                .size(48.dp)
-                .background(Color(0xFFFB8C00), RoundedCornerShape(16.dp))
+                .size(56.dp)
+                .background(Color(0xFFFB8C00), RoundedCornerShape(12.dp))
         ) {
             Icon(Icons.Default.PhotoCamera, contentDescription = "مسح الباركود", tint = Color.White)
         }
@@ -542,18 +527,12 @@ fun SupplierReportControls(viewModel: ReportsViewModel) {
     val dateFormatter = java.text.SimpleDateFormat("yyyy/MM/dd", java.util.Locale.getDefault())
 
     Column(modifier = Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        OutlinedTextField(
+        CustomKeyboardTextField(
             value = searchQuery,
             onValueChange = { viewModel.onSupplierSearchQueryChanged(it) },
+            label = "بحث باسم المورد أو رقم المرجع...",
             modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("بحث باسم المورد أو رقم المرجع...") },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-            shape = RoundedCornerShape(16.dp),
-            colors = TextFieldDefaults.outlinedTextFieldColors(
-                containerColor = MaterialTheme.colorScheme.surface,
-                focusedBorderColor = MaterialTheme.colorScheme.primary,
-                unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-            )
+            onSearch = { /* Search is reactive, just hide keyboard */ }
         )
 
         Card(
@@ -665,7 +644,21 @@ fun SupplierCardRedesigned(item: com.batterysales.viewmodel.SupplierReportItem) 
                             Text("JD ${String.format("%.3f", po.remainingBalance)}", style = MaterialTheme.typography.labelSmall, color = if (po.remainingBalance > 0) Color(0xFFEF4444) else Color.Gray)
                         }
                         if (po.referenceNumbers.isNotEmpty()) {
-                            Text(po.referenceNumbers.joinToString(", "), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+                                Icon(
+                                    Icons.Default.Payments, 
+                                    contentDescription = null, 
+                                    modifier = Modifier.size(14.dp), 
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = po.referenceNumbers.joinToString(", "), 
+                                    style = MaterialTheme.typography.labelSmall, 
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
                     }
                 }

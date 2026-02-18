@@ -18,7 +18,8 @@ fun CustomKeyboardTextField(
     modifier: Modifier = Modifier,
     readOnly: Boolean = false,
     enabled: Boolean = true,
-    keyboardType: KeyboardLanguage = KeyboardLanguage.ARABIC
+    keyboardType: KeyboardLanguage = KeyboardLanguage.ARABIC,
+    onSearch: (() -> Unit)? = null
 ) {
     val keyboardController = LocalCustomKeyboardController.current
 
@@ -52,7 +53,8 @@ fun CustomKeyboardTextField(
                             initialValue = value,
                             label = label,
                             keyboardType = keyboardType,
-                            onValueChange = onValueChange
+                            onValueChange = onValueChange,
+                            onSearch = onSearch
                         )
                     }
             )
