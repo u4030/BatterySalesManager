@@ -394,7 +394,7 @@ fun CostCalculationSection(uiState: StockEntryUiState, viewModel: StockEntryView
                 OutlinedTextField(
                     value = if (uiState.costInputMode == CostInputMode.BY_AMPERE) uiState.costValue else costPerAmpere,
                     onValueChange = viewModel::onCostValueChanged,
-                    label = { Text("سعر الأمبير") },
+                    label = { Text("سعر الأمبير مثال (0.68.25)") },
                     modifier = Modifier.weight(1f).widthIn(min = 140.dp),
                     readOnly = uiState.costInputMode != CostInputMode.BY_AMPERE,
                     enabled = uiState.selectedVariant != null,

@@ -622,7 +622,7 @@ fun SupplierCardRedesigned(item: com.batterysales.viewmodel.SupplierReportItem) 
                 Text("تفاصيل طلبيات الشراء:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.height(12.dp))
                 
-                val dateFormatter = java.text.SimpleDateFormat("yyyy/MM/dd", java.util.Locale.getDefault())
+                val dateFormatter = java.text.SimpleDateFormat("yyyy/MM/dd hh:mm a", java.util.Locale.getDefault())
                 item.purchaseOrders.forEach { po ->
                     Column(
                         modifier = Modifier
@@ -634,7 +634,7 @@ fun SupplierCardRedesigned(item: com.batterysales.viewmodel.SupplierReportItem) 
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text(dateFormatter.format(po.entry.timestamp), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
                             if (po.entry.invoiceNumber.isNotEmpty()) {
-                                Text("فاتورة: ${po.entry.invoiceNumber}", style = MaterialTheme.typography.labelSmall, color = Color(0xFFFB8C00))
+                                Text("فاتورة: ${po.entry.invoiceNumber}", style = MaterialTheme.typography.labelSmall, color = Color(0xFFFB8C00),fontSize = 16.sp)
                             }
                             Text("JD ${String.format("%.3f", po.entry.totalCost)}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
                         }
@@ -656,7 +656,8 @@ fun SupplierCardRedesigned(item: com.batterysales.viewmodel.SupplierReportItem) 
                                     text = po.referenceNumbers.joinToString(", "), 
                                     style = MaterialTheme.typography.labelSmall, 
                                     color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp
                                 )
                             }
                         }

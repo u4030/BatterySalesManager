@@ -218,68 +218,6 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
                     }
                 }
 
-                // Scrap Section
-                item {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = cardBgColor),
-                        shape = RoundedCornerShape(24.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(
-                                    modifier = Modifier.size(40.dp).background(accentColor.copy(alpha = 0.1f), CircleShape),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(Icons.Default.BatteryChargingFull, contentDescription = null, tint = accentColor, modifier = Modifier.size(20.dp))
-                                }
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column {
-                                    Text("البطاريات القديمة (سكراب)", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
-                                    Text(
-                                        "سيتم إضافة البطاريات المستهلكة إلى المستودع",
-                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                                        fontSize = 11.sp
-                                    )
-                                }
-                            }
-
-                            FlowRow(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(12.dp),
-                                maxItemsInEachRow = 2
-                            ) {
-                                SalesTextField(
-                                    value = uiState.oldBatteriesQuantity,
-                                    onValueChange = viewModel::onOldBatteriesQuantityChanged,
-                                    label = "الكمية",
-                                    modifier = Modifier.widthIn(min = 120.dp).weight(1f),
-                                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
-                                    textAlign = TextAlign.Center
-                                )
-                                SalesTextField(
-                                    value = uiState.oldBatteriesTotalAmps,
-                                    onValueChange = viewModel::onOldBatteriesTotalAmpsChanged,
-                                    label = "إجمالي الأمبيرات",
-                                    modifier = Modifier.widthIn(min = 120.dp).weight(1f),
-                                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal,
-                                    textAlign = TextAlign.Center
-                                )
-                            }
-
-                            SalesTextField(
-                                value = uiState.oldBatteriesValue,
-                                onValueChange = viewModel::onOldBatteriesValueChanged,
-                                label = "قيمة الخصم",
-                                keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal,
-                                suffix = "JD",
-                                textAlign = TextAlign.Center
-                            )
-                        }
-                    }
-                }
-
                 // Payment Method
                 item {
                     Card(
@@ -340,6 +278,68 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
                                 value = paidAmount,
                                 onValueChange = { paidAmount = it },
                                 label = "المبلغ المدفوع",
+                                keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal,
+                                suffix = "JD",
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
+
+                // Scrap Section
+                item {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                        shape = RoundedCornerShape(24.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier.size(40.dp).background(accentColor.copy(alpha = 0.1f), CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Default.BatteryChargingFull, contentDescription = null, tint = accentColor, modifier = Modifier.size(20.dp))
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text("البطاريات القديمة (سكراب)", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        "سيتم إضافة البطاريات المستهلكة إلى المستودع",
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
+
+                            FlowRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                                maxItemsInEachRow = 2
+                            ) {
+                                SalesTextField(
+                                    value = uiState.oldBatteriesQuantity,
+                                    onValueChange = viewModel::onOldBatteriesQuantityChanged,
+                                    label = "الكمية",
+                                    modifier = Modifier.widthIn(min = 120.dp).weight(1f),
+                                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
+                                    textAlign = TextAlign.Center
+                                )
+                                SalesTextField(
+                                    value = uiState.oldBatteriesTotalAmps,
+                                    onValueChange = viewModel::onOldBatteriesTotalAmpsChanged,
+                                    label = "إجمالي الأمبيرات",
+                                    modifier = Modifier.widthIn(min = 120.dp).weight(1f),
+                                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+
+                            SalesTextField(
+                                value = uiState.oldBatteriesValue,
+                                onValueChange = viewModel::onOldBatteriesValueChanged,
+                                label = "قيمة الخصم",
                                 keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal,
                                 suffix = "JD",
                                 textAlign = TextAlign.Center

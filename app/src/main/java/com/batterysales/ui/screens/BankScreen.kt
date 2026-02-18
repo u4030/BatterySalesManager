@@ -221,7 +221,7 @@ fun BankScreen(
                                         Text("حالة الرصيد", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
                                         Text(
                                             if (balance >= 0) "إيجابي" else "مدين",
-                                            color = if (balance >= 0) Color(0xFF10B981) else Color(0xFFEF4444),
+                                            color = if (balance >= 0) Color(0xFF10B948) else Color(0xFFEF4444),
                                             fontWeight = FontWeight.Bold
                                         )
                                     }

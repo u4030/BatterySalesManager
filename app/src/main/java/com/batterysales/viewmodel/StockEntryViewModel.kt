@@ -258,7 +258,7 @@ class StockEntryViewModel @Inject constructor(
             return
         }
 
-        _uiState.update { it.copy(stockItems = it.stockItems + newItem, quantity = "", costValue = "") }
+        _uiState.update { it.copy(stockItems = it.stockItems + newItem, quantity = "") }
     }
 
     fun onSaveClicked() {
