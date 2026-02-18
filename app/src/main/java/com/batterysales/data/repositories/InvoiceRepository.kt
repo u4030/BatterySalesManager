@@ -118,20 +118,58 @@ class InvoiceRepository @Inject constructor(
     }
 
     suspend fun deleteInvoice(invoiceId: String) {
-        // First, delete all payments associated with the invoice
         val payments = firestore.collection(Payment.COLLECTION_NAME)
             .whereEqualTo("invoiceId", invoiceId)
             .get()
             .await()
 
-        val batch = firestore.batch()
-        payments.documents.forEach { doc ->
-            batch.delete(doc.reference)
+        val stockEntries = firestore.collection(com.batterysales.data.models.StockEntry.COLLECTION_NAME)
+            .whereEqualTo("invoiceId", invoiceId)
+            .get()
+            .await()
+
+        firestore.runTransaction { transaction ->
+            // 1. Delete associated payments
+            payments.documents.forEach { transaction.delete(it.reference) }
+
+            // 2. Delete stock entries and update balances
+            stockEntries.documents.forEach { doc ->
+                val entry = doc.toObject(com.batterysales.data.models.StockEntry::class.java)
+                if (entry != null) {
+                    updateVariantStock(transaction, entry.productVariantId, entry.warehouseId, -(entry.quantity - entry.returnedQuantity))
+                    if (entry.status == com.batterysales.data.models.StockEntry.STATUS_APPROVED && entry.supplierId.isNotEmpty()) {
+                        updateSupplierBalance(transaction, entry.supplierId, debitDelta = -entry.totalCost, creditDelta = 0.0)
+                    }
+                }
+                transaction.delete(doc.reference)
+            }
+
+            // 3. Delete the invoice itself
+            transaction.delete(firestore.collection(Invoice.COLLECTION_NAME).document(invoiceId))
+        }.await()
+    }
+
+    private fun updateVariantStock(transaction: com.google.firebase.firestore.Transaction, variantId: String, warehouseId: String, delta: Int) {
+        if (variantId.isEmpty()) return
+        val variantRef = firestore.collection(com.batterysales.data.models.ProductVariant.COLLECTION_NAME).document(variantId)
+        val variant = transaction.get(variantRef).toObject(com.batterysales.data.models.ProductVariant::class.java)
+        if (variant != null) {
+            val stockLevels = variant.stockLevels.toMutableMap()
+            val currentStock = stockLevels[warehouseId] ?: 0
+            stockLevels[warehouseId] = currentStock + delta
+            transaction.update(variantRef, "stockLevels", stockLevels)
         }
+    }
 
-        // Then, delete the invoice itself
-        batch.delete(firestore.collection(Invoice.COLLECTION_NAME).document(invoiceId))
-
-        batch.commit().await()
+    private fun updateSupplierBalance(transaction: com.google.firebase.firestore.Transaction, supplierId: String, debitDelta: Double, creditDelta: Double) {
+        if (supplierId.isEmpty()) return
+        val supplierRef = firestore.collection(com.batterysales.data.models.Supplier.COLLECTION_NAME).document(supplierId)
+        val supplier = transaction.get(supplierRef).toObject(com.batterysales.data.models.Supplier::class.java)
+        if (supplier != null) {
+            val updates = mutableMapOf<String, Any>()
+            if (debitDelta != 0.0) updates["totalDebit"] = supplier.totalDebit + debitDelta
+            if (creditDelta != 0.0) updates["totalCredit"] = supplier.totalCredit + creditDelta
+            if (updates.isNotEmpty()) transaction.update(supplierRef, updates)
+        }
     }
 }

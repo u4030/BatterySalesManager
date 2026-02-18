@@ -78,4 +78,13 @@ class ProductVariantRepository @Inject constructor(
             .await()
         return snapshot.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }
     }
+
+    suspend fun getVariantByBarcode(barcode: String): ProductVariant? {
+        val snapshot = firestore.collection(ProductVariant.COLLECTION_NAME)
+            .whereEqualTo("barcode", barcode)
+            .limit(1)
+            .get()
+            .await()
+        return snapshot.documents.firstOrNull()?.toObject(ProductVariant::class.java)?.copy(id = snapshot.documents.firstOrNull()?.id ?: "")
+    }
 }

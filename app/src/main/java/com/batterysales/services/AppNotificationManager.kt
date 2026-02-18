@@ -65,6 +65,7 @@ class AppNotificationManager @Inject constructor(
         var hasEmittedData = false
         // Listener for Upcoming Bills/Checks
         upcomingBillsListener = firestore.collection(Bill.COLLECTION_NAME)
+            .whereNotEqualTo("status", BillStatus.PAID)
             .addSnapshotListener { snapshot, e ->
                 if (e != null) return@addSnapshotListener
                 if (snapshot == null) return@addSnapshotListener
@@ -174,20 +175,14 @@ class AppNotificationManager @Inject constructor(
     private fun setupLowStockListener() {
         var hasEmittedData = false
         lowStockJob = combine(
-            stockEntryRepository.getAllStockEntriesFlow(),
             productVariantRepository.getAllVariantsFlow(),
             productRepository.getProducts(),
             warehouseRepository.getWarehouses()
-        ) { allEntries, allVariants, allProducts, allWarehouses ->
+        ) { allVariants, allProducts, allWarehouses ->
             // Skip if no products or variants exist yet (initial load)
             if (allProducts.isEmpty() && allVariants.isEmpty()) return@combine
 
             val productMap = allProducts.associateBy { it.id }
-
-            // Group entries to optimize calculation by Pair(variantId, warehouseId)
-            val stockMap = allEntries.filter { it.status == StockEntry.STATUS_APPROVED }
-                .groupBy { Pair(it.productVariantId, it.warehouseId) }
-                .mapValues { it.value.sumOf { entry -> entry.quantity - entry.returnedQuantity } }
 
             val lowStockItems = mutableListOf<Pair<ProductVariant, Warehouse>>()
             allVariants.filter { !it.archived }.forEach { variant ->
@@ -195,7 +190,7 @@ class AppNotificationManager @Inject constructor(
                     val threshold = variant.minQuantities[warehouse.id] ?: variant.minQuantity
                     if (threshold <= 0) continue
 
-                    val qty = stockMap[Pair(variant.id, warehouse.id)] ?: 0
+                    val qty = variant.stockLevels[warehouse.id] ?: 0
                     if (qty <= threshold) {
                         lowStockItems.add(Pair(variant, warehouse))
                     }
@@ -229,7 +224,7 @@ class AppNotificationManager @Inject constructor(
                     if (threshold <= 0) continue
 
                     val key = "${variant.id}:${warehouse.id}"
-                    val currentQty = stockMap[Pair(variant.id, warehouse.id)] ?: 0
+                    val currentQty = variant.stockLevels[warehouse.id] ?: 0
 
                     if (currentQty <= threshold) {
                         if (!notifiedLowStockKeys.contains(key)) {
