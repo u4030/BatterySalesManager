@@ -225,7 +225,7 @@ fun SearchBarRedesigned(
                 label = "تصفية حسب الباركود..."
             )
         }
-        
+
         IconButton(
             onClick = onScan,
             modifier = Modifier
@@ -318,7 +318,7 @@ fun ReportItemCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                
+
                 if (isLowStock) {
                     Surface(
                         color = Color(0xFFEF4444).copy(alpha = 0.1f),
@@ -336,7 +336,7 @@ fun ReportItemCard(
             }
 
             Spacer(modifier = Modifier.height(20.dp))
-            
+
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -364,7 +364,7 @@ fun ReportItemCard(
                 Spacer(modifier = Modifier.height(16.dp))
                 Text("توزيع المستودعات:", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(modifier = Modifier.height(8.dp))
-                
+
                 FlowRow(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -396,7 +396,7 @@ fun OldBatteryReportSectionRedesigned(
 ) {
     var selectedWHIndex by remember { mutableIntStateOf(0) }
     val currentSummary = if (selectedWHIndex == 0) oldBatterySummary
-                        else oldBatteryWarehouseSummary[warehouses[selectedWHIndex - 1].id] ?: Pair(0, 0.0)
+    else oldBatteryWarehouseSummary[warehouses[selectedWHIndex - 1].id] ?: Pair(0, 0.0)
 
     Column(modifier = Modifier.fillMaxWidth()) {
         if (warehouses.isNotEmpty()) {
@@ -439,12 +439,12 @@ fun OldBatteryReportSectionRedesigned(
                         Icon(Icons.Default.BatteryChargingFull, contentDescription = null, tint = Color(0xFFD7CCC8), modifier = Modifier.size(24.dp))
                     }
                 }
-                
+
                 Spacer(modifier = Modifier.height(16.dp))
                 Text("إجمالي مخزون السكراب", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                
+
                 Spacer(modifier = Modifier.height(24.dp))
-                
+
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("الكمية", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -455,12 +455,12 @@ fun OldBatteryReportSectionRedesigned(
                         Text("${String.format("%.1f", currentSummary.second)} A", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Color(0xFFFB8C00))
                     }
                 }
-                
+
                 Spacer(modifier = Modifier.height(32.dp))
-                
+
                 Button(
                     onClick = onNavigate,
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5D4037)),
                     shape = RoundedCornerShape(16.dp)
                 ) {
@@ -494,14 +494,14 @@ private fun supplierReportSectionRedesigned(
                 verticalArrangement = Arrangement.Center
             ) {
                 Text(
-                    "إجمالي مستحقات الموردين", 
+                    "إجمالي مستحقات الموردين",
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(vertical = 4.dp)
                 )
                 Text(
-                    "JD ${String.format("%.3f", totalSuppliersDebit)}", 
-                    fontWeight = FontWeight.Bold, 
-                    color = Color(0xFFEF4444), 
+                    "JD ${String.format("%.3f", totalSuppliersDebit)}",
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFFEF4444),
                     style = MaterialTheme.typography.titleLarge,
                     modifier = Modifier.padding(vertical = 4.dp)
                 )
@@ -602,9 +602,9 @@ fun SupplierCardRedesigned(item: com.batterysales.viewmodel.SupplierReportItem) 
                     }
                 }
             }
-            
+
             Spacer(modifier = Modifier.height(20.dp))
-            
+
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -612,7 +612,7 @@ fun SupplierCardRedesigned(item: com.batterysales.viewmodel.SupplierReportItem) 
             ) {
                 InfoBadge(label = "مدين", value = "JD ${String.format("%.3f", item.totalDebit)}", color = Color(0xFFFB8C00))
                 InfoBadge(label = "دائن", value = "JD ${String.format("%.3f", item.totalCredit)}", color = Color(0xFF10B981))
-                InfoBadge(label = "الرصيد", value = "JD ${String.format("%.3f", item.balance)}", color = if (item.balance > 0) Color(0xFFEF4444) else Color(0xFF10B981))
+                InfoBadge(label = "المتبقي", value = "JD ${String.format("%.3f", item.balance)}", color = if (item.balance > 0) Color(0xFFEF4444) else Color(0xFF10B981))
             }
 
             if (expanded && item.purchaseOrders.isNotEmpty()) {
@@ -621,44 +621,72 @@ fun SupplierCardRedesigned(item: com.batterysales.viewmodel.SupplierReportItem) 
                 Spacer(modifier = Modifier.height(16.dp))
                 Text("تفاصيل طلبيات الشراء:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.height(12.dp))
-                
+
                 val dateFormatter = java.text.SimpleDateFormat("yyyy/MM/dd hh:mm a", java.util.Locale.getDefault())
                 item.purchaseOrders.forEach { po ->
-                    Column(
+                    Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(bottom = 12.dp)
-                            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.02f), RoundedCornerShape(12.dp))
-                            .padding(12.dp)
+                            .padding(bottom = 12.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.03f))
                     ) {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(dateFormatter.format(po.entry.timestamp), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
-                            if (po.entry.invoiceNumber.isNotEmpty()) {
-                                Text("فاتورة: ${po.entry.invoiceNumber}", style = MaterialTheme.typography.labelSmall, color = Color(0xFFFB8C00),fontSize = 16.sp)
-                            }
-                            Text("JD ${String.format("%.3f", po.entry.totalCost)}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("المتبقي:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("JD ${String.format("%.3f", po.remainingBalance)}", style = MaterialTheme.typography.labelSmall, color = if (po.remainingBalance > 0) Color(0xFFEF4444) else Color.Gray)
-                        }
-                        if (po.referenceNumbers.isNotEmpty()) {
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
-                                Icon(
-                                    Icons.Default.Payments, 
-                                    contentDescription = null, 
-                                    modifier = Modifier.size(14.dp), 
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    text = po.referenceNumbers.joinToString(", "), 
-                                    style = MaterialTheme.typography.labelSmall, 
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 16.sp
+                                    text = dateFormatter.format(po.entry.timestamp),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold
                                 )
+                                if (po.entry.invoiceNumber.isNotEmpty()) {
+                                    Surface(
+                                        color = Color(0xFFFB8C00).copy(alpha = 0.1f),
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Text(
+                                            text = "فاتورة: ${po.entry.invoiceNumber}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = Color(0xFFFB8C00),
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("إجمالي الطلبية:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("JD ${String.format("%.3f", po.entry.totalCost)}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.ExtraBold)
+                            }
+
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("المتبقي:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(
+                                    text = "JD ${String.format("%.3f", po.remainingBalance)}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (po.remainingBalance > 0) Color(0xFFEF4444) else Color(0xFF10B981)
+                                )
+                            }
+
+                            if (po.referenceNumbers.isNotEmpty()) {
+                                HorizontalDivider(modifier = Modifier.alpha(0.1f))
+                                Row(verticalAlignment = Alignment.Top) {
+                                    Icon(
+                                        Icons.Default.Payments,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp).padding(top = 2.dp),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = po.referenceNumbers.joinToString(", "),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.Bold,
+                                        lineHeight = 16.sp,
+                                        fontSize = 13.sp,
+                                    )
+                                }
                             }
                         }
                     }

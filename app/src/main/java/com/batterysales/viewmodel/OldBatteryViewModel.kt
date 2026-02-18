@@ -71,43 +71,41 @@ class OldBatteryViewModel @Inject constructor(
     private var lastDocument: DocumentSnapshot? = null
 
     init {
-        loadInitialData()
-    }
+        userRepository.getCurrentUserFlow()
+            .onEach { user ->
+                currentUser = user
+                _isSeller.value = user?.role == "seller"
+                _userWarehouseId.value = user?.warehouseId
 
-    fun loadInitialData() {
-        viewModelScope.launch {
-            _isLoading.value = true
-            try {
-                currentUser = userRepository.getCurrentUser()
-                _isSeller.value = currentUser?.role == "seller"
-                _userWarehouseId.value = currentUser?.warehouseId
+                // Clear state when user changes
+                _transactions.value = emptyList()
+                _summary.value = Pair(0, 0.0)
+                _selectedWarehouseId.value = null
 
                 warehouseRepository.getWarehouses().onEach { allWh ->
                     val active = allWh.filter { it.isActive }
                     _warehouses.value = active
-                    
-                    // If admin and no warehouse selected, default to first active one
-                    if (currentUser?.role == "admin" && _selectedWarehouseId.value == null) {
-                        active.firstOrNull()?.let { 
+
+                    if (user?.role == "admin" && _selectedWarehouseId.value == null) {
+                        active.firstOrNull()?.let {
                             _selectedWarehouseId.value = it.id
                             loadTransactions(reset = true, warehouseId = it.id)
                         }
                     }
                 }.launchIn(viewModelScope)
-                
-                if (_isSeller.value) {
-                    loadTransactions(reset = true, warehouseId = _userWarehouseId.value)
+
+                if (user?.role == "seller") {
+                    loadTransactions(reset = true, warehouseId = user.warehouseId)
                 }
-                
-            } catch (e: Exception) {
-                Log.e("OldBatteryViewModel", "Error loading initial data", e)
-                _isLoading.value = false
-            }
-        }
+            }.launchIn(viewModelScope)
+    }
+
+    fun loadInitialData() {
+        // No-op now as initialization is handled by user flow
     }
 
     fun loadTransactions(
-        reset: Boolean = false, 
+        reset: Boolean = false,
         warehouseId: String? = _selectedWarehouseId.value,
         startDate: Long? = _startDate.value,
         endDate: Long? = _endDate.value
@@ -127,9 +125,9 @@ class OldBatteryViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 if (!reset) _isLoadingMore.value = true
-                
+
                 val warehouseFilter = if (_isSeller.value) _userWarehouseId.value else warehouseId
-                
+
                 val result = repository.getTransactionsPaginated(
                     warehouseId = warehouseFilter,
                     startDate = _startDate.value,
@@ -143,10 +141,10 @@ class OldBatteryViewModel @Inject constructor(
 
                 _transactions.update { current -> if (reset) newTransactions else current + newTransactions }
                 _isLastPage.value = newTransactions.size < 20
-                
+
                 _isLoading.value = false
                 _isLoadingMore.value = false
-                
+
                 // Load summary via aggregation
                 val summ = repository.getStockSummary(warehouseFilter)
                 _summary.value = summ

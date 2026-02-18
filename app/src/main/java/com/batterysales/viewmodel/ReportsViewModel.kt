@@ -96,11 +96,11 @@ class ReportsViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {
-        viewModelScope.launch {
-            val user = userRepository.getCurrentUser()
-            _isSeller.value = user?.role == "seller"
-            refreshAll()
-        }
+        userRepository.getCurrentUserFlow()
+            .onEach { user ->
+                _isSeller.value = user?.role == "seller"
+                refreshAll()
+            }.launchIn(viewModelScope)
     }
 
     fun refreshAll() {
@@ -147,7 +147,7 @@ class ReportsViewModel @Inject constructor(
                     async {
                         aggregationSemaphore.withPermit {
                             val product = activeProducts[variant.productId] ?: return@withPermit null
-                            
+
                             // Get global summary first
                             val globalSummary = stockEntryRepository.getVariantSummary(variant.id, null)
                             if (globalSummary.first <= 0 && barcode == null) return@withPermit null
@@ -159,7 +159,7 @@ class ReportsViewModel @Inject constructor(
                             }
 
                             val averageCost = globalSummary.second // We'll use the aggregated totalCost / (qty-returned)
-                            
+
                             InventoryReportItem(
                                 product = product,
                                 variant = variant,
@@ -194,7 +194,7 @@ class ReportsViewModel @Inject constructor(
             } else {
                 val globalSummary = oldBatteryRepository.getStockSummary(null)
                 _oldBatterySummary.value = globalSummary
-                
+
                 val whSummaries = mutableMapOf<String, Pair<Int, Double>>()
                 for (wh in warehouses.value.filter { it.isActive }) {
                     whSummaries[wh.id] = oldBatteryRepository.getStockSummary(wh.id)
@@ -210,7 +210,7 @@ class ReportsViewModel @Inject constructor(
                 val suppliers = supplierRepository.getSuppliers().first()
                 val start = _startDate.value
                 val end = _endDate.value
-                
+
                 // Use suspend fetch instead of .first() on flow to ensure we wait for fresh data
                 val allStockEntries = stockEntryRepository.getAllStockEntries()
                 val allBills = billRepository.getAllBills()
@@ -238,18 +238,18 @@ class ReportsViewModel @Inject constructor(
                     val purchaseOrders = groupedEntries.map { (key, group) ->
                         val representative = group.first()
                         val totalOrderCost = if (representative.grandTotalCost > 0) representative.grandTotalCost else group.sumOf { it.totalCost }
-                        
-                        val linkedBills = supplierBills.filter { 
+
+                        val linkedBills = supplierBills.filter {
                             it.relatedEntryId == key || group.any { entry -> entry.id == it.relatedEntryId }
                         }
                         val linkedPaid = linkedBills.sumOf { it.paidAmount }
-                        
+
                         PurchaseOrderItem(
                             entry = representative.copy(totalCost = totalOrderCost),
                             linkedPaidAmount = linkedPaid,
                             remainingBalance = totalOrderCost - linkedPaid,
-                            referenceNumbers = linkedBills.filter { 
-                                it.referenceNumber.isNotEmpty() && it.status == BillStatus.PAID 
+                            referenceNumbers = linkedBills.filter {
+                                it.referenceNumber.isNotEmpty() && it.status == BillStatus.PAID
                             }.map { bill ->
                                 val typeStr = when (bill.billType) {
                                     BillType.CHECK -> "شيك"

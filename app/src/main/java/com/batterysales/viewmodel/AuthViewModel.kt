@@ -116,9 +116,12 @@ class AuthViewModel @Inject constructor(
     }
 
     fun logout() {
-        userRepository.logout()
-        _currentUser.value = null
-        _isLoggedIn.value = false
+        viewModelScope.launch {
+            userRepository.logout()
+            _currentUser.value = null
+            _isLoggedIn.value = false
+            _errorMessage.value = null
+        }
     }
 
     fun clearError() {
