@@ -173,74 +173,42 @@ class AppNotificationManager @Inject constructor(
     }
 
     private fun setupLowStockListener() {
-        var hasEmittedData = false
-        lowStockJob = combine(
-            productVariantRepository.getAllVariantsFlow(),
-            productRepository.getProducts(),
-            warehouseRepository.getWarehouses()
-        ) { allVariants, allProducts, allWarehouses ->
-            // Skip if no products or variants exist yet (initial load)
-            if (allProducts.isEmpty() && allVariants.isEmpty()) return@combine
+        lowStockJob = scope.launch {
+            // Check for low stock once on start/login using accurate aggregation
+            try {
+                val allVariants = productVariantRepository.getAllVariants().filter { !it.archived }
+                val allWarehouses = warehouseRepository.getWarehousesOnce()
+                val products = productRepository.getProductsOnce().associateBy { it.id }
 
-            val productMap = allProducts.associateBy { it.id }
+                val lowStockItemsCount = mutableListOf<String>()
 
-            val lowStockItems = mutableListOf<Pair<ProductVariant, Warehouse>>()
-            allVariants.filter { !it.archived }.forEach { variant ->
-                for (warehouse in allWarehouses) {
-                    val threshold = variant.minQuantities[warehouse.id] ?: variant.minQuantity
-                    if (threshold <= 0) continue
+                for (variant in allVariants) {
+                    val globalSummary = stockEntryRepository.getVariantSummary(variant.id, null)
+                    val totalQty = globalSummary.first
 
-                    val qty = variant.stockLevels[warehouse.id] ?: 0
-                    if (qty <= threshold) {
-                        lowStockItems.add(Pair(variant, warehouse))
+                    for (warehouse in allWarehouses) {
+                        val threshold = variant.minQuantities[warehouse.id] ?: variant.minQuantity
+                        if (threshold <= 0) continue
+
+                        val whSummary = stockEntryRepository.getVariantSummary(variant.id, warehouse.id)
+                        val qty = whSummary.first
+
+                        if (qty <= threshold) {
+                            lowStockItemsCount.add("${variant.id}:${warehouse.id}")
+                        }
                     }
                 }
-            }
 
-            if (!hasEmittedData) {
-                // Wait for all data to load (avoid false positives on partial load)
-                if (allProducts.isNotEmpty() && allVariants.isEmpty()) return@combine
-
-                hasEmittedData = true
-                
-                if (lowStockItems.isNotEmpty()) {
+                if (lowStockItemsCount.isNotEmpty()) {
                     NotificationHelper.showNotification(
                         context,
                         "تنبيه المخزون المنخفض",
-                        "يوجد عدد ${lowStockItems.size} أصناف وصلت للحد الأدنى للمخزون في المستودعات"
+                        "يوجد عدد ${lowStockItemsCount.size} أصناف وصلت للحد الأدنى للمخزون"
                     )
                 }
-                
-                lowStockItems.forEach { (variant, warehouse) ->
-                    notifiedLowStockKeys.add("${variant.id}:${warehouse.id}")
-                }
-                return@combine
+            } catch (e: Exception) {
+                Log.e("AppNotificationManager", "Error checking low stock", e)
             }
-
-            allVariants.filter { !it.archived }.forEach { variant ->
-                val product = productMap[variant.productId]
-                for (warehouse in allWarehouses) {
-                    val threshold = variant.minQuantities[warehouse.id] ?: variant.minQuantity
-                    if (threshold <= 0) continue
-
-                    val key = "${variant.id}:${warehouse.id}"
-                    val currentQty = variant.stockLevels[warehouse.id] ?: 0
-
-                    if (currentQty <= threshold) {
-                        if (!notifiedLowStockKeys.contains(key)) {
-                            NotificationHelper.showNotification(
-                                context,
-                                "تنبيه انخفاض المخزون",
-                                "المنتج ${product?.name ?: ""} (${variant.capacity} أمبير) في ${warehouse.name} وصل للحد الأدنى ($currentQty)"
-                            )
-                            notifiedLowStockKeys.add(key)
-                        }
-                    } else {
-                        // Reset if stock goes up
-                        notifiedLowStockKeys.remove(key)
-                    }
-                }
-            }
-        }.launchIn(scope)
+        }
     }
 }

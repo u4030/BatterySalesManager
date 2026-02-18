@@ -14,11 +14,8 @@ import kotlinx.coroutines.tasks.await
 import java.util.Date
 import javax.inject.Inject
 
-import com.batterysales.data.helper.BalanceManager
-
 class InvoiceRepository @Inject constructor(
-    private val firestore: FirebaseFirestore,
-    private val balanceManager: BalanceManager
+    private val firestore: FirebaseFirestore
 ) {
 
     suspend fun createInvoice(invoice: Invoice): Invoice {
@@ -135,15 +132,8 @@ class InvoiceRepository @Inject constructor(
             // 1. Delete associated payments
             payments.documents.forEach { transaction.delete(it.reference) }
 
-            // 2. Delete stock entries and update balances
+            // 2. Delete stock entries
             stockEntries.documents.forEach { doc ->
-                val entry = doc.toObject(com.batterysales.data.models.StockEntry::class.java)
-                if (entry != null) {
-                    balanceManager.updateVariantStock(transaction, entry.productVariantId, entry.warehouseId, -(entry.quantity - entry.returnedQuantity))
-                    if (entry.status == com.batterysales.data.models.StockEntry.STATUS_APPROVED && entry.supplierId.isNotEmpty()) {
-                        balanceManager.updateSupplierBalance(transaction, entry.supplierId, debitDelta = -entry.totalCost, creditDelta = 0.0)
-                    }
-                }
                 transaction.delete(doc.reference)
             }
 

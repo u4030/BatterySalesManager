@@ -146,6 +146,11 @@ fun InvoiceScreen(
                     onBackClick = { navController.popBackStack() },
                     actions = {
                         HeaderIconButton(
+                            icon = Icons.Default.Refresh,
+                            onClick = { viewModel.loadInvoices(reset = true) },
+                            contentDescription = "Refresh"
+                        )
+                        HeaderIconButton(
                             icon = Icons.Default.CalendarMonth,
                             onClick = { showDateRangePicker = true },
                             contentDescription = "Date Range"

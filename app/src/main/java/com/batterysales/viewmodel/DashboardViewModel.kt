@@ -42,7 +42,6 @@ data class DashboardUiState(
     val upcomingBills: List<com.batterysales.data.models.Bill> = emptyList(),
     val warehouseStats: List<WarehouseStats> = emptyList(),
     val notifications: List<AppNotification> = emptyList(),
-    val isMigrationRequired: Boolean = false,
     val isLoading: Boolean = true
 )
 
@@ -63,8 +62,7 @@ class DashboardViewModel @Inject constructor(
     private val billRepository: BillRepository,
     private val warehouseRepository: WarehouseRepository,
     private val userRepository: UserRepository,
-    private val paymentRepository: PaymentRepository,
-    private val systemConfigRepository: SystemConfigRepository
+    private val paymentRepository: PaymentRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DashboardUiState())
@@ -75,8 +73,6 @@ class DashboardViewModel @Inject constructor(
     }
 
     private fun loadDashboardData() {
-        val migrationFlow = flow { emit(systemConfigRepository.isMigrationCompleted()) }
-
         combine(
             warehouseRepository.getWarehouses(),
             userRepository.getCurrentUserFlow(),
@@ -84,8 +80,7 @@ class DashboardViewModel @Inject constructor(
             productVariantRepository.getAllVariantsFlow(),
             productRepository.getProducts(),
             stockEntryRepository.getPendingEntriesFlow(),
-            paymentRepository.getAllPaymentsFlow(),
-            migrationFlow
+            paymentRepository.getAllPaymentsFlow()
         ) { array ->
             val warehouses = array[0] as List<com.batterysales.data.models.Warehouse>
             val user = array[1] as com.batterysales.data.models.User?
@@ -94,7 +89,6 @@ class DashboardViewModel @Inject constructor(
             val products = array[4] as List<com.batterysales.data.models.Product>
             val pendingEntries = array[5] as List<StockEntry>
             val allPayments = array[6] as List<com.batterysales.data.models.Payment>
-            val isMigrationCompleted = array[7] as Boolean
 
             val isAdmin = user?.role == "admin"
             val userWarehouseId = user?.warehouseId
@@ -145,25 +139,10 @@ class DashboardViewModel @Inject constructor(
                     )
                 }.filter { if (isAdmin) it.todayCollection > 0 else true }
 
-            // 4. Low Stock (Optimized using stored balances)
-            val lowStock = calculateLowStockFromStoredBalances(variants, products, warehouses)
+            // 4. Low Stock Notifications (Summarized for speed)
+            // Actual calculation is done in Reports or AppNotificationManager
 
             val allNotifications = mutableListOf<AppNotification>()
-                
-                // Add Low Stock Notifications
-                lowStock.forEach { item ->
-                    allNotifications.add(
-                        AppNotification(
-                            id = "low_stock_${item.variantId}_${item.warehouseName}",
-                            title = "انخفاض المخزون",
-                            message = "${item.productName} (${item.capacity}A) في ${item.warehouseName}: الكمية ${item.currentQuantity}",
-                            type = NotificationType.LOW_STOCK,
-                            route = "reports"
-                        )
-                    )
-                }
-
-                // Add Pending Approvals Notification
                 if (pendingCount > 0) {
                     allNotifications.add(
                         AppNotification(
@@ -192,11 +171,10 @@ class DashboardViewModel @Inject constructor(
 
                 DashboardUiState(
                     pendingApprovalsCount = pendingCount,
-                    lowStockVariants = lowStock,
+                    lowStockVariants = emptyList(),
                     upcomingBills = upcoming,
                     warehouseStats = warehouseStatsList,
                     notifications = allNotifications,
-                    isMigrationRequired = isAdmin && !isMigrationCompleted,
                     isLoading = false
                 )
             }.onEach { state ->
@@ -204,36 +182,4 @@ class DashboardViewModel @Inject constructor(
             }.launchIn(viewModelScope)
     }
 
-    private fun calculateLowStockFromStoredBalances(
-        variants: List<ProductVariant>,
-        products: List<com.batterysales.data.models.Product>,
-        warehouses: List<com.batterysales.data.models.Warehouse>
-    ): List<LowStockItem> {
-        val productMap = products.associateBy { it.id }
-        val lowStock = mutableListOf<LowStockItem>()
-        val activeVariants = variants.filter { !it.archived }
-
-        for (variant in activeVariants) {
-            val product = productMap[variant.productId] ?: continue
-            for (warehouse in warehouses) {
-                val threshold = variant.minQuantities[warehouse.id] ?: variant.minQuantity
-                if (threshold <= 0) continue
-
-                val currentQty = variant.stockLevels[warehouse.id] ?: 0
-                if (currentQty <= threshold) {
-                    lowStock.add(
-                        LowStockItem(
-                            variantId = variant.id,
-                            productName = product.name,
-                            capacity = variant.capacity,
-                            currentQuantity = currentQty,
-                            minQuantity = threshold,
-                            warehouseName = warehouse.name
-                        )
-                    )
-                }
-            }
-        }
-        return lowStock
-    }
 }

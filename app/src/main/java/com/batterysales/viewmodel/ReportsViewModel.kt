@@ -10,6 +10,11 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import android.util.Log
+import com.google.firebase.firestore.AggregateField
+import com.google.firebase.firestore.AggregateSource
+import com.google.firebase.firestore.DocumentSnapshot
+import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import javax.inject.Inject
@@ -48,7 +53,8 @@ class ReportsViewModel @Inject constructor(
     private val supplierRepository: SupplierRepository,
     private val billRepository: BillRepository,
     private val oldBatteryRepository: OldBatteryRepository,
-    private val userRepository: UserRepository
+    private val userRepository: UserRepository,
+    private val firestore: FirebaseFirestore
 ) : ViewModel() {
 
     private val _isLoading = MutableStateFlow(false)
@@ -71,6 +77,14 @@ class ReportsViewModel @Inject constructor(
 
     private val _inventoryReport = MutableStateFlow<List<InventoryReportItem>>(emptyList())
     val inventoryReport = _inventoryReport.asStateFlow()
+
+    private val _grandTotalInventoryQuantity = MutableStateFlow(0)
+    val grandTotalInventoryQuantity = _grandTotalInventoryQuantity.asStateFlow()
+
+    private val _isInventoryLastPage = MutableStateFlow(false)
+    val isInventoryLastPage = _isInventoryLastPage.asStateFlow()
+
+    private var lastVariantDoc: DocumentSnapshot? = null
 
     private val _supplierReport = MutableStateFlow<List<SupplierReportItem>>(emptyList())
     val supplierReport = _supplierReport.asStateFlow()
@@ -104,14 +118,14 @@ class ReportsViewModel @Inject constructor(
     }
 
     fun refreshAll() {
-        loadInventoryReport()
+        loadInventoryReport(reset = true)
         loadScrapReport()
         loadSupplierReport()
     }
 
     fun onBarcodeScanned(barcode: String?) {
         _barcodeFilter.value = barcode
-        loadInventoryReport()
+        loadInventoryReport(reset = true)
     }
 
     fun onDateRangeSelected(start: Long?, end: Long?) {
@@ -126,7 +140,34 @@ class ReportsViewModel @Inject constructor(
         // but we could also reload if query is specific.
     }
 
-    fun loadInventoryReport() {
+    fun loadInventoryReport(reset: Boolean = false) {
+        if (reset) {
+            lastVariantDoc = null
+            _inventoryReport.value = emptyList()
+            _grandTotalInventoryQuantity.value = 0
+            _isInventoryLastPage.value = false
+
+            // Calculate Global Grand Total once
+            viewModelScope.launch {
+                try {
+                    val qtySnap = firestore.collection(StockEntry.COLLECTION_NAME)
+                        .whereEqualTo("status", "approved")
+                        .aggregate(
+                            AggregateField.sum("quantity"),
+                            AggregateField.sum("returnedQuantity")
+                        ).get(AggregateSource.SERVER).await()
+
+                    val totalQty = (qtySnap.getLong(AggregateField.sum("quantity")) ?: 0).toInt()
+                    val totalRet = (qtySnap.getLong(AggregateField.sum("returnedQuantity")) ?: 0).toInt()
+                    _grandTotalInventoryQuantity.value = totalQty - totalRet
+                } catch (e: Exception) {
+                    Log.e("ReportsViewModel", "Error calculating grand total", e)
+                }
+            }
+        }
+
+        if (_isInventoryLastPage.value || _isLoading.value) return
+
         viewModelScope.launch {
             _isLoading.value = true
             try {
@@ -135,47 +176,66 @@ class ReportsViewModel @Inject constructor(
                     filteredWarehouses.filter { it.isNotEmpty() }.first()
                 }
 
-                val products = productRepository.getProducts().first()
-                val allVariants = productVariantRepository.getAllVariantsFlow().first()
                 val warehouseList = filteredWarehouses.value
                 val barcode = _barcodeFilter.value
 
-                val activeProducts = products.filter { !it.archived }.associateBy { it.id }
-                val activeVariants = allVariants.filter { !it.archived && (barcode == null || it.barcode == barcode) }
+                // 1. Fetch Variants with Pagination
+                var query = firestore.collection(ProductVariant.COLLECTION_NAME)
+                    .whereEqualTo("archived", false)
 
-                val report = activeVariants.mapNotNull { variant ->
-                    val product = activeProducts[variant.productId] ?: return@mapNotNull null
-
-                    val warehouseQuantities = mutableMapOf<String, Int>()
-                    var totalQuantity = 0
-                    for (wh in warehouseList) {
-                        val qty = variant.stockLevels[wh.id] ?: 0
-                        warehouseQuantities[wh.id] = qty
-                        totalQuantity += qty
-                    }
-
-                    if (totalQuantity <= 0 && barcode == null) return@mapNotNull null
-
-                    // For Average Cost, we still need to calculate it or store it.
-                    // Currently, we'll keep the summary call for average cost ONLY if needed,
-                    // but wait, the user wants performance.
-                    // Let's use the summary call ONLY ONCE per variant to get global average cost.
-                    // Or even better, store averageCost in ProductVariant.
-
-                    val globalSummary = stockEntryRepository.getVariantSummary(variant.id, null)
-                    val averageCost = globalSummary.second
-
-                    InventoryReportItem(
-                        product = product,
-                        variant = variant,
-                        warehouseQuantities = warehouseQuantities,
-                        totalQuantity = totalQuantity,
-                        averageCost = averageCost,
-                        totalCostValue = totalQuantity * averageCost
-                    )
+                if (barcode != null) {
+                    query = query.whereEqualTo("barcode", barcode)
                 }
 
-                _inventoryReport.value = report
+                if (lastVariantDoc != null) {
+                    query = query.startAfter(lastVariantDoc!!)
+                }
+
+                val variantSnapshots = query.limit(20).get().await()
+                val activeVariants = variantSnapshots.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }
+                lastVariantDoc = variantSnapshots.documents.lastOrNull()
+
+                if (activeVariants.isEmpty()) {
+                    _isInventoryLastPage.value = true
+                    return@launch
+                }
+
+                // 2. Aggregate each variant in parallel
+                val jobs = activeVariants.map { variant ->
+                    async {
+                        val product = productRepository.getProduct(variant.productId) ?: return@async null
+
+                        val globalSummary = stockEntryRepository.getVariantSummary(variant.id, null)
+                        val totalQuantity = globalSummary.first
+
+                        if (totalQuantity <= 0 && barcode == null) return@async null
+
+                        val warehouseQuantities = mutableMapOf<String, Int>()
+                        for (wh in warehouseList) {
+                            val whSummary = stockEntryRepository.getVariantSummary(variant.id, wh.id)
+                            warehouseQuantities[wh.id] = whSummary.first
+                        }
+
+                        val averageCost = globalSummary.second
+
+                        InventoryReportItem(
+                            product = product,
+                            variant = variant,
+                            warehouseQuantities = warehouseQuantities,
+                            totalQuantity = totalQuantity,
+                            averageCost = averageCost,
+                            totalCostValue = totalQuantity * averageCost
+                        )
+                    }
+                }
+
+                val newItems = jobs.awaitAll().filterNotNull()
+                _inventoryReport.value = _inventoryReport.value + newItems
+
+                if (variantSnapshots.size() < 20) {
+                    _isInventoryLastPage.value = true
+                }
+
             } catch (e: Exception) {
                 Log.e("ReportsViewModel", "Error loading inventory report", e)
             } finally {
@@ -210,67 +270,37 @@ class ReportsViewModel @Inject constructor(
     fun loadSupplierReport() {
         viewModelScope.launch {
             try {
-                val suppliers = supplierRepository.getSuppliers().first()
+                val suppliers = supplierRepository.getSuppliersOnce()
                 val start = _startDate.value
                 val end = _endDate.value
 
-                // If date range is selected, we still need to fetch entries for that range.
-                // But for the general summary, we use the stored balances.
-                val isDateFiltered = start != null || end != null
-
-                // For detailed purchase orders, we'll still need entries.
-                // However, we can fetch only the ones for the specific suppliers or just the recent ones.
-                val allStockEntries = if (isDateFiltered) stockEntryRepository.getAllStockEntries() else emptyList()
-                val allBills = if (isDateFiltered) billRepository.getAllBills() else emptyList()
-
                 val report = suppliers.map { supplier ->
-                    val totalDebit: Double
-                    val totalCredit: Double
-
-                    if (isDateFiltered) {
-                        val supplierEntries = allStockEntries.filter {
-                            it.supplierId == supplier.id &&
-                                    it.status == "approved" &&
-                                    (supplier.resetDate == null || !it.timestamp.before(supplier.resetDate)) &&
-                                    (start == null || it.timestamp.time >= start) &&
-                                    (end == null || it.timestamp.time <= end)
-                        }
-                        val supplierBills = allBills.filter {
-                            it.supplierId == supplier.id &&
-                                    (supplier.resetDate == null || !it.createdAt.before(supplier.resetDate)) &&
-                                    (start == null || it.dueDate.time >= start) &&
-                                    (end == null || it.dueDate.time <= end)
-                        }
-                        totalDebit = supplierEntries.sumOf { it.totalCost }
-                        totalCredit = supplierBills.sumOf { it.paidAmount }
-                    } else {
-                        totalDebit = supplier.totalDebit
-                        totalCredit = supplier.totalCredit
-                    }
-
+                    // Use server-side aggregation for real-time accuracy
+                    val totalDebit = stockEntryRepository.getSupplierDebit(supplier.id, supplier.resetDate, start, end)
+                    val totalCredit = billRepository.getSupplierCredit(supplier.id, supplier.resetDate, start, end)
                     val balance = totalDebit - totalCredit
 
-                    // We still need detailed purchase orders for the UI expansion
-                    // To optimize, we could fetch these on-demand or only for the current year.
-                    // For now, let's at least optimize the summary.
-
-                    val supplierEntriesForOrders = if (isDateFiltered) {
-                        allStockEntries.filter { it.supplierId == supplier.id && it.status == "approved" && (start == null || it.timestamp.time >= start) && (end == null || it.timestamp.time <= end) }
-                    } else {
-                         stockEntryRepository.getAllStockEntries().filter { it.supplierId == supplier.id && it.status == "approved" }
+                    // Fetch logs only for current supplier to show orders
+                    val supplierEntries = stockEntryRepository.getAllStockEntries().filter {
+                        it.supplierId == supplier.id &&
+                                it.status == "approved" &&
+                                (supplier.resetDate == null || !it.timestamp.before(supplier.resetDate)) &&
+                                (start == null || it.timestamp.time >= start) &&
+                                (end == null || it.timestamp.time <= end)
                     }
-                    val supplierBillsForOrders = if (isDateFiltered) {
-                        allBills.filter { it.supplierId == supplier.id && (start == null || it.dueDate.time >= start) && (end == null || it.dueDate.time <= end) }
-                    } else {
-                         billRepository.getAllBills().filter { it.supplierId == supplier.id }
+                    val supplierBills = billRepository.getAllBills().filter {
+                        it.supplierId == supplier.id &&
+                                (supplier.resetDate == null || !it.createdAt.before(supplier.resetDate)) &&
+                                (start == null || it.dueDate.time >= start) &&
+                                (end == null || it.dueDate.time <= end)
                     }
 
-                    val groupedEntries = supplierEntriesForOrders.filter { it.quantity > 0 }.groupBy { it.orderId.ifEmpty { it.id } }
+                    val groupedEntries = supplierEntries.filter { it.quantity > 0 }.groupBy { it.orderId.ifEmpty { it.id } }
                     val purchaseOrders = groupedEntries.map { (key, group) ->
                         val representative = group.first()
                         val totalOrderCost = if (representative.grandTotalCost > 0) representative.grandTotalCost else group.sumOf { it.totalCost }
 
-                        val linkedBills = supplierBillsForOrders.filter {
+                        val linkedBills = supplierBills.filter {
                             it.relatedEntryId == key || group.any { entry -> entry.id == it.relatedEntryId }
                         }
                         val linkedPaid = linkedBills.sumOf { it.paidAmount }

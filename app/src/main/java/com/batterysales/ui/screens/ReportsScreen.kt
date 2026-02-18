@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -43,25 +44,38 @@ import com.batterysales.ui.components.KeyboardLanguage
 @Composable
 fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hiltViewModel()) {
     val reportItems by viewModel.inventoryReport.collectAsState()
+    val grandTotalQuantity by viewModel.grandTotalInventoryQuantity.collectAsState()
     val supplierItems by viewModel.supplierReport.collectAsState()
     val isSeller by viewModel.isSeller.collectAsState()
     val warehouses by viewModel.filteredWarehouses.collectAsState()
     val oldBatterySummary by viewModel.oldBatterySummary.collectAsState()
     val oldBatteryWarehouseSummary by viewModel.oldBatteryWarehouseSummary.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val isInventoryLastPage by viewModel.isInventoryLastPage.collectAsState()
     val barcodeFilter by viewModel.barcodeFilter.collectAsState()
     var showScanner by remember { mutableStateOf(false) }
+    val listState = rememberLazyListState()
     var selectedTab by remember { mutableIntStateOf(0) }
+
+    // Load more when reaching the end
+    val shouldLoadMore = remember {
+        derivedStateOf {
+            val lastVisibleItem = listState.layoutInfo.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf false
+            lastVisibleItem.index >= listState.layoutInfo.totalItemsCount - 5
+        }
+    }
+
+    LaunchedEffect(shouldLoadMore.value) {
+        if (shouldLoadMore.value && selectedTab == 0 && !isLoading && !isInventoryLastPage) {
+            viewModel.loadInventoryReport()
+        }
+    }
 
     val bgColor = MaterialTheme.colorScheme.background
     val accentColor = Color(0xFFFB8C00)
     val headerGradient = androidx.compose.ui.graphics.Brush.verticalGradient(
         colors = listOf(Color(0xFFE53935), Color(0xFFFB8C00))
     )
-
-    val grandTotalQuantity = remember(reportItems) {
-        reportItems.sumOf { it.totalQuantity }
-    }
 
     if (showScanner) {
         androidx.compose.ui.window.Dialog(
@@ -87,6 +101,7 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
         containerColor = bgColor
     ) { padding ->
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
@@ -102,7 +117,7 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                     actions = {
                         HeaderIconButton(
                             icon = Icons.Default.Refresh,
-                            onClick = { /* Reload logic */ },
+                            onClick = { viewModel.refreshAll() },
                             contentDescription = "Refresh"
                         )
                     }
@@ -179,6 +194,14 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                                         )
                                     }
                                 )
+                            }
+                        }
+
+                        if (isLoading && reportItems.isNotEmpty()) {
+                            item {
+                                Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                                    CircularProgressIndicator(modifier = Modifier.size(32.dp), color = accentColor)
+                                }
                             }
                         }
                     }

@@ -14,11 +14,8 @@ import kotlinx.coroutines.tasks.await
 import java.util.Date
 import javax.inject.Inject
 
-import com.batterysales.data.helper.BalanceManager
-
 class BillRepository @Inject constructor(
-    private val firestore: FirebaseFirestore,
-    private val balanceManager: BalanceManager
+    private val firestore: FirebaseFirestore
 ) {
 
     suspend fun getAllBills(): List<Bill> {
@@ -44,15 +41,9 @@ class BillRepository @Inject constructor(
     }
 
     suspend fun addBill(bill: Bill) {
-        firestore.runTransaction { transaction ->
-            val docRef = firestore.collection(Bill.COLLECTION_NAME).document()
-            val finalBill = bill.copy(id = docRef.id, createdAt = Date(), updatedAt = Date())
-            transaction.set(docRef, finalBill)
-
-            if (finalBill.paidAmount != 0.0 && finalBill.supplierId.isNotEmpty()) {
-                balanceManager.updateSupplierBalance(transaction, finalBill.supplierId, debitDelta = 0.0, creditDelta = finalBill.paidAmount)
-            }
-        }.await()
+        val docRef = firestore.collection(Bill.COLLECTION_NAME).document()
+        val finalBill = bill.copy(id = docRef.id, createdAt = Date(), updatedAt = Date())
+        docRef.set(finalBill).await()
     }
 
     suspend fun updateBillStatus(billId: String, status: BillStatus, paidDate: Date? = null) {
@@ -93,24 +84,14 @@ class BillRepository @Inject constructor(
             }
 
             transaction.update(billRef, updates)
-
-            if (bill.supplierId.isNotEmpty()) {
-                balanceManager.updateSupplierBalance(transaction, bill.supplierId, debitDelta = 0.0, creditDelta = paymentAmount)
-            }
         }.await()
     }
 
     suspend fun deleteBill(billId: String) {
-        firestore.runTransaction { transaction ->
-            val billRef = firestore.collection(Bill.COLLECTION_NAME).document(billId)
-            val bill = transaction.get(billRef).toObject(Bill::class.java) ?: return@runTransaction
-
-            if (bill.paidAmount != 0.0 && bill.supplierId.isNotEmpty()) {
-                balanceManager.updateSupplierBalance(transaction, bill.supplierId, debitDelta = 0.0, creditDelta = -bill.paidAmount)
-            }
-
-            transaction.delete(billRef)
-        }.await()
+        firestore.collection(Bill.COLLECTION_NAME)
+            .document(billId)
+            .delete()
+            .await()
     }
 
     suspend fun getBillsPaginated(
