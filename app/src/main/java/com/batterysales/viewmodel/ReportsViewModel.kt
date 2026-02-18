@@ -143,36 +143,39 @@ class ReportsViewModel @Inject constructor(
                 val activeProducts = products.filter { !it.archived }.associateBy { it.id }
                 val activeVariants = allVariants.filter { !it.archived && (barcode == null || it.barcode == barcode) }
 
-                val jobs = activeVariants.map { variant ->
-                    async {
-                        aggregationSemaphore.withPermit {
-                            val product = activeProducts[variant.productId] ?: return@withPermit null
+                val report = activeVariants.mapNotNull { variant ->
+                    val product = activeProducts[variant.productId] ?: return@mapNotNull null
 
-                            // Get global summary first
-                            val globalSummary = stockEntryRepository.getVariantSummary(variant.id, null)
-                            if (globalSummary.first <= 0 && barcode == null) return@withPermit null
-
-                            val warehouseQuantities = mutableMapOf<String, Int>()
-                            for (wh in warehouseList) {
-                                val whSummary = stockEntryRepository.getVariantSummary(variant.id, wh.id)
-                                warehouseQuantities[wh.id] = whSummary.first
-                            }
-
-                            val averageCost = globalSummary.second // We'll use the aggregated totalCost / (qty-returned)
-
-                            InventoryReportItem(
-                                product = product,
-                                variant = variant,
-                                warehouseQuantities = warehouseQuantities,
-                                totalQuantity = globalSummary.first,
-                                averageCost = averageCost,
-                                totalCostValue = globalSummary.first * averageCost
-                            )
-                        }
+                    val warehouseQuantities = mutableMapOf<String, Int>()
+                    var totalQuantity = 0
+                    for (wh in warehouseList) {
+                        val qty = variant.stockLevels[wh.id] ?: 0
+                        warehouseQuantities[wh.id] = qty
+                        totalQuantity += qty
                     }
+
+                    if (totalQuantity <= 0 && barcode == null) return@mapNotNull null
+
+                    // For Average Cost, we still need to calculate it or store it.
+                    // Currently, we'll keep the summary call for average cost ONLY if needed,
+                    // but wait, the user wants performance.
+                    // Let's use the summary call ONLY ONCE per variant to get global average cost.
+                    // Or even better, store averageCost in ProductVariant.
+
+                    val globalSummary = stockEntryRepository.getVariantSummary(variant.id, null)
+                    val averageCost = globalSummary.second
+
+                    InventoryReportItem(
+                        product = product,
+                        variant = variant,
+                        warehouseQuantities = warehouseQuantities,
+                        totalQuantity = totalQuantity,
+                        averageCost = averageCost,
+                        totalCostValue = totalQuantity * averageCost
+                    )
                 }
 
-                _inventoryReport.value = jobs.awaitAll().filterNotNull()
+                _inventoryReport.value = report
             } catch (e: Exception) {
                 Log.e("ReportsViewModel", "Error loading inventory report", e)
             } finally {
@@ -211,35 +214,63 @@ class ReportsViewModel @Inject constructor(
                 val start = _startDate.value
                 val end = _endDate.value
 
-                // Use suspend fetch instead of .first() on flow to ensure we wait for fresh data
-                val allStockEntries = stockEntryRepository.getAllStockEntries()
-                val allBills = billRepository.getAllBills()
+                // If date range is selected, we still need to fetch entries for that range.
+                // But for the general summary, we use the stored balances.
+                val isDateFiltered = start != null || end != null
+
+                // For detailed purchase orders, we'll still need entries.
+                // However, we can fetch only the ones for the specific suppliers or just the recent ones.
+                val allStockEntries = if (isDateFiltered) stockEntryRepository.getAllStockEntries() else emptyList()
+                val allBills = if (isDateFiltered) billRepository.getAllBills() else emptyList()
 
                 val report = suppliers.map { supplier ->
-                    val supplierEntries = allStockEntries.filter {
-                        it.supplierId == supplier.id &&
-                                it.status == "approved" &&
-                                (supplier.resetDate == null || !it.timestamp.before(supplier.resetDate)) &&
-                                (start == null || it.timestamp.time >= start) &&
-                                (end == null || it.timestamp.time <= end)
-                    }
-                    val supplierBills = allBills.filter {
-                        it.supplierId == supplier.id &&
-                                (supplier.resetDate == null || !it.createdAt.before(supplier.resetDate)) &&
-                                (start == null || it.dueDate.time >= start) &&
-                                (end == null || it.dueDate.time <= end)
+                    val totalDebit: Double
+                    val totalCredit: Double
+
+                    if (isDateFiltered) {
+                        val supplierEntries = allStockEntries.filter {
+                            it.supplierId == supplier.id &&
+                                    it.status == "approved" &&
+                                    (supplier.resetDate == null || !it.timestamp.before(supplier.resetDate)) &&
+                                    (start == null || it.timestamp.time >= start) &&
+                                    (end == null || it.timestamp.time <= end)
+                        }
+                        val supplierBills = allBills.filter {
+                            it.supplierId == supplier.id &&
+                                    (supplier.resetDate == null || !it.createdAt.before(supplier.resetDate)) &&
+                                    (start == null || it.dueDate.time >= start) &&
+                                    (end == null || it.dueDate.time <= end)
+                        }
+                        totalDebit = supplierEntries.sumOf { it.totalCost }
+                        totalCredit = supplierBills.sumOf { it.paidAmount }
+                    } else {
+                        totalDebit = supplier.totalDebit
+                        totalCredit = supplier.totalCredit
                     }
 
-                    val totalDebit = supplierEntries.sumOf { it.totalCost }
-                    val totalCredit = supplierBills.sumOf { it.paidAmount }
                     val balance = totalDebit - totalCredit
 
-                    val groupedEntries = supplierEntries.filter { it.quantity > 0 }.groupBy { it.orderId.ifEmpty { it.id } }
+                    // We still need detailed purchase orders for the UI expansion
+                    // To optimize, we could fetch these on-demand or only for the current year.
+                    // For now, let's at least optimize the summary.
+
+                    val supplierEntriesForOrders = if (isDateFiltered) {
+                        allStockEntries.filter { it.supplierId == supplier.id && it.status == "approved" && (start == null || it.timestamp.time >= start) && (end == null || it.timestamp.time <= end) }
+                    } else {
+                         stockEntryRepository.getAllStockEntries().filter { it.supplierId == supplier.id && it.status == "approved" }
+                    }
+                    val supplierBillsForOrders = if (isDateFiltered) {
+                        allBills.filter { it.supplierId == supplier.id && (start == null || it.dueDate.time >= start) && (end == null || it.dueDate.time <= end) }
+                    } else {
+                         billRepository.getAllBills().filter { it.supplierId == supplier.id }
+                    }
+
+                    val groupedEntries = supplierEntriesForOrders.filter { it.quantity > 0 }.groupBy { it.orderId.ifEmpty { it.id } }
                     val purchaseOrders = groupedEntries.map { (key, group) ->
                         val representative = group.first()
                         val totalOrderCost = if (representative.grandTotalCost > 0) representative.grandTotalCost else group.sumOf { it.totalCost }
 
-                        val linkedBills = supplierBills.filter {
+                        val linkedBills = supplierBillsForOrders.filter {
                             it.relatedEntryId == key || group.any { entry -> entry.id == it.relatedEntryId }
                         }
                         val linkedPaid = linkedBills.sumOf { it.paidAmount }

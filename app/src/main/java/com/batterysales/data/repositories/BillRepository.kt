@@ -41,9 +41,15 @@ class BillRepository @Inject constructor(
     }
 
     suspend fun addBill(bill: Bill) {
-        val docRef = firestore.collection(Bill.COLLECTION_NAME).document()
-        val finalBill = bill.copy(id = docRef.id, createdAt = Date(), updatedAt = Date())
-        docRef.set(finalBill).await()
+        firestore.runTransaction { transaction ->
+            val docRef = firestore.collection(Bill.COLLECTION_NAME).document()
+            val finalBill = bill.copy(id = docRef.id, createdAt = Date(), updatedAt = Date())
+            transaction.set(docRef, finalBill)
+
+            if (finalBill.paidAmount != 0.0 && finalBill.supplierId.isNotEmpty()) {
+                updateSupplierBalance(transaction, finalBill.supplierId, debitDelta = 0.0, creditDelta = finalBill.paidAmount)
+            }
+        }.await()
     }
 
     suspend fun updateBillStatus(billId: String, status: BillStatus, paidDate: Date? = null) {
@@ -84,14 +90,24 @@ class BillRepository @Inject constructor(
             }
 
             transaction.update(billRef, updates)
+
+            if (bill.supplierId.isNotEmpty()) {
+                updateSupplierBalance(transaction, bill.supplierId, debitDelta = 0.0, creditDelta = paymentAmount)
+            }
         }.await()
     }
 
     suspend fun deleteBill(billId: String) {
-        firestore.collection(Bill.COLLECTION_NAME)
-            .document(billId)
-            .delete()
-            .await()
+        firestore.runTransaction { transaction ->
+            val billRef = firestore.collection(Bill.COLLECTION_NAME).document(billId)
+            val bill = transaction.get(billRef).toObject(Bill::class.java) ?: return@runTransaction
+
+            if (bill.paidAmount != 0.0 && bill.supplierId.isNotEmpty()) {
+                updateSupplierBalance(transaction, bill.supplierId, debitDelta = 0.0, creditDelta = -bill.paidAmount)
+            }
+
+            transaction.delete(billRef)
+        }.await()
     }
 
     suspend fun getBillsPaginated(
@@ -156,5 +172,17 @@ class BillRepository @Inject constructor(
         val bills = snapshot.documents.mapNotNull { it.toObject(Bill::class.java) }
         return bills.groupBy { it.relatedEntryId!! }
             .mapValues { entry -> entry.value.sumOf { it.amount } }
+    }
+
+    private fun updateSupplierBalance(transaction: com.google.firebase.firestore.Transaction, supplierId: String, debitDelta: Double, creditDelta: Double) {
+        if (supplierId.isEmpty()) return
+        val supplierRef = firestore.collection(com.batterysales.data.models.Supplier.COLLECTION_NAME).document(supplierId)
+        val supplier = transaction.get(supplierRef).toObject(com.batterysales.data.models.Supplier::class.java)
+        if (supplier != null) {
+            val updates = mutableMapOf<String, Any>()
+            if (debitDelta != 0.0) updates["totalDebit"] = supplier.totalDebit + debitDelta
+            if (creditDelta != 0.0) updates["totalCredit"] = supplier.totalCredit + creditDelta
+            if (updates.isNotEmpty()) transaction.update(supplierRef, updates)
+        }
     }
 }
