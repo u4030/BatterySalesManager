@@ -96,11 +96,11 @@ class ReportsViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {
-        viewModelScope.launch {
-            val user = userRepository.getCurrentUser()
-            _isSeller.value = user?.role == "seller"
-            refreshAll()
-        }
+        userRepository.getCurrentUserFlow()
+            .onEach { user ->
+                _isSeller.value = user?.role == "seller"
+                refreshAll()
+            }.launchIn(viewModelScope)
     }
 
     fun refreshAll() {

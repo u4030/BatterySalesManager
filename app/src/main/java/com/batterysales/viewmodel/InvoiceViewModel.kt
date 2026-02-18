@@ -55,37 +55,33 @@ class InvoiceViewModel @Inject constructor(
     }
 
     private fun checkRoleAndLoadWarehouses() {
-        viewModelScope.launch {
-            val user = userRepository.getCurrentUser()
+        userRepository.getCurrentUserFlow().onEach { user ->
             val isAdmin = user?.role == "admin"
             
-            launch {
-                warehouseRepository.getWarehouses().collect { allWh ->
-                    val warehouses = if (isAdmin) allWh else allWh.filter { it.isActive }
-                    
-                    val oldWhId = _uiState.value.selectedWarehouseId
-                    _uiState.update { state ->
-                        val initialWarehouseId = if (isAdmin) {
-                            state.selectedWarehouseId.ifBlank { allWh.firstOrNull()?.id ?: "" }
-                        } else {
-                            user?.warehouseId ?: ""
-                        }
-                        
-                        state.copy(
-                            warehouses = warehouses,
-                            isAdmin = isAdmin,
-                            selectedWarehouseId = initialWarehouseId
-                        )
+            warehouseRepository.getWarehouses().take(1).collect { allWh ->
+                val warehouses = if (isAdmin) allWh else allWh.filter { it.isActive }
+
+                val oldWhId = _uiState.value.selectedWarehouseId
+                _uiState.update { state ->
+                    val initialWarehouseId = if (isAdmin) {
+                        state.selectedWarehouseId.ifBlank { allWh.firstOrNull()?.id ?: "" }
+                    } else {
+                        user?.warehouseId ?: ""
                     }
                     
-                    val newWhId = _uiState.value.selectedWarehouseId
-                    // Trigger load if warehouse ID was empty and now it's not, or if it changed (though it shouldn't normally change here for non-admins)
-                    if (newWhId.isNotBlank() && (oldWhId.isBlank() || _uiState.value.invoices.isEmpty())) {
-                        loadInvoices(reset = true)
-                    }
+                    state.copy(
+                        warehouses = warehouses,
+                        isAdmin = isAdmin,
+                        selectedWarehouseId = initialWarehouseId
+                    )
+                }
+
+                val newWhId = _uiState.value.selectedWarehouseId
+                if (newWhId.isNotBlank() && (oldWhId.isBlank() || _uiState.value.invoices.isEmpty())) {
+                    loadInvoices(reset = true)
                 }
             }
-        }
+        }.launchIn(viewModelScope)
     }
 
     fun loadInvoices(reset: Boolean = false) {

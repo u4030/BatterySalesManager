@@ -86,18 +86,25 @@ class InvoiceRepository @Inject constructor(
             query = query.whereEqualTo("status", status)
         }
 
-        if (startDate != null && endDate != null) {
+        val isSearching = !searchQuery.isNullOrBlank()
+
+        if (startDate != null && endDate != null && !isSearching) {
             query = query.whereGreaterThanOrEqualTo("invoiceDate", Date(startDate))
                 .whereLessThanOrEqualTo("invoiceDate", Date(endDate + 86400000))
         }
 
-        if (!searchQuery.isNullOrBlank()) {
-            // Prefix search for invoiceNumber
-            query = query.whereGreaterThanOrEqualTo("invoiceNumber", searchQuery)
-                .whereLessThanOrEqualTo("invoiceNumber", searchQuery + "\uf8ff")
-        }
+        if (isSearching) {
+            // Determine if we should search by invoiceNumber or customerPhone
+            val isNumeric = searchQuery.all { it.isDigit() }
+            val searchField = if (isNumeric && searchQuery.length >= 3) "customerPhone" else "invoiceNumber"
 
-        query = query.orderBy(if (!searchQuery.isNullOrBlank()) "invoiceNumber" else "invoiceDate", Query.Direction.DESCENDING)
+            // Prefix search
+            query = query.whereGreaterThanOrEqualTo(searchField, searchQuery)
+                .whereLessThanOrEqualTo(searchField, searchQuery + "\uf8ff")
+                .orderBy(searchField, Query.Direction.DESCENDING)
+        } else {
+            query = query.orderBy("invoiceDate", Query.Direction.DESCENDING)
+        }
 
         if (lastDocument != null) {
             query = query.startAfter(lastDocument)

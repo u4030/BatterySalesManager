@@ -108,24 +108,25 @@ class AccountingViewModel @Inject constructor(
     }
 
     private fun loadInitialData() {
-        viewModelScope.launch {
-            val user = userRepository.getCurrentUser()
-            _currentUser.value = user
-            
-            if (user?.role == "admin") {
-                // Listen to warehouses once to get initial selection
-                val allWh = warehouseRepository.getWarehouses().onEach { allWh ->
-                    val active = allWh.filter { it.isActive }
-                    _warehouses.value = active
-                    if (_selectedWarehouseId.value == null && active.isNotEmpty()) {
-                        _selectedWarehouseId.value = active.firstOrNull()?.id
-                    }
-                }.launchIn(viewModelScope)
-            } else {
-                _selectedWarehouseId.value = user?.warehouseId
-                // No need to call loadData here, it will be triggered by _selectedWarehouseId change
-            }
-        }
+        userRepository.getCurrentUserFlow()
+            .onEach { user ->
+                _currentUser.value = user
+
+                if (user?.role == "admin") {
+                    // Start listening to warehouses if admin
+                    warehouseRepository.getWarehouses()
+                        .onEach { allWh ->
+                            val active = allWh.filter { it.isActive }
+                            _warehouses.value = active
+                            if (_selectedWarehouseId.value == null && active.isNotEmpty()) {
+                                _selectedWarehouseId.value = active.firstOrNull()?.id
+                            }
+                        }.launchIn(viewModelScope)
+                } else {
+                    _selectedWarehouseId.value = user?.warehouseId
+                    _warehouses.value = emptyList() // Sellers only see their own, list not needed for tabs
+                }
+            }.launchIn(viewModelScope)
     }
 
     fun onWarehouseSelected(id: String) {
