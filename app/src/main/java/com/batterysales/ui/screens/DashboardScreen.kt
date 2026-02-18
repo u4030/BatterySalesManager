@@ -52,6 +52,7 @@ fun DashboardScreen(
     val userRole = currentUser?.role ?: "seller"
     val isAdmin = userRole == "admin"
     var showNotificationDialog by remember { mutableStateOf(false) }
+    var showMigrationDialog by remember { mutableStateOf(false) }
 
     val dashboardBgColor = MaterialTheme.colorScheme.background
     val cardBgColor = MaterialTheme.colorScheme.surface
@@ -156,6 +157,33 @@ fun DashboardScreen(
 
                 // Summary content below header
                 Column(modifier = Modifier.padding(16.dp)) {
+                    if (dashboardState.isMigrationRequired) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3E0)),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFB74D))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Info, contentDescription = null, tint = Color(0xFFF57C00))
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("تحديث النظام مطلوب", fontWeight = FontWeight.Bold, color = Color(0xFFE65100))
+                                    Text("يجب تحديث أرصدة الحسابات القديمة لضمان دقة التقارير الجديدة.", style = MaterialTheme.typography.bodySmall, color = Color(0xFFE65100))
+                                }
+                                Button(
+                                    onClick = { showMigrationDialog = true },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF57C00))
+                                ) {
+                                    Text("تحديث الآن", color = Color.White, fontSize = 12.sp)
+                                }
+                            }
+                        }
+                    }
+
                     if (dashboardState.warehouseStats.isNotEmpty()) {
                         androidx.compose.foundation.lazy.LazyRow(
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -280,6 +308,54 @@ fun DashboardScreen(
             }
         )
     }
+
+    if (showMigrationDialog) {
+        MigrationDialog(onDismiss = { showMigrationDialog = false })
+    }
+}
+
+@Composable
+fun MigrationDialog(
+    onDismiss: () -> Unit,
+    viewModel: com.batterysales.viewmodel.AdminToolsViewModel = hiltViewModel()
+) {
+    val status by viewModel.migrationStatus.collectAsState()
+    val isMigrating by viewModel.isMigrating.collectAsState()
+
+    AlertDialog(
+        onDismissRequest = if (isMigrating) ({}) else onDismiss,
+        title = { Text("تحديث أرصدة النظام") },
+        text = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    status ?: "هذه العملية ستقوم بإعادة حساب كافة أرصدة المنتجات والموردين من واقع السجلات التاريخية لمرة واحدة.",
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+                if (isMigrating) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    CircularProgressIndicator(color = Color(0xFFFB8C00))
+                }
+            }
+        },
+        confirmButton = {
+            if (!isMigrating && status == null) {
+                Button(onClick = { viewModel.runDataMigration() }) {
+                    Text("ابدأ التحديث")
+                }
+            } else if (!isMigrating && status != null) {
+                Button(onClick = onDismiss) {
+                    Text("إغلاق")
+                }
+            }
+        },
+        dismissButton = {
+            if (!isMigrating && status == null) {
+                TextButton(onClick = onDismiss) {
+                    Text("إلغاء")
+                }
+            }
+        }
+    )
 }
 
 @Composable

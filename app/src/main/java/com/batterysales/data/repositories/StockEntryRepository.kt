@@ -12,8 +12,11 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 
+import com.batterysales.data.helper.BalanceManager
+
 class StockEntryRepository @Inject constructor(
-    private val firestore: FirebaseFirestore
+    private val firestore: FirebaseFirestore,
+    private val balanceManager: BalanceManager
 ) {
 
     suspend fun addStockEntry(stockEntry: StockEntry) {
@@ -22,10 +25,10 @@ class StockEntryRepository @Inject constructor(
             val finalEntry = stockEntry.copy(id = docRef.id)
             transaction.set(docRef, finalEntry)
 
-            updateVariantStock(transaction, finalEntry.productVariantId, finalEntry.warehouseId, finalEntry.quantity - finalEntry.returnedQuantity)
+            balanceManager.updateVariantStock(transaction, finalEntry.productVariantId, finalEntry.warehouseId, finalEntry.quantity - finalEntry.returnedQuantity)
 
             if (finalEntry.status == StockEntry.STATUS_APPROVED && finalEntry.supplierId.isNotEmpty()) {
-                updateSupplierBalance(transaction, finalEntry.supplierId, debitDelta = finalEntry.totalCost, creditDelta = 0.0)
+                balanceManager.updateSupplierBalance(transaction, finalEntry.supplierId, debitDelta = finalEntry.totalCost, creditDelta = 0.0)
             }
         }.await()
     }
@@ -37,10 +40,10 @@ class StockEntryRepository @Inject constructor(
                 val finalEntry = entry.copy(id = docRef.id)
                 transaction.set(docRef, finalEntry)
 
-                updateVariantStock(transaction, finalEntry.productVariantId, finalEntry.warehouseId, finalEntry.quantity - finalEntry.returnedQuantity)
+                balanceManager.updateVariantStock(transaction, finalEntry.productVariantId, finalEntry.warehouseId, finalEntry.quantity - finalEntry.returnedQuantity)
 
                 if (finalEntry.status == StockEntry.STATUS_APPROVED && finalEntry.supplierId.isNotEmpty()) {
-                    updateSupplierBalance(transaction, finalEntry.supplierId, debitDelta = finalEntry.totalCost, creditDelta = 0.0)
+                    balanceManager.updateSupplierBalance(transaction, finalEntry.supplierId, debitDelta = finalEntry.totalCost, creditDelta = 0.0)
                 }
             }
         }.await()
@@ -95,7 +98,7 @@ class StockEntryRepository @Inject constructor(
                 createdByUserName = createdByUserName
             )
             transaction.set(sourceDocRef, sourceStockEntry)
-            updateVariantStock(transaction, productVariantId, sourceWarehouseId, -quantity)
+            balanceManager.updateVariantStock(transaction, productVariantId, sourceWarehouseId, -quantity)
 
             // Create a positive stock entry for the destination warehouse
             val destinationDocRef = firestore.collection(StockEntry.COLLECTION_NAME).document()
@@ -112,7 +115,7 @@ class StockEntryRepository @Inject constructor(
                 createdByUserName = createdByUserName
             )
             transaction.set(destinationDocRef, destinationStockEntry)
-            updateVariantStock(transaction, productVariantId, destinationWarehouseId, quantity)
+            balanceManager.updateVariantStock(transaction, productVariantId, destinationWarehouseId, quantity)
         }.await()
     }
 
@@ -174,16 +177,16 @@ class StockEntryRepository @Inject constructor(
             val oldEntry = transaction.get(entryRef).toObject(StockEntry::class.java) ?: return@runTransaction
 
             // Reverse old impact
-            updateVariantStock(transaction, oldEntry.productVariantId, oldEntry.warehouseId, -(oldEntry.quantity - oldEntry.returnedQuantity))
+            balanceManager.updateVariantStock(transaction, oldEntry.productVariantId, oldEntry.warehouseId, -(oldEntry.quantity - oldEntry.returnedQuantity))
             if (oldEntry.status == StockEntry.STATUS_APPROVED && oldEntry.supplierId.isNotEmpty()) {
-                updateSupplierBalance(transaction, oldEntry.supplierId, debitDelta = -oldEntry.totalCost, creditDelta = 0.0)
+                balanceManager.updateSupplierBalance(transaction, oldEntry.supplierId, debitDelta = -oldEntry.totalCost, creditDelta = 0.0)
             }
 
             // Apply new impact
             transaction.set(entryRef, entry)
-            updateVariantStock(transaction, entry.productVariantId, entry.warehouseId, entry.quantity - entry.returnedQuantity)
+            balanceManager.updateVariantStock(transaction, entry.productVariantId, entry.warehouseId, entry.quantity - entry.returnedQuantity)
             if (entry.status == StockEntry.STATUS_APPROVED && entry.supplierId.isNotEmpty()) {
-                updateSupplierBalance(transaction, entry.supplierId, debitDelta = entry.totalCost, creditDelta = 0.0)
+                balanceManager.updateSupplierBalance(transaction, entry.supplierId, debitDelta = entry.totalCost, creditDelta = 0.0)
             }
         }.await()
     }
@@ -194,9 +197,9 @@ class StockEntryRepository @Inject constructor(
             val entry = transaction.get(entryRef).toObject(StockEntry::class.java) ?: return@runTransaction
 
             // Reverse impact
-            updateVariantStock(transaction, entry.productVariantId, entry.warehouseId, -(entry.quantity - entry.returnedQuantity))
+            balanceManager.updateVariantStock(transaction, entry.productVariantId, entry.warehouseId, -(entry.quantity - entry.returnedQuantity))
             if (entry.status == StockEntry.STATUS_APPROVED && entry.supplierId.isNotEmpty()) {
-                updateSupplierBalance(transaction, entry.supplierId, debitDelta = -entry.totalCost, creditDelta = 0.0)
+                balanceManager.updateSupplierBalance(transaction, entry.supplierId, debitDelta = -entry.totalCost, creditDelta = 0.0)
             }
 
             transaction.delete(entryRef)
@@ -238,7 +241,7 @@ class StockEntryRepository @Inject constructor(
 
                 // When approved, if it has a supplier, update supplier debit
                 if (entry.supplierId.isNotEmpty()) {
-                    updateSupplierBalance(transaction, entry.supplierId, debitDelta = entry.totalCost, creditDelta = 0.0)
+                    balanceManager.updateSupplierBalance(transaction, entry.supplierId, debitDelta = entry.totalCost, creditDelta = 0.0)
                 }
             }
         }.await()
@@ -316,27 +319,4 @@ class StockEntryRepository @Inject constructor(
         return snapshot.getDouble(AggregateField.sum("totalCost")) ?: 0.0
     }
 
-    private fun updateVariantStock(transaction: com.google.firebase.firestore.Transaction, variantId: String, warehouseId: String, delta: Int) {
-        if (variantId.isEmpty()) return
-        val variantRef = firestore.collection(com.batterysales.data.models.ProductVariant.COLLECTION_NAME).document(variantId)
-        val variant = transaction.get(variantRef).toObject(com.batterysales.data.models.ProductVariant::class.java)
-        if (variant != null) {
-            val stockLevels = variant.stockLevels.toMutableMap()
-            val currentStock = stockLevels[warehouseId] ?: 0
-            stockLevels[warehouseId] = currentStock + delta
-            transaction.update(variantRef, "stockLevels", stockLevels)
-        }
-    }
-
-    private fun updateSupplierBalance(transaction: com.google.firebase.firestore.Transaction, supplierId: String, debitDelta: Double, creditDelta: Double) {
-        if (supplierId.isEmpty()) return
-        val supplierRef = firestore.collection(com.batterysales.data.models.Supplier.COLLECTION_NAME).document(supplierId)
-        val supplier = transaction.get(supplierRef).toObject(com.batterysales.data.models.Supplier::class.java)
-        if (supplier != null) {
-            val updates = mutableMapOf<String, Any>()
-            if (debitDelta != 0.0) updates["totalDebit"] = supplier.totalDebit + debitDelta
-            if (creditDelta != 0.0) updates["totalCredit"] = supplier.totalCredit + creditDelta
-            if (updates.isNotEmpty()) transaction.update(supplierRef, updates)
-        }
-    }
 }

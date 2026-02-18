@@ -14,8 +14,11 @@ import kotlinx.coroutines.tasks.await
 import java.util.Date
 import javax.inject.Inject
 
+import com.batterysales.data.helper.BalanceManager
+
 class BillRepository @Inject constructor(
-    private val firestore: FirebaseFirestore
+    private val firestore: FirebaseFirestore,
+    private val balanceManager: BalanceManager
 ) {
 
     suspend fun getAllBills(): List<Bill> {
@@ -47,7 +50,7 @@ class BillRepository @Inject constructor(
             transaction.set(docRef, finalBill)
 
             if (finalBill.paidAmount != 0.0 && finalBill.supplierId.isNotEmpty()) {
-                updateSupplierBalance(transaction, finalBill.supplierId, debitDelta = 0.0, creditDelta = finalBill.paidAmount)
+                balanceManager.updateSupplierBalance(transaction, finalBill.supplierId, debitDelta = 0.0, creditDelta = finalBill.paidAmount)
             }
         }.await()
     }
@@ -92,7 +95,7 @@ class BillRepository @Inject constructor(
             transaction.update(billRef, updates)
 
             if (bill.supplierId.isNotEmpty()) {
-                updateSupplierBalance(transaction, bill.supplierId, debitDelta = 0.0, creditDelta = paymentAmount)
+                balanceManager.updateSupplierBalance(transaction, bill.supplierId, debitDelta = 0.0, creditDelta = paymentAmount)
             }
         }.await()
     }
@@ -103,7 +106,7 @@ class BillRepository @Inject constructor(
             val bill = transaction.get(billRef).toObject(Bill::class.java) ?: return@runTransaction
 
             if (bill.paidAmount != 0.0 && bill.supplierId.isNotEmpty()) {
-                updateSupplierBalance(transaction, bill.supplierId, debitDelta = 0.0, creditDelta = -bill.paidAmount)
+                balanceManager.updateSupplierBalance(transaction, bill.supplierId, debitDelta = 0.0, creditDelta = -bill.paidAmount)
             }
 
             transaction.delete(billRef)
@@ -174,15 +177,4 @@ class BillRepository @Inject constructor(
             .mapValues { entry -> entry.value.sumOf { it.amount } }
     }
 
-    private fun updateSupplierBalance(transaction: com.google.firebase.firestore.Transaction, supplierId: String, debitDelta: Double, creditDelta: Double) {
-        if (supplierId.isEmpty()) return
-        val supplierRef = firestore.collection(com.batterysales.data.models.Supplier.COLLECTION_NAME).document(supplierId)
-        val supplier = transaction.get(supplierRef).toObject(com.batterysales.data.models.Supplier::class.java)
-        if (supplier != null) {
-            val updates = mutableMapOf<String, Any>()
-            if (debitDelta != 0.0) updates["totalDebit"] = supplier.totalDebit + debitDelta
-            if (creditDelta != 0.0) updates["totalCredit"] = supplier.totalCredit + creditDelta
-            if (updates.isNotEmpty()) transaction.update(supplierRef, updates)
-        }
-    }
 }

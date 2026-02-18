@@ -156,12 +156,15 @@ class InvoiceViewModel @Inject constructor(
         loadInvoices(reset = true)
     }
 
+    private var searchJob: kotlinx.coroutines.Job? = null
     fun onSearchQueryChanged(query: String) {
         _uiState.update { it.copy(searchQuery = query) }
-        // For search, we might want to reload everything or just filter in-memory if the list is small.
-        // Given we are paginating, we should probably reset and load from server if searching is supported there,
-        // but since it's not well supported, we stay with current list or reset.
-        loadInvoices(reset = true)
+
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(500)
+            loadInvoices(reset = true)
+        }
     }
 
     fun onDateRangeSelected(start: Long?, end: Long?) {
@@ -177,32 +180,16 @@ class InvoiceViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value.invoiceToDelete?.let { invoice ->
                 try {
-                    // 1. Get related stock entries
-                    val saleEntries = stockEntryRepository.getEntriesForInvoice(invoice.id)
-
-                    // 2. Create reversal stock entries
-                    val reversalEntries = saleEntries.map {
-                        it.copy(
-                            id = "", // Let Firestore generate a new ID
-                            quantity = -it.quantity, // Reverse the quantity
-                            supplier = "Reversal for Invoice ${invoice.id}",
-                            invoiceId = null // Clear the invoice ID
-                        )
-                    }
-                    stockEntryRepository.addStockEntries(reversalEntries)
-
-                    // 3. Delete related treasury transactions
-                    // Delete for each payment
-                    val payments = paymentRepository.getPaymentsForInvoice(invoice.id).first()
-                    payments.forEach { payment ->
-                        accountingRepository.deleteTransactionsByRelatedId(payment.id)
-                    }
-                    // Also delete any legacy transactions linked directly to the invoice ID
-                    accountingRepository.deleteTransactionsByRelatedId(invoice.id)
-
-                    // 4. Delete the invoice and associated payments
+                    // Delete the invoice and associated payments/stock entries (Repository handles transactions and balance updates)
                     invoiceRepository.deleteInvoice(invoice.id)
 
+                    // Also delete treasury entries linked to payments
+                    paymentRepository.getPaymentsForInvoice(invoice.id).first().forEach { payment ->
+                        accountingRepository.deleteTransactionsByRelatedId(payment.id)
+                    }
+                    accountingRepository.deleteTransactionsByRelatedId(invoice.id)
+
+                    loadInvoices(reset = true)
                 } catch (e: Exception) {
                     Log.e("InvoiceViewModel", "Error confirming delete", e)
                     _uiState.update { it.copy(errorMessage = "Failed to delete invoice") }

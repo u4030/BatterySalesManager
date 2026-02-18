@@ -30,6 +30,11 @@ class SupplierRepository @Inject constructor(
         awaitClose { listenerRegistration.remove() }
     }
 
+    suspend fun getSuppliersOnce(): List<Supplier> {
+        val snapshot = firestore.collection(Supplier.COLLECTION_NAME).get().await()
+        return snapshot.documents.mapNotNull { it.toObject(Supplier::class.java)?.copy(id = it.id) }
+    }
+
     suspend fun getSupplier(supplierId: String): Supplier? {
         val snapshot = firestore.collection(Supplier.COLLECTION_NAME)
             .document(supplierId)
