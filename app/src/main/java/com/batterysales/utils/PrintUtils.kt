@@ -279,7 +279,7 @@ object PrintUtils {
                 
                 <div class="info">
                     <p><strong>تاريخ التقرير:</strong> ${dateFormatter.format(Date())}</p>
-                    <p><strong>رصيد المورد:</strong> JD ${String.format("%.3f", item.balance)}</p>
+                    <p><strong>المتبقي:</strong> JD ${String.format("%.3f", item.balance)}</p>
                     <p><strong>إجمالي المسحوبات:</strong> JD ${String.format("%.3f", item.totalDebit)}</p>
                     <p><strong>إجمالي المدفوعات:</strong> JD ${String.format("%.3f", item.totalCredit)}</p>
                 </div>
