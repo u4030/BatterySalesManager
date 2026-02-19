@@ -125,8 +125,8 @@ fun SupplierManagementScreen(
     if (showAddDialog) {
         SupplierDialog(
             onDismiss = { showAddDialog = false },
-            onConfirm = { name, phone, email, address, target ->
-                viewModel.addSupplier(name, phone, email, address, target)
+            onConfirm = { name, phone, email, address, t1, t2, t3 ->
+                viewModel.addSupplier(name, phone, email, address, t1, t2, t3)
             }
         )
     }
@@ -135,13 +135,15 @@ fun SupplierManagementScreen(
         SupplierDialog(
             supplier = supplier,
             onDismiss = { supplierToEdit = null },
-            onConfirm = { name, phone, email, address, target ->
+            onConfirm = { name, phone, email, address, t1, t2, t3 ->
                 viewModel.updateSupplier(supplier.copy(
                     name = name,
                     phone = phone,
                     email = email,
                     address = address,
-                    yearlyTarget = target
+                    yearlyTarget = t1,
+                    yearlyTarget2 = t2,
+                    yearlyTarget3 = t3
                 ))
             }
         )
@@ -251,19 +253,21 @@ fun SupplierItemCard(
                 }
             }
             
-            if (supplier.yearlyTarget > 0) {
+            if (supplier.yearlyTarget > 0 || supplier.yearlyTarget2 > 0 || supplier.yearlyTarget3 > 0) {
                 Spacer(modifier = Modifier.height(12.dp))
                 HorizontalDivider(modifier = Modifier.alpha(0.1f))
                 Spacer(modifier = Modifier.height(12.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Star, contentDescription = null, size = 16.sp, tint = Color(0xFFFACC15))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "الهدف السنوي: JD ${String.format("%,.3f", supplier.yearlyTarget)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (supplier.yearlyTarget > 0) {
+                        TargetRow(label = "الهدف 1", amount = supplier.yearlyTarget)
+                    }
+                    if (supplier.yearlyTarget2 > 0) {
+                        TargetRow(label = "الهدف 2", amount = supplier.yearlyTarget2)
+                    }
+                    if (supplier.yearlyTarget3 > 0) {
+                        TargetRow(label = "الهدف 3", amount = supplier.yearlyTarget3)
+                    }
                 }
             }
         }
@@ -276,16 +280,32 @@ private fun Icon(icon: androidx.compose.ui.graphics.vector.ImageVector, contentD
 }
 
 @Composable
+private fun TargetRow(label: String, amount: Double) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Default.Star, contentDescription = null, size = 14.sp, tint = Color(0xFFFACC15))
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(
+            text = "$label: JD ${String.format("%,.3f", amount)}",
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.primary
+        )
+    }
+}
+
+@Composable
 fun SupplierDialog(
     supplier: Supplier? = null,
     onDismiss: () -> Unit,
-    onConfirm: (String, String, String, String, Double) -> Unit
+    onConfirm: (String, String, String, String, Double, Double, Double) -> Unit
 ) {
     var name by remember { mutableStateOf(supplier?.name ?: "") }
     var phone by remember { mutableStateOf(supplier?.phone ?: "") }
     var email by remember { mutableStateOf(supplier?.email ?: "") }
     var address by remember { mutableStateOf(supplier?.address ?: "") }
-    var target by remember { mutableStateOf(supplier?.yearlyTarget?.toString() ?: "") }
+    var target1 by remember { mutableStateOf(supplier?.yearlyTarget?.takeIf { it > 0 }?.toString() ?: "") }
+    var target2 by remember { mutableStateOf(supplier?.yearlyTarget2?.takeIf { it > 0 }?.toString() ?: "") }
+    var target3 by remember { mutableStateOf(supplier?.yearlyTarget3?.takeIf { it > 0 }?.toString() ?: "") }
 
     AppDialog(
         onDismiss = onDismiss,
@@ -293,7 +313,12 @@ fun SupplierDialog(
         confirmButton = {
             Button(onClick = {
                 if (name.isNotBlank()) {
-                    onConfirm(name, phone, email, address, target.toDoubleOrNull() ?: 0.0)
+                    onConfirm(
+                        name, phone, email, address,
+                        target1.toDoubleOrNull() ?: 0.0,
+                        target2.toDoubleOrNull() ?: 0.0,
+                        target3.toDoubleOrNull() ?: 0.0
+                    )
                     onDismiss()
                 }
             }) { Text(if (supplier == null) "إضافة" else "حفظ") }
@@ -306,6 +331,8 @@ fun SupplierDialog(
         CustomKeyboardTextField(value = phone, onValueChange = { phone = it }, label = "رقم الهاتف")
         CustomKeyboardTextField(value = email, onValueChange = { email = it }, label = "البريد الإلكتروني")
         CustomKeyboardTextField(value = address, onValueChange = { address = it }, label = "العنوان")
-        CustomKeyboardTextField(value = target, onValueChange = { target = it }, label = "الهدف السنوي (Target)")
+        CustomKeyboardTextField(value = target1, onValueChange = { target1 = it }, label = "الهدف السنوي 1")
+        CustomKeyboardTextField(value = target2, onValueChange = { target2 = it }, label = "الهدف السنوي 2")
+        CustomKeyboardTextField(value = target3, onValueChange = { target3 = it }, label = "الهدف السنوي 3")
     }
 }

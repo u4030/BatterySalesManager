@@ -567,6 +567,25 @@ fun SupplierReportControls(viewModel: ReportsViewModel) {
     }
 }
 
+@Composable
+private fun TargetProgressItem(label: String, target: Double, current: Double) {
+    val progress = if (target > 0) current / target else 0.0
+    Column(modifier = Modifier.padding(top = 12.dp)) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
+            Text("$label: JD ${String.format("%.3f", target)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("${(progress * 100).toInt()}%", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+        }
+        Spacer(modifier = Modifier.height(6.dp))
+        LinearProgressIndicator(
+            progress = { progress.toFloat().coerceIn(0f, 1f) },
+            modifier = Modifier.fillMaxWidth().height(6.dp),
+            color = if (progress >= 1.0) Color(0xFF10B981) else MaterialTheme.colorScheme.primary,
+            trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f),
+            strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
+        )
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SupplierCardRedesigned(item: com.batterysales.viewmodel.SupplierReportItem) {
@@ -692,20 +711,21 @@ fun SupplierCardRedesigned(item: com.batterysales.viewmodel.SupplierReportItem) 
                 }
             }
 
-            if (item.supplier.yearlyTarget > 0) {
-                Spacer(modifier = Modifier.height(20.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
-                    Text("الهدف السنوي: JD ${String.format("%.3f", item.supplier.yearlyTarget)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("${(item.targetProgress * 100).toInt()}%", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            if (item.supplier.yearlyTarget > 0 || item.supplier.yearlyTarget2 > 0 || item.supplier.yearlyTarget3 > 0) {
+                Spacer(modifier = Modifier.height(24.dp))
+                HorizontalDivider(modifier = Modifier.alpha(0.05f))
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("تحقيق الأهداف السنوية:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+
+                if (item.supplier.yearlyTarget > 0) {
+                    TargetProgressItem("الهدف 1", item.supplier.yearlyTarget, item.totalDebit)
                 }
-                Spacer(modifier = Modifier.height(8.dp))
-                LinearProgressIndicator(
-                    progress = item.targetProgress.toFloat().coerceIn(0f, 1f),
-                    modifier = Modifier.fillMaxWidth().height(6.dp),
-                    color = if (item.targetProgress >= 1.0) Color(0xFF10B981) else MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f),
-                    strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
-                )
+                if (item.supplier.yearlyTarget2 > 0) {
+                    TargetProgressItem("الهدف 2", item.supplier.yearlyTarget2, item.totalDebit)
+                }
+                if (item.supplier.yearlyTarget3 > 0) {
+                    TargetProgressItem("الهدف 3", item.supplier.yearlyTarget3, item.totalDebit)
+                }
             }
         }
     }

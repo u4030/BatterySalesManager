@@ -18,7 +18,8 @@ class BillViewModel @Inject constructor(
     private val supplierRepository: SupplierRepository,
     private val stockEntryRepository: StockEntryRepository,
     private val accountingRepository: AccountingRepository,
-    private val bankRepository: BankRepository
+    private val bankRepository: BankRepository,
+    private val userRepository: UserRepository
 ) : ViewModel() {
 
     private val _bills = MutableStateFlow<List<Bill>>(emptyList())
@@ -83,7 +84,10 @@ class BillViewModel @Inject constructor(
     private var lastDocument: DocumentSnapshot? = null
 
     init {
-        loadInitialData()
+        userRepository.getCurrentUserFlow()
+            .onEach {
+                loadInitialData()
+            }.launchIn(viewModelScope)
     }
 
     fun loadInitialData() {
@@ -193,18 +197,21 @@ class BillViewModel @Inject constructor(
                 
                 repository.recordPayment(billId, amount)
 
-                // Record in treasury (always)
-                val transaction = Transaction(
-                    type = com.batterysales.data.models.TransactionType.EXPENSE,
-                    amount = amount,
-                    description = "تسديد ${if (amount >= (bill.amount - bill.paidAmount)) "كلي" else "جزئي"} ${if (bill.billType == BillType.CHECK) "لشيك" else "لكمبيالة"}: ${bill.description} (المورد: $supplierName)",
-                    relatedId = billId,
-                    referenceNumber = bill.referenceNumber,
-                    warehouseId = bill.warehouseId
-                )
-                accountingRepository.addTransaction(transaction)
+                // Record in treasury if it's NOT a check (checks come from Bank)
+                // Promissory notes (BILL) and others usually come from Treasury cash
+                if (bill.billType != BillType.CHECK) {
+                    val transaction = Transaction(
+                        type = com.batterysales.data.models.TransactionType.EXPENSE,
+                        amount = amount,
+                        description = "تسديد ${if (amount >= (bill.amount - bill.paidAmount)) "كلي" else "جزئي"} لكمبيالة: ${bill.description} (المورد: $supplierName)",
+                        relatedId = billId,
+                        referenceNumber = bill.referenceNumber,
+                        warehouseId = bill.warehouseId
+                    )
+                    accountingRepository.addTransaction(transaction)
+                }
 
-                // Additionally record in bank if it's a check
+                // Record in bank if it's a check
                 if (bill.billType == com.batterysales.data.models.BillType.CHECK) {
                     val bankTransaction = com.batterysales.data.models.BankTransaction(
                         type = com.batterysales.data.models.BankTransactionType.WITHDRAWAL,

@@ -469,7 +469,7 @@ fun AddBillDialog(
         )
 
         val supplierPurchases = pendingPurchases
-            .filter { it.supplierId == selectedSupplier?.id }
+            .filter { it.supplierId == selectedSupplier?.id || (it.supplierId.isBlank() && it.supplier == selectedSupplier?.name) }
             .sortedByDescending { it.timestamp }
         if (supplierPurchases.isNotEmpty()) {
             val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
