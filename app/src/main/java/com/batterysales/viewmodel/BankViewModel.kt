@@ -115,7 +115,9 @@ class BankViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoading.value = true
             try {
+                val transactionId = com.google.firebase.firestore.FirebaseFirestore.getInstance().collection(com.batterysales.data.models.BankTransaction.COLLECTION_NAME).document().id
                 val transaction = com.batterysales.data.models.BankTransaction(
+                    id = transactionId,
                     type = type,
                     amount = amount,
                     description = description,
@@ -123,7 +125,7 @@ class BankViewModel @Inject constructor(
                     supplierName = supplierName,
                     date = java.util.Date()
                 )
-                repository.addTransaction(transaction)
+                repository.updateTransaction(transaction) // repository.addTransaction doesn't take ID, using update with known ID
 
                 // If it's a deposit to the bank, it should be an expense/withdrawal from the treasury
                 if (type == com.batterysales.data.models.BankTransactionType.DEPOSIT) {
@@ -132,7 +134,9 @@ class BankViewModel @Inject constructor(
                         amount = amount,
                         description = "إيداع بنكي: $description",
                         referenceNumber = referenceNumber,
-                        warehouseId = null // Global or unspecified
+                        relatedId = transactionId,
+                        paymentMethod = "cash",
+                        warehouseId = null
                     )
                     accountingRepository.addTransaction(treasuryTransaction)
                 }
@@ -140,6 +144,36 @@ class BankViewModel @Inject constructor(
                 loadData(reset = true)
             } finally {
                 _isLoading.value = false
+            }
+        }
+    }
+
+    fun deleteTransaction(id: String) {
+        viewModelScope.launch {
+            try {
+                repository.deleteTransaction(id)
+                accountingRepository.deleteTransactionsByRelatedId(id)
+                loadData(reset = true)
+            } catch (e: Exception) {
+                Log.e("BankViewModel", "Error deleting transaction", e)
+            }
+        }
+    }
+
+    fun updateTransaction(transaction: com.batterysales.data.models.BankTransaction) {
+        viewModelScope.launch {
+            try {
+                repository.updateTransaction(transaction)
+                if (transaction.type == com.batterysales.data.models.BankTransactionType.DEPOSIT) {
+                    accountingRepository.updateTransactionByRelatedId(
+                        relatedId = transaction.id,
+                        newAmount = transaction.amount,
+                        newDescription = "إيداع بنكي: ${transaction.description}"
+                    )
+                }
+                loadData(reset = true)
+            } catch (e: Exception) {
+                Log.e("BankViewModel", "Error updating transaction", e)
             }
         }
     }
