@@ -442,11 +442,6 @@ fun AddBillDialog(
             TextButton(onClick = onDismiss) { Text("إلغاء") }
         }
     ) {
-        com.batterysales.ui.components.CustomKeyboardTextField(
-            value = description,
-            onValueChange = { description = it },
-            label = "الوصف"
-        )
         com.batterysales.ui.stockentry.Dropdown(
             label = "المورد",
             selectedValue = selectedSupplier?.name ?: "",
@@ -457,19 +452,9 @@ fun AddBillDialog(
             },
             enabled = true
         )
-        com.batterysales.ui.components.CustomKeyboardTextField(
-            value = amount,
-            onValueChange = { amount = it },
-            label = "المبلغ"
-        )
-        com.batterysales.ui.components.CustomKeyboardTextField(
-            value = refNum,
-            onValueChange = { refNum = it },
-            label = "رقم السند / الشيك"
-        )
 
         val supplierPurchases = pendingPurchases
-            .filter { it.supplierId == selectedSupplier?.id }
+            .filter { it.supplierId == selectedSupplier?.id || (it.supplierId.isBlank() && it.supplier == selectedSupplier?.name) }
             .sortedByDescending { it.timestamp }
         if (supplierPurchases.isNotEmpty()) {
             val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
@@ -480,14 +465,14 @@ fun AddBillDialog(
                 onOptionSelected = { index ->
                     selectedPurchase = if (index == 0) null else supplierPurchases[index - 1]
                     // Auto-fill amount if linked
-                    selectedPurchase?.let { 
+                    selectedPurchase?.let {
                         amount = String.format("%.3f", it.totalCost)
                         if (description.isEmpty()) description = "تسديد لطلبية شراء بتاريخ ${dateFormatter.format(it.timestamp)}"
                     }
                 },
                 enabled = true
             )
-            
+
             if (selectedPurchase != null) {
                 Text(
                     text = "إجمالي الطلبية: JD ${String.format("%.3f", selectedPurchase!!.grandTotalCost)} | المتبقي: JD ${String.format("%.3f", selectedPurchase!!.totalCost)}",
@@ -497,6 +482,23 @@ fun AddBillDialog(
                 )
             }
         }
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = amount,
+            onValueChange = { amount = it },
+            label = "المبلغ"
+        )
+
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = description,
+            onValueChange = { description = it },
+            label = "الوصف"
+        )
+
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = refNum,
+            onValueChange = { refNum = it },
+            label = "رقم السند / الشيك"
+        )
 
         Text("نوع الالتزام:", fontSize = 14.sp, fontWeight = FontWeight.Medium)
         Row(

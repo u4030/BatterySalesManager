@@ -76,7 +76,7 @@ class OldBatteryViewModel @Inject constructor(
                 currentUser = user
                 _isSeller.value = user?.role == "seller"
                 _userWarehouseId.value = user?.warehouseId
-
+                
                 // Clear state when user changes
                 _transactions.value = emptyList()
                 _summary.value = Pair(0, 0.0)
@@ -85,15 +85,15 @@ class OldBatteryViewModel @Inject constructor(
                 warehouseRepository.getWarehouses().onEach { allWh ->
                     val active = allWh.filter { it.isActive }
                     _warehouses.value = active
-
+                    
                     if (user?.role == "admin" && _selectedWarehouseId.value == null) {
-                        active.firstOrNull()?.let {
+                        active.firstOrNull()?.let { 
                             _selectedWarehouseId.value = it.id
                             loadTransactions(reset = true, warehouseId = it.id)
                         }
                     }
                 }.launchIn(viewModelScope)
-
+                
                 if (user?.role == "seller") {
                     loadTransactions(reset = true, warehouseId = user.warehouseId)
                 }
@@ -105,7 +105,7 @@ class OldBatteryViewModel @Inject constructor(
     }
 
     fun loadTransactions(
-        reset: Boolean = false,
+        reset: Boolean = false, 
         warehouseId: String? = _selectedWarehouseId.value,
         startDate: Long? = _startDate.value,
         endDate: Long? = _endDate.value
@@ -125,9 +125,9 @@ class OldBatteryViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 if (!reset) _isLoadingMore.value = true
-
+                
                 val warehouseFilter = if (_isSeller.value) _userWarehouseId.value else warehouseId
-
+                
                 val result = repository.getTransactionsPaginated(
                     warehouseId = warehouseFilter,
                     startDate = _startDate.value,
@@ -141,10 +141,10 @@ class OldBatteryViewModel @Inject constructor(
 
                 _transactions.update { current -> if (reset) newTransactions else current + newTransactions }
                 _isLastPage.value = newTransactions.size < 20
-
+                
                 _isLoading.value = false
                 _isLoadingMore.value = false
-
+                
                 // Load summary via aggregation
                 val summ = repository.getStockSummary(warehouseFilter)
                 _summary.value = summ

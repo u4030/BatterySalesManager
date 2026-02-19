@@ -78,7 +78,7 @@ class AccountingViewModel @Inject constructor(
         val cal = Calendar.getInstance()
         val year = cal.get(Calendar.YEAR)
         _selectedYear.value = year
-
+        
         cal.set(year, Calendar.JANUARY, 1, 0, 0, 0)
         currentStartDate = cal.timeInMillis
         cal.set(year, Calendar.DECEMBER, 31, 23, 59, 59)
@@ -98,20 +98,20 @@ class AccountingViewModel @Inject constructor(
             // Trigger parameters
             Triple(w, t, p) to y
         }
-            .distinctUntilChanged()
-            .onEach { (triple, year) ->
-                if (triple.first != null) {
-                    loadData(reset = true)
-                }
+        .distinctUntilChanged()
+        .onEach { (triple, year) ->
+            if (triple.first != null) {
+                loadData(reset = true)
             }
-            .launchIn(viewModelScope)
+        }
+        .launchIn(viewModelScope)
     }
 
     private fun loadInitialData() {
         userRepository.getCurrentUserFlow()
             .onEach { user ->
                 _currentUser.value = user
-
+                
                 if (user?.role == "admin") {
                     // Start listening to warehouses if admin
                     warehouseRepository.getWarehouses()
@@ -183,13 +183,13 @@ class AccountingViewModel @Inject constructor(
                 val typesFilter = if (_selectedTab.value == 1) {
                     listOf(com.batterysales.data.models.TransactionType.EXPENSE.name, com.batterysales.data.models.TransactionType.REFUND.name)
                 } else null
-
+                
                 if (reset) {
                     coroutineScope {
                         val balanceJob = async { repository.getCurrentBalance(warehouseId, paymentMethod, currentEndDate) }
                         val totalExpensesJob = async { repository.getTotalExpenses(warehouseId, paymentMethod, currentStartDate, currentEndDate) }
                         val expensesJob = async { repository.getAllExpenses() }
-
+                        
                         _balance.value = balanceJob.await()
                         _totalExpenses.value = totalExpensesJob.await()
                         _expenses.value = expensesJob.await()
@@ -240,7 +240,7 @@ class AccountingViewModel @Inject constructor(
             _isLoading.value = true
             try {
                 val expense = Expense(
-                    description = description,
+                    description = description, 
                     amount = amount,
                     warehouseId = _selectedWarehouseId.value
                 )
@@ -253,9 +253,9 @@ class AccountingViewModel @Inject constructor(
     }
 
     fun addManualTransaction(
-        type: com.batterysales.data.models.TransactionType,
-        amount: Double,
-        description: String,
+        type: com.batterysales.data.models.TransactionType, 
+        amount: Double, 
+        description: String, 
         referenceNumber: String = "",
         paymentMethod: String = "cash"
     ) {

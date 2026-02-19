@@ -57,10 +57,10 @@ class InvoiceViewModel @Inject constructor(
     private fun checkRoleAndLoadWarehouses() {
         userRepository.getCurrentUserFlow().onEach { user ->
             val isAdmin = user?.role == "admin"
-
+            
             warehouseRepository.getWarehouses().take(1).collect { allWh ->
                 val warehouses = if (isAdmin) allWh else allWh.filter { it.isActive }
-
+                
                 val oldWhId = _uiState.value.selectedWarehouseId
                 _uiState.update { state ->
                     val initialWarehouseId = if (isAdmin) {
@@ -68,14 +68,14 @@ class InvoiceViewModel @Inject constructor(
                     } else {
                         user?.warehouseId ?: ""
                     }
-
+                    
                     state.copy(
                         warehouses = warehouses,
                         isAdmin = isAdmin,
                         selectedWarehouseId = initialWarehouseId
                     )
                 }
-
+                
                 val newWhId = _uiState.value.selectedWarehouseId
                 if (newWhId.isNotBlank() && (oldWhId.isBlank() || _uiState.value.invoices.isEmpty())) {
                     loadInvoices(reset = true)
@@ -98,7 +98,7 @@ class InvoiceViewModel @Inject constructor(
 
                 val state = _uiState.value
                 val statusFilter = if (state.selectedTab == 1) "pending" else null
-
+                
                 val result = invoiceRepository.getInvoicesPaginated(
                     warehouseId = if (state.selectedWarehouseId == "all") null else state.selectedWarehouseId,
                     status = statusFilter,
@@ -114,7 +114,7 @@ class InvoiceViewModel @Inject constructor(
 
                 _uiState.update { currentState ->
                     val combinedInvoices = if (reset) newInvoices else currentState.invoices + newInvoices
-
+                    
                     currentState.copy(
                         invoices = combinedInvoices,
                         isLoading = false,
@@ -122,7 +122,7 @@ class InvoiceViewModel @Inject constructor(
                         isLastPage = newInvoices.size < 20
                     )
                 }
-
+                
                 // Calculate debt
                 calculateTotalDebt()
 

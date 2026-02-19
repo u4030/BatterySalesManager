@@ -77,7 +77,7 @@ class InvoiceRepository @Inject constructor(
         limit: Long = 20
     ): Pair<List<Invoice>, DocumentSnapshot?> {
         var query: Query = firestore.collection(Invoice.COLLECTION_NAME)
-
+        
         if (!warehouseId.isNullOrBlank()) {
             query = query.whereEqualTo("warehouseId", warehouseId)
         }
@@ -97,7 +97,7 @@ class InvoiceRepository @Inject constructor(
             // Determine if we should search by invoiceNumber or customerPhone
             val isNumeric = searchQuery.all { it.isDigit() }
             val searchField = if (isNumeric && searchQuery.length >= 3) "customerPhone" else "invoiceNumber"
-
+            
             // Prefix search
             query = query.whereGreaterThanOrEqualTo(searchField, searchQuery)
                 .whereLessThanOrEqualTo(searchField, searchQuery + "\uf8ff")

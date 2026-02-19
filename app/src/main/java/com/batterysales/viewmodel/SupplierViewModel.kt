@@ -43,7 +43,7 @@ class SupplierViewModel @Inject constructor(
         }
     }
 
-    fun addSupplier(name: String, phone: String, email: String, address: String, yearlyTarget: Double) {
+    fun addSupplier(name: String, phone: String, email: String, address: String, yearlyTarget: Double, target2: Double = 0.0, target3: Double = 0.0) {
         viewModelScope.launch {
             try {
                 val supplier = Supplier(
@@ -51,7 +51,9 @@ class SupplierViewModel @Inject constructor(
                     phone = phone,
                     email = email,
                     address = address,
-                    yearlyTarget = yearlyTarget
+                    yearlyTarget = yearlyTarget,
+                    yearlyTarget2 = target2,
+                    yearlyTarget3 = target3
                 )
                 supplierRepository.addSupplier(supplier)
             } catch (e: Exception) {

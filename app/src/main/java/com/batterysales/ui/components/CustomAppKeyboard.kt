@@ -225,7 +225,7 @@ fun CustomAppKeyboard(
                         }
 
                         Surface(
-                            onClick = { 
+                            onClick = {
                                 if (onSearch != null) onSearch() else onDone()
                             },
                             modifier = Modifier
@@ -236,8 +236,8 @@ fun CustomAppKeyboard(
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Text(
-                                    text = "تم", 
-                                    color = if (onSearch != null) Color.White else MaterialTheme.colorScheme.onPrimary, 
+                                    text = "تم",
+                                    color = if (onSearch != null) Color.White else MaterialTheme.colorScheme.onPrimary,
                                     fontWeight = FontWeight.Bold
                                 )
                             }

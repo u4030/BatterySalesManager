@@ -16,7 +16,8 @@ import javax.inject.Inject
 
 @HiltViewModel
 class BankViewModel @Inject constructor(
-    private val repository: BankRepository
+    private val repository: BankRepository,
+    private val accountingRepository: com.batterysales.data.repositories.AccountingRepository
 ) : ViewModel() {
 
     private val _transactions = MutableStateFlow<List<BankTransaction>>(emptyList())
@@ -123,6 +124,19 @@ class BankViewModel @Inject constructor(
                     date = java.util.Date()
                 )
                 repository.addTransaction(transaction)
+
+                // If it's a deposit to the bank, it should be an expense/withdrawal from the treasury
+                if (type == com.batterysales.data.models.BankTransactionType.DEPOSIT) {
+                    val treasuryTransaction = com.batterysales.data.models.Transaction(
+                        type = com.batterysales.data.models.TransactionType.EXPENSE,
+                        amount = amount,
+                        description = "إيداع بنكي: $description",
+                        referenceNumber = referenceNumber,
+                        warehouseId = null // Global or unspecified
+                    )
+                    accountingRepository.addTransaction(treasuryTransaction)
+                }
+
                 loadData(reset = true)
             } finally {
                 _isLoading.value = false

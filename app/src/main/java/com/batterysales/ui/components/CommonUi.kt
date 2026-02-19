@@ -49,12 +49,21 @@ fun AppDialog(
                     .padding(20.dp)
                     .wrapContentHeight()
             ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = 16.dp)
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Clear, contentDescription = "Close")
+                    }
+                }
 
                 Column(
                     modifier = Modifier
@@ -63,20 +72,23 @@ fun AppDialog(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     content()
-                    // Spacer to lift content above the custom keyboard
-                    Spacer(modifier = Modifier.height(keyboardHeight))
+                    // Smaller bottom padding if keyboard is not visible
+                    Spacer(modifier = Modifier.height(if (keyboardHeight > 0.dp) keyboardHeight else 16.dp))
                 }
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 16.dp),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
+                Surface(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    color = MaterialTheme.colorScheme.surface
                 ) {
-                    dismissButton?.invoke()
-                    Spacer(modifier = Modifier.width(8.dp))
-                    confirmButton()
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        dismissButton?.invoke()
+                        Spacer(modifier = Modifier.width(12.dp))
+                        confirmButton()
+                    }
                 }
             }
         }

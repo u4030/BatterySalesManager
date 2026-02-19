@@ -530,7 +530,7 @@ fun TransactionItemCard(
             if (transaction.referenceNumber.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "رقم الشيك/السند/المرجع: ${transaction.referenceNumber}",
+                    text = "رقم المرجع: ${transaction.referenceNumber}",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color(0xFFFB8C00),
                     fontWeight = FontWeight.Medium
