@@ -217,14 +217,14 @@ class ReportsViewModel @Inject constructor(
 
                 val report = suppliers.map { supplier ->
                     val supplierEntries = allStockEntries.filter {
-                        it.supplierId == supplier.id &&
+                        (it.supplierId == supplier.id || (it.supplierId.isBlank() && it.supplier == supplier.name)) &&
                                 it.status == "approved" &&
                                 (supplier.resetDate == null || !it.timestamp.before(supplier.resetDate)) &&
                                 (start == null || it.timestamp.time >= start) &&
                                 (end == null || it.timestamp.time <= end)
                     }
                     val supplierBills = allBills.filter {
-                        it.supplierId == supplier.id &&
+                        (it.supplierId == supplier.id || it.supplierId.isBlank()) && // Fallback for bills is risky if same name, but usually unique enough
                                 (supplier.resetDate == null || !it.createdAt.before(supplier.resetDate)) &&
                                 (start == null || it.dueDate.time >= start) &&
                                 (end == null || it.dueDate.time <= end)
