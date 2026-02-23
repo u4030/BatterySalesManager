@@ -324,49 +324,41 @@ fun UserCard(
     }
 
     if (showRoleDialog) {
-        AlertDialog(
-            onDismissRequest = { showRoleDialog = false },
-            title = { Text("تغيير دور المستخدم") },
-            text = {
-                Column {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { onRoleChange("admin"); showRoleDialog = false }) {
-                        RadioButton(selected = user.role == "admin", onClick = { onRoleChange("admin"); showRoleDialog = false })
-                        Text("مدير")
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { onRoleChange("seller"); showRoleDialog = false }) {
-                        RadioButton(selected = user.role == "seller", onClick = { onRoleChange("seller"); showRoleDialog = false })
-                        Text("بائع")
-                    }
-                }
-            },
+        com.batterysales.ui.components.AppDialog(
+            onDismiss = { showRoleDialog = false },
+            title = "تغيير دور المستخدم",
             confirmButton = {},
             dismissButton = { TextButton(onClick = { showRoleDialog = false }) { Text("إلغاء") } }
-        )
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { onRoleChange("admin"); showRoleDialog = false }) {
+                RadioButton(selected = user.role == "admin", onClick = { onRoleChange("admin"); showRoleDialog = false })
+                Text("مدير")
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { onRoleChange("seller"); showRoleDialog = false }) {
+                RadioButton(selected = user.role == "seller", onClick = { onRoleChange("seller"); showRoleDialog = false })
+                Text("بائع")
+            }
+        }
     }
 
     if (showWarehouseDialog) {
-        AlertDialog(
-            onDismissRequest = { showWarehouseDialog = false },
-            title = { Text("ربط بمستودع") },
-            text = {
-                LazyColumn {
-                    item {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { onWarehouseChange(null); showWarehouseDialog = false }) {
-                            RadioButton(selected = user.warehouseId == null, onClick = { onWarehouseChange(null); showWarehouseDialog = false })
-                            Text("إلغاء الربط")
-                        }
-                    }
-                    items(warehouses.filter { it.isActive }) { warehouse ->
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { onWarehouseChange(warehouse.id); showWarehouseDialog = false }) {
-                            RadioButton(selected = user.warehouseId == warehouse.id, onClick = { onWarehouseChange(warehouse.id); showWarehouseDialog = false })
-                            Text(warehouse.name)
-                        }
-                    }
-                }
-            },
+        com.batterysales.ui.components.AppDialog(
+            onDismiss = { showWarehouseDialog = false },
+            title = "ربط بمستودع",
             confirmButton = {},
             dismissButton = { TextButton(onClick = { showWarehouseDialog = false }) { Text("إلغاء") } }
-        )
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { onWarehouseChange(null); showWarehouseDialog = false }) {
+                RadioButton(selected = user.warehouseId == null, onClick = { onWarehouseChange(null); showWarehouseDialog = false })
+                Text("إلغاء الربط")
+            }
+            warehouses.filter { it.isActive }.forEach { warehouse ->
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { onWarehouseChange(warehouse.id); showWarehouseDialog = false }) {
+                    RadioButton(selected = user.warehouseId == warehouse.id, onClick = { onWarehouseChange(warehouse.id); showWarehouseDialog = false })
+                    Text(warehouse.name)
+                }
+            }
+        }
     }
 }
 
@@ -382,59 +374,9 @@ fun CreateUserDialog(
     var role by remember { mutableStateOf("seller") }
     var selectedWarehouseId by remember { mutableStateOf<String?>(null) }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("إنشاء مستخدم جديد") },
-        text = {
-            Column(
-                modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                com.batterysales.ui.components.CustomKeyboardTextField(
-                    value = displayName,
-                    onValueChange = { displayName = it },
-                    label = "الاسم الكامل",
-                    modifier = Modifier.fillMaxWidth()
-                )
-                com.batterysales.ui.components.CustomKeyboardTextField(
-                    value = email,
-                    onValueChange = { email = it },
-                    label = "البريد الإلكتروني",
-                    modifier = Modifier.fillMaxWidth()
-                )
-                com.batterysales.ui.components.CustomKeyboardTextField(
-                    value = password,
-                    onValueChange = { password = it },
-                    label = "كلمة المرور",
-                    modifier = Modifier.fillMaxWidth()
-                )
-                
-                Text("الدور:", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(selected = role == "admin", onClick = { role = "admin" })
-                    Text("مدير")
-                    Spacer(modifier = Modifier.width(16.dp))
-                    RadioButton(selected = role == "seller", onClick = { role = "seller" })
-                    Text("بائع")
-                }
-                
-                if (role == "seller") {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("المستودع المرتبط:", style = MaterialTheme.typography.titleSmall)
-                    warehouses.filter { it.isActive }.forEach { warehouse ->
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth().clickable { selectedWarehouseId = warehouse.id }
-                        ) {
-                            RadioButton(selected = selectedWarehouseId == warehouse.id, onClick = { selectedWarehouseId = warehouse.id })
-                            Text(warehouse.name)
-                        }
-                    }
-                }
-                
-                Spacer(modifier = Modifier.height(com.batterysales.ui.components.LocalCustomKeyboardController.current.keyboardHeight.value))
-            }
-        },
+    com.batterysales.ui.components.AppDialog(
+        onDismiss = onDismiss,
+        title = "إنشاء مستخدم جديد",
         confirmButton = {
             Button(onClick = { onConfirm(email, password, displayName, role, if (role == "seller") selectedWarehouseId else null) }) {
                 Text("إنشاء")
@@ -443,5 +385,47 @@ fun CreateUserDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("إلغاء") }
         }
-    )
+    ) {
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = displayName,
+            onValueChange = { displayName = it },
+            label = "الاسم الكامل",
+            modifier = Modifier.fillMaxWidth()
+        )
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = email,
+            onValueChange = { email = it },
+            label = "البريد الإلكتروني",
+            modifier = Modifier.fillMaxWidth()
+        )
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = password,
+            onValueChange = { password = it },
+            label = "كلمة المرور",
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Text("الدور:", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            RadioButton(selected = role == "admin", onClick = { role = "admin" })
+            Text("مدير")
+            Spacer(modifier = Modifier.width(16.dp))
+            RadioButton(selected = role == "seller", onClick = { role = "seller" })
+            Text("بائع")
+        }
+
+        if (role == "seller") {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("المستودع المرتبط:", style = MaterialTheme.typography.titleSmall)
+            warehouses.filter { it.isActive }.forEach { warehouse ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().clickable { selectedWarehouseId = warehouse.id }
+                ) {
+                    RadioButton(selected = selectedWarehouseId == warehouse.id, onClick = { selectedWarehouseId = warehouse.id })
+                    Text(warehouse.name)
+                }
+            }
+        }
+    }
 }

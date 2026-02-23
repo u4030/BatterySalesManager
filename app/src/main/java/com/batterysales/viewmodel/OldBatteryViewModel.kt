@@ -252,6 +252,7 @@ class OldBatteryViewModel @Inject constructor(
                     createdByUserName = currentUser?.displayName ?: ""
                 )
                 repository.addTransaction(transaction)
+                loadTransactions(reset = true)
             } catch (e: Exception) {
                 Log.e("OldBatteryViewModel", "Error adding manual intake", e)
             }
@@ -261,7 +262,9 @@ class OldBatteryViewModel @Inject constructor(
     fun sellBatteries(quantity: Int, totalAmperes: Double, amount: Double, warehouseId: String) {
         viewModelScope.launch {
             try {
+                val transactionId = com.google.firebase.firestore.FirebaseFirestore.getInstance().collection(com.batterysales.data.models.OldBatteryTransaction.COLLECTION_NAME).document().id
                 val transaction = OldBatteryTransaction(
+                    id = transactionId,
                     quantity = quantity,
                     warehouseId = warehouseId,
                     totalAmperes = totalAmperes,
@@ -278,9 +281,10 @@ class OldBatteryViewModel @Inject constructor(
                     type = TransactionType.INCOME,
                     amount = amount,
                     description = "بيع بطاريات قديمة (سكراب): $quantity حبة",
-                    relatedId = null // Manual income in treasury
+                    relatedId = transactionId
                 )
                 accountingRepository.addTransaction(treasuryTransaction)
+                loadTransactions(reset = true)
             } catch (e: Exception) {
                 Log.e("OldBatteryViewModel", "Error selling batteries", e)
             }

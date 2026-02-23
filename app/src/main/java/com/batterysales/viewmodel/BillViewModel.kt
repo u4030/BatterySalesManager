@@ -230,6 +230,7 @@ class BillViewModel @Inject constructor(
                 accountingRepository.deleteTransactionsByRelatedId(billId)
                 bankRepository.deleteTransactionsByBillId(billId)
                 loadBills(reset = true)
+                loadLinkedIds() // Refresh linking availability
             } catch (e: Exception) {
                 Log.e("BillViewModel", "Error deleting bill", e)
             }

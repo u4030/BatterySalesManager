@@ -43,6 +43,17 @@ fun OldBatteryLedgerScreen(
     navController: NavHostController,
     viewModel: OldBatteryViewModel = hiltViewModel()
 ) {
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                viewModel.loadTransactions(reset = true)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     val transactions by viewModel.transactions.collectAsState()
     val summary by viewModel.summary.collectAsState()
     val warehouses by viewModel.warehouses.collectAsState()
@@ -465,51 +476,9 @@ fun AddEditOldBatteryDialog(
                    
     var selectedWarehouseId by remember { mutableStateOf(initialWH) }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (transaction == null) "إضافة بطاريات قديمة" else "تعديل السجل") },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                if (warehouses.isNotEmpty() && !isSeller) {
-                    Text("المستودع:", style = MaterialTheme.typography.titleSmall)
-                    androidx.compose.foundation.lazy.LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        items(warehouses) { warehouse ->
-                            FilterChip(
-                                selected = selectedWarehouseId == warehouse.id,
-                                onClick = { selectedWarehouseId = warehouse.id },
-                                label = { Text(warehouse.name) }
-                            )
-                        }
-                    }
-                } else if (isSeller) {
-                    val whName = warehouses.find { it.id == userWarehouseId }?.name ?: "المستودع الخاص بك"
-                    Text("المستودع: $whName", style = MaterialTheme.typography.bodyMedium)
-                }
-
-                com.batterysales.ui.components.CustomKeyboardTextField(
-                    value = qty,
-                    onValueChange = { qty = it },
-                    label = "الكمية"
-                )
-                com.batterysales.ui.components.CustomKeyboardTextField(
-                    value = amps,
-                    onValueChange = { amps = it },
-                    label = "إجمالي الأمبيرات"
-                )
-                com.batterysales.ui.components.CustomKeyboardTextField(
-                    value = notes,
-                    onValueChange = { notes = it },
-                    label = "ملاحظات"
-                )
-                Spacer(modifier = Modifier.height(com.batterysales.ui.components.LocalCustomKeyboardController.current.keyboardHeight.value))
-            }
-        },
+    com.batterysales.ui.components.AppDialog(
+        onDismiss = onDismiss,
+        title = if (transaction == null) "إضافة بطاريات قديمة" else "تعديل السجل",
         confirmButton = {
             Button(onClick = {
                 val q = qty.toIntOrNull() ?: 0
@@ -518,7 +487,42 @@ fun AddEditOldBatteryDialog(
             }) { Text("موافق") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
-    )
+    ) {
+        if (warehouses.isNotEmpty() && !isSeller) {
+            Text("المستودع:", style = MaterialTheme.typography.titleSmall)
+            androidx.compose.foundation.lazy.LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                items(warehouses) { warehouse ->
+                    FilterChip(
+                        selected = selectedWarehouseId == warehouse.id,
+                        onClick = { selectedWarehouseId = warehouse.id },
+                        label = { Text(warehouse.name) }
+                    )
+                }
+            }
+        } else if (isSeller) {
+            val whName = warehouses.find { it.id == userWarehouseId }?.name ?: "المستودع الخاص بك"
+            Text("المستودع: $whName", style = MaterialTheme.typography.bodyMedium)
+        }
+
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = qty,
+            onValueChange = { qty = it },
+            label = "الكمية"
+        )
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = amps,
+            onValueChange = { amps = it },
+            label = "إجمالي الأمبيرات"
+        )
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = notes,
+            onValueChange = { notes = it },
+            label = "ملاحظات"
+        )
+    }
 }
 
 @Composable
@@ -535,54 +539,15 @@ fun SellOldBatteryDialog(
     // Automatic price calculation with 3-decimal precision
     LaunchedEffect(amps, pricePerAmp) {
         val a = amps.toDoubleOrNull() ?: 0.0
-        
-        // Use parsing logic that supports multi-dot if needed, but primarily 3-decimal precision
-        val ppa = if (pricePerAmp.count { it == '.' } > 1) {
-            val parts = pricePerAmp.split(".")
-            val jd = parts.getOrNull(0) ?: "0"
-            val qirsh = (parts.getOrNull(1) ?: "00").padStart(2, '0')
-            val fils = (parts.getOrNull(2) ?: "00").padStart(2, '0')
-            "$jd.${qirsh}${fils}".toDoubleOrNull() ?: 0.0
-        } else {
-            pricePerAmp.toDoubleOrNull() ?: 0.0
-        }
-
+        val ppa = pricePerAmp.toDoubleOrNull() ?: 0.0
         if (a > 0 && ppa > 0) {
             price = String.format("%.3f", a * ppa)
         }
     }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("بيع بطاريات قديمة (سكراب)") },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                com.batterysales.ui.components.CustomKeyboardTextField(
-                    value = qty,
-                    onValueChange = { qty = it },
-                    label = "الكمية المباعة"
-                )
-                com.batterysales.ui.components.CustomKeyboardTextField(
-                    value = amps,
-                    onValueChange = { amps = it },
-                    label = "إجمالي الأمبيرات"
-                )
-                com.batterysales.ui.components.CustomKeyboardTextField(
-                    value = pricePerAmp,
-                    onValueChange = { pricePerAmp = it },
-                    label = "سعر الأمبير الواحد"
-                )
-                com.batterysales.ui.components.CustomKeyboardTextField(
-                    value = price,
-                    onValueChange = { price = it },
-                    label = "سعر البيع الإجمالي"
-                )
-                Spacer(modifier = Modifier.height(com.batterysales.ui.components.LocalCustomKeyboardController.current.keyboardHeight.value))
-            }
-        },
+    com.batterysales.ui.components.AppDialog(
+        onDismiss = onDismiss,
+        title = "بيع بطاريات قديمة (سكراب)",
         confirmButton = {
             Button(onClick = {
                 val q = qty.toIntOrNull() ?: 0
@@ -592,5 +557,26 @@ fun SellOldBatteryDialog(
             }) { Text("موافق") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
-    )
+    ) {
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = qty,
+            onValueChange = { qty = it },
+            label = "الكمية المباعة"
+        )
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = amps,
+            onValueChange = { amps = it },
+            label = "إجمالي الأمبيرات"
+        )
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = pricePerAmp,
+            onValueChange = { pricePerAmp = it },
+            label = "سعر الأمبير الواحد"
+        )
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = price,
+            onValueChange = { price = it },
+            label = "سعر البيع الإجمالي"
+        )
+    }
 }

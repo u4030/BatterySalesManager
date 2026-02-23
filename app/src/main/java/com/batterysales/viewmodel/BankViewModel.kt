@@ -17,7 +17,8 @@ import javax.inject.Inject
 @HiltViewModel
 class BankViewModel @Inject constructor(
     private val repository: BankRepository,
-    private val accountingRepository: com.batterysales.data.repositories.AccountingRepository
+    private val accountingRepository: com.batterysales.data.repositories.AccountingRepository,
+    private val warehouseRepository: com.batterysales.data.repositories.WarehouseRepository
 ) : ViewModel() {
 
     private val _transactions = MutableStateFlow<List<BankTransaction>>(emptyList())
@@ -41,11 +42,15 @@ class BankViewModel @Inject constructor(
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage = _errorMessage.asStateFlow()
 
+    private val _warehouses = MutableStateFlow<List<com.batterysales.data.models.Warehouse>>(emptyList())
+    val warehouses = _warehouses.asStateFlow()
+
     private var lastDocument: DocumentSnapshot? = null
     private var currentStartDate: Long? = null
     private var currentEndDate: Long? = null
 
     init {
+        loadWarehouses()
         // Default to current year
         val cal = Calendar.getInstance()
         val year = cal.get(Calendar.YEAR)
@@ -105,13 +110,28 @@ class BankViewModel @Inject constructor(
         _errorMessage.value = null
     }
 
+    private fun loadWarehouses() {
+        viewModelScope.launch {
+            warehouseRepository.getWarehouses().collect { allWh ->
+                _warehouses.value = allWh.filter { it.isActive }
+            }
+        }
+    }
+
     fun onDateRangeSelected(start: Long?, end: Long?) {
         currentStartDate = start
         currentEndDate = end
         loadData(reset = true)
     }
 
-    fun addManualTransaction(type: com.batterysales.data.models.BankTransactionType, amount: Double, description: String, referenceNumber: String = "", supplierName: String = "") {
+    fun addManualTransaction(
+        type: com.batterysales.data.models.BankTransactionType,
+        amount: Double,
+        description: String,
+        referenceNumber: String = "",
+        supplierName: String = "",
+        warehouseId: String? = null
+    ) {
         viewModelScope.launch {
             _isLoading.value = true
             try {
@@ -125,7 +145,7 @@ class BankViewModel @Inject constructor(
                     supplierName = supplierName,
                     date = java.util.Date()
                 )
-                repository.updateTransaction(transaction) // repository.addTransaction doesn't take ID, using update with known ID
+                repository.updateTransaction(transaction)
 
                 // If it's a deposit to the bank, it should be an expense/withdrawal from the treasury
                 if (type == com.batterysales.data.models.BankTransactionType.DEPOSIT) {
@@ -136,7 +156,7 @@ class BankViewModel @Inject constructor(
                         referenceNumber = referenceNumber,
                         relatedId = transactionId,
                         paymentMethod = "cash",
-                        warehouseId = null
+                        warehouseId = warehouseId // Link to a warehouse so it appears in the accounting ledger
                     )
                     accountingRepository.addTransaction(treasuryTransaction)
                 }
