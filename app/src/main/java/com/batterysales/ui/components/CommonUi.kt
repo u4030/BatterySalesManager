@@ -30,17 +30,19 @@ fun AppDialog(
     dismissButton: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val keyboardController = LocalCustomKeyboardController.current
-    val keyboardHeight by keyboardController.keyboardHeight
-
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false // Allow drawing behind status/navigation bars and keyboard
+        )
     ) {
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(16.dp)
+                .systemBarsPadding() // Avoid overlapping status/nav bars
+                .imePadding(), // Lift whole dialog above the keyboard
             shape = RoundedCornerShape(24.dp),
             color = MaterialTheme.colorScheme.surface
         ) {
@@ -72,8 +74,8 @@ fun AppDialog(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     content()
-                    // Smaller bottom padding if keyboard is not visible
-                    Spacer(modifier = Modifier.height(if (keyboardHeight > 0.dp) keyboardHeight else 16.dp))
+                    // Adaptive bottom padding
+                    Spacer(modifier = Modifier.height(16.dp))
                 }
 
                 Surface(

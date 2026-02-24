@@ -14,6 +14,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import android.util.Log
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
@@ -98,6 +99,20 @@ class OldBatteryViewModel @Inject constructor(
                     loadTransactions(reset = true, warehouseId = user.warehouseId)
                 }
             }.launchIn(viewModelScope)
+
+        // Reactive Summary
+        combine(
+            repository.getAllTransactionsFlow(),
+            _selectedWarehouseId,
+            _userWarehouseId,
+            _isSeller
+        ) { allTransactions, selectedId, userId, seller ->
+            val filterId = if (seller) userId else selectedId
+            val filtered = if (filterId != null) {
+                allTransactions.filter { it.warehouseId == filterId }
+            } else allTransactions
+            _summary.value = calculateSummary(filtered)
+        }.launchIn(viewModelScope)
     }
 
     fun loadInitialData() {
@@ -145,9 +160,7 @@ class OldBatteryViewModel @Inject constructor(
                 _isLoading.value = false
                 _isLoadingMore.value = false
                 
-                // Load summary via aggregation
-                val summ = repository.getStockSummary(warehouseFilter)
-                _summary.value = summ
+                // Summary is handled reactively
 
             } catch (e: Exception) {
                 Log.e("OldBatteryViewModel", "Error loading transactions", e)
