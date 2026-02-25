@@ -42,7 +42,8 @@ class InvoiceViewModel @Inject constructor(
     private val warehouseRepository: WarehouseRepository,
     private val paymentRepository: PaymentRepository,
     private val accountingRepository: AccountingRepository,
-    private val userRepository: UserRepository
+    private val userRepository: UserRepository,
+    private val oldBatteryRepository: com.batterysales.data.repositories.OldBatteryRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(InvoiceUiState())
@@ -202,6 +203,9 @@ class InvoiceViewModel @Inject constructor(
 
                     // 4. Delete the invoice and associated payments
                     invoiceRepository.deleteInvoice(invoice.id)
+
+                    // 5. Delete associated scrap transactions
+                    oldBatteryRepository.deleteTransactionsByInvoiceId(invoice.id)
 
                 } catch (e: Exception) {
                     Log.e("InvoiceViewModel", "Error confirming delete", e)

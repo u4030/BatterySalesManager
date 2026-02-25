@@ -216,8 +216,10 @@ class AccountingViewModel @Inject constructor(
                 }
                 _isLastPage.value = newTransactions.size < 20
             } catch (e: Exception) {
-                Log.e("AccountingViewModel", "Error loading data", e)
-                _errorMessage.value = "خطأ في تحميل البيانات: ${e.message}"
+                if (e !is kotlinx.coroutines.CancellationException) {
+                    Log.e("AccountingViewModel", "Error loading data", e)
+                    _errorMessage.value = "خطأ في تحميل البيانات: ${e.message}"
+                }
             } finally {
                 _isLoading.value = false
                 _isLoadingMore.value = false

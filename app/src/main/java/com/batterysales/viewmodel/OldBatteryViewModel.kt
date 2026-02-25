@@ -205,10 +205,14 @@ class OldBatteryViewModel @Inject constructor(
                 val transaction = _transactions.value.find { it.id == id }
                 repository.deleteTransaction(id)
 
+                // Delete linked treasury transaction if any
+                accountingRepository.deleteTransactionsByRelatedId(id)
+
                 // Sync with invoice if applicable
                 transaction?.invoiceId?.let { invoiceId ->
                     updateInvoiceScrap(invoiceId, 0, 0.0, 0.0)
                 }
+                loadTransactions(reset = true)
             } catch (e: Exception) {
                 Log.e("OldBatteryViewModel", "Error deleting transaction", e)
             }
@@ -218,7 +222,6 @@ class OldBatteryViewModel @Inject constructor(
     fun updateTransaction(transaction: com.batterysales.data.models.OldBatteryTransaction) {
         viewModelScope.launch {
             try {
-                val oldTransaction = _transactions.value.find { it.id == transaction.id }
                 repository.updateTransaction(transaction)
 
                 // Sync with invoice if applicable
@@ -230,6 +233,7 @@ class OldBatteryViewModel @Inject constructor(
                         updateInvoiceScrap(invoiceId, transaction.quantity, transaction.totalAmperes, newValue)
                     }
                 }
+                loadTransactions(reset = true)
             } catch (e: Exception) {
                 Log.e("OldBatteryViewModel", "Error updating transaction", e)
             }

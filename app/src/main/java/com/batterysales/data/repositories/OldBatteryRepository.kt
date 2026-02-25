@@ -44,6 +44,19 @@ class OldBatteryRepository @Inject constructor(
             .await()
     }
 
+    suspend fun deleteTransactionsByInvoiceId(invoiceId: String) {
+        val snapshot = firestore.collection(OldBatteryTransaction.COLLECTION_NAME)
+            .whereEqualTo("invoiceId", invoiceId)
+            .get()
+            .await()
+
+        val batch = firestore.batch()
+        snapshot.documents.forEach { doc ->
+            batch.delete(doc.reference)
+        }
+        batch.commit().await()
+    }
+
     suspend fun getStockSummary(warehouseId: String? = null): Pair<Int, Double> {
         var baseQuery: Query = firestore.collection(OldBatteryTransaction.COLLECTION_NAME)
         if (warehouseId != null) {
