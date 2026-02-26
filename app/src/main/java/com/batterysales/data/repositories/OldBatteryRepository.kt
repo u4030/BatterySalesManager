@@ -25,9 +25,13 @@ class OldBatteryRepository @Inject constructor(
     }
 
     suspend fun addTransaction(transaction: OldBatteryTransaction) {
-        val docRef = firestore.collection(OldBatteryTransaction.COLLECTION_NAME).document()
-        val finalTransaction = transaction.copy(id = docRef.id)
-        docRef.set(finalTransaction).await()
+        val docRef = if (transaction.id.isNotBlank()) {
+            firestore.collection(OldBatteryTransaction.COLLECTION_NAME).document(transaction.id)
+        } else {
+            firestore.collection(OldBatteryTransaction.COLLECTION_NAME).document()
+        }
+        val idToUse = if (transaction.id.isNotBlank()) transaction.id else docRef.id
+        docRef.set(transaction.copy(id = idToUse)).await()
     }
 
     suspend fun updateTransaction(transaction: OldBatteryTransaction) {

@@ -298,7 +298,9 @@ class OldBatteryViewModel @Inject constructor(
                     type = TransactionType.INCOME,
                     amount = amount,
                     description = "بيع بطاريات قديمة (سكراب): $quantity حبة",
-                    relatedId = transactionId
+                    relatedId = transactionId,
+                    warehouseId = warehouseId,
+                    paymentMethod = "cash"
                 )
                 accountingRepository.addTransaction(treasuryTransaction)
                 loadTransactions(reset = true)

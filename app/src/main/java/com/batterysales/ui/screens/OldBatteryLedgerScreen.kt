@@ -57,6 +57,7 @@ fun OldBatteryLedgerScreen(
     val transactions by viewModel.transactions.collectAsState()
     val summary by viewModel.summary.collectAsState()
     val warehouses by viewModel.warehouses.collectAsState()
+    val selectedWarehouseId by viewModel.selectedWarehouseId.collectAsState()
     val isSeller by viewModel.isSeller.collectAsState()
     val userWarehouseId by viewModel.userWarehouseId.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -164,7 +165,8 @@ fun OldBatteryLedgerScreen(
                                         onClick = {
                                             showSaleDialog = com.batterysales.data.models.OldBatteryTransaction(
                                                 quantity = summary.first,
-                                                totalAmperes = summary.second
+                                                totalAmperes = summary.second,
+                                                warehouseId = if (isSeller) userWarehouseId ?: "" else selectedWarehouseId ?: ""
                                             )
                                         },
                                         modifier = Modifier.fillMaxWidth().height(48.dp),
