@@ -2,19 +2,19 @@ package com.batterysales.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.paging.Pager
+import androidx.paging.PagingConfig
+import androidx.paging.PagingData
+import androidx.paging.cachedIn
 import com.batterysales.data.models.Expense
 import com.batterysales.data.models.Transaction
+import com.batterysales.data.paging.TransactionPagingSource
 import com.google.firebase.firestore.DocumentSnapshot
 import com.batterysales.data.repositories.AccountingRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.*
 import android.util.Log
-import kotlinx.coroutines.flow.launchIn
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.onEach
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.flow.combine
+import com.batterysales.utils.Quadruple
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -28,9 +28,6 @@ class AccountingViewModel @Inject constructor(
     private val userRepository: com.batterysales.data.repositories.UserRepository,
     private val warehouseRepository: com.batterysales.data.repositories.WarehouseRepository
 ) : ViewModel() {
-
-    private val _transactions = MutableStateFlow<List<Transaction>>(emptyList())
-    val transactions = _transactions.asStateFlow()
 
     private val _expenses = MutableStateFlow<List<Expense>>(emptyList())
     val expenses = _expenses.asStateFlow()
@@ -68,7 +65,27 @@ class AccountingViewModel @Inject constructor(
     private val _selectedYear = MutableStateFlow<Int?>(null)
     val selectedYear = _selectedYear.asStateFlow()
 
-    private var lastDocument: DocumentSnapshot? = null
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val transactions: Flow<PagingData<Transaction>> = combine(
+        _selectedWarehouseId,
+        _selectedTab,
+        _selectedPaymentMethod,
+        _selectedYear
+    ) { w, t, p, y ->
+        Quadruple(w, t, p, y)
+    }.flatMapLatest { (warehouseId, tab, paymentMethod, _) ->
+        Pager(PagingConfig(pageSize = 20)) {
+            TransactionPagingSource(
+                repository = repository,
+                warehouseId = if (warehouseId == "all") null else warehouseId,
+                paymentMethod = if (paymentMethod == "all") null else paymentMethod,
+                types = if (tab == 1) listOf(com.batterysales.data.models.TransactionType.EXPENSE.name, com.batterysales.data.models.TransactionType.REFUND.name) else null,
+                startDate = currentStartDate,
+                endDate = currentEndDate
+            )
+        }.flow.cachedIn(viewModelScope)
+    }
+
     private var currentStartDate: Long? = null
     private var currentEndDate: Long? = null
     private var loadJob: kotlinx.coroutines.Job? = null
@@ -166,55 +183,23 @@ class AccountingViewModel @Inject constructor(
 
         if (reset) {
             loadJob?.cancel()
-            lastDocument = null
-            // Don't clear transactions immediately to avoid flickering
-            _isLastPage.value = false
             _isLoading.value = true
         }
 
-        if (_isLastPage.value || (loadJob?.isActive == true && !reset)) return
-
         loadJob = viewModelScope.launch {
             try {
-                if (!reset) _isLoadingMore.value = true
-
                 val warehouseId = _selectedWarehouseId.value
                 val paymentMethod = _selectedPaymentMethod.value
-                val typesFilter = if (_selectedTab.value == 1) {
-                    listOf(com.batterysales.data.models.TransactionType.EXPENSE.name, com.batterysales.data.models.TransactionType.REFUND.name)
-                } else null
 
-                if (reset) {
-                    coroutineScope {
-                        val balanceJob = async { repository.getCurrentBalance(warehouseId, paymentMethod, currentEndDate) }
-                        val totalExpensesJob = async { repository.getTotalExpenses(warehouseId, paymentMethod, currentStartDate, currentEndDate) }
-                        val expensesJob = async { repository.getAllExpenses() }
+                coroutineScope {
+                    val balanceJob = async { repository.getCurrentBalance(warehouseId, paymentMethod, currentEndDate) }
+                    val totalExpensesJob = async { repository.getTotalExpenses(warehouseId, paymentMethod, currentStartDate, currentEndDate) }
+                    val expensesJob = async { repository.getAllExpenses() }
 
-                        _balance.value = balanceJob.await()
-                        _totalExpenses.value = totalExpensesJob.await()
-                        _expenses.value = expensesJob.await()
-                    }
+                    _balance.value = balanceJob.await()
+                    _totalExpenses.value = totalExpensesJob.await()
+                    _expenses.value = expensesJob.await()
                 }
-
-                val result = repository.getTransactionsPaginated(
-                    warehouseId = warehouseId,
-                    paymentMethod = paymentMethod,
-                    types = typesFilter,
-                    startDate = currentStartDate,
-                    endDate = currentEndDate,
-                    lastDocument = lastDocument,
-                    limit = 20
-                )
-
-                val newTransactions = result.first
-                lastDocument = result.second
-
-                if (reset) {
-                    _transactions.value = newTransactions
-                } else {
-                    _transactions.update { it + newTransactions }
-                }
-                _isLastPage.value = newTransactions.size < 20
             } catch (e: Exception) {
                 Log.e("AccountingViewModel", "Error loading data", e)
                 _errorMessage.value = "خطأ في تحميل البيانات: ${e.message}"

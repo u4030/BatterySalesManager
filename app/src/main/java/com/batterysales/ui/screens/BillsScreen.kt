@@ -7,7 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -45,34 +45,17 @@ fun BillsScreen(
     navController: NavHostController,
     viewModel: BillViewModel = hiltViewModel()
 ) {
-    val bills by viewModel.filteredBills.collectAsState()
+    val pagingItems = viewModel.bills.collectAsLazyPagingItems()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val suppliers by viewModel.suppliers.collectAsState()
     val pendingPurchases by viewModel.pendingPurchases.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
-    val isLoadingMore by viewModel.isLoadingMore.collectAsState()
-    val isLastPage by viewModel.isLastPage.collectAsState()
     val listState = rememberLazyListState()
 
     var showAddBillDialog by remember { mutableStateOf(false) }
     var showDateRangePicker by remember { mutableStateOf(false) }
     val dateRangePickerState = rememberDateRangePickerState()
 
-    val filteredBills = remember(bills) { bills }
-
-    // Load more when reaching the end
-    val shouldLoadMore = remember {
-        derivedStateOf {
-            val lastVisibleItem = listState.layoutInfo.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf false
-            lastVisibleItem.index >= listState.layoutInfo.totalItemsCount - 5
-        }
-    }
-
-    LaunchedEffect(shouldLoadMore.value) {
-        if (shouldLoadMore.value && !isLoading && !isLoadingMore && !isLastPage) {
-            viewModel.loadBills()
-        }
-    }
 
     val bgColor = MaterialTheme.colorScheme.background
     val cardBgColor = MaterialTheme.colorScheme.surface
@@ -132,11 +115,11 @@ fun BillsScreen(
             }
 
             item {
-                if (isLoading) {
+                if (pagingItems.loadState.refresh is androidx.paging.LoadState.Loading) {
                     Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = accentColor)
                     }
-                } else if (bills.isEmpty()) {
+                } else if (pagingItems.itemCount == 0) {
                     Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                         Text(
                             "لا توجد كمبيالات أو شيكات مسجلة",
@@ -157,25 +140,26 @@ fun BillsScreen(
                 }
             }
 
-            if (!isLoading && filteredBills.isNotEmpty()) {
-                items(filteredBills, key = { it.id }) { bill ->
-                    val supplier = suppliers.find { it.id == bill.supplierId }
+            items(pagingItems.itemCount) { index ->
+                val billItem = pagingItems[index]
+                billItem?.let { b ->
+                    val supplier = suppliers.find { it.id == b.supplierId }
                     Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                         BillItemCard(
-                            bill = bill,
+                            bill = b,
                             supplierName = supplier?.name ?: "",
-                            onPayClick = { selectedBillForPayment = bill },
-                            onDeleteClick = { billToDelete = bill },
-                            onEditClick = { billToEdit = bill }
+                            onPayClick = { selectedBillForPayment = b },
+                            onDeleteClick = { billToDelete = b },
+                            onEditClick = { billToEdit = b }
                         )
                     }
                 }
+            }
 
-                if (isLoadingMore) {
-                    item {
-                        Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(modifier = Modifier.size(32.dp), color = accentColor)
-                        }
+            if (pagingItems.loadState.append is androidx.paging.LoadState.Loading) {
+                item {
+                    Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(modifier = Modifier.size(32.dp), color = accentColor)
                     }
                 }
             }

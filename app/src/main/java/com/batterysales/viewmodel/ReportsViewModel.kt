@@ -2,13 +2,19 @@ package com.batterysales.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.paging.Pager
+import androidx.paging.PagingConfig
+import androidx.paging.PagingData
+import androidx.paging.cachedIn
 import com.batterysales.data.models.*
 import com.batterysales.data.repositories.*
+import com.batterysales.data.paging.InventoryPagingSource
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import androidx.paging.map
 import android.util.Log
 import com.google.firebase.firestore.AggregateField
 import com.google.firebase.firestore.AggregateSource
@@ -75,16 +81,8 @@ class ReportsViewModel @Inject constructor(
     private val _supplierSearchQuery = MutableStateFlow("")
     val supplierSearchQuery = _supplierSearchQuery.asStateFlow()
 
-    private val _inventoryReport = MutableStateFlow<List<InventoryReportItem>>(emptyList())
-    val inventoryReport = _inventoryReport.asStateFlow()
-
     private val _grandTotalInventoryQuantity = MutableStateFlow(0)
     val grandTotalInventoryQuantity = _grandTotalInventoryQuantity.asStateFlow()
-
-    private val _isInventoryLastPage = MutableStateFlow(false)
-    val isInventoryLastPage = _isInventoryLastPage.asStateFlow()
-
-    private var lastVariantDoc: DocumentSnapshot? = null
 
     private val _supplierReport = MutableStateFlow<List<SupplierReportItem>>(emptyList())
     val supplierReport = _supplierReport.asStateFlow()
@@ -108,6 +106,19 @@ class ReportsViewModel @Inject constructor(
         val active = allWh.filter { it.isActive }
         if (seller) active.filter { it.id == user?.warehouseId } else active
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val inventoryReport: Flow<PagingData<InventoryReportItem>> = combine(
+        barcodeFilter,
+        filteredWarehouses
+    ) { barcode, warehouseList ->
+        Pair(barcode, warehouseList)
+    }.flatMapLatest { (barcode, warehouseList) ->
+        val productsMap = productRepository.getProductsOnce().associateBy { it.id }
+        Pager(PagingConfig(pageSize = 20)) {
+            InventoryPagingSource(firestore, stockEntryRepository, productsMap, warehouseList, barcode)
+        }.flow.cachedIn(viewModelScope)
+    }
 
     init {
         userRepository.getCurrentUserFlow()
@@ -142,10 +153,7 @@ class ReportsViewModel @Inject constructor(
 
     fun loadInventoryReport(reset: Boolean = false) {
         if (reset) {
-            lastVariantDoc = null
-            _inventoryReport.value = emptyList()
             _grandTotalInventoryQuantity.value = 0
-            _isInventoryLastPage.value = false
 
             // Calculate Global Grand Total once
             viewModelScope.launch {
@@ -163,83 +171,6 @@ class ReportsViewModel @Inject constructor(
                 } catch (e: Exception) {
                     Log.e("ReportsViewModel", "Error calculating grand total", e)
                 }
-            }
-        }
-
-        if (_isInventoryLastPage.value || _isLoading.value) return
-
-        viewModelScope.launch {
-            _isLoading.value = true
-            try {
-                // Ensure filteredWarehouses has data
-                if (filteredWarehouses.value.isEmpty()) {
-                    filteredWarehouses.filter { it.isNotEmpty() }.first()
-                }
-
-                val warehouseList = filteredWarehouses.value
-                val barcode = _barcodeFilter.value
-
-                // 1. Fetch Variants with Pagination
-                var query = firestore.collection(ProductVariant.COLLECTION_NAME)
-                    .whereEqualTo("archived", false)
-
-                if (barcode != null) {
-                    query = query.whereEqualTo("barcode", barcode)
-                }
-
-                if (lastVariantDoc != null) {
-                    query = query.startAfter(lastVariantDoc!!)
-                }
-
-                val variantSnapshots = query.limit(20).get().await()
-                val activeVariants = variantSnapshots.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }
-                lastVariantDoc = variantSnapshots.documents.lastOrNull()
-
-                if (activeVariants.isEmpty()) {
-                    _isInventoryLastPage.value = true
-                    return@launch
-                }
-
-                // 2. Aggregate each variant in parallel
-                val jobs = activeVariants.map { variant ->
-                    async {
-                        val product = productRepository.getProduct(variant.productId) ?: return@async null
-
-                        val globalSummary = stockEntryRepository.getVariantSummary(variant.id, null)
-                        val totalQuantity = globalSummary.first
-
-                        if (totalQuantity <= 0 && barcode == null) return@async null
-
-                        val warehouseQuantities = mutableMapOf<String, Int>()
-                        for (wh in warehouseList) {
-                            val whSummary = stockEntryRepository.getVariantSummary(variant.id, wh.id)
-                            warehouseQuantities[wh.id] = whSummary.first
-                        }
-
-                        val averageCost = globalSummary.second
-
-                        InventoryReportItem(
-                            product = product,
-                            variant = variant,
-                            warehouseQuantities = warehouseQuantities,
-                            totalQuantity = totalQuantity,
-                            averageCost = averageCost,
-                            totalCostValue = totalQuantity * averageCost
-                        )
-                    }
-                }
-
-                val newItems = jobs.awaitAll().filterNotNull()
-                _inventoryReport.value = _inventoryReport.value + newItems
-
-                if (variantSnapshots.size() < 20) {
-                    _isInventoryLastPage.value = true
-                }
-
-            } catch (e: Exception) {
-                Log.e("ReportsViewModel", "Error loading inventory report", e)
-            } finally {
-                _isLoading.value = false
             }
         }
     }

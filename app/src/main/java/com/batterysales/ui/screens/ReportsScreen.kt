@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -43,7 +44,7 @@ import com.batterysales.ui.components.KeyboardLanguage
 
 @Composable
 fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hiltViewModel()) {
-    val reportItems by viewModel.inventoryReport.collectAsState()
+    val pagingItems = viewModel.inventoryReport.collectAsLazyPagingItems()
     val grandTotalQuantity by viewModel.grandTotalInventoryQuantity.collectAsState()
     val supplierItems by viewModel.supplierReport.collectAsState()
     val isSeller by viewModel.isSeller.collectAsState()
@@ -51,25 +52,11 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
     val oldBatterySummary by viewModel.oldBatterySummary.collectAsState()
     val oldBatteryWarehouseSummary by viewModel.oldBatteryWarehouseSummary.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
-    val isInventoryLastPage by viewModel.isInventoryLastPage.collectAsState()
     val barcodeFilter by viewModel.barcodeFilter.collectAsState()
     var showScanner by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     var selectedTab by remember { mutableIntStateOf(0) }
 
-    // Load more when reaching the end
-    val shouldLoadMore = remember {
-        derivedStateOf {
-            val lastVisibleItem = listState.layoutInfo.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf false
-            lastVisibleItem.index >= listState.layoutInfo.totalItemsCount - 5
-        }
-    }
-
-    LaunchedEffect(shouldLoadMore.value) {
-        if (shouldLoadMore.value && selectedTab == 0 && !isLoading && !isInventoryLastPage) {
-            viewModel.loadInventoryReport()
-        }
-    }
 
     val bgColor = MaterialTheme.colorScheme.background
     val accentColor = Color(0xFFFB8C00)
@@ -156,7 +143,7 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                 }
             }
 
-            if (isLoading) {
+            if (isLoading && selectedTab != 0) {
                 item {
                     Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = accentColor)
@@ -173,31 +160,42 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                             )
                         }
 
-                        if (reportItems.isNotEmpty()) {
+                        if (pagingItems.loadState.refresh is androidx.paging.LoadState.Loading) {
+                            item {
+                                Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                                    CircularProgressIndicator(color = accentColor)
+                                }
+                            }
+                        }
+
+                        if (pagingItems.itemCount > 0) {
                             item {
                                 GrandTotalCard(totalQuantity = grandTotalQuantity, isSeller = isSeller)
                             }
                         }
 
-                        items(reportItems) { item ->
-                            Box(modifier = Modifier.padding(horizontal = 16.dp)) {
-                                ReportItemCard(
-                                    item = item,
-                                    warehouses = warehouses,
-                                    isSeller = isSeller,
-                                    onClick = {
-                                        val capacityStr = item.variant.capacity.toString()
-                                        val productName = item.product.name
-                                        val spec = item.variant.specification.ifEmpty { "no_spec" }
-                                        navController.navigate(
-                                            "product_ledger/${item.variant.id}/$productName/$capacityStr/$spec"
-                                        )
-                                    }
-                                )
+                        items(pagingItems.itemCount) { index ->
+                            val reportItem = pagingItems[index]
+                            reportItem?.let {
+                                Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                                    ReportItemCard(
+                                        item = it,
+                                        warehouses = warehouses,
+                                        isSeller = isSeller,
+                                        onClick = {
+                                            val capacityStr = it.variant.capacity.toString()
+                                            val productName = it.product.name
+                                            val spec = it.variant.specification.ifEmpty { "no_spec" }
+                                            navController.navigate(
+                                                "product_ledger/${it.variant.id}/$productName/$capacityStr/$spec"
+                                            )
+                                        }
+                                    )
+                                }
                             }
                         }
 
-                        if (isLoading && reportItems.isNotEmpty()) {
+                        if (pagingItems.loadState.append is androidx.paging.LoadState.Loading) {
                             item {
                                 Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
                                     CircularProgressIndicator(modifier = Modifier.size(32.dp), color = accentColor)
@@ -498,13 +496,13 @@ fun OldBatteryReportSectionRedesigned(
 private fun supplierReportSectionRedesigned(
     scope: androidx.compose.foundation.lazy.LazyListScope,
     viewModel: ReportsViewModel,
-    items: List<com.batterysales.viewmodel.SupplierReportItem>
+    supplierItems: List<com.batterysales.viewmodel.SupplierReportItem>
 ) {
     scope.item {
         SupplierReportControls(viewModel)
     }
 
-    val totalSuppliersDebit = items.sumOf { it.balance }
+    val totalSuppliersDebit = supplierItems.sumOf { it.balance }
     scope.item {
         Card(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
@@ -532,7 +530,7 @@ private fun supplierReportSectionRedesigned(
         }
     }
 
-    scope.items(items) { item ->
+    scope.items(supplierItems) { item ->
         Box(modifier = Modifier.padding(horizontal = 16.dp)) {
             SupplierCardRedesigned(item)
         }

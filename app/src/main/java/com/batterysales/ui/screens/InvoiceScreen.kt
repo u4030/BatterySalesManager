@@ -6,7 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -46,6 +46,7 @@ fun InvoiceScreen(
     viewModel: InvoiceViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val pagingItems = viewModel.invoices.collectAsLazyPagingItems()
     var showEditDialog by remember { mutableStateOf<Invoice?>(null) }
     var showDateRangePicker by remember { mutableStateOf(false) }
     val dateRangePickerState = rememberDateRangePickerState()
@@ -99,20 +100,6 @@ fun InvoiceScreen(
                 Button(onClick = { viewModel.onDismissError() }) { Text("موافق") }
             }
         )
-    }
-
-    // Load more when reaching the end
-    val shouldLoadMore = remember {
-        derivedStateOf {
-            val lastVisibleItem = listState.layoutInfo.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf false
-            lastVisibleItem.index >= listState.layoutInfo.totalItemsCount - 5
-        }
-    }
-
-    LaunchedEffect(shouldLoadMore.value) {
-        if (shouldLoadMore.value && !uiState.isLoading && !uiState.isLoadingMore && !uiState.isLastPage) {
-            viewModel.loadInvoices()
-        }
     }
 
     // Refresh data when screen is focused to update invoice status after payments
@@ -260,13 +247,13 @@ fun InvoiceScreen(
                 }
             }
 
-            if (uiState.isLoading) {
+            if (pagingItems.loadState.refresh is androidx.paging.LoadState.Loading) {
                 item {
                     Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = accentColor)
                     }
                 }
-            } else if (uiState.invoices.isEmpty()) {
+            } else if (pagingItems.itemCount == 0) {
                 item {
                     Box(modifier = Modifier.fillMaxWidth().height(300.dp), contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -277,19 +264,22 @@ fun InvoiceScreen(
                     }
                 }
             } else {
-                items(uiState.invoices) { invoice ->
-                    Box(modifier = Modifier.padding(horizontal = 16.dp)) {
-                        InvoiceItemCard(
-                            invoice = invoice,
-                            onClick = { navController.navigate("invoice_detail/${invoice.id}") },
-                            onDeleteClick = { viewModel.deleteInvoice(invoice) },
-                            onEditClick = { showEditDialog = invoice }
-                        )
+                items(pagingItems.itemCount) { index ->
+                    val inv = pagingItems[index]
+                    inv?.let {
+                        Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                            InvoiceItemCard(
+                                invoice = it,
+                                onClick = { navController.navigate("invoice_detail/${it.id}") },
+                                onDeleteClick = { viewModel.deleteInvoice(it) },
+                                onEditClick = { showEditDialog = it }
+                            )
+                        }
                     }
                 }
             }
 
-            if (uiState.isLoadingMore) {
+            if (pagingItems.loadState.append is androidx.paging.LoadState.Loading) {
                 item {
                     Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(modifier = Modifier.size(32.dp), color = accentColor)

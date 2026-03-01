@@ -4,7 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -40,7 +40,7 @@ fun BankScreen(
     navController: NavHostController,
     viewModel: BankViewModel = hiltViewModel()
 ) {
-    val transactions by viewModel.transactions.collectAsState()
+    val pagingItems = viewModel.transactions.collectAsLazyPagingItems()
     val balance by viewModel.balance.collectAsState()
     val totalWithdrawals by viewModel.totalWithdrawals.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -57,33 +57,6 @@ fun BankScreen(
 
     var searchQuery by remember { mutableStateOf("") }
 
-    val filteredTransactions = remember(transactions, selectedTab, searchQuery) {
-        transactions.filter { transaction ->
-            val matchesTab = when (selectedTab) {
-                0 -> true // All
-                1 -> transaction.type == com.batterysales.data.models.BankTransactionType.WITHDRAWAL // Withdrawals
-                else -> true
-            }
-            val matchesSearch = transaction.description.contains(searchQuery, ignoreCase = true) || 
-                               transaction.referenceNumber.contains(searchQuery, ignoreCase = true) ||
-                               transaction.supplierName.contains(searchQuery, ignoreCase = true)
-            matchesTab && matchesSearch
-        }
-    }
-
-    // Load more when reaching the end
-    val shouldLoadMore = remember {
-        derivedStateOf {
-            val lastVisibleItem = listState.layoutInfo.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf false
-            lastVisibleItem.index >= listState.layoutInfo.totalItemsCount - 5
-        }
-    }
-
-    LaunchedEffect(shouldLoadMore.value) {
-        if (shouldLoadMore.value && !isLoading && !isLoadingMore && !isLastPage) {
-            viewModel.loadData()
-        }
-    }
 
     val bgColor = MaterialTheme.colorScheme.background
     val cardBgColor = MaterialTheme.colorScheme.surface
@@ -275,26 +248,37 @@ fun BankScreen(
                 }
             }
 
-            if (isLoading) {
+            if (pagingItems.loadState.refresh is androidx.paging.LoadState.Loading) {
                 item {
                     Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = accentColor)
                     }
                 }
-            } else if (filteredTransactions.isEmpty()) {
+            } else if (pagingItems.itemCount == 0) {
                 item {
                     Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                         Text(
-                            "لا توجد عمليات تطابق البحث",
+                            "لا توجد عمليات حالياً",
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
                 }
             } else {
-                items(filteredTransactions, key = { it.id }) { transaction ->
-                    Box(modifier = Modifier.padding(horizontal = 16.dp)) {
-                        BankTransactionItemCard(transaction)
+                items(pagingItems.itemCount) { index ->
+                    val transaction = pagingItems[index]
+                    transaction?.let {
+                        Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                            BankTransactionItemCard(it)
+                        }
+                    }
+                }
+            }
+
+            if (pagingItems.loadState.append is androidx.paging.LoadState.Loading) {
+                item {
+                    Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(modifier = Modifier.size(32.dp), color = accentColor)
                     }
                 }
             }

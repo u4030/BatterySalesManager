@@ -114,6 +114,11 @@ dependencies {
     implementation("com.itextpdf:itext7-core:7.2.5")
     implementation("joda-time:joda-time:2.12.7")
 
+    // Paging 3
+    val pagingVersion = "3.2.1"
+    implementation("androidx.paging:paging-runtime-ktx:$pagingVersion")
+    implementation("androidx.paging:paging-compose:3.2.1")
+
     // Testing
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")

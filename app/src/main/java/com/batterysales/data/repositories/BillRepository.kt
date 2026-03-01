@@ -25,6 +25,11 @@ class BillRepository @Inject constructor(
         return snapshot.documents.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) }
     }
 
+    suspend fun getBill(id: String): Bill? {
+        val snapshot = firestore.collection(Bill.COLLECTION_NAME).document(id).get().await()
+        return snapshot.toObject(Bill::class.java)?.copy(id = snapshot.id)
+    }
+
     fun getAllBillsFlow(): Flow<List<Bill>> = callbackFlow {
         val listenerRegistration = firestore.collection(Bill.COLLECTION_NAME)
             .addSnapshotListener { snapshot, error ->

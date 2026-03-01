@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -42,12 +43,9 @@ fun AccountingScreen(
     navController: NavHostController,
     viewModel: AccountingViewModel = hiltViewModel()
 ) {
-    val transactions by viewModel.transactions.collectAsState()
+    val pagingItems = viewModel.transactions.collectAsLazyPagingItems()
     val balance by viewModel.balance.collectAsState()
     val totalExpenses by viewModel.totalExpenses.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
-    val isLoadingMore by viewModel.isLoadingMore.collectAsState()
-    val isLastPage by viewModel.isLastPage.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val listState = rememberLazyListState()
     var showAddTransactionDialog by remember { mutableStateOf(false) }
@@ -67,26 +65,6 @@ fun AccountingScreen(
     val selectedPaymentMethod by viewModel.selectedPaymentMethod.collectAsState()
     val selectedYear by viewModel.selectedYear.collectAsState()
 
-    val filteredTransactions = remember(transactions, searchQuery) {
-        transactions.filter { transaction ->
-            transaction.description.contains(searchQuery, ignoreCase = true) || 
-            transaction.referenceNumber.contains(searchQuery, ignoreCase = true)
-        }
-    }
-
-    // Load more when reaching the end
-    val shouldLoadMore = remember {
-        derivedStateOf {
-            val lastVisibleItem = listState.layoutInfo.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf false
-            lastVisibleItem.index >= listState.layoutInfo.totalItemsCount - 5
-        }
-    }
-
-    LaunchedEffect(shouldLoadMore.value) {
-        if (shouldLoadMore.value && !isLoading && !isLoadingMore && !isLastPage) {
-            viewModel.loadData()
-        }
-    }
 
     val bgColor = MaterialTheme.colorScheme.background
     val cardBgColor = MaterialTheme.colorScheme.surface
@@ -322,6 +300,7 @@ fun AccountingScreen(
                     }
 
                     // Payment Method Chips
+                    val paymentMethods = listOf("cash" to "كاش", "e-wallet" to "محفظة", "visa" to "فيزا")
                     androidx.compose.foundation.lazy.LazyRow(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -333,7 +312,7 @@ fun AccountingScreen(
                                 label = { Text("جميع طرق الدفع") }
                             )
                         }
-                        items(listOf("cash" to "كاش", "e-wallet" to "محفظة", "visa" to "فيزا")) { (id, label) ->
+                        items(paymentMethods) { (id, label) ->
                             FilterChip(
                                 selected = selectedPaymentMethod == id,
                                 onClick = { viewModel.onPaymentMethodSelected(id) },
@@ -363,30 +342,41 @@ fun AccountingScreen(
                 }
             }
 
-            if (isLoading) {
+            if (pagingItems.loadState.refresh is androidx.paging.LoadState.Loading) {
                 item {
                     Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = accentColor)
                     }
                 }
-            } else if (filteredTransactions.isEmpty()) {
+            } else if (pagingItems.itemCount == 0) {
                 item {
                     Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                         Text(
-                            "لا توجد عمليات تطابق البحث",
+                            "لا توجد عمليات حالياً",
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
                 }
             } else {
-                items(filteredTransactions, key = { it.id }) { transaction ->
-                    Box(modifier = Modifier.padding(horizontal = 16.dp)) {
-                        TransactionItemCard(
-                            transaction = transaction,
-                            onEdit = { transactionToEdit = transaction },
-                            onDelete = { showDeleteConfirm = transaction }
-                        )
+                items(pagingItems.itemCount) { index ->
+                    val trans = pagingItems[index]
+                    trans?.let {
+                        Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                            TransactionItemCard(
+                                transaction = it,
+                                onEdit = { transactionToEdit = it },
+                                onDelete = { showDeleteConfirm = it }
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (pagingItems.loadState.append is androidx.paging.LoadState.Loading) {
+                item {
+                    Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(modifier = Modifier.size(32.dp), color = accentColor)
                     }
                 }
             }

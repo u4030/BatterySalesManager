@@ -19,8 +19,6 @@ data class WarehouseStats(
     val todayCollectionCount: Int // Number of unique invoices collected today
 )
 
-data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
-
 data class AppNotification(
     val id: String,
     val title: String,

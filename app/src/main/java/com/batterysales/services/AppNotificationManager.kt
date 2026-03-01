@@ -173,42 +173,102 @@ class AppNotificationManager @Inject constructor(
     }
 
     private fun setupLowStockListener() {
-        lowStockJob = scope.launch {
-            // Check for low stock once on start/login using accurate aggregation
-            try {
-                val allVariants = productVariantRepository.getAllVariants().filter { !it.archived }
-                val allWarehouses = warehouseRepository.getWarehousesOnce()
-                val products = productRepository.getProductsOnce().associateBy { it.id }
+        lowStockJob?.cancel()
 
-                val lowStockItemsCount = mutableListOf<String>()
+        // Setup a listener for NEW Stock Entries to trigger targeted low stock checks
+        // This avoids periodic full-database scans while maintaining near real-time accuracy.
+        var isFirstSnapshot = true
+        lowStockJob = firestore.collection(StockEntry.COLLECTION_NAME)
+            .orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING)
+            .limit(10)
+            .addSnapshotListener { snapshot, e ->
+                if (e != null) return@addSnapshotListener
 
-                for (variant in allVariants) {
-                    val globalSummary = stockEntryRepository.getVariantSummary(variant.id, null)
-                    val totalQty = globalSummary.first
+                if (isFirstSnapshot) {
+                    isFirstSnapshot = false
+                    // Perform initial check on startup
+                    scope.launch { performFullLowStockCheck() }
+                    return@addSnapshotListener
+                }
 
-                    for (warehouse in allWarehouses) {
-                        val threshold = variant.minQuantities[warehouse.id] ?: variant.minQuantity
-                        if (threshold <= 0) continue
-
-                        val whSummary = stockEntryRepository.getVariantSummary(variant.id, warehouse.id)
-                        val qty = whSummary.first
-
-                        if (qty <= threshold) {
-                            lowStockItemsCount.add("${variant.id}:${warehouse.id}")
-                        }
+                snapshot?.documentChanges?.forEach { change ->
+                    if (change.type == com.google.firebase.firestore.DocumentChange.Type.ADDED) {
+                        val entry = change.document.toObject(StockEntry::class.java)
+                        // Trigger check for the specific variant/warehouse affected
+                        scope.launch { checkVariantLowStock(entry.productVariantId, entry.warehouseId) }
                     }
                 }
+            }.let { registration ->
+                // Return a job that removes the listener when cancelled
+                scope.launch {
+                    try {
+                        kotlinx.coroutines.awaitCancellation()
+                    } finally {
+                        registration.remove()
+                    }
+                }
+            }
+    }
 
-                if (lowStockItemsCount.isNotEmpty()) {
+    private suspend fun checkVariantLowStock(variantId: String, warehouseId: String) {
+        try {
+            val variant = productVariantRepository.getVariant(variantId) ?: return
+            if (variant.archived) return
+
+            val threshold = variant.minQuantities[warehouseId] ?: variant.minQuantity
+            if (threshold <= 0) return
+
+            val whSummary = stockEntryRepository.getVariantSummary(variantId, warehouseId)
+            val qty = whSummary.first
+
+            val key = "$variantId:$warehouseId"
+            if (qty <= threshold) {
+                if (!notifiedLowStockKeys.contains(key)) {
+                    val product = productRepository.getProduct(variant.productId)
                     NotificationHelper.showNotification(
                         context,
-                        "تنبيه المخزون المنخفض",
-                        "يوجد عدد ${lowStockItemsCount.size} أصناف وصلت للحد الأدنى للمخزون"
+                        "تنبيه مخزون منخفض",
+                        "المنتج ${product?.name ?: ""} (${variant.capacity}A) وصل للحد الأدنى في المستودع"
                     )
+                    notifiedLowStockKeys.add(key)
                 }
-            } catch (e: Exception) {
-                Log.e("AppNotificationManager", "Error checking low stock", e)
+            } else {
+                // Reset notification if stock is replenished
+                notifiedLowStockKeys.remove(key)
             }
+        } catch (e: Exception) {
+            Log.e("AppNotificationManager", "Error checking targeted low stock", e)
+        }
+    }
+
+    private suspend fun performFullLowStockCheck() {
+        try {
+            val allVariants = productVariantRepository.getAllVariants().filter { !it.archived }
+            val allWarehouses = warehouseRepository.getWarehousesOnce()
+
+            var lowStockCount = 0
+            for (variant in allVariants) {
+                for (warehouse in allWarehouses) {
+                    val threshold = variant.minQuantities[warehouse.id] ?: variant.minQuantity
+                    if (threshold <= 0) continue
+
+                    val whSummary = stockEntryRepository.getVariantSummary(variant.id, warehouse.id)
+                    if (whSummary.first <= threshold) {
+                        lowStockCount++
+                        notifiedLowStockKeys.add("${variant.id}:${warehouse.id}")
+                    }
+                }
+            }
+
+            if (lowStockCount > 0) {
+                NotificationHelper.showNotification(
+                    context,
+                    "ملخص المخزون المنخفض",
+                    "يوجد عدد $lowStockCount أصناف وصلت للحد الأدنى للمخزون"
+                )
+            }
+        } catch (e: Exception) {
+            Log.e("AppNotificationManager", "Error in full low stock check", e)
         }
     }
 }

@@ -2,8 +2,14 @@ package com.batterysales.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.paging.Pager
+import androidx.paging.PagingConfig
+import androidx.paging.PagingData
+import androidx.paging.cachedIn
+import androidx.paging.filter
 import com.batterysales.data.models.*
 import com.batterysales.data.repositories.*
+import com.batterysales.data.paging.BillPagingSource
 import com.google.firebase.firestore.DocumentSnapshot
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
@@ -21,28 +27,32 @@ class BillViewModel @Inject constructor(
     private val bankRepository: BankRepository
 ) : ViewModel() {
 
-    private val _bills = MutableStateFlow<List<Bill>>(emptyList())
     private val _searchQuery = MutableStateFlow("")
     val searchQuery = _searchQuery.asStateFlow()
 
     private val _suppliers = MutableStateFlow<List<Supplier>>(emptyList())
     val suppliers = _suppliers.asStateFlow()
 
-    val filteredBills: StateFlow<List<Bill>> = combine(
-        _bills,
-        _suppliers,
-        _searchQuery
-    ) { bills, suppliers, query ->
-        if (query.isBlank()) return@combine bills
-        
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val bills: Flow<PagingData<Bill>> = combine(
+        _searchQuery,
+        _suppliers
+    ) { query, suppliers ->
+        Pair(query, suppliers)
+    }.flatMapLatest { (query, suppliers) ->
         val suppliersMap = suppliers.associateBy { it.id }
-        bills.filter { bill ->
-            val supplierName = suppliersMap[bill.supplierId]?.name ?: ""
-            bill.referenceNumber.contains(query, ignoreCase = true) ||
-            supplierName.contains(query, ignoreCase = true) ||
-            bill.description.contains(query, ignoreCase = true)
-        }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        Pager(PagingConfig(pageSize = 20)) {
+            BillPagingSource(repository)
+        }.flow.map { pagingData ->
+            if (query.isBlank()) pagingData
+            else pagingData.filter { bill ->
+                val supplierName = suppliersMap[bill.supplierId]?.name ?: ""
+                bill.referenceNumber.contains(query, ignoreCase = true) ||
+                        supplierName.contains(query, ignoreCase = true) ||
+                        bill.description.contains(query, ignoreCase = true)
+            }
+        }.cachedIn(viewModelScope)
+    }
 
     private val _allRecentPurchases = MutableStateFlow<List<StockEntry>>(emptyList())
     private val _linkedAmounts = MutableStateFlow<Map<String, Double>>(emptyMap())
@@ -111,33 +121,8 @@ class BillViewModel @Inject constructor(
 
     fun loadBills(reset: Boolean = false) {
         if (reset) {
-            lastDocument = null
-            _bills.value = emptyList()
-            _isLastPage.value = false
             _isLoading.value = true
-        }
-
-        if (_isLastPage.value || _isLoadingMore.value) return
-
-        viewModelScope.launch {
-            try {
-                if (!reset) _isLoadingMore.value = true
-
-                val result = repository.getBillsPaginated(
-                    lastDocument = lastDocument,
-                    limit = 20
-                )
-
-                val newBills = result.first
-                lastDocument = result.second
-
-                _bills.update { current -> if (reset) newBills else current + newBills }
-                _isLastPage.value = newBills.size < 20
-
-            } finally {
-                _isLoading.value = false
-                _isLoadingMore.value = false
-            }
+            // Paging 3 will handle refresh when flow is collected
         }
     }
 
@@ -187,7 +172,9 @@ class BillViewModel @Inject constructor(
     fun recordPayment(billId: String, amount: Double) {
         viewModelScope.launch {
             try {
-                val bill = _bills.value.find { it.id == billId } ?: return@launch
+                // Fetch the bill once to get details
+                val snapshot = repository.getBill(billId) ?: return@launch
+                val bill = snapshot
                 val supplier = _suppliers.value.find { it.id == bill.supplierId }
                 val supplierName = supplier?.name ?: ""
                 

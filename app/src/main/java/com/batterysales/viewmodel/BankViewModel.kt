@@ -2,14 +2,21 @@ package com.batterysales.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.paging.Pager
+import androidx.paging.PagingConfig
+import androidx.paging.PagingData
+import androidx.paging.cachedIn
 import com.batterysales.data.models.BankTransaction
+import com.batterysales.data.paging.BankPagingSource
 import com.google.firebase.firestore.DocumentSnapshot
 import com.batterysales.data.repositories.BankRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import android.util.Log
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.update
+import android.util.Log
 import kotlinx.coroutines.launch
 import java.util.Calendar
 import javax.inject.Inject
@@ -18,9 +25,6 @@ import javax.inject.Inject
 class BankViewModel @Inject constructor(
     private val repository: BankRepository
 ) : ViewModel() {
-
-    private val _transactions = MutableStateFlow<List<BankTransaction>>(emptyList())
-    val transactions = _transactions.asStateFlow()
 
     private val _balance = MutableStateFlow(0.0)
     val balance = _balance.asStateFlow()
@@ -40,7 +44,17 @@ class BankViewModel @Inject constructor(
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage = _errorMessage.asStateFlow()
 
-    private var lastDocument: DocumentSnapshot? = null
+    private val filterState = MutableStateFlow(Pair<Long?, Long?>(null, null))
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val transactions: Flow<PagingData<BankTransaction>> = filterState.flatMapLatest { data ->
+        val start = data.first
+        val end = data.second
+        Pager(PagingConfig(pageSize = 20)) {
+            com.batterysales.data.paging.BankPagingSource(repository, start, end)
+        }.flow.cachedIn(viewModelScope)
+    }
+
     private var currentStartDate: Long? = null
     private var currentEndDate: Long? = null
 
@@ -59,35 +73,14 @@ class BankViewModel @Inject constructor(
 
     fun loadData(reset: Boolean = false) {
         if (reset) {
-            lastDocument = null
-            _transactions.value = emptyList()
-            _isLastPage.value = false
             _isLoading.value = true
+            filterState.update { it.copy() }
         }
-
-        if (_isLastPage.value || _isLoadingMore.value) return
 
         viewModelScope.launch {
             try {
-                if (!reset) _isLoadingMore.value = true
-
-                val result = repository.getTransactionsPaginated(
-                    startDate = currentStartDate,
-                    endDate = currentEndDate,
-                    lastDocument = lastDocument,
-                    limit = 20
-                )
-
-                val newTransactions = result.first
-                lastDocument = result.second
-
-                _transactions.update { current -> if (reset) newTransactions else current + newTransactions }
-                _isLastPage.value = newTransactions.size < 20
-
-                if (reset) {
-                    _balance.value = repository.getCurrentBalance(currentEndDate)
-                    _totalWithdrawals.value = repository.getTotalWithdrawals(currentStartDate, currentEndDate)
-                }
+                _balance.value = repository.getCurrentBalance(currentEndDate)
+                _totalWithdrawals.value = repository.getTotalWithdrawals(currentStartDate, currentEndDate)
                 
                 _isLoading.value = false
                 _isLoadingMore.value = false
@@ -107,6 +100,7 @@ class BankViewModel @Inject constructor(
     fun onDateRangeSelected(start: Long?, end: Long?) {
         currentStartDate = start
         currentEndDate = end
+        filterState.value = Pair(start, end)
         loadData(reset = true)
     }
 

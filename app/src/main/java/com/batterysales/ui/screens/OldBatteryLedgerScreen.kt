@@ -8,6 +8,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -43,34 +44,19 @@ fun OldBatteryLedgerScreen(
     navController: NavHostController,
     viewModel: OldBatteryViewModel = hiltViewModel()
 ) {
-    val transactions by viewModel.transactions.collectAsState()
+    val pagingItems = viewModel.transactions.collectAsLazyPagingItems()
     val summary by viewModel.summary.collectAsState()
     val warehouses by viewModel.warehouses.collectAsState()
     val isSeller by viewModel.isSeller.collectAsState()
     val userWarehouseId by viewModel.userWarehouseId.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
-    val isLoadingMore by viewModel.isLoadingMore.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
-    val isLastPage by viewModel.isLastPage.collectAsState()
     val listState = rememberLazyListState()
     
     var selectedFilterWH by remember { mutableStateOf<String?>(null) }
     var showDateRangePicker by remember { mutableStateOf(false) }
     val dateRangePickerState = rememberDateRangePickerState()
 
-    // Load more when reaching the end
-    val shouldLoadMore = remember {
-        derivedStateOf {
-            val lastVisibleItem = listState.layoutInfo.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf false
-            lastVisibleItem.index >= listState.layoutInfo.totalItemsCount - 5
-        }
-    }
-
-    LaunchedEffect(shouldLoadMore.value) {
-        if (shouldLoadMore.value && !isLoading && !isLoadingMore && !isLastPage) {
-            viewModel.loadTransactions()
-        }
-    }
 
     var showSaleDialog by remember { mutableStateOf<OldBatteryTransaction?>(null) }
     var showEditDialog by remember { mutableStateOf<OldBatteryTransaction?>(null) }
@@ -205,37 +191,40 @@ fun OldBatteryLedgerScreen(
                 }
             }
 
-            if (isLoading) {
+            if (pagingItems.loadState.refresh is androidx.paging.LoadState.Loading) {
                 item {
                     Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = accentColor)
                     }
                 }
-            } else if (transactions.isEmpty()) {
+            } else if (pagingItems.itemCount == 0) {
                 item {
                     Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                         Text("لا توجد عمليات مسجلة", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
                     }
                 }
             } else {
-                items(transactions, key = { it.id }) { transaction ->
-                    val warehouseName = warehouses.find { it.id == transaction.warehouseId }?.name ?: "غير معروف"
-                    OldBatteryTransactionCard(
-                        transaction = transaction,
-                        warehouseName = warehouseName,
-                        onEdit = { showEditDialog = transaction },
-                        onDelete = { showDeleteConfirm = transaction },
-                        onSell = { showSaleDialog = transaction }
-                    )
-                }
-
-            if (isLoadingMore) {
-                item {
-                    Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(modifier = Modifier.size(32.dp), color = accentColor)
+                items(pagingItems.itemCount) { index ->
+                    val trans = pagingItems[index]
+                    trans?.let {
+                        val warehouseName = warehouses.find { wh -> wh.id == it.warehouseId }?.name ?: "غير معروف"
+                        OldBatteryTransactionCard(
+                            transaction = it,
+                            warehouseName = warehouseName,
+                            onEdit = { showEditDialog = it },
+                            onDelete = { showDeleteConfirm = it },
+                            onSell = { showSaleDialog = it }
+                        )
                     }
                 }
-            }
+
+                if (pagingItems.loadState.append is androidx.paging.LoadState.Loading) {
+                    item {
+                        Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(modifier = Modifier.size(32.dp), color = accentColor)
+                        }
+                    }
+                }
             }
         }
     }

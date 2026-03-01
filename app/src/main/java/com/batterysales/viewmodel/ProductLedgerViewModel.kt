@@ -9,6 +9,13 @@ import com.google.firebase.firestore.DocumentSnapshot
 import com.batterysales.data.repositories.StockEntryRepository
 import com.batterysales.data.repositories.UserRepository
 import android.util.Log
+import androidx.paging.Pager
+import androidx.paging.PagingConfig
+import androidx.paging.PagingData
+import androidx.paging.cachedIn
+import androidx.paging.filter
+import androidx.paging.map
+import com.batterysales.data.paging.StockEntryPagingSource
 import com.batterysales.data.repositories.WarehouseRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
@@ -64,8 +71,44 @@ class ProductLedgerViewModel @Inject constructor(
     private val _searchQuery = MutableStateFlow("")
     val searchQuery = _searchQuery.asStateFlow()
 
-    private val _ledgerItems = MutableStateFlow<List<LedgerItem>>(emptyList())
-    val ledgerItems: StateFlow<List<LedgerItem>> = _ledgerItems.asStateFlow()
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val ledgerItems: Flow<PagingData<LedgerItem>> = combine(
+        _selectedCategory,
+        _searchQuery
+    ) { category, query ->
+        category to query
+    }.flatMapLatest { (category, query) ->
+        val warehouseMap = allWarehouses.associateBy { it.id }
+        Pager(PagingConfig(pageSize = 20)) {
+            StockEntryPagingSource(stockEntryRepository, productVariantId)
+        }.flow.map { pagingData ->
+            val mapped: PagingData<LedgerItem> = pagingData.map { entry ->
+                LedgerItem(
+                    entry = entry,
+                    warehouseName = warehouseMap[entry.warehouseId]?.name ?: "Unknown"
+                )
+            }
+            mapped.filter { item: LedgerItem ->
+                // Apply category filter
+                val categoryMatch = when (category) {
+                    LedgerCategory.ALL -> true
+                    LedgerCategory.PURCHASES -> item.entry.quantity > 0 && item.entry.supplier != "Sale" && item.entry.costPrice > 0 && !item.entry.supplier.contains("Reversal")
+                    LedgerCategory.SALES -> item.entry.supplier == "Sale"
+                    LedgerCategory.TRANSFERS -> item.entry.costPrice == 0.0 && !item.entry.supplier.contains("Reversal")
+                    LedgerCategory.RETURNS -> item.entry.supplier.contains("Reversal") || item.entry.returnedQuantity > 0
+                }
+
+                // Apply search filter
+                val searchMatch = if (query.isBlank()) true
+                else item.entry.supplier.contains(query, ignoreCase = true) ||
+                        item.warehouseName.contains(query, ignoreCase = true) ||
+                        item.entry.createdByUserName.contains(query, ignoreCase = true) ||
+                        item.entry.invoiceNumber.contains(query, ignoreCase = true)
+
+                categoryMatch && searchMatch
+            }
+        }.cachedIn(viewModelScope)
+    }
 
     private var allEntries: List<StockEntry> = emptyList()
     private var allWarehouses: List<Warehouse> = emptyList()
@@ -83,82 +126,20 @@ class ProductLedgerViewModel @Inject constructor(
     }
 
     fun loadData(reset: Boolean = false) {
-        if (productVariantId.isEmpty()) return
         if (reset) {
-            lastDocument = null
-            allEntries = emptyList()
-            _isLastPage.value = false
             _isLoading.value = true
+            // Trigger refresh
+            _selectedCategory.value = _selectedCategory.value
         }
-
-        if (_isLastPage.value || _isLoadingMore.value) return
-
-        viewModelScope.launch {
-            try {
-                if (!reset) _isLoadingMore.value = true
-
-                val result = stockEntryRepository.getEntriesPaginated(
-                    productVariantId = productVariantId,
-                    lastDocument = lastDocument,
-                    limit = 20
-                )
-
-                val newEntries = result.first
-                lastDocument = result.second
-
-                allEntries = if (reset) newEntries else allEntries + newEntries
-                _isLastPage.value = newEntries.size < 20
-
-                applyFilters()
-
-            } catch (e: Exception) {
-                Log.e("ProductLedgerViewModel", "Error loading ledger data", e)
-            } finally {
-                _isLoading.value = false
-                _isLoadingMore.value = false
-            }
-        }
-    }
-
-    private fun applyFilters() {
-        val warehouseMap = allWarehouses.associateBy { it.id }
-        val category = _selectedCategory.value
-        val query = _searchQuery.value
-
-        val items = allEntries.mapNotNull { entry ->
-            warehouseMap[entry.warehouseId]?.let { warehouse ->
-                LedgerItem(
-                    entry = entry,
-                    warehouseName = warehouse.name
-                )
-            }
-        }.filter {
-            if (query.isBlank()) true
-            else it.entry.supplier.contains(query, ignoreCase = true) ||
-                    it.warehouseName.contains(query, ignoreCase = true) ||
-                    it.entry.createdByUserName.contains(query, ignoreCase = true) ||
-                    it.entry.invoiceNumber.contains(query, ignoreCase = true)
-        }
-
-        val filtered = when (category) {
-            LedgerCategory.ALL -> items
-            LedgerCategory.PURCHASES -> items.filter { it.entry.quantity > 0 && it.entry.supplier != "Sale" && it.entry.costPrice > 0 && !it.entry.supplier.contains("Reversal") }
-            LedgerCategory.SALES -> items.filter { it.entry.supplier == "Sale" }
-            LedgerCategory.TRANSFERS -> items.filter { it.entry.costPrice == 0.0 && !it.entry.supplier.contains("Reversal") }
-            LedgerCategory.RETURNS -> items.filter { it.entry.supplier.contains("Reversal") || it.entry.returnedQuantity > 0 }
-        }
-
-        _ledgerItems.value = filtered
+        _isLoading.value = false
     }
 
     fun selectCategory(category: LedgerCategory) {
         _selectedCategory.value = category
-        applyFilters()
     }
 
     fun onSearchQueryChanged(query: String) {
         _searchQuery.value = query
-        applyFilters()
     }
 
     suspend fun findVariantByBarcode(barcode: String): com.batterysales.data.models.ProductVariant? {

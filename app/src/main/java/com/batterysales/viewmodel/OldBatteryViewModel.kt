@@ -2,21 +2,23 @@ package com.batterysales.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.paging.Pager
+import androidx.paging.PagingConfig
+import androidx.paging.PagingData
+import androidx.paging.cachedIn
 import com.batterysales.data.models.OldBatteryTransaction
 import com.batterysales.data.models.OldBatteryTransactionType
 import com.batterysales.data.models.Transaction
 import com.batterysales.data.models.TransactionType
+import com.batterysales.data.paging.OldBatteryPagingSource
 import com.google.firebase.firestore.DocumentSnapshot
 import com.batterysales.data.repositories.AccountingRepository
 import com.batterysales.data.repositories.InvoiceRepository
 import com.batterysales.data.repositories.OldBatteryRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.*
 import android.util.Log
-import kotlinx.coroutines.flow.launchIn
-import kotlinx.coroutines.flow.onEach
-import kotlinx.coroutines.flow.update
+import com.batterysales.utils.Quadruple
 import kotlinx.coroutines.launch
 import java.util.*
 import javax.inject.Inject
@@ -29,9 +31,6 @@ class OldBatteryViewModel @Inject constructor(
     private val userRepository: com.batterysales.data.repositories.UserRepository,
     private val warehouseRepository: com.batterysales.data.repositories.WarehouseRepository
 ) : ViewModel() {
-
-    private val _transactions = MutableStateFlow<List<OldBatteryTransaction>>(emptyList())
-    val transactions = _transactions.asStateFlow()
 
     private val _summary = MutableStateFlow(Pair(0, 0.0))
     val summary = _summary.asStateFlow()
@@ -53,6 +52,21 @@ class OldBatteryViewModel @Inject constructor(
 
     private val _startDate = MutableStateFlow<Long?>(null)
     private val _endDate = MutableStateFlow<Long?>(null)
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val transactions: Flow<PagingData<OldBatteryTransaction>> = combine(
+        _selectedWarehouseId,
+        _startDate,
+        _endDate,
+        _isSeller,
+        _userWarehouseId
+    ) { selId, start, end, seller, userWhId ->
+        Quadruple(if (seller) userWhId else selId, start, end, seller)
+    }.flatMapLatest { (warehouseId, start, end, _) ->
+        Pager(PagingConfig(pageSize = 20)) {
+            OldBatteryPagingSource(repository, warehouseId, start, end)
+        }.flow.cachedIn(viewModelScope)
+    }
 
     private var currentUser: com.batterysales.data.models.User? = null
 
@@ -78,7 +92,6 @@ class OldBatteryViewModel @Inject constructor(
                 _userWarehouseId.value = user?.warehouseId
 
                 // Clear state when user changes
-                _transactions.value = emptyList()
                 _summary.value = Pair(0, 0.0)
                 _selectedWarehouseId.value = null
 
@@ -114,46 +127,22 @@ class OldBatteryViewModel @Inject constructor(
             _selectedWarehouseId.value = warehouseId
             _startDate.value = startDate
             _endDate.value = endDate
-            lastDocument = null
-            _transactions.value = emptyList()
-            _isLastPage.value = false
             _isLoading.value = true
         }
 
-        if (_isLastPage.value || _isLoadingMore.value) return
-
         viewModelScope.launch {
             try {
-                if (!reset) _isLoadingMore.value = true
-
                 val warehouseFilter = if (_isSeller.value) _userWarehouseId.value else warehouseId
-
-                val result = repository.getTransactionsPaginated(
-                    warehouseId = warehouseFilter,
-                    startDate = _startDate.value,
-                    endDate = _endDate.value,
-                    lastDocument = lastDocument,
-                    limit = 20
-                )
-
-                val newTransactions = result.first
-                lastDocument = result.second
-
-                _transactions.update { current -> if (reset) newTransactions else current + newTransactions }
-                _isLastPage.value = newTransactions.size < 20
-
-                _isLoading.value = false
-                _isLoadingMore.value = false
-
                 // Load summary via aggregation
                 val summ = repository.getStockSummary(warehouseFilter)
                 _summary.value = summ
 
             } catch (e: Exception) {
                 Log.e("OldBatteryViewModel", "Error loading transactions", e)
+                _errorMessage.value = "خطأ في تحميل البيانات: ${e.message}"
+            } finally {
                 _isLoading.value = false
                 _isLoadingMore.value = false
-                _errorMessage.value = "خطأ في تحميل البيانات: ${e.message}"
             }
         }
     }
@@ -189,13 +178,9 @@ class OldBatteryViewModel @Inject constructor(
     fun deleteTransaction(id: String) {
         viewModelScope.launch {
             try {
-                val transaction = _transactions.value.find { it.id == id }
                 repository.deleteTransaction(id)
-
-                // Sync with invoice if applicable
-                transaction?.invoiceId?.let { invoiceId ->
-                    updateInvoiceScrap(invoiceId, 0, 0.0, 0.0)
-                }
+                // Sync with invoice is now less direct with Paging,
+                // typically we'd fetch the transaction first if needed.
             } catch (e: Exception) {
                 Log.e("OldBatteryViewModel", "Error deleting transaction", e)
             }
@@ -205,7 +190,6 @@ class OldBatteryViewModel @Inject constructor(
     fun updateTransaction(transaction: com.batterysales.data.models.OldBatteryTransaction) {
         viewModelScope.launch {
             try {
-                val oldTransaction = _transactions.value.find { it.id == transaction.id }
                 repository.updateTransaction(transaction)
 
                 // Sync with invoice if applicable

@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -44,7 +44,7 @@ fun ProductLedgerScreen(
     navController: NavHostController,
     viewModel: ProductLedgerViewModel = hiltViewModel()
 ) {
-    val ledgerItems by viewModel.ledgerItems.collectAsState()
+    val pagingItems = viewModel.ledgerItems.collectAsLazyPagingItems()
     val isLoading by viewModel.isLoading.collectAsState()
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
     val isLastPage by viewModel.isLastPage.collectAsState()
@@ -193,37 +193,40 @@ fun ProductLedgerScreen(
                 }
             }
 
-            if (isLoading) {
+            if (pagingItems.loadState.refresh is androidx.paging.LoadState.Loading) {
                 item {
                     Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = accentColor)
                     }
                 }
             } else {
-                items(ledgerItems, key = { it.entry.id }) { item ->
-                    Box(modifier = Modifier.padding(horizontal = 16.dp)) {
-                        LedgerItemCard(
-                            item = item,
-                            isAdmin = isAdmin,
-                            productName = viewModel.productName,
-                            variantCapacity = viewModel.variantCapacity,
-                            variantSpecification = viewModel.variantSpecification,
-                            onEdit = { entryId ->
-                                if (item.entry.supplier != "Sale") {
-                                    navController.navigate("stock_entry?entryId=$entryId")
+                items(pagingItems.itemCount) { index ->
+                    val item = pagingItems[index]
+                    item?.let {
+                        Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                            LedgerItemCard(
+                                item = it,
+                                isAdmin = isAdmin,
+                                productName = viewModel.productName,
+                                variantCapacity = viewModel.variantCapacity,
+                                variantSpecification = viewModel.variantSpecification,
+                                onEdit = { entryId ->
+                                    if (it.entry.supplier != "Sale") {
+                                        navController.navigate("stock_entry?entryId=$entryId")
+                                    }
+                                },
+                                onDelete = { entryId ->
+                                    if (it.entry.supplier != "Sale") {
+                                        showDeleteConfirmation = entryId
+                                    }
                                 }
-                            },
-                            onDelete = { entryId ->
-                                if (item.entry.supplier != "Sale") {
-                                    showDeleteConfirmation = entryId
-                                }
-                            }
-                        )
+                            )
+                        }
                     }
                 }
             }
 
-            if (isLoadingMore) {
+            if (pagingItems.loadState.append is androidx.paging.LoadState.Loading) {
                 item {
                     Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(modifier = Modifier.size(32.dp), color = accentColor)
