@@ -394,7 +394,7 @@ fun CostCalculationSection(uiState: StockEntryUiState, viewModel: StockEntryView
                 OutlinedTextField(
                     value = if (uiState.costInputMode == CostInputMode.BY_AMPERE) uiState.costValue else costPerAmpere,
                     onValueChange = viewModel::onCostValueChanged,
-                    label = { Text("سعر الأمبير مثال (0.68.25)") },
+                    label = { Text("سعر الأمبير") },
                     modifier = Modifier.weight(1f).widthIn(min = 140.dp),
                     readOnly = uiState.costInputMode != CostInputMode.BY_AMPERE,
                     enabled = uiState.selectedVariant != null,
@@ -521,49 +521,27 @@ fun Dropdown(
 @Composable
 fun AddWarehouseDialog(onDismiss: () -> Unit, onAddWarehouse: (String) -> Unit) {
     var name by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss, 
-        title = { Text("إضافة مستودع جديد") }, 
-        text = { 
-            OutlinedTextField(
-                value = name, 
-                onValueChange = { name = it }, 
-                label = { Text("اسم المستودع") }, 
-                textStyle = LocalInputTextStyle.current,
-                shape = RoundedCornerShape(12.dp)
-            ) 
-        }, 
+    com.batterysales.ui.components.AppDialog(
+        onDismiss = onDismiss, 
+        title = "إضافة مستودع جديد",
         confirmButton = { Button(onClick = { if (name.isNotBlank()) { onAddWarehouse(name); onDismiss() } }) { Text("إضافة") } }, 
         dismissButton = { Button(onClick = onDismiss) { Text("إلغاء") } }
-    )
+    ) {
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = name, 
+            onValueChange = { name = it }, 
+            label = "اسم المستودع"
+        )
+    }
 }
 
 @Composable
 fun AddSupplierDialog(onDismiss: () -> Unit, onAddSupplier: (String, Double) -> Unit) {
     var name by remember { mutableStateOf("") }
     var target by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("إضافة مورد جديد") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = name, 
-                    onValueChange = { name = it }, 
-                    label = { Text("اسم المورد") }, 
-                    textStyle = LocalInputTextStyle.current,
-                    shape = RoundedCornerShape(12.dp)
-                )
-                OutlinedTextField(
-                    value = target, 
-                    onValueChange = { target = it }, 
-                    label = { Text("الهدف السنوي (Target)") }, 
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal), 
-                    textStyle = LocalInputTextStyle.current,
-                    shape = RoundedCornerShape(12.dp)
-                )
-            }
-        },
+    com.batterysales.ui.components.AppDialog(
+        onDismiss = onDismiss,
+        title = "إضافة مورد جديد",
         confirmButton = {
             Button(onClick = {
                 if (name.isNotBlank()) {
@@ -573,5 +551,16 @@ fun AddSupplierDialog(onDismiss: () -> Unit, onAddSupplier: (String, Double) -> 
             }) { Text("إضافة") }
         },
         dismissButton = { Button(onClick = onDismiss) { Text("إلغاء") } }
-    )
+    ) {
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = name, 
+            onValueChange = { name = it }, 
+            label = "اسم المورد"
+        )
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = target, 
+            onValueChange = { target = it }, 
+            label = "الهدف السنوي (Target)"
+        )
+    }
 }

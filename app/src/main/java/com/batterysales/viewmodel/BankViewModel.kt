@@ -17,7 +17,8 @@ import javax.inject.Inject
 @HiltViewModel
 class BankViewModel @Inject constructor(
     private val repository: BankRepository,
-    private val accountingRepository: com.batterysales.data.repositories.AccountingRepository
+    private val accountingRepository: com.batterysales.data.repositories.AccountingRepository,
+    private val warehouseRepository: com.batterysales.data.repositories.WarehouseRepository
 ) : ViewModel() {
 
     private val _transactions = MutableStateFlow<List<BankTransaction>>(emptyList())
@@ -41,11 +42,15 @@ class BankViewModel @Inject constructor(
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage = _errorMessage.asStateFlow()
 
+    private val _warehouses = MutableStateFlow<List<com.batterysales.data.models.Warehouse>>(emptyList())
+    val warehouses = _warehouses.asStateFlow()
+
     private var lastDocument: DocumentSnapshot? = null
     private var currentStartDate: Long? = null
     private var currentEndDate: Long? = null
 
     init {
+        loadWarehouses()
         // Default to current year
         val cal = Calendar.getInstance()
         val year = cal.get(Calendar.YEAR)
@@ -105,17 +110,34 @@ class BankViewModel @Inject constructor(
         _errorMessage.value = null
     }
 
+    private fun loadWarehouses() {
+        viewModelScope.launch {
+            warehouseRepository.getWarehouses().collect { allWh ->
+                _warehouses.value = allWh.filter { it.isActive }
+            }
+        }
+    }
+
     fun onDateRangeSelected(start: Long?, end: Long?) {
         currentStartDate = start
         currentEndDate = end
         loadData(reset = true)
     }
 
-    fun addManualTransaction(type: com.batterysales.data.models.BankTransactionType, amount: Double, description: String, referenceNumber: String = "", supplierName: String = "") {
+    fun addManualTransaction(
+        type: com.batterysales.data.models.BankTransactionType, 
+        amount: Double, 
+        description: String, 
+        referenceNumber: String = "", 
+        supplierName: String = "",
+        warehouseId: String? = null
+    ) {
         viewModelScope.launch {
             _isLoading.value = true
             try {
+                val transactionId = com.google.firebase.firestore.FirebaseFirestore.getInstance().collection(com.batterysales.data.models.BankTransaction.COLLECTION_NAME).document().id
                 val transaction = com.batterysales.data.models.BankTransaction(
+                    id = transactionId,
                     type = type,
                     amount = amount,
                     description = description,
@@ -123,7 +145,7 @@ class BankViewModel @Inject constructor(
                     supplierName = supplierName,
                     date = java.util.Date()
                 )
-                repository.addTransaction(transaction)
+                repository.updateTransaction(transaction)
 
                 // If it's a deposit to the bank, it should be an expense/withdrawal from the treasury
                 if (type == com.batterysales.data.models.BankTransactionType.DEPOSIT) {
@@ -132,7 +154,9 @@ class BankViewModel @Inject constructor(
                         amount = amount,
                         description = "إيداع بنكي: $description",
                         referenceNumber = referenceNumber,
-                        warehouseId = null // Global or unspecified
+                        relatedId = transactionId,
+                        paymentMethod = "cash",
+                        warehouseId = warehouseId // Link to a warehouse so it appears in the accounting ledger
                     )
                     accountingRepository.addTransaction(treasuryTransaction)
                 }
@@ -140,6 +164,36 @@ class BankViewModel @Inject constructor(
                 loadData(reset = true)
             } finally {
                 _isLoading.value = false
+            }
+        }
+    }
+
+    fun deleteTransaction(id: String) {
+        viewModelScope.launch {
+            try {
+                repository.deleteTransaction(id)
+                accountingRepository.deleteTransactionsByRelatedId(id)
+                loadData(reset = true)
+            } catch (e: Exception) {
+                Log.e("BankViewModel", "Error deleting transaction", e)
+            }
+        }
+    }
+
+    fun updateTransaction(transaction: com.batterysales.data.models.BankTransaction) {
+        viewModelScope.launch {
+            try {
+                repository.updateTransaction(transaction)
+                if (transaction.type == com.batterysales.data.models.BankTransactionType.DEPOSIT) {
+                    accountingRepository.updateTransactionByRelatedId(
+                        relatedId = transaction.id,
+                        newAmount = transaction.amount,
+                        newDescription = "إيداع بنكي: ${transaction.description}"
+                    )
+                }
+                loadData(reset = true)
+            } catch (e: Exception) {
+                Log.e("BankViewModel", "Error updating transaction", e)
             }
         }
     }

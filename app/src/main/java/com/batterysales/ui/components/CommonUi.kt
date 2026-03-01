@@ -187,13 +187,13 @@ fun AppDateRangePickerDialog(
     DatePickerDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
-            TextButton(onClick = onConfirm) { 
-                Text("موافق", fontWeight = FontWeight.Bold) 
+            TextButton(onClick = onConfirm) {
+                Text("موافق", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { 
-                Text("إلغاء") 
+            TextButton(onClick = onDismiss) {
+                Text("إلغاء")
             }
         },
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)

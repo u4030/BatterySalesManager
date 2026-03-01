@@ -88,6 +88,13 @@ class BankRepository @Inject constructor(
         return Pair(transactions, lastDoc)
     }
 
+    suspend fun updateTransaction(transaction: BankTransaction) {
+        firestore.collection(BankTransaction.COLLECTION_NAME)
+            .document(transaction.id)
+            .set(transaction)
+            .await()
+    }
+
     suspend fun deleteTransaction(id: String) {
         firestore.collection(BankTransaction.COLLECTION_NAME)
             .document(id)

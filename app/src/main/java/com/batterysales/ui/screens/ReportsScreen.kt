@@ -698,7 +698,7 @@ fun SupplierCardRedesigned(item: com.batterysales.viewmodel.SupplierReportItem) 
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = ", " + po.referenceNumbers.joinToString(", "),
+                                        text = "الدفعات: " + po.referenceNumbers.joinToString(", "), 
                                         style = MaterialTheme.typography.labelSmall, 
                                         color = MaterialTheme.colorScheme.primary,
                                         fontWeight = FontWeight.Medium,

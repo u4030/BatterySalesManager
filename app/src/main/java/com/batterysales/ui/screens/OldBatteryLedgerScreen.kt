@@ -43,9 +43,21 @@ fun OldBatteryLedgerScreen(
     navController: NavHostController,
     viewModel: OldBatteryViewModel = hiltViewModel()
 ) {
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                viewModel.loadTransactions(reset = true)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     val transactions by viewModel.transactions.collectAsState()
     val summary by viewModel.summary.collectAsState()
     val warehouses by viewModel.warehouses.collectAsState()
+    val selectedWarehouseId by viewModel.selectedWarehouseId.collectAsState()
     val isSeller by viewModel.isSeller.collectAsState()
     val userWarehouseId by viewModel.userWarehouseId.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -53,7 +65,7 @@ fun OldBatteryLedgerScreen(
     val errorMessage by viewModel.errorMessage.collectAsState()
     val isLastPage by viewModel.isLastPage.collectAsState()
     val listState = rememberLazyListState()
-    
+
     var selectedFilterWH by remember { mutableStateOf<String?>(null) }
     var showDateRangePicker by remember { mutableStateOf(false) }
     val dateRangePickerState = rememberDateRangePickerState()
@@ -130,43 +142,44 @@ fun OldBatteryLedgerScreen(
 
                 Column(modifier = Modifier.padding(16.dp)) {
                     // Summary Card
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(20.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.15f))
-                        ) {
-                            Column(modifier = Modifier.padding(20.dp), horizontalAlignment = Alignment.End) {
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
-                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                        Text("إجمالي الكمية", color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelSmall)
-                                        Text("${summary.first}", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
-                                    }
-                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                        Text("إجمالي الأمبيرات", color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelSmall)
-                                        Text("${String.format("%.1f", summary.second)} A", color = accentColor, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
-                                    }
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.15f))
+                    ) {
+                        Column(modifier = Modifier.padding(20.dp), horizontalAlignment = Alignment.End) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("إجمالي الكمية", color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelSmall)
+                                    Text("${summary.first}", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
                                 }
-                                
-                                if (summary.first > 0) {
-                                    Spacer(modifier = Modifier.height(16.dp))
-                                    Button(
-                                        onClick = {
-                                            showSaleDialog = com.batterysales.data.models.OldBatteryTransaction(
-                                                quantity = summary.first,
-                                                totalAmperes = summary.second
-                                            )
-                                        },
-                                        modifier = Modifier.fillMaxWidth().height(48.dp),
-                                        colors = ButtonDefaults.buttonColors(containerColor = accentColor),
-                                        shape = RoundedCornerShape(12.dp)
-                                    ) {
-                                        Text("بيع سكراب بالجملة", fontWeight = FontWeight.Bold)
-                                    }
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("إجمالي الأمبيرات", color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelSmall)
+                                    Text("${String.format("%.1f", summary.second)} A", color = accentColor, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+                                }
+                            }
+
+                            if (summary.first > 0) {
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Button(
+                                    onClick = {
+                                        showSaleDialog = com.batterysales.data.models.OldBatteryTransaction(
+                                            quantity = summary.first,
+                                            totalAmperes = summary.second,
+                                            warehouseId = if (isSeller) userWarehouseId ?: "" else selectedWarehouseId ?: ""
+                                        )
+                                    },
+                                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = accentColor),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text("بيع سكراب بالجملة", fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
                     }
                 }
+            }
 
             if (dateRangePickerState.selectedStartDateMillis != null) {
                 item {
@@ -174,7 +187,7 @@ fun OldBatteryLedgerScreen(
                         com.batterysales.ui.components.DateRangeInfo(
                             startDate = dateRangePickerState.selectedStartDateMillis,
                             endDate = dateRangePickerState.selectedEndDateMillis,
-                            onClear = { 
+                            onClear = {
                                 dateRangePickerState.setSelection(null, null)
                                 viewModel.loadTransactions(reset = true, startDate = null, endDate = null)
                             }
@@ -193,7 +206,7 @@ fun OldBatteryLedgerScreen(
                         items(warehouses) { warehouse ->
                             FilterChip(
                                 selected = selectedFilterWH == warehouse.id,
-                                onClick = { 
+                                onClick = {
                                     selectedFilterWH = warehouse.id
                                     viewModel.loadTransactions(reset = true, warehouseId = warehouse.id)
                                 },
@@ -229,13 +242,13 @@ fun OldBatteryLedgerScreen(
                     )
                 }
 
-            if (isLoadingMore) {
-                item {
-                    Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(modifier = Modifier.size(32.dp), color = accentColor)
+                if (isLoadingMore) {
+                    item {
+                        Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(modifier = Modifier.size(32.dp), color = accentColor)
+                        }
                     }
                 }
-            }
             }
         }
     }
@@ -301,7 +314,7 @@ fun OldBatteryLedgerScreen(
         com.batterysales.ui.components.AppDateRangePickerDialog(
             state = dateRangePickerState,
             onDismiss = { showDateRangePicker = false },
-            onConfirm = { 
+            onConfirm = {
                 showDateRangePicker = false
                 viewModel.loadTransactions(
                     reset = true,
@@ -347,7 +360,7 @@ fun OldBatteryTransactionCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                
+
                 Surface(
                     color = typeColor.copy(alpha = 0.1f),
                     shape = RoundedCornerShape(12.dp)
@@ -426,7 +439,7 @@ fun OldBatteryTransactionCard(
                     }
                 }
             }
-            
+
             if (transaction.notes.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(12.dp))
                 Surface(
@@ -458,58 +471,16 @@ fun AddEditOldBatteryDialog(
     var qty by remember { mutableStateOf(transaction?.quantity?.toString() ?: "") }
     var amps by remember { mutableStateOf(transaction?.totalAmperes?.toString() ?: "") }
     var notes by remember { mutableStateOf(transaction?.notes ?: "") }
-    
+
     // Default to user warehouse if seller, or existing transaction warehouse, or first warehouse
-    val initialWH = if (isSeller) userWarehouseId ?: "" 
-                   else transaction?.warehouseId ?: (if (warehouses.isNotEmpty()) warehouses[0].id else "")
-                   
+    val initialWH = if (isSeller) userWarehouseId ?: ""
+    else transaction?.warehouseId ?: (if (warehouses.isNotEmpty()) warehouses[0].id else "")
+
     var selectedWarehouseId by remember { mutableStateOf(initialWH) }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (transaction == null) "إضافة بطاريات قديمة" else "تعديل السجل") },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                if (warehouses.isNotEmpty() && !isSeller) {
-                    Text("المستودع:", style = MaterialTheme.typography.titleSmall)
-                    androidx.compose.foundation.lazy.LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        items(warehouses) { warehouse ->
-                            FilterChip(
-                                selected = selectedWarehouseId == warehouse.id,
-                                onClick = { selectedWarehouseId = warehouse.id },
-                                label = { Text(warehouse.name) }
-                            )
-                        }
-                    }
-                } else if (isSeller) {
-                    val whName = warehouses.find { it.id == userWarehouseId }?.name ?: "المستودع الخاص بك"
-                    Text("المستودع: $whName", style = MaterialTheme.typography.bodyMedium)
-                }
-
-                com.batterysales.ui.components.CustomKeyboardTextField(
-                    value = qty,
-                    onValueChange = { qty = it },
-                    label = "الكمية"
-                )
-                com.batterysales.ui.components.CustomKeyboardTextField(
-                    value = amps,
-                    onValueChange = { amps = it },
-                    label = "إجمالي الأمبيرات"
-                )
-                com.batterysales.ui.components.CustomKeyboardTextField(
-                    value = notes,
-                    onValueChange = { notes = it },
-                    label = "ملاحظات"
-                )
-                Spacer(modifier = Modifier.height(com.batterysales.ui.components.LocalCustomKeyboardController.current.keyboardHeight.value))
-            }
-        },
+    com.batterysales.ui.components.AppDialog(
+        onDismiss = onDismiss,
+        title = if (transaction == null) "إضافة بطاريات قديمة" else "تعديل السجل",
         confirmButton = {
             Button(onClick = {
                 val q = qty.toIntOrNull() ?: 0
@@ -518,7 +489,42 @@ fun AddEditOldBatteryDialog(
             }) { Text("موافق") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
-    )
+    ) {
+        if (warehouses.isNotEmpty() && !isSeller) {
+            Text("المستودع:", style = MaterialTheme.typography.titleSmall)
+            androidx.compose.foundation.lazy.LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                items(warehouses) { warehouse ->
+                    FilterChip(
+                        selected = selectedWarehouseId == warehouse.id,
+                        onClick = { selectedWarehouseId = warehouse.id },
+                        label = { Text(warehouse.name) }
+                    )
+                }
+            }
+        } else if (isSeller) {
+            val whName = warehouses.find { it.id == userWarehouseId }?.name ?: "المستودع الخاص بك"
+            Text("المستودع: $whName", style = MaterialTheme.typography.bodyMedium)
+        }
+
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = qty,
+            onValueChange = { qty = it },
+            label = "الكمية"
+        )
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = amps,
+            onValueChange = { amps = it },
+            label = "إجمالي الأمبيرات"
+        )
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = notes,
+            onValueChange = { notes = it },
+            label = "ملاحظات"
+        )
+    }
 }
 
 @Composable
@@ -535,54 +541,15 @@ fun SellOldBatteryDialog(
     // Automatic price calculation with 3-decimal precision
     LaunchedEffect(amps, pricePerAmp) {
         val a = amps.toDoubleOrNull() ?: 0.0
-        
-        // Use parsing logic that supports multi-dot if needed, but primarily 3-decimal precision
-        val ppa = if (pricePerAmp.count { it == '.' } > 1) {
-            val parts = pricePerAmp.split(".")
-            val jd = parts.getOrNull(0) ?: "0"
-            val qirsh = (parts.getOrNull(1) ?: "00").padStart(2, '0')
-            val fils = (parts.getOrNull(2) ?: "00").padStart(2, '0')
-            "$jd.${qirsh}${fils}".toDoubleOrNull() ?: 0.0
-        } else {
-            pricePerAmp.toDoubleOrNull() ?: 0.0
-        }
-
+        val ppa = pricePerAmp.toDoubleOrNull() ?: 0.0
         if (a > 0 && ppa > 0) {
             price = String.format("%.3f", a * ppa)
         }
     }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("بيع بطاريات قديمة (سكراب)") },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                com.batterysales.ui.components.CustomKeyboardTextField(
-                    value = qty,
-                    onValueChange = { qty = it },
-                    label = "الكمية المباعة"
-                )
-                com.batterysales.ui.components.CustomKeyboardTextField(
-                    value = amps,
-                    onValueChange = { amps = it },
-                    label = "إجمالي الأمبيرات"
-                )
-                com.batterysales.ui.components.CustomKeyboardTextField(
-                    value = pricePerAmp,
-                    onValueChange = { pricePerAmp = it },
-                    label = "سعر الأمبير الواحد"
-                )
-                com.batterysales.ui.components.CustomKeyboardTextField(
-                    value = price,
-                    onValueChange = { price = it },
-                    label = "سعر البيع الإجمالي"
-                )
-                Spacer(modifier = Modifier.height(com.batterysales.ui.components.LocalCustomKeyboardController.current.keyboardHeight.value))
-            }
-        },
+    com.batterysales.ui.components.AppDialog(
+        onDismiss = onDismiss,
+        title = "بيع بطاريات قديمة (سكراب)",
         confirmButton = {
             Button(onClick = {
                 val q = qty.toIntOrNull() ?: 0
@@ -592,5 +559,26 @@ fun SellOldBatteryDialog(
             }) { Text("موافق") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
-    )
+    ) {
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = qty,
+            onValueChange = { qty = it },
+            label = "الكمية المباعة"
+        )
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = amps,
+            onValueChange = { amps = it },
+            label = "إجمالي الأمبيرات"
+        )
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = pricePerAmp,
+            onValueChange = { pricePerAmp = it },
+            label = "سعر الأمبير الواحد"
+        )
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = price,
+            onValueChange = { price = it },
+            label = "سعر البيع الإجمالي"
+        )
+    }
 }

@@ -14,6 +14,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import android.util.Log
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
@@ -76,7 +77,7 @@ class OldBatteryViewModel @Inject constructor(
                 currentUser = user
                 _isSeller.value = user?.role == "seller"
                 _userWarehouseId.value = user?.warehouseId
-                
+
                 // Clear state when user changes
                 _transactions.value = emptyList()
                 _summary.value = Pair(0, 0.0)
@@ -85,19 +86,33 @@ class OldBatteryViewModel @Inject constructor(
                 warehouseRepository.getWarehouses().onEach { allWh ->
                     val active = allWh.filter { it.isActive }
                     _warehouses.value = active
-                    
+
                     if (user?.role == "admin" && _selectedWarehouseId.value == null) {
-                        active.firstOrNull()?.let { 
+                        active.firstOrNull()?.let {
                             _selectedWarehouseId.value = it.id
                             loadTransactions(reset = true, warehouseId = it.id)
                         }
                     }
                 }.launchIn(viewModelScope)
-                
+
                 if (user?.role == "seller") {
                     loadTransactions(reset = true, warehouseId = user.warehouseId)
                 }
             }.launchIn(viewModelScope)
+
+        // Reactive Summary
+        combine(
+            repository.getAllTransactionsFlow(),
+            _selectedWarehouseId,
+            _userWarehouseId,
+            _isSeller
+        ) { allTransactions, selectedId, userId, seller ->
+            val filterId = if (seller) userId else selectedId
+            val filtered = if (filterId != null) {
+                allTransactions.filter { it.warehouseId == filterId }
+            } else allTransactions
+            _summary.value = calculateSummary(filtered)
+        }.launchIn(viewModelScope)
     }
 
     fun loadInitialData() {
@@ -105,7 +120,7 @@ class OldBatteryViewModel @Inject constructor(
     }
 
     fun loadTransactions(
-        reset: Boolean = false, 
+        reset: Boolean = false,
         warehouseId: String? = _selectedWarehouseId.value,
         startDate: Long? = _startDate.value,
         endDate: Long? = _endDate.value
@@ -125,9 +140,9 @@ class OldBatteryViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 if (!reset) _isLoadingMore.value = true
-                
+
                 val warehouseFilter = if (_isSeller.value) _userWarehouseId.value else warehouseId
-                
+
                 val result = repository.getTransactionsPaginated(
                     warehouseId = warehouseFilter,
                     startDate = _startDate.value,
@@ -141,13 +156,11 @@ class OldBatteryViewModel @Inject constructor(
 
                 _transactions.update { current -> if (reset) newTransactions else current + newTransactions }
                 _isLastPage.value = newTransactions.size < 20
-                
+
                 _isLoading.value = false
                 _isLoadingMore.value = false
-                
-                // Load summary via aggregation
-                val summ = repository.getStockSummary(warehouseFilter)
-                _summary.value = summ
+
+                // Summary is handled reactively
 
             } catch (e: Exception) {
                 Log.e("OldBatteryViewModel", "Error loading transactions", e)
@@ -192,10 +205,14 @@ class OldBatteryViewModel @Inject constructor(
                 val transaction = _transactions.value.find { it.id == id }
                 repository.deleteTransaction(id)
 
+                // Delete linked treasury transaction if any
+                accountingRepository.deleteTransactionsByRelatedId(id)
+
                 // Sync with invoice if applicable
                 transaction?.invoiceId?.let { invoiceId ->
                     updateInvoiceScrap(invoiceId, 0, 0.0, 0.0)
                 }
+                loadTransactions(reset = true)
             } catch (e: Exception) {
                 Log.e("OldBatteryViewModel", "Error deleting transaction", e)
             }
@@ -205,7 +222,6 @@ class OldBatteryViewModel @Inject constructor(
     fun updateTransaction(transaction: com.batterysales.data.models.OldBatteryTransaction) {
         viewModelScope.launch {
             try {
-                val oldTransaction = _transactions.value.find { it.id == transaction.id }
                 repository.updateTransaction(transaction)
 
                 // Sync with invoice if applicable
@@ -217,6 +233,7 @@ class OldBatteryViewModel @Inject constructor(
                         updateInvoiceScrap(invoiceId, transaction.quantity, transaction.totalAmperes, newValue)
                     }
                 }
+                loadTransactions(reset = true)
             } catch (e: Exception) {
                 Log.e("OldBatteryViewModel", "Error updating transaction", e)
             }
@@ -252,6 +269,7 @@ class OldBatteryViewModel @Inject constructor(
                     createdByUserName = currentUser?.displayName ?: ""
                 )
                 repository.addTransaction(transaction)
+                loadTransactions(reset = true)
             } catch (e: Exception) {
                 Log.e("OldBatteryViewModel", "Error adding manual intake", e)
             }
@@ -261,7 +279,9 @@ class OldBatteryViewModel @Inject constructor(
     fun sellBatteries(quantity: Int, totalAmperes: Double, amount: Double, warehouseId: String) {
         viewModelScope.launch {
             try {
+                val transactionId = com.google.firebase.firestore.FirebaseFirestore.getInstance().collection(com.batterysales.data.models.OldBatteryTransaction.COLLECTION_NAME).document().id
                 val transaction = OldBatteryTransaction(
+                    id = transactionId,
                     quantity = quantity,
                     warehouseId = warehouseId,
                     totalAmperes = totalAmperes,
@@ -278,9 +298,12 @@ class OldBatteryViewModel @Inject constructor(
                     type = TransactionType.INCOME,
                     amount = amount,
                     description = "بيع بطاريات قديمة (سكراب): $quantity حبة",
-                    relatedId = null // Manual income in treasury
+                    relatedId = transactionId,
+                    warehouseId = warehouseId,
+                    paymentMethod = "cash"
                 )
                 accountingRepository.addTransaction(treasuryTransaction)
+                loadTransactions(reset = true)
             } catch (e: Exception) {
                 Log.e("OldBatteryViewModel", "Error selling batteries", e)
             }

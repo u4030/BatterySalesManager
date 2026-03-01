@@ -25,9 +25,13 @@ class OldBatteryRepository @Inject constructor(
     }
 
     suspend fun addTransaction(transaction: OldBatteryTransaction) {
-        val docRef = firestore.collection(OldBatteryTransaction.COLLECTION_NAME).document()
-        val finalTransaction = transaction.copy(id = docRef.id)
-        docRef.set(finalTransaction).await()
+        val docRef = if (transaction.id.isNotBlank()) {
+            firestore.collection(OldBatteryTransaction.COLLECTION_NAME).document(transaction.id)
+        } else {
+            firestore.collection(OldBatteryTransaction.COLLECTION_NAME).document()
+        }
+        val idToUse = if (transaction.id.isNotBlank()) transaction.id else docRef.id
+        docRef.set(transaction.copy(id = idToUse)).await()
     }
 
     suspend fun updateTransaction(transaction: OldBatteryTransaction) {
@@ -42,6 +46,19 @@ class OldBatteryRepository @Inject constructor(
             .document(id)
             .delete()
             .await()
+    }
+
+    suspend fun deleteTransactionsByInvoiceId(invoiceId: String) {
+        val snapshot = firestore.collection(OldBatteryTransaction.COLLECTION_NAME)
+            .whereEqualTo("invoiceId", invoiceId)
+            .get()
+            .await()
+
+        val batch = firestore.batch()
+        snapshot.documents.forEach { doc ->
+            batch.delete(doc.reference)
+        }
+        batch.commit().await()
     }
 
     suspend fun getStockSummary(warehouseId: String? = null): Pair<Int, Double> {

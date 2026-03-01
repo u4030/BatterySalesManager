@@ -101,11 +101,70 @@ class ReportsViewModel @Inject constructor(
                 _isSeller.value = user?.role == "seller"
                 refreshAll()
             }.launchIn(viewModelScope)
+
+        // Reactive Supplier Report
+        combine(
+            supplierRepository.getSuppliers(),
+            stockEntryRepository.getAllStockEntriesFlow(),
+            billRepository.getAllBillsFlow(),
+            _startDate,
+            _endDate
+        ) { suppliers, allStockEntries, allBills, start, end ->
+            val supplierReportList = calculateSupplierReport(suppliers, allStockEntries, allBills, start, end)
+            _supplierReport.value = supplierReportList
+        }.launchIn(viewModelScope)
+
+        // Reactive Scrap Report
+        combine(
+            oldBatteryRepository.getAllTransactionsFlow(),
+            userRepository.getCurrentUserFlow(),
+            warehouses
+        ) { transactions, user, allWh ->
+            val seller = user?.role == "seller"
+            val targetWarehouseId = if (seller) user?.warehouseId else null
+
+            if (targetWarehouseId != null) {
+                val summary = calculateSummary(transactions.filter { it.warehouseId == targetWarehouseId })
+                _oldBatterySummary.value = summary
+                _oldBatteryWarehouseSummary.value = mapOf(targetWarehouseId to summary)
+            } else {
+                val globalSummary = calculateSummary(transactions)
+                _oldBatterySummary.value = globalSummary
+                
+                val whSummaries = mutableMapOf<String, Pair<Int, Double>>()
+                for (wh in allWh.filter { it.isActive }) {
+                    whSummaries[wh.id] = calculateSummary(transactions.filter { it.warehouseId == wh.id })
+                }
+                _oldBatteryWarehouseSummary.value = whSummaries
+            }
+        }.launchIn(viewModelScope)
+    }
+
+    private fun calculateSummary(transactions: List<OldBatteryTransaction>): Pair<Int, Double> {
+        var qty = 0
+        var amps = 0.0
+        transactions.forEach {
+            when (it.type) {
+                OldBatteryTransactionType.INTAKE -> {
+                    qty += it.quantity
+                    amps += it.totalAmperes
+                }
+                OldBatteryTransactionType.SALE -> {
+                    qty -= it.quantity
+                    amps -= it.totalAmperes
+                }
+                OldBatteryTransactionType.ADJUSTMENT -> {
+                    qty += it.quantity
+                    amps += it.totalAmperes
+                }
+            }
+        }
+        return Pair(qty, amps)
     }
 
     fun refreshAll() {
         loadInventoryReport()
-        loadScrapReport()
+        // Scrap is now reactive
         loadSupplierReport()
     }
 
@@ -147,7 +206,7 @@ class ReportsViewModel @Inject constructor(
                     async {
                         aggregationSemaphore.withPermit {
                             val product = activeProducts[variant.productId] ?: return@withPermit null
-
+                            
                             // Get global summary first
                             val globalSummary = stockEntryRepository.getVariantSummary(variant.id, null)
                             if (globalSummary.first <= 0 && barcode == null) return@withPermit null
@@ -159,7 +218,7 @@ class ReportsViewModel @Inject constructor(
                             }
 
                             val averageCost = globalSummary.second // We'll use the aggregated totalCost / (qty-returned)
-
+                            
                             InventoryReportItem(
                                 product = product,
                                 variant = variant,
@@ -182,101 +241,77 @@ class ReportsViewModel @Inject constructor(
     }
 
     fun loadScrapReport() {
-        viewModelScope.launch {
-            val user = userRepository.getCurrentUser()
-            val seller = user?.role == "seller"
-            val targetWarehouseId = if (seller) user?.warehouseId else null
+        // Handled by reactive flow in init
+    }
 
-            if (targetWarehouseId != null) {
-                val summary = oldBatteryRepository.getStockSummary(targetWarehouseId)
-                _oldBatterySummary.value = summary
-                _oldBatteryWarehouseSummary.value = mapOf(targetWarehouseId to summary)
-            } else {
-                val globalSummary = oldBatteryRepository.getStockSummary(null)
-                _oldBatterySummary.value = globalSummary
-
-                val whSummaries = mutableMapOf<String, Pair<Int, Double>>()
-                for (wh in warehouses.value.filter { it.isActive }) {
-                    whSummaries[wh.id] = oldBatteryRepository.getStockSummary(wh.id)
-                }
-                _oldBatteryWarehouseSummary.value = whSummaries
+    private fun calculateSupplierReport(
+        suppliers: List<Supplier>,
+        allStockEntries: List<StockEntry>,
+        allBills: List<Bill>,
+        start: Long?,
+        end: Long?
+    ): List<SupplierReportItem> {
+        return suppliers.map { supplier ->
+            val supplierEntries = allStockEntries.filter {
+                (it.supplierId == supplier.id || (it.supplierId.isBlank() && it.supplier == supplier.name)) &&
+                        it.status == "approved" &&
+                        (supplier.resetDate == null || !it.timestamp.before(supplier.resetDate)) &&
+                        (start == null || it.timestamp.time >= start) &&
+                        (end == null || it.timestamp.time <= end)
             }
+            val supplierBills = allBills.filter {
+                (it.supplierId == supplier.id || it.supplierId.isBlank()) &&
+                        (supplier.resetDate == null || !it.createdAt.before(supplier.resetDate)) &&
+                        (start == null || it.dueDate.time >= start) &&
+                        (end == null || it.dueDate.time <= end)
+            }
+
+            val totalDebit = supplierEntries.sumOf { it.totalCost }
+            val totalCredit = supplierBills.sumOf { it.paidAmount }
+            val balance = totalDebit - totalCredit
+
+            val groupedEntries = supplierEntries.filter { it.quantity > 0 }.groupBy { it.orderId.ifEmpty { it.id } }
+            val purchaseOrders = groupedEntries.map { (key, group) ->
+                val representative = group.first()
+                val totalOrderCost = if (representative.grandTotalCost > 0) representative.grandTotalCost else group.sumOf { it.totalCost }
+
+                val linkedBills = supplierBills.filter {
+                    it.relatedEntryId == key || group.any { entry -> entry.id == it.relatedEntryId }
+                }
+                val linkedPaid = linkedBills.sumOf { it.paidAmount }
+
+                PurchaseOrderItem(
+                    entry = representative.copy(totalCost = totalOrderCost),
+                    linkedPaidAmount = linkedPaid,
+                    remainingBalance = totalOrderCost - linkedPaid,
+                    referenceNumbers = linkedBills.filter {
+                        it.referenceNumber.isNotEmpty() && it.status == BillStatus.PAID
+                    }.map { bill ->
+                        val typeStr = when (bill.billType) {
+                            BillType.CHECK -> "شيك"
+                            BillType.BILL -> "كمبيالة"
+                            BillType.TRANSFER -> "تحويل"
+                            BillType.OTHER -> "أخرى"
+                        }
+                        "$typeStr: ${bill.referenceNumber}"
+                    }.distinct()
+                )
+            }
+
+            val targetProgress = if (supplier.yearlyTarget > 0) totalDebit / supplier.yearlyTarget else 0.0
+
+            SupplierReportItem(
+                supplier = supplier,
+                totalDebit = totalDebit,
+                totalCredit = totalCredit,
+                balance = balance,
+                targetProgress = targetProgress,
+                purchaseOrders = purchaseOrders
+            )
         }
     }
 
     fun loadSupplierReport() {
-        viewModelScope.launch {
-            try {
-                val suppliers = supplierRepository.getSuppliers().first()
-                val start = _startDate.value
-                val end = _endDate.value
-
-                // Use suspend fetch instead of .first() on flow to ensure we wait for fresh data
-                val allStockEntries = stockEntryRepository.getAllStockEntries()
-                val allBills = billRepository.getAllBills()
-
-                val report = suppliers.map { supplier ->
-                    val supplierEntries = allStockEntries.filter {
-                        (it.supplierId == supplier.id || (it.supplierId.isBlank() && it.supplier == supplier.name)) &&
-                                it.status == "approved" &&
-                                (supplier.resetDate == null || !it.timestamp.before(supplier.resetDate)) &&
-                                (start == null || it.timestamp.time >= start) &&
-                                (end == null || it.timestamp.time <= end)
-                    }
-                    val supplierBills = allBills.filter {
-                        (it.supplierId == supplier.id || it.supplierId.isBlank()) && // Fallback for bills is risky if same name, but usually unique enough
-                                (supplier.resetDate == null || !it.createdAt.before(supplier.resetDate)) &&
-                                (start == null || it.dueDate.time >= start) &&
-                                (end == null || it.dueDate.time <= end)
-                    }
-
-                    val totalDebit = supplierEntries.sumOf { it.totalCost }
-                    val totalCredit = supplierBills.sumOf { it.paidAmount }
-                    val balance = totalDebit - totalCredit
-
-                    val groupedEntries = supplierEntries.filter { it.quantity > 0 }.groupBy { it.orderId.ifEmpty { it.id } }
-                    val purchaseOrders = groupedEntries.map { (key, group) ->
-                        val representative = group.first()
-                        val totalOrderCost = if (representative.grandTotalCost > 0) representative.grandTotalCost else group.sumOf { it.totalCost }
-
-                        val linkedBills = supplierBills.filter {
-                            it.relatedEntryId == key || group.any { entry -> entry.id == it.relatedEntryId }
-                        }
-                        val linkedPaid = linkedBills.sumOf { it.paidAmount }
-
-                        PurchaseOrderItem(
-                            entry = representative.copy(totalCost = totalOrderCost),
-                            linkedPaidAmount = linkedPaid,
-                            remainingBalance = totalOrderCost - linkedPaid,
-                            referenceNumbers = linkedBills.filter {
-                                it.referenceNumber.isNotEmpty() && it.status == BillStatus.PAID
-                            }.map { bill ->
-                                val typeStr = when (bill.billType) {
-                                    BillType.CHECK -> "شيك"
-                                    BillType.BILL -> "كمبيالة"
-                                    BillType.TRANSFER -> "تحويل"
-                                    BillType.OTHER -> "أخرى"
-                                }
-                                "$typeStr: ${bill.referenceNumber}"
-                            }.distinct()
-                        )
-                    }
-
-                    val targetProgress = if (supplier.yearlyTarget > 0) totalDebit / supplier.yearlyTarget else 0.0
-
-                    SupplierReportItem(
-                        supplier = supplier,
-                        totalDebit = totalDebit,
-                        totalCredit = totalCredit,
-                        balance = balance,
-                        targetProgress = targetProgress,
-                        purchaseOrders = purchaseOrders
-                    )
-                }
-                _supplierReport.value = report
-            } catch (e: Exception) {
-                Log.e("ReportsViewModel", "Error loading supplier report", e)
-            }
-        }
+        // Reactive handled in init
     }
 }

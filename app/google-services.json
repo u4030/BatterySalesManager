@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "91362967016",
-    "project_id": "batterysales-b7972",
-    "storage_bucket": "batterysales-b7972.firebasestorage.app"
+    "project_number": "367772734663",
+    "project_id": "al-3a9ryah-stor",
+    "storage_bucket": "al-3a9ryah-stor.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:91362967016:android:0c08c3c339b86533a4385d",
+        "mobilesdk_app_id": "1:367772734663:android:cca2f9587d3aeb31b6dae2",
         "android_client_info": {
           "package_name": "com.batterysales"
         }
@@ -15,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyAouDM3y_4St7RToxtTTXH0JTk56Yzb33Q"
+          "current_key": "AIzaSyBQmEvD7ubKtFNg_DAXi6FS_PTJpe2XyIY"
         }
       ],
       "services": {

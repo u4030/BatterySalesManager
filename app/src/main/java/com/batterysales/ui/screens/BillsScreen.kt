@@ -45,6 +45,17 @@ fun BillsScreen(
     navController: NavHostController,
     viewModel: BillViewModel = hiltViewModel()
 ) {
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                viewModel.loadBills(reset = true)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     val bills by viewModel.filteredBills.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val suppliers by viewModel.suppliers.collectAsState()
@@ -338,7 +349,7 @@ fun BillItemCard(bill: Bill, supplierName: String, onPayClick: () -> Unit, onDel
                     
                     if (bill.referenceNumber.isNotEmpty()) {
                         Text(
-                            text = "رقم السند: ${bill.referenceNumber}",
+                            text = (if (bill.billType == BillType.CHECK) "رقم الشيك: " else "رقم السند/الكمبيالة: ") + bill.referenceNumber,
                             style = MaterialTheme.typography.labelSmall,
                             color = Color(0xFFFB8C00)
                         )
@@ -497,7 +508,7 @@ fun AddBillDialog(
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = refNum,
             onValueChange = { refNum = it },
-            label = "رقم السند / الشيك"
+            label = if (selectedType == BillType.CHECK) "رقم الشيك" else "رقم الكمبيالة"
         )
 
         Text("نوع الالتزام:", fontSize = 14.sp, fontWeight = FontWeight.Medium)
@@ -625,7 +636,7 @@ fun EditBillDialog(
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = refNum,
             onValueChange = { refNum = it },
-            label = "رقم السند / الشيك"
+            label = if (selectedType == BillType.CHECK) "رقم الشيك" else "رقم السند/الكمبيالة"
         )
 
         com.batterysales.ui.stockentry.Dropdown(

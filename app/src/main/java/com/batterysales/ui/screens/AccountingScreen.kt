@@ -42,6 +42,17 @@ fun AccountingScreen(
     navController: NavHostController,
     viewModel: AccountingViewModel = hiltViewModel()
 ) {
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                viewModel.loadData(reset = true)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     val transactions by viewModel.transactions.collectAsState()
     val balance by viewModel.balance.collectAsState()
     val totalExpenses by viewModel.totalExpenses.collectAsState()
@@ -69,7 +80,7 @@ fun AccountingScreen(
 
     val filteredTransactions = remember(transactions, searchQuery) {
         transactions.filter { transaction ->
-            transaction.description.contains(searchQuery, ignoreCase = true) || 
+            transaction.description.contains(searchQuery, ignoreCase = true) ||
             transaction.referenceNumber.contains(searchQuery, ignoreCase = true)
         }
     }
@@ -251,11 +262,11 @@ fun AccountingScreen(
                                     fontWeight = FontWeight.Bold,
                                     color = Color.White
                                 )
-                                
+
                                 Spacer(modifier = Modifier.height(12.dp))
                                 HorizontalDivider(color = Color.White.copy(alpha = 0.2f))
                                 Spacer(modifier = Modifier.height(12.dp))
-                                
+
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                         Text("إجمالي المصروفات", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
@@ -299,9 +310,9 @@ fun AccountingScreen(
                             onClick = { viewModel.onTabSelected(1) },
                             label = { Text("المسحوبات") }
                         )
-                        
+
                         Spacer(modifier = Modifier.weight(1f))
-                        
+
                         // Year Selector
                         var yearExpanded by remember { mutableStateOf(false) }
                         Box {
@@ -495,13 +506,13 @@ fun TransactionItemCard(
                 if (transaction.relatedId == null) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         IconButton(
-                            onClick = onEdit, 
+                            onClick = onEdit,
                             modifier = Modifier.size(32.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f), CircleShape)
                         ) {
                             Icon(Icons.Default.Edit, contentDescription = "Edit", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
                         }
                         IconButton(
-                            onClick = onDelete, 
+                            onClick = onDelete,
                             modifier = Modifier.size(32.dp).background(Color(0xFF3B1F1F), CircleShape)
                         ) {
                             Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color(0xFFEF4444), modifier = Modifier.size(16.dp))
@@ -530,7 +541,7 @@ fun TransactionItemCard(
             if (transaction.referenceNumber.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "رقم المرجع: ${transaction.referenceNumber}",
+                    text = "رقم الشيك: ${transaction.referenceNumber}",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color(0xFFFB8C00),
                     fontWeight = FontWeight.Medium
@@ -538,7 +549,7 @@ fun TransactionItemCard(
             }
 
             Spacer(modifier = Modifier.height(12.dp))
-            
+
             Text(
                 dateFormatter.format(transaction.createdAt),
                 style = MaterialTheme.typography.labelSmall,

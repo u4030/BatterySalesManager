@@ -158,7 +158,7 @@ fun InvoiceScreen(
 
                             ScrollableTabRow(
                                 selectedTabIndex = selectedIndex,
-                                containerColor = Color.Transparent,
+                                containerColor = Color.Yellow.copy(alpha = 0.2f),
                                 contentColor = Color.White,
                                 edgePadding = 16.dp,
                                 divider = {},
@@ -169,7 +169,7 @@ fun InvoiceScreen(
                                                 .tabIndicatorOffset(tabPositions[selectedIndex])
                                                 .height(4.dp)
                                                 .padding(horizontal = 16.dp)
-                                                .background(Color.White, RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
+                                                .background(Color.Green.copy(alpha = 0.2f), RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
                                         )
                                     }
                                 },
@@ -186,8 +186,8 @@ fun InvoiceScreen(
                                                 fontWeight = if (uiState.selectedWarehouseId == warehouse.id) FontWeight.Bold else FontWeight.Medium
                                             )
                                         },
-                                        selectedContentColor = Color.White,
-                                        unselectedContentColor = Color.White.copy(alpha = 0.6f)
+                                        selectedContentColor = Color.Green.copy(alpha = 0.7f),
+                                        unselectedContentColor = Color.Black.copy(alpha = 0.6f)
                                     )
                                 }
                             }
