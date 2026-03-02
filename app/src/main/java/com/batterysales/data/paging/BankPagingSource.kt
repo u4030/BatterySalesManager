@@ -9,7 +9,8 @@ import com.google.firebase.firestore.DocumentSnapshot
 class BankPagingSource(
     private val repository: BankRepository,
     private val startDate: Long?,
-    private val endDate: Long?
+    private val endDate: Long?,
+    private val type: String? = null
 ) : PagingSource<DocumentSnapshot, BankTransaction>() {
 
     override fun getRefreshKey(state: PagingState<DocumentSnapshot, BankTransaction>): DocumentSnapshot? = null
@@ -19,6 +20,7 @@ class BankPagingSource(
             val result = repository.getTransactionsPaginated(
                 startDate = startDate,
                 endDate = endDate,
+                type = type,
                 lastDocument = params.key,
                 limit = params.loadSize.toLong()
             )

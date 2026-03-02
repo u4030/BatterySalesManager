@@ -44,14 +44,20 @@ class BankViewModel @Inject constructor(
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage = _errorMessage.asStateFlow()
 
-    private val filterState = MutableStateFlow(Pair<Long?, Long?>(null, null))
+    private val _selectedTab = MutableStateFlow(0) // 0: All, 1: Withdrawals
+    val selectedTab = _selectedTab.asStateFlow()
+
+    private val filterState = MutableStateFlow(Triple<Long?, Long?, Int>(null, null, 0))
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    val transactions: Flow<PagingData<BankTransaction>> = filterState.flatMapLatest { data ->
-        val start = data.first
-        val end = data.second
+    val transactions: Flow<PagingData<BankTransaction>> = filterState.flatMapLatest { (start, end, tab) ->
         Pager(PagingConfig(pageSize = 20)) {
-            com.batterysales.data.paging.BankPagingSource(repository, start, end)
+            com.batterysales.data.paging.BankPagingSource(
+                repository = repository,
+                startDate = start,
+                endDate = end,
+                type = if (tab == 1) com.batterysales.data.models.BankTransactionType.WITHDRAWAL.name else null
+            )
         }.flow.cachedIn(viewModelScope)
     }
 
@@ -100,7 +106,13 @@ class BankViewModel @Inject constructor(
     fun onDateRangeSelected(start: Long?, end: Long?) {
         currentStartDate = start
         currentEndDate = end
-        filterState.value = Pair(start, end)
+        filterState.update { it.copy(first = start, second = end) }
+        loadData(reset = true)
+    }
+
+    fun onTabSelected(index: Int) {
+        _selectedTab.value = index
+        filterState.update { it.copy(third = index) }
         loadData(reset = true)
     }
 

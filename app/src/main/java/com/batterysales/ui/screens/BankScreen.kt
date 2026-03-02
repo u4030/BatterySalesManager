@@ -51,7 +51,7 @@ fun BankScreen(
     var showAddDialog by remember { mutableStateOf(false) }
     var selectedType by remember { mutableStateOf(com.batterysales.data.models.BankTransactionType.DEPOSIT) }
 
-    var selectedTab by remember { mutableIntStateOf(0) }
+    val selectedTab by viewModel.selectedTab.collectAsState()
     var showDateRangePicker by remember { mutableStateOf(false) }
     val dateRangePickerState = rememberDateRangePickerState()
 
@@ -219,10 +219,10 @@ fun BankScreen(
                         },
                         divider = {}
                     ) {
-                        Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }) {
+                        Tab(selected = selectedTab == 0, onClick = { viewModel.onTabSelected(0) }) {
                             Text("الكل", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleSmall, color = if(selectedTab == 0) accentColor else MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) {
+                        Tab(selected = selectedTab == 1, onClick = { viewModel.onTabSelected(1) }) {
                             Text("المسحوبات", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleSmall, color = if(selectedTab == 1) accentColor else MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }

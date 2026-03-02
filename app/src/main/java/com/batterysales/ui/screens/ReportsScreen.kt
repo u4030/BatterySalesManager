@@ -55,7 +55,7 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
     val barcodeFilter by viewModel.barcodeFilter.collectAsState()
     var showScanner by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
-    var selectedTab by remember { mutableIntStateOf(0) }
+    val selectedTab by viewModel.selectedTab.collectAsState()
 
 
     val bgColor = MaterialTheme.colorScheme.background
@@ -123,20 +123,20 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                             title = "المخزون",
                             isSelected = selectedTab == 0,
                             modifier = Modifier.padding(horizontal = 4.dp),
-                            onClick = { selectedTab = 0 }
+                            onClick = { viewModel.onTabSelected(0) }
                         )
                         TabItem(
                             title = "السكراب",
                             isSelected = selectedTab == 1,
                             modifier = Modifier.padding(horizontal = 4.dp),
-                            onClick = { selectedTab = 1 }
+                            onClick = { viewModel.onTabSelected(1) }
                         )
                         if (!isSeller) {
                             TabItem(
                                 title = "الموردين",
                                 isSelected = selectedTab == 2,
                                 modifier = Modifier.padding(horizontal = 4.dp),
-                                onClick = { selectedTab = 2 }
+                                onClick = { viewModel.onTabSelected(2) }
                             )
                         }
                     }

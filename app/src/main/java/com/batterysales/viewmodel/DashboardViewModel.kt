@@ -126,8 +126,11 @@ class DashboardViewModel @Inject constructor(
                                         else warehouses.filter { it.id == userWarehouseId && it.isActive }
 
                 val warehouseStatsList = relevantWarehouses.map { warehouse ->
-                    val collection = paymentRepository.getTodayCollection(startOfToday, warehouse.id)
-                    val count = paymentRepository.getTodayCollectedInvoicesCount(startOfToday, warehouse.id)
+                    val warehousePayments = allPayments.filter {
+                        it.warehouseId == warehouse.id && !it.timestamp.before(startOfToday)
+                    }
+                    val collection = warehousePayments.sumOf { it.amount }
+                    val count = warehousePayments.map { it.invoiceId }.distinct().size
 
                     WarehouseStats(
                         warehouseId = warehouse.id,

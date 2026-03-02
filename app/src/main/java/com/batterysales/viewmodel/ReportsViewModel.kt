@@ -87,6 +87,9 @@ class ReportsViewModel @Inject constructor(
     private val _supplierReport = MutableStateFlow<List<SupplierReportItem>>(emptyList())
     val supplierReport = _supplierReport.asStateFlow()
 
+    private val _selectedTab = MutableStateFlow(0)
+    val selectedTab = _selectedTab.asStateFlow()
+
     private val _oldBatterySummary = MutableStateFlow<Pair<Int, Double>>(Pair(0, 0.0))
     val oldBatterySummary = _oldBatterySummary.asStateFlow()
 
@@ -126,6 +129,16 @@ class ReportsViewModel @Inject constructor(
                 _isSeller.value = user?.role == "seller"
                 refreshAll()
             }.launchIn(viewModelScope)
+
+        _selectedTab.onEach { tab ->
+            if (tab == 2 && _supplierReport.value.isEmpty()) {
+                loadSupplierReport()
+            }
+        }.launchIn(viewModelScope)
+    }
+
+    fun onTabSelected(index: Int) {
+        _selectedTab.value = index
     }
 
     fun refreshAll() {
@@ -147,8 +160,7 @@ class ReportsViewModel @Inject constructor(
 
     fun onSupplierSearchQueryChanged(query: String) {
         _supplierSearchQuery.value = query
-        // The supplier report is filtered locally currently for responsiveness, 
-        // but we could also reload if query is specific.
+        loadSupplierReport()
     }
 
     fun loadInventoryReport(reset: Boolean = false) {
@@ -198,76 +210,92 @@ class ReportsViewModel @Inject constructor(
         }
     }
 
+    private var supplierJob: kotlinx.coroutines.Job? = null
     fun loadSupplierReport() {
-        viewModelScope.launch {
+        supplierJob?.cancel()
+        supplierJob = viewModelScope.launch {
             try {
-                val suppliers = supplierRepository.getSuppliersOnce()
+                _isLoading.value = true
+                val query = _supplierSearchQuery.value
+                val allSuppliers = supplierRepository.getSuppliersOnce()
+                val suppliers = if (query.isBlank()) allSuppliers
+                               else allSuppliers.filter { it.name.contains(query, ignoreCase = true) }
+
                 val start = _startDate.value
                 val end = _endDate.value
 
+                // 1. Fetch all relevant entries and bills once to avoid multiple full collection scans
+                val allEntries = stockEntryRepository.getAllStockEntries()
+                val allBills = billRepository.getAllBills()
+
                 val report = suppliers.map { supplier ->
-                    // Use server-side aggregation for real-time accuracy
-                    val totalDebit = stockEntryRepository.getSupplierDebit(supplier.id, supplier.resetDate, start, end)
-                    val totalCredit = billRepository.getSupplierCredit(supplier.id, supplier.resetDate, start, end)
-                    val balance = totalDebit - totalCredit
+                    async {
+                        // Use server-side aggregation for totals to ensure absolute accuracy
+                        val totalDebit = stockEntryRepository.getSupplierDebit(supplier.id, supplier.resetDate, start, end)
+                        val totalCredit = billRepository.getSupplierCredit(supplier.id, supplier.resetDate, start, end)
+                        val balance = totalDebit - totalCredit
 
-                    // Fetch logs only for current supplier to show orders
-                    val supplierEntries = stockEntryRepository.getAllStockEntries().filter {
-                        it.supplierId == supplier.id &&
-                                it.status == "approved" &&
-                                (supplier.resetDate == null || !it.timestamp.before(supplier.resetDate)) &&
-                                (start == null || it.timestamp.time >= start) &&
-                                (end == null || it.timestamp.time <= end)
-                    }
-                    val supplierBills = billRepository.getAllBills().filter {
-                        it.supplierId == supplier.id &&
-                                (supplier.resetDate == null || !it.createdAt.before(supplier.resetDate)) &&
-                                (start == null || it.dueDate.time >= start) &&
-                                (end == null || it.dueDate.time <= end)
-                    }
-
-                    val groupedEntries = supplierEntries.filter { it.quantity > 0 }.groupBy { it.orderId.ifEmpty { it.id } }
-                    val purchaseOrders = groupedEntries.map { (key, group) ->
-                        val representative = group.first()
-                        val totalOrderCost = if (representative.grandTotalCost > 0) representative.grandTotalCost else group.sumOf { it.totalCost }
-
-                        val linkedBills = supplierBills.filter {
-                            it.relatedEntryId == key || group.any { entry -> entry.id == it.relatedEntryId }
+                        // Filter pre-fetched logs for the specific supplier
+                        val supplierEntries = allEntries.filter {
+                            it.supplierId == supplier.id &&
+                                    it.status == "approved" &&
+                                    (supplier.resetDate == null || !it.timestamp.before(supplier.resetDate)) &&
+                                    (start == null || it.timestamp.time >= start) &&
+                                    (end == null || it.timestamp.time <= end)
                         }
-                        val linkedPaid = linkedBills.sumOf { it.paidAmount }
+                        val supplierBills = allBills.filter {
+                            it.supplierId == supplier.id &&
+                                    (supplier.resetDate == null || !it.createdAt.before(supplier.resetDate)) &&
+                                    (start == null || it.dueDate.time >= start) &&
+                                    (end == null || it.dueDate.time <= end)
+                        }
 
-                        PurchaseOrderItem(
-                            entry = representative.copy(totalCost = totalOrderCost),
-                            linkedPaidAmount = linkedPaid,
-                            remainingBalance = totalOrderCost - linkedPaid,
-                            referenceNumbers = linkedBills.filter {
-                                it.referenceNumber.isNotEmpty() && it.status == BillStatus.PAID
-                            }.map { bill ->
-                                val typeStr = when (bill.billType) {
-                                    BillType.CHECK -> "شيك"
-                                    BillType.BILL -> "كمبيالة"
-                                    BillType.TRANSFER -> "تحويل"
-                                    BillType.OTHER -> "أخرى"
-                                }
-                                "$typeStr: ${bill.referenceNumber}"
-                            }.distinct()
+                        val groupedEntries = supplierEntries.filter { it.quantity > 0 }.groupBy { it.orderId.ifEmpty { it.id } }
+                        val purchaseOrders = groupedEntries.map { (key, group) ->
+                            val representative = group.first()
+                            val totalOrderCost = if (representative.grandTotalCost > 0) representative.grandTotalCost else group.sumOf { it.totalCost }
+
+                            val linkedBills = supplierBills.filter {
+                                it.relatedEntryId == key || group.any { entry -> entry.id == it.relatedEntryId }
+                            }
+                            val linkedPaid = linkedBills.sumOf { it.paidAmount }
+
+                            PurchaseOrderItem(
+                                entry = representative.copy(totalCost = totalOrderCost),
+                                linkedPaidAmount = linkedPaid,
+                                remainingBalance = totalOrderCost - linkedPaid,
+                                referenceNumbers = linkedBills.filter {
+                                    it.referenceNumber.isNotEmpty() && it.status == BillStatus.PAID
+                                }.map { bill ->
+                                    val typeStr = when (bill.billType) {
+                                        BillType.CHECK -> "شيك"
+                                        BillType.BILL -> "كمبيالة"
+                                        BillType.TRANSFER -> "تحويل"
+                                        BillType.OTHER -> "أخرى"
+                                    }
+                                    "$typeStr: ${bill.referenceNumber}"
+                                }.distinct()
+                            )
+                        }.sortedByDescending { it.entry.timestamp }
+
+                        val targetProgress = if (supplier.yearlyTarget > 0) totalDebit / supplier.yearlyTarget else 0.0
+
+                        SupplierReportItem(
+                            supplier = supplier,
+                            totalDebit = totalDebit,
+                            totalCredit = totalCredit,
+                            balance = balance,
+                            targetProgress = targetProgress,
+                            purchaseOrders = purchaseOrders
                         )
                     }
+                }.awaitAll()
 
-                    val targetProgress = if (supplier.yearlyTarget > 0) totalDebit / supplier.yearlyTarget else 0.0
-
-                    SupplierReportItem(
-                        supplier = supplier,
-                        totalDebit = totalDebit,
-                        totalCredit = totalCredit,
-                        balance = balance,
-                        targetProgress = targetProgress,
-                        purchaseOrders = purchaseOrders
-                    )
-                }
-                _supplierReport.value = report
+                _supplierReport.value = report.filter { it.totalDebit > 0 || it.totalCredit > 0 || it.supplier.name.contains(query, ignoreCase = true) }
             } catch (e: Exception) {
                 Log.e("ReportsViewModel", "Error loading supplier report", e)
+            } finally {
+                _isLoading.value = false
             }
         }
     }

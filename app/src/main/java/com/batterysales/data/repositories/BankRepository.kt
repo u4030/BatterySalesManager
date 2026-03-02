@@ -65,10 +65,15 @@ class BankRepository @Inject constructor(
     suspend fun getTransactionsPaginated(
         startDate: Long? = null,
         endDate: Long? = null,
+        type: String? = null,
         lastDocument: DocumentSnapshot? = null,
         limit: Long = 20
     ): Pair<List<BankTransaction>, DocumentSnapshot?> {
         var query: Query = firestore.collection(BankTransaction.COLLECTION_NAME)
+
+        if (type != null) {
+            query = query.whereEqualTo("type", type)
+        }
 
         if (startDate != null && endDate != null) {
             query = query.whereGreaterThanOrEqualTo("date", java.util.Date(startDate))
