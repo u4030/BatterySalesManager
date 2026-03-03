@@ -33,11 +33,14 @@ class BillViewModel @Inject constructor(
     private val _suppliers = MutableStateFlow<List<Supplier>>(emptyList())
     val suppliers = _suppliers.asStateFlow()
 
+    private val refreshTrigger = MutableStateFlow(0)
+
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val bills: Flow<PagingData<Bill>> = combine(
         _searchQuery,
-        _suppliers
-    ) { query, suppliers ->
+        _suppliers,
+        refreshTrigger
+    ) { query, suppliers, _ ->
         Pair(query, suppliers)
     }.flatMapLatest { (query, suppliers) ->
         val suppliersMap = suppliers.associateBy { it.id }
@@ -122,7 +125,7 @@ class BillViewModel @Inject constructor(
     fun loadBills(reset: Boolean = false) {
         if (reset) {
             _isLoading.value = true
-            // Paging 3 will handle refresh when flow is collected
+            refreshTrigger.value += 1
         }
     }
 
@@ -163,6 +166,8 @@ class BillViewModel @Inject constructor(
                 repository.addBill(bill)
                 loadBills(reset = true)
                 loadLinkedIds() // Refresh linked IDs after adding a bill
+            } catch (e: Exception) {
+                Log.e("BillViewModel", "Error adding bill", e)
             } finally {
                 _isLoading.value = false
             }
