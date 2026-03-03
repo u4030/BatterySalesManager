@@ -65,29 +65,47 @@ class AccountingViewModel @Inject constructor(
     private val _selectedYear = MutableStateFlow<Int?>(null)
     val selectedYear = _selectedYear.asStateFlow()
 
+    private val _startDate = MutableStateFlow<Long?>(null)
+    private val _endDate = MutableStateFlow<Long?>(null)
+
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val transactions: Flow<PagingData<Transaction>> = combine(
         _selectedWarehouseId,
         _selectedTab,
         _selectedPaymentMethod,
-        _selectedYear
-    ) { w, t, p, y ->
-        Quadruple(w, t, p, y)
-    }.flatMapLatest { (warehouseId, tab, paymentMethod, _) ->
+        _selectedYear,
+        _startDate,
+        _endDate
+    ) { args: Array<Any?> ->
+        Filters(
+            warehouseId = args[0] as String?,
+            tab = args[1] as Int,
+            paymentMethod = args[2] as String?,
+            year = args[3] as Int?,
+            start = args[4] as Long?,
+            end = args[5] as Long?
+        )
+    }.flatMapLatest { filters ->
         Pager(PagingConfig(pageSize = 20)) {
             TransactionPagingSource(
                 repository = repository,
-                warehouseId = if (warehouseId == "all") null else warehouseId,
-                paymentMethod = if (paymentMethod == "all") null else paymentMethod,
-                types = if (tab == 1) listOf(com.batterysales.data.models.TransactionType.EXPENSE.name, com.batterysales.data.models.TransactionType.REFUND.name) else null,
-                startDate = currentStartDate,
-                endDate = currentEndDate
+                warehouseId = if (filters.warehouseId == "all") null else filters.warehouseId,
+                paymentMethod = if (filters.paymentMethod == "all") null else filters.paymentMethod,
+                types = if (filters.tab == 1) listOf(com.batterysales.data.models.TransactionType.EXPENSE.name, com.batterysales.data.models.TransactionType.REFUND.name) else null,
+                startDate = filters.start,
+                endDate = filters.end
             )
         }.flow.cachedIn(viewModelScope)
     }
 
-    private var currentStartDate: Long? = null
-    private var currentEndDate: Long? = null
+    private data class Filters(
+        val warehouseId: String?,
+        val tab: Int,
+        val paymentMethod: String?,
+        val year: Int?,
+        val start: Long?,
+        val end: Long?
+    )
     private var loadJob: kotlinx.coroutines.Job? = null
 
     init {
@@ -97,9 +115,9 @@ class AccountingViewModel @Inject constructor(
         _selectedYear.value = year
 
         cal.set(year, Calendar.JANUARY, 1, 0, 0, 0)
-        currentStartDate = cal.timeInMillis
+        _startDate.value = cal.timeInMillis
         cal.set(year, Calendar.DECEMBER, 31, 23, 59, 59)
-        currentEndDate = cal.timeInMillis
+        _endDate.value = cal.timeInMillis
 
         setupFiltersTrigger()
         loadInitialData()
@@ -162,12 +180,12 @@ class AccountingViewModel @Inject constructor(
         if (year != null) {
             val cal = Calendar.getInstance()
             cal.set(year, Calendar.JANUARY, 1, 0, 0, 0)
-            currentStartDate = cal.timeInMillis
+            _startDate.value = cal.timeInMillis
             cal.set(year, Calendar.DECEMBER, 31, 23, 59, 59)
-            currentEndDate = cal.timeInMillis
+            _endDate.value = cal.timeInMillis
         } else {
-            currentStartDate = null
-            currentEndDate = null
+            _startDate.value = null
+            _endDate.value = null
         }
         _selectedYear.value = year
     }
@@ -190,10 +208,12 @@ class AccountingViewModel @Inject constructor(
             try {
                 val warehouseId = _selectedWarehouseId.value
                 val paymentMethod = _selectedPaymentMethod.value
+                val start = _startDate.value
+                val end = _endDate.value
 
                 coroutineScope {
-                    val balanceJob = async { repository.getCurrentBalance(warehouseId, paymentMethod, currentEndDate) }
-                    val totalExpensesJob = async { repository.getTotalExpenses(warehouseId, paymentMethod, currentStartDate, currentEndDate) }
+                    val balanceJob = async { repository.getCurrentBalance(warehouseId, paymentMethod, end) }
+                    val totalExpensesJob = async { repository.getTotalExpenses(warehouseId, paymentMethod, start, end) }
                     val expensesJob = async { repository.getAllExpenses() }
 
                     _balance.value = balanceJob.await()
@@ -215,8 +235,8 @@ class AccountingViewModel @Inject constructor(
     }
 
     fun onDateRangeSelected(start: Long?, end: Long?) {
-        currentStartDate = start
-        currentEndDate = end
+        _startDate.value = start
+        _endDate.value = end
         loadData(reset = true)
     }
 

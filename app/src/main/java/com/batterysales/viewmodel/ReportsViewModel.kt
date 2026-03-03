@@ -224,39 +224,55 @@ class ReportsViewModel @Inject constructor(
                 val start = _startDate.value
                 val end = _endDate.value
 
-                // 1. Fetch all relevant entries and bills once to avoid multiple full collection scans
-                val allEntries = stockEntryRepository.getAllStockEntries()
-                val allBills = billRepository.getAllBills()
+                // 1. Fetch all relevant entries and bills once in parallel
+                val allEntriesJob = async { stockEntryRepository.getAllStockEntries() }
+                val allBillsJob = async { billRepository.getAllBills() }
+
+                val allEntries = allEntriesJob.await()
+                val allBills = allBillsJob.await()
 
                 val report = suppliers.map { supplier ->
                     async {
-                        // Use server-side aggregation for totals to ensure absolute accuracy
-                        val totalDebit = stockEntryRepository.getSupplierDebit(supplier.id, supplier.resetDate, start, end)
-                        val totalCredit = billRepository.getSupplierCredit(supplier.id, supplier.resetDate, start, end)
+                        val adjustedEnd = end?.let { it + 86400000 }
+
+                        // Filter entries for this supplier
+                        val supplierEntries = allEntries.filter { entry ->
+                            val matchId = entry.supplierId.isNotEmpty() && entry.supplierId == supplier.id
+                            // Robust name matching fallback for legacy entries
+                            val matchName = entry.supplier.isNotBlank() &&
+                                           (entry.supplier.trim().equals(supplier.name.trim(), ignoreCase = true) ||
+                                            entry.supplier.trim().contains(supplier.name.trim(), ignoreCase = true))
+
+                            (matchId || matchName) &&
+                                    entry.status == "approved" &&
+                                    (supplier.resetDate == null || !entry.timestamp.before(supplier.resetDate)) &&
+                                    (start == null || entry.timestamp.time >= start) &&
+                                    (adjustedEnd == null || entry.timestamp.time <= adjustedEnd)
+                        }
+
+                        // Filter bills for this supplier
+                        val supplierBills = allBills.filter { bill ->
+                            bill.supplierId == supplier.id &&
+                                    (supplier.resetDate == null || !bill.createdAt.before(supplier.resetDate)) &&
+                                    (start == null || bill.dueDate.time >= start) &&
+                                    (adjustedEnd == null || bill.dueDate.time <= adjustedEnd)
+                        }
+
+                        // Calculate totals locally for accuracy and consistency
+                        val totalDebit = supplierEntries.sumOf { it.totalCost }
+                        val totalCredit = supplierBills.sumOf { it.paidAmount }
                         val balance = totalDebit - totalCredit
 
-                        // Filter pre-fetched logs for the specific supplier
-                        val supplierEntries = allEntries.filter {
-                            it.supplierId == supplier.id &&
-                                    it.status == "approved" &&
-                                    (supplier.resetDate == null || !it.timestamp.before(supplier.resetDate)) &&
-                                    (start == null || it.timestamp.time >= start) &&
-                                    (end == null || it.timestamp.time <= end)
-                        }
-                        val supplierBills = allBills.filter {
-                            it.supplierId == supplier.id &&
-                                    (supplier.resetDate == null || !it.createdAt.before(supplier.resetDate)) &&
-                                    (start == null || it.dueDate.time >= start) &&
-                                    (end == null || it.dueDate.time <= end)
-                        }
+                        // Group entries into Purchase Orders
+                        val groupedEntries = supplierEntries.filter { it.quantity > 0 }
+                            .groupBy { it.orderId.ifEmpty { it.id } }
 
-                        val groupedEntries = supplierEntries.filter { it.quantity > 0 }.groupBy { it.orderId.ifEmpty { it.id } }
                         val purchaseOrders = groupedEntries.map { (key, group) ->
                             val representative = group.first()
                             val totalOrderCost = if (representative.grandTotalCost > 0) representative.grandTotalCost else group.sumOf { it.totalCost }
 
-                            val linkedBills = supplierBills.filter {
-                                it.relatedEntryId == key || group.any { entry -> entry.id == it.relatedEntryId }
+                            val linkedBills = supplierBills.filter { bill ->
+                                bill.relatedEntryId == key || group.any { entry -> entry.id == bill.relatedEntryId }
                             }
                             val linkedPaid = linkedBills.sumOf { it.paidAmount }
 
@@ -264,8 +280,8 @@ class ReportsViewModel @Inject constructor(
                                 entry = representative.copy(totalCost = totalOrderCost),
                                 linkedPaidAmount = linkedPaid,
                                 remainingBalance = totalOrderCost - linkedPaid,
-                                referenceNumbers = linkedBills.filter {
-                                    it.referenceNumber.isNotEmpty() && it.status == BillStatus.PAID
+                                referenceNumbers = linkedBills.filter { bill ->
+                                    bill.referenceNumber.isNotEmpty() && bill.status == BillStatus.PAID
                                 }.map { bill ->
                                     val typeStr = when (bill.billType) {
                                         BillType.CHECK -> "شيك"
@@ -291,7 +307,7 @@ class ReportsViewModel @Inject constructor(
                     }
                 }.awaitAll()
 
-                _supplierReport.value = report.filter { it.totalDebit > 0 || it.totalCredit > 0 || it.supplier.name.contains(query, ignoreCase = true) }
+                _supplierReport.value = report.filter { it.totalDebit > 0 || it.totalCredit > 0 || query.isNotBlank() }
             } catch (e: Exception) {
                 Log.e("ReportsViewModel", "Error loading supplier report", e)
             } finally {

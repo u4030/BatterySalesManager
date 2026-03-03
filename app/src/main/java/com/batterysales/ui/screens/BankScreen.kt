@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -55,7 +56,7 @@ fun BankScreen(
     var showDateRangePicker by remember { mutableStateOf(false) }
     val dateRangePickerState = rememberDateRangePickerState()
 
-    var searchQuery by remember { mutableStateOf("") }
+    val searchQuery by viewModel.searchQuery.collectAsState()
 
 
     val bgColor = MaterialTheme.colorScheme.background
@@ -232,7 +233,7 @@ fun BankScreen(
                     // Search Bar
                     CustomKeyboardTextField(
                         value = searchQuery,
-                        onValueChange = { searchQuery = it },
+                        onValueChange = viewModel::onSearchQueryChanged,
                         modifier = Modifier.fillMaxWidth(),
                         label = "بحث بالوصف أو الرقم المرجعي..."
                     )
@@ -248,10 +249,18 @@ fun BankScreen(
                 }
             }
 
-            if (pagingItems.loadState.refresh is androidx.paging.LoadState.Loading) {
+            val loadState = pagingItems.loadState
+            if (loadState.refresh is androidx.paging.LoadState.Loading) {
                 item {
                     Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = accentColor)
+                    }
+                }
+            } else if (loadState.refresh is androidx.paging.LoadState.Error) {
+                val error = (loadState.refresh as androidx.paging.LoadState.Error).error
+                item {
+                    Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                        Text("حدث خطأ أثناء تحميل السجل: ${error.localizedMessage}", color = Color.Red, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                     }
                 }
             } else if (pagingItems.itemCount == 0) {
@@ -265,7 +274,13 @@ fun BankScreen(
                     }
                 }
             } else {
-                items(pagingItems.itemCount) { index ->
+                items(
+                    count = pagingItems.itemCount,
+                    key = { index ->
+                        val item = pagingItems[index]
+                        "${selectedTab}_${item?.id ?: index}"
+                    }
+                ) { index ->
                     val transaction = pagingItems[index]
                     transaction?.let {
                         Box(modifier = Modifier.padding(horizontal = 16.dp)) {

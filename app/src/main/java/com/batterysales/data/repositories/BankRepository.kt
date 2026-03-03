@@ -71,8 +71,9 @@ class BankRepository @Inject constructor(
     ): Pair<List<BankTransaction>, DocumentSnapshot?> {
         var query: Query = firestore.collection(BankTransaction.COLLECTION_NAME)
 
-        if (type != null) {
-            query = query.whereEqualTo("type", type)
+        if (!type.isNullOrEmpty()) {
+            // Support both Enum name and potentially lowercase if stored that way
+            query = query.whereIn("type", listOf(type, type.lowercase(), type.uppercase()).distinct())
         }
 
         if (startDate != null && endDate != null) {
@@ -80,6 +81,7 @@ class BankRepository @Inject constructor(
                 .whereLessThanOrEqualTo("date", java.util.Date(endDate + 86400000))
         }
 
+        // Add index-safe ordering
         query = query.orderBy("date", Query.Direction.DESCENDING)
 
         if (lastDocument != null) {

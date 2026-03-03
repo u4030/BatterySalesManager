@@ -114,20 +114,20 @@ class DashboardViewModel @Inject constructor(
                             !it.dueDate.after(nextWeek.time)
                 }.sortedBy { it.dueDate }
 
-                // 3. Today's Collections (Optimized via aggregation)
-                val startOfToday = Calendar.getInstance().apply {
-                    set(Calendar.HOUR_OF_DAY, 0)
-                    set(Calendar.MINUTE, 0)
-                    set(Calendar.SECOND, 0)
-                    set(Calendar.MILLISECOND, 0)
-                }.time
+                // 3. Today's Collections (Reactive from Flow)
+                val calendar = Calendar.getInstance()
+                calendar.set(Calendar.HOUR_OF_DAY, 0)
+                calendar.set(Calendar.MINUTE, 0)
+                calendar.set(Calendar.SECOND, 0)
+                calendar.set(Calendar.MILLISECOND, 0)
+                val startOfToday = calendar.time
 
                 val relevantWarehouses = if (isAdmin) warehouses 
                                         else warehouses.filter { it.id == userWarehouseId && it.isActive }
 
                 val warehouseStatsList = relevantWarehouses.map { warehouse ->
                     val warehousePayments = allPayments.filter {
-                        it.warehouseId == warehouse.id && !it.timestamp.before(startOfToday)
+                        it.warehouseId == warehouse.id && (it.timestamp.after(startOfToday) || it.timestamp.equals(startOfToday))
                     }
                     val collection = warehousePayments.sumOf { it.amount }
                     val count = warehousePayments.map { it.invoiceId }.distinct().size
@@ -138,7 +138,7 @@ class DashboardViewModel @Inject constructor(
                         todayCollection = collection,
                         todayCollectionCount = count
                     )
-                }.filter { if (isAdmin) it.todayCollection > 0 else true }
+                }.filter { if (isAdmin) it.todayCollection > 0 || it.todayCollectionCount > 0 else true }
 
             // 4. Low Stock Notifications (Summarized for speed)
             // Actual calculation is done in Reports or AppNotificationManager

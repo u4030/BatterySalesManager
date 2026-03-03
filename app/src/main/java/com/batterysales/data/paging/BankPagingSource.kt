@@ -28,7 +28,7 @@ class BankPagingSource(
             LoadResult.Page(
                 data = result.first,
                 prevKey = null,
-                nextKey = result.second
+                nextKey = if (result.first.size < params.loadSize) null else result.second
             )
         } catch (e: Exception) {
             LoadResult.Error(e)

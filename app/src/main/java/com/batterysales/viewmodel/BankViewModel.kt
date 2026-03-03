@@ -10,13 +10,12 @@ import com.batterysales.data.models.BankTransaction
 import com.batterysales.data.paging.BankPagingSource
 import com.google.firebase.firestore.DocumentSnapshot
 import com.batterysales.data.repositories.BankRepository
+import com.batterysales.utils.Quadruple
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.*
 import android.util.Log
+import androidx.paging.filter
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import java.util.Calendar
 import javax.inject.Inject
@@ -47,22 +46,61 @@ class BankViewModel @Inject constructor(
     private val _selectedTab = MutableStateFlow(0) // 0: All, 1: Withdrawals
     val selectedTab = _selectedTab.asStateFlow()
 
-    private val filterState = MutableStateFlow(Triple<Long?, Long?, Int>(null, null, 0))
+    private val _startDate = MutableStateFlow<Long?>(null)
+    private val _endDate = MutableStateFlow<Long?>(null)
+
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery = _searchQuery.asStateFlow()
+
+    private val refreshTrigger = MutableStateFlow(0)
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    val transactions: Flow<PagingData<BankTransaction>> = filterState.flatMapLatest { (start, end, tab) ->
-        Pager(PagingConfig(pageSize = 20)) {
-            com.batterysales.data.paging.BankPagingSource(
-                repository = repository,
-                startDate = start,
-                endDate = end,
-                type = if (tab == 1) com.batterysales.data.models.BankTransactionType.WITHDRAWAL.name else null
-            )
-        }.flow.cachedIn(viewModelScope)
+    val transactions: Flow<PagingData<BankTransaction>> = combine(
+        _startDate,
+        _endDate,
+        _selectedTab,
+        _searchQuery,
+        refreshTrigger
+    ) { start, end, tab, query, refresh ->
+        BankFilters(start, end, tab, query, refresh)
     }
+        .distinctUntilChanged()
+        .flatMapLatest { filters ->
+            Log.d("BankViewModel", "Applying filters: tab=${filters.tab}, query=${filters.query}")
+            // Explicit type string for Firestore and local matching
+            val filterType = if (filters.tab == 1) com.batterysales.data.models.BankTransactionType.WITHDRAWAL else null
 
-    private var currentStartDate: Long? = null
-    private var currentEndDate: Long? = null
+            Pager(PagingConfig(pageSize = 20, enablePlaceholders = false)) {
+                com.batterysales.data.paging.BankPagingSource(
+                    repository = repository,
+                    startDate = filters.start,
+                    endDate = filters.end,
+                    type = filterType?.name
+                )
+            }.flow
+                .map { pagingData ->
+                    pagingData.filter { trans ->
+                        // Strict local filtering fallback to guarantee tab correctness
+                        val typeMatch = filterType == null || trans.type == filterType
+                        val queryMatch = filters.query.isBlank() ||
+                                trans.description.contains(filters.query, ignoreCase = true) ||
+                                trans.referenceNumber.contains(filters.query, ignoreCase = true) ||
+                                trans.supplierName.contains(filters.query, ignoreCase = true) ||
+                                trans.notes.contains(filters.query, ignoreCase = true)
+
+                        typeMatch && queryMatch
+                    }
+                }
+        }
+        .cachedIn(viewModelScope)
+
+    private data class BankFilters(
+        val start: Long?,
+        val end: Long?,
+        val tab: Int,
+        val query: String,
+        val refresh: Int
+    )
 
     init {
         // Default to current year
@@ -70,31 +108,34 @@ class BankViewModel @Inject constructor(
         val year = cal.get(Calendar.YEAR)
         
         cal.set(year, Calendar.JANUARY, 1, 0, 0, 0)
-        currentStartDate = cal.timeInMillis
+        _startDate.value = cal.timeInMillis
         cal.set(year, Calendar.DECEMBER, 31, 23, 59, 59)
-        currentEndDate = cal.timeInMillis
+        _endDate.value = cal.timeInMillis
 
-        loadData(reset = true)
+        loadData()
     }
 
-    fun loadData(reset: Boolean = false) {
-        if (reset) {
-            _isLoading.value = true
-            filterState.update { it.copy() }
-        }
-
+    fun loadData() {
+        _isLoading.value = true
         viewModelScope.launch {
             try {
-                _balance.value = repository.getCurrentBalance(currentEndDate)
-                _totalWithdrawals.value = repository.getTotalWithdrawals(currentStartDate, currentEndDate)
+                val end = _endDate.value
+                val start = _startDate.value
+
+                kotlinx.coroutines.coroutineScope {
+                    val balanceJob = async { repository.getCurrentBalance(end) }
+                    val withdrawalsJob = async { repository.getTotalWithdrawals(start, end) }
+
+                    _balance.value = balanceJob.await()
+                    _totalWithdrawals.value = withdrawalsJob.await()
+                }
                 
-                _isLoading.value = false
-                _isLoadingMore.value = false
+                refreshTrigger.value += 1 // Force Paging 3 to reload
             } catch (e: Exception) {
                 Log.e("BankViewModel", "Error loading data", e)
-                _isLoading.value = false
-                _isLoadingMore.value = false
                 _errorMessage.value = "خطأ في تحميل البيانات: ${e.message}"
+            } finally {
+                _isLoading.value = false
             }
         }
     }
@@ -104,16 +145,24 @@ class BankViewModel @Inject constructor(
     }
 
     fun onDateRangeSelected(start: Long?, end: Long?) {
-        currentStartDate = start
-        currentEndDate = end
-        filterState.update { it.copy(first = start, second = end) }
-        loadData(reset = true)
+        _startDate.value = start
+        _endDate.value = end
+        loadData()
     }
 
     fun onTabSelected(index: Int) {
         _selectedTab.value = index
-        filterState.update { it.copy(third = index) }
-        loadData(reset = true)
+        loadData()
+    }
+
+    private var searchJob: kotlinx.coroutines.Job? = null
+    fun onSearchQueryChanged(query: String) {
+        _searchQuery.value = query
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(500)
+            loadData()
+        }
     }
 
     fun addManualTransaction(type: com.batterysales.data.models.BankTransactionType, amount: Double, description: String, referenceNumber: String = "", supplierName: String = "") {
@@ -129,7 +178,7 @@ class BankViewModel @Inject constructor(
                     date = java.util.Date()
                 )
                 repository.addTransaction(transaction)
-                loadData(reset = true)
+                loadData()
             } finally {
                 _isLoading.value = false
             }
