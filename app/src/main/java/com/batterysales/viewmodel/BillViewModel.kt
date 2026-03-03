@@ -57,8 +57,15 @@ class BillViewModel @Inject constructor(
         }.cachedIn(viewModelScope)
     }
 
-    private val _allRecentPurchases = MutableStateFlow<List<StockEntry>>(emptyList())
-    private val _linkedAmounts = MutableStateFlow<Map<String, Double>>(emptyMap())
+    private val _allRecentPurchases = stockEntryRepository.getAllStockEntriesFlow()
+        .map { entries -> entries.filter { it.status == "approved" && it.totalCost > 0 }.take(200) }
+
+    private val _linkedAmounts = repository.getAllBillsFlow()
+        .map { bills ->
+            bills.filter { it.relatedEntryId != null }
+                .groupBy { it.relatedEntryId!! }
+                .mapValues { entry -> entry.value.sumOf { it.amount } }
+        }
     
     val pendingPurchases: StateFlow<List<StockEntry>> = combine(
         _allRecentPurchases,
@@ -70,13 +77,11 @@ class BillViewModel @Inject constructor(
             val totalOrderCost = if (representative.grandTotalCost > 0) representative.grandTotalCost else group.sumOf { it.totalCost }
             val linkedAmount = linkedAmounts[key] ?: 0.0
             
-            if (linkedAmount < totalOrderCost - 0.001) { // Small epsilon for float comparison
-                // We return the representative entry with its ID or OrderId as its ID,
-                // and we'll use totalCost to store the REMAINING balance for the UI to display.
+            if (linkedAmount < totalOrderCost - 0.001) {
                 representative.copy(
-                    id = key, // Use orderId or entryId as the ID
+                    id = key,
                     totalCost = totalOrderCost - linkedAmount,
-                    grandTotalCost = totalOrderCost // Keep original total cost too
+                    grandTotalCost = totalOrderCost
                 )
             } else {
                 null
@@ -102,18 +107,6 @@ class BillViewModel @Inject constructor(
     fun loadInitialData() {
         loadBills(reset = true)
         loadSuppliers()
-        loadPendingPurchases()
-        loadLinkedIds()
-    }
-
-    private fun loadLinkedIds() {
-        viewModelScope.launch {
-            try {
-                _linkedAmounts.value = repository.getLinkedAmounts()
-            } catch (e: Exception) {
-                Log.e("BillViewModel", "Error loading linked amounts", e)
-            }
-        }
     }
 
     fun onSearchQueryChanged(query: String) {
@@ -137,20 +130,12 @@ class BillViewModel @Inject constructor(
         }
     }
 
-    fun loadPendingPurchases() {
-        viewModelScope.launch {
-            // Fetch only last 100 approved purchases instead of all history
-            val entries = stockEntryRepository.getRecentApprovedPurchases(100)
-            _allRecentPurchases.value = entries
-        }
-    }
-
     fun addBill(description: String, amount: Double, dueDate: Date, billType: BillType, referenceNumber: String = "", supplierId: String = "", relatedEntryId: String? = null) {
         viewModelScope.launch {
             _isLoading.value = true
             try {
                 val warehouseId = if (relatedEntryId != null) {
-                    _allRecentPurchases.value.find { it.id == relatedEntryId || it.orderId == relatedEntryId }?.warehouseId
+                    pendingPurchases.value.find { it.id == relatedEntryId || it.orderId == relatedEntryId }?.warehouseId
                 } else null
 
                 val bill = Bill(
@@ -165,7 +150,6 @@ class BillViewModel @Inject constructor(
                 )
                 repository.addBill(bill)
                 loadBills(reset = true)
-                loadLinkedIds() // Refresh linked IDs after adding a bill
             } catch (e: Exception) {
                 Log.e("BillViewModel", "Error adding bill", e)
             } finally {

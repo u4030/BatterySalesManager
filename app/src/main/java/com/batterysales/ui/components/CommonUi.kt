@@ -44,8 +44,8 @@ fun AppDialog(
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .systemBarsPadding()
                 .padding(horizontal = 16.dp, vertical = 24.dp)
+                .systemBarsPadding()
                 .imePadding(),
             shape = RoundedCornerShape(24.dp),
             color = MaterialTheme.colorScheme.surface,
@@ -54,7 +54,6 @@ fun AppDialog(
             Column(
                 modifier = Modifier
                     .padding(20.dp)
-                    .wrapContentHeight()
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
