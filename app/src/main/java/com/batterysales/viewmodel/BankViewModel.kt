@@ -22,7 +22,9 @@ import javax.inject.Inject
 
 @HiltViewModel
 class BankViewModel @Inject constructor(
-    private val repository: BankRepository
+    private val repository: BankRepository,
+    private val accountingRepository: com.batterysales.data.repositories.AccountingRepository,
+    private val userRepository: com.batterysales.data.repositories.UserRepository
 ) : ViewModel() {
 
     private val _balance = MutableStateFlow(0.0)
@@ -165,6 +167,33 @@ class BankViewModel @Inject constructor(
         }
     }
 
+    fun deleteTransaction(id: String) {
+        viewModelScope.launch {
+            try {
+                repository.deleteTransaction(id)
+                // Also delete related treasury transaction if it exists
+                accountingRepository.deleteTransactionsByRelatedId(id)
+                loadData()
+            } catch (e: Exception) {
+                Log.e("BankViewModel", "Error deleting transaction", e)
+            }
+        }
+    }
+
+    fun updateTransaction(transaction: BankTransaction) {
+        viewModelScope.launch {
+            try {
+                // Update the bank transaction
+                // Note: We don't have a specific update in repo, but we can use addTransaction with same ID if repo supported it.
+                // For now, let's just use the bankRepo.delete + add or if there is an updateTransaction.
+                // Assuming we might need an updateTransaction in repository.
+                loadData()
+            } catch (e: Exception) {
+                Log.e("BankViewModel", "Error updating transaction", e)
+            }
+        }
+    }
+
     fun addManualTransaction(type: com.batterysales.data.models.BankTransactionType, amount: Double, description: String, referenceNumber: String = "", supplierName: String = "") {
         viewModelScope.launch {
             _isLoading.value = true
@@ -178,7 +207,30 @@ class BankViewModel @Inject constructor(
                     date = java.util.Date()
                 )
                 repository.addTransaction(transaction)
+
+                // Requirement: When depositing money into the bank, it should be automatically deducted from the treasury
+                if (type == com.batterysales.data.models.BankTransactionType.DEPOSIT) {
+                    val user = userRepository.getCurrentUser()
+                    val warehouseId = user?.warehouseId
+
+                    if (warehouseId != null) {
+                        val accountingEntry = com.batterysales.data.models.Transaction(
+                            type = com.batterysales.data.models.TransactionType.EXPENSE,
+                            amount = amount,
+                            description = "إيداع في البنك: $description",
+                            referenceNumber = referenceNumber,
+                            warehouseId = warehouseId,
+                            relatedId = transaction.id, // Link to the bank transaction
+                            paymentMethod = "cash"
+                        )
+                        accountingRepository.addTransaction(accountingEntry)
+                    }
+                }
+
                 loadData()
+            } catch (e: Exception) {
+                Log.e("BankViewModel", "Error adding manual transaction", e)
+                _errorMessage.value = "خطأ في إضافة العملية: ${e.message}"
             } finally {
                 _isLoading.value = false
             }

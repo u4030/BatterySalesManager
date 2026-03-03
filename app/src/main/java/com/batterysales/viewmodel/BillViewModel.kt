@@ -180,28 +180,32 @@ class BillViewModel @Inject constructor(
                 
                 repository.recordPayment(billId, amount)
 
-                // Record in treasury (always)
-                val transaction = Transaction(
-                    type = com.batterysales.data.models.TransactionType.EXPENSE,
-                    amount = amount,
-                    description = "تسديد ${if (amount >= (bill.amount - bill.paidAmount)) "كلي" else "جزئي"} ${if (bill.billType == BillType.CHECK) "لشيك" else "لكمبيالة"}: ${bill.description} (المورد: $supplierName)",
-                    relatedId = billId,
-                    referenceNumber = bill.referenceNumber,
-                    warehouseId = bill.warehouseId
-                )
-                accountingRepository.addTransaction(transaction)
+                // Logic updated based on requirement:
+                // 1. Promissory Notes (BILL/TRANSFER/OTHER) are deducted from Treasury (Accounting)
+                // 2. Checks (CHECK) are deducted from Bank ONLY.
 
-                // Additionally record in bank if it's a check
                 if (bill.billType == com.batterysales.data.models.BillType.CHECK) {
+                    // Record ONLY in bank if it's a check
                     val bankTransaction = com.batterysales.data.models.BankTransaction(
                         type = com.batterysales.data.models.BankTransactionType.WITHDRAWAL,
                         amount = amount,
-                        description = "تسديد لشيك: ${bill.description}",
+                        description = "تسديد لشيك: ${bill.description} (المورد: $supplierName)",
                         billId = billId,
                         referenceNumber = bill.referenceNumber,
                         supplierName = supplierName
                     )
                     bankRepository.addTransaction(bankTransaction)
+                } else {
+                    // Record ONLY in treasury (Accounting) for other types
+                    val transaction = Transaction(
+                        type = com.batterysales.data.models.TransactionType.EXPENSE,
+                        amount = amount,
+                        description = "تسديد ${if (amount >= (bill.amount - bill.paidAmount)) "كلي" else "جزئي"} لكمبيالة: ${bill.description} (المورد: $supplierName)",
+                        relatedId = billId,
+                        referenceNumber = bill.referenceNumber,
+                        warehouseId = bill.warehouseId
+                    )
+                    accountingRepository.addTransaction(transaction)
                 }
 
                 loadBills(reset = true)
