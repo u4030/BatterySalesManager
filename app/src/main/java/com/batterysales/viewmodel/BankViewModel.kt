@@ -24,7 +24,8 @@ import javax.inject.Inject
 class BankViewModel @Inject constructor(
     private val repository: BankRepository,
     private val accountingRepository: com.batterysales.data.repositories.AccountingRepository,
-    private val userRepository: com.batterysales.data.repositories.UserRepository
+    private val userRepository: com.batterysales.data.repositories.UserRepository,
+    private val warehouseRepository: com.batterysales.data.repositories.WarehouseRepository
 ) : ViewModel() {
 
     private val _balance = MutableStateFlow(0.0)
