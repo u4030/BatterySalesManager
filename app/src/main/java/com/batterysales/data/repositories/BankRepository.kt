@@ -24,10 +24,15 @@ class BankRepository @Inject constructor(
             }
     }
 
-    suspend fun addTransaction(transaction: BankTransaction) {
-        val docRef = firestore.collection(BankTransaction.COLLECTION_NAME).document()
+    suspend fun addTransaction(transaction: BankTransaction): String {
+        val docRef = if (transaction.id.isEmpty()) {
+            firestore.collection(BankTransaction.COLLECTION_NAME).document()
+        } else {
+            firestore.collection(BankTransaction.COLLECTION_NAME).document(transaction.id)
+        }
         val finalTransaction = transaction.copy(id = docRef.id)
         docRef.set(finalTransaction).await()
+        return docRef.id
     }
 
     suspend fun getCurrentBalance(endDate: Long? = null): Double {

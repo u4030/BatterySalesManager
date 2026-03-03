@@ -21,9 +21,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavHostController
 import com.batterysales.data.models.BankTransaction
 import com.batterysales.data.models.BankTransactionType
@@ -42,6 +45,20 @@ fun BankScreen(
     viewModel: BankViewModel = hiltViewModel()
 ) {
     val pagingItems = viewModel.transactions.collectAsLazyPagingItems()
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.loadData()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+    val warehouses by viewModel.warehouses.collectAsState()
     val balance by viewModel.balance.collectAsState()
     val totalWithdrawals by viewModel.totalWithdrawals.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -317,9 +334,10 @@ fun BankScreen(
     if (showAddDialog) {
         AddBankTransactionDialog(
             type = selectedType,
+            warehouses = warehouses,
             onDismiss = { showAddDialog = false },
-            onAdd = { type, desc, amount, ref, supplier ->
-                viewModel.addManualTransaction(type, amount, desc, ref, supplier)
+            onAdd = { type, desc, amount, ref, supplier, fromTreasury, warehouseId ->
+                viewModel.addManualTransaction(type, amount, desc, ref, supplier, fromTreasury, warehouseId)
                 showAddDialog = false
             }
         )
@@ -329,13 +347,16 @@ fun BankScreen(
 @Composable
 fun AddBankTransactionDialog(
     type: com.batterysales.data.models.BankTransactionType,
+    warehouses: List<com.batterysales.data.models.Warehouse>,
     onDismiss: () -> Unit,
-    onAdd: (com.batterysales.data.models.BankTransactionType, String, Double, String, String) -> Unit
+    onAdd: (com.batterysales.data.models.BankTransactionType, String, Double, String, String, Boolean, String?) -> Unit
 ) {
     var description by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
     var referenceNumber by remember { mutableStateOf("") }
     var supplierName by remember { mutableStateOf("") }
+    var fromTreasury by remember { mutableStateOf(false) }
+    var selectedWarehouseId by remember { mutableStateOf<String?>(null) }
 
     AppDialog(
         onDismiss = onDismiss,
@@ -343,7 +364,7 @@ fun AddBankTransactionDialog(
         confirmButton = {
             Button(onClick = {
                 val amt = amount.toDoubleOrNull() ?: 0.0
-                if (description.isNotEmpty() && amt > 0) onAdd(type, description, amt, referenceNumber, supplierName)
+                if (description.isNotEmpty() && amt > 0) onAdd(type, description, amt, referenceNumber, supplierName, fromTreasury, selectedWarehouseId)
             }, colors = ButtonDefaults.buttonColors(
                 containerColor = if (type == com.batterysales.data.models.BankTransactionType.DEPOSIT) Color(0xFF4CAF50) else Color(0xFFF44336)
             )) { Text("موافق") }
@@ -352,6 +373,35 @@ fun AddBankTransactionDialog(
             TextButton(onClick = onDismiss) { Text("إلغاء") }
         }
     ) {
+        if (type == com.batterysales.data.models.BankTransactionType.DEPOSIT) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("إيداع من الخزينة؟", style = MaterialTheme.typography.bodyMedium)
+                Switch(
+                    checked = fromTreasury,
+                    onCheckedChange = { fromTreasury = it }
+                )
+            }
+            if (fromTreasury) {
+                Text("سيتم خصم المبلغ تلقائياً من رصيد الخزينة", style = MaterialTheme.typography.bodySmall, color = Color(0xFFFB8C00))
+                Spacer(modifier = Modifier.height(8.dp))
+
+                if (warehouses.isNotEmpty()) {
+                    com.batterysales.ui.stockentry.Dropdown(
+                        label = "المستودع (الخزينة) المصدر",
+                        selectedValue = warehouses.find { it.id == selectedWarehouseId }?.name ?: "اختر المستودع",
+                        options = warehouses.map { it.name },
+                        onOptionSelected = { index -> selectedWarehouseId = warehouses[index].id },
+                        enabled = true
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+        }
+
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = description,
             onValueChange = { description = it },

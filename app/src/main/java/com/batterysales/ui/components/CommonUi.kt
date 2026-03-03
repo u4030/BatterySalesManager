@@ -34,6 +34,9 @@ fun AppDialog(
     val keyboardController = LocalCustomKeyboardController.current
     val keyboardHeight by keyboardController.keyboardHeight
 
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    val screenHeight = configuration.screenHeightDp.dp
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(
@@ -41,20 +44,25 @@ fun AppDialog(
             decorFitsSystemWindows = false
         )
     ) {
-        Surface(
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 24.dp)
+                .fillMaxSize()
                 .systemBarsPadding()
                 .imePadding(),
-            shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 8.dp
+            contentAlignment = Alignment.Center
         ) {
-            Column(
+            Surface(
                 modifier = Modifier
-                    .padding(20.dp)
+                    .fillMaxWidth()
+                    .heightIn(max = screenHeight * 0.8f) // Maximum 80% of screen height
+                    .padding(horizontal = 16.dp),
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 8.dp
             ) {
+                Column(
+                    modifier = Modifier.padding(20.dp)
+                ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -75,7 +83,7 @@ fun AppDialog(
 
                 Column(
                     modifier = Modifier
-                        .weight(1f, fill = false)
+                        .weight(1f, fill = false) // Only take needed space up to max
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
@@ -90,7 +98,8 @@ fun AppDialog(
 
                 Row(
                     modifier = Modifier
-                        .fillMaxWidth(),
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
                     horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -101,6 +110,7 @@ fun AppDialog(
             }
         }
     }
+}
 }
 
 @Composable

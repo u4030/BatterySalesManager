@@ -49,6 +49,7 @@ fun BillsScreen(
     viewModel: BillViewModel = hiltViewModel()
 ) {
     val pagingItems = viewModel.bills.collectAsLazyPagingItems()
+    val warehouses by viewModel.warehouses.collectAsState()
     val lifecycleOwner = LocalLifecycleOwner.current
 
     DisposableEffect(lifecycleOwner) {
@@ -229,9 +230,10 @@ fun BillsScreen(
         AddBillDialog(
             suppliers = suppliers,
             pendingPurchases = pendingPurchases,
+            warehouses = warehouses,
             onDismiss = { showAddBillDialog = false },
-            onAdd = { desc, amount, date, type, ref, supplierId, relatedEntryId ->
-                viewModel.addBill(desc, amount, date, type, ref, supplierId, relatedEntryId)
+            onAdd = { desc, amount, date, type, ref, supplierId, relatedEntryId, warehouseId ->
+                viewModel.addBill(desc, amount, date, type, ref, supplierId, relatedEntryId, warehouseId)
                 showAddBillDialog = false
             }
         )
@@ -411,12 +413,14 @@ fun PaymentDialog(
 fun AddBillDialog(
     suppliers: List<com.batterysales.data.models.Supplier>,
     pendingPurchases: List<com.batterysales.data.models.StockEntry>,
+    warehouses: List<com.batterysales.data.models.Warehouse>,
     onDismiss: () -> Unit,
-    onAdd: (String, Double, Date, BillType, String, String, String?) -> Unit
+    onAdd: (String, Double, Date, BillType, String, String, String?, String?) -> Unit
 ) {
     var description by remember { mutableStateOf("") }
     var selectedSupplier by remember { mutableStateOf<com.batterysales.data.models.Supplier?>(null) }
     var selectedPurchase by remember { mutableStateOf<com.batterysales.data.models.StockEntry?>(null) }
+    var selectedWarehouseId by remember { mutableStateOf<String?>(null) }
     var amount by remember { mutableStateOf("") }
     var refNum by remember { mutableStateOf("") }
     var selectedType by remember { mutableStateOf(BillType.CHECK) }
@@ -435,7 +439,7 @@ fun AddBillDialog(
         confirmButton = {
             Button(onClick = {
                 val amt = amount.toDoubleOrNull() ?: 0.0
-                if (description.isNotEmpty() && amt > 0) onAdd(description, amt, selectedDate, selectedType, refNum, selectedSupplier?.id ?: "", selectedPurchase?.id)
+                if (description.isNotEmpty() && amt > 0) onAdd(description, amt, selectedDate, selectedType, refNum, selectedSupplier?.id ?: "", selectedPurchase?.id, selectedWarehouseId)
             }) { Text("إضافة") }
         },
         dismissButton = {
@@ -457,6 +461,16 @@ fun AddBillDialog(
             },
             enabled = true
         )
+
+        if (warehouses.isNotEmpty()) {
+            com.batterysales.ui.stockentry.Dropdown(
+                label = "المستودع (للخزينة)",
+                selectedValue = warehouses.find { it.id == selectedWarehouseId }?.name ?: "اختر المستودع",
+                options = warehouses.map { it.name },
+                onOptionSelected = { index -> selectedWarehouseId = warehouses[index].id },
+                enabled = true
+            )
+        }
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = amount,
             onValueChange = { amount = it },

@@ -24,7 +24,9 @@ class BillViewModel @Inject constructor(
     private val supplierRepository: SupplierRepository,
     private val stockEntryRepository: StockEntryRepository,
     private val accountingRepository: AccountingRepository,
-    private val bankRepository: BankRepository
+    private val bankRepository: BankRepository,
+    private val warehouseRepository: com.batterysales.data.repositories.WarehouseRepository,
+    private val userRepository: com.batterysales.data.repositories.UserRepository
 ) : ViewModel() {
 
     private val _searchQuery = MutableStateFlow("")
@@ -32,6 +34,9 @@ class BillViewModel @Inject constructor(
 
     private val _suppliers = MutableStateFlow<List<Supplier>>(emptyList())
     val suppliers = _suppliers.asStateFlow()
+
+    val warehouses: StateFlow<List<com.batterysales.data.models.Warehouse>> = warehouseRepository.getWarehouses()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val refreshTrigger = MutableStateFlow(0)
 
@@ -130,13 +135,24 @@ class BillViewModel @Inject constructor(
         }
     }
 
-    fun addBill(description: String, amount: Double, dueDate: Date, billType: BillType, referenceNumber: String = "", supplierId: String = "", relatedEntryId: String? = null) {
+    fun addBill(
+        description: String,
+        amount: Double,
+        dueDate: Date,
+        billType: BillType,
+        referenceNumber: String = "",
+        supplierId: String = "",
+        relatedEntryId: String? = null,
+        warehouseId: String? = null
+    ) {
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                val warehouseId = if (relatedEntryId != null) {
+                val finalWarehouseId = warehouseId ?: if (relatedEntryId != null) {
                     pendingPurchases.value.find { it.id == relatedEntryId || it.orderId == relatedEntryId }?.warehouseId
-                } else null
+                } else {
+                    userRepository.getCurrentUser()?.warehouseId
+                }
 
                 val bill = Bill(
                     description = description,
@@ -146,7 +162,7 @@ class BillViewModel @Inject constructor(
                     referenceNumber = referenceNumber,
                     supplierId = supplierId,
                     relatedEntryId = relatedEntryId,
-                    warehouseId = warehouseId
+                    warehouseId = finalWarehouseId
                 )
                 repository.addBill(bill)
                 loadBills(reset = true)

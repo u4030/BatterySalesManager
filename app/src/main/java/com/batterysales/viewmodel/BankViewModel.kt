@@ -56,6 +56,9 @@ class BankViewModel @Inject constructor(
 
     private val refreshTrigger = MutableStateFlow(0)
 
+    val warehouses: StateFlow<List<com.batterysales.data.models.Warehouse>> = warehouseRepository.getWarehouses()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val transactions: Flow<PagingData<BankTransaction>> = combine(
         _startDate,
@@ -194,7 +197,15 @@ class BankViewModel @Inject constructor(
         }
     }
 
-    fun addManualTransaction(type: com.batterysales.data.models.BankTransactionType, amount: Double, description: String, referenceNumber: String = "", supplierName: String = "") {
+    fun addManualTransaction(
+        type: com.batterysales.data.models.BankTransactionType,
+        amount: Double,
+        description: String,
+        referenceNumber: String = "",
+        supplierName: String = "",
+        fromTreasury: Boolean = false,
+        warehouseId: String? = null
+    ) {
         viewModelScope.launch {
             _isLoading.value = true
             try {
@@ -206,21 +217,21 @@ class BankViewModel @Inject constructor(
                     supplierName = supplierName,
                     date = java.util.Date()
                 )
-                repository.addTransaction(transaction)
+                val transId = repository.addTransaction(transaction)
 
-                // Requirement: When depositing money into the bank, it should be automatically deducted from the treasury
-                if (type == com.batterysales.data.models.BankTransactionType.DEPOSIT) {
+                // Requirement: Option to deduct from treasury during deposit
+                if (type == com.batterysales.data.models.BankTransactionType.DEPOSIT && fromTreasury) {
                     val user = userRepository.getCurrentUser()
-                    val warehouseId = user?.warehouseId
+                    val targetWhId = warehouseId ?: user?.warehouseId
 
-                    if (warehouseId != null) {
+                    if (targetWhId != null) {
                         val accountingEntry = com.batterysales.data.models.Transaction(
                             type = com.batterysales.data.models.TransactionType.EXPENSE,
                             amount = amount,
                             description = "إيداع في البنك: $description",
                             referenceNumber = referenceNumber,
-                            warehouseId = warehouseId,
-                            relatedId = transaction.id, // Link to the bank transaction
+                            warehouseId = targetWhId,
+                            relatedId = transId,
                             paymentMethod = "cash"
                         )
                         accountingRepository.addTransaction(accountingEntry)
