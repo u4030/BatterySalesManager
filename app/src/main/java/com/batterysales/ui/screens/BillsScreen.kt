@@ -482,9 +482,12 @@ fun AddBillDialog(
             label = "رقم السند / الشيك"
         )
 
-        val supplierPurchases = pendingPurchases
-            .filter { it.supplierId == selectedSupplier?.id }
-            .sortedByDescending { it.timestamp }
+        val supplierPurchases = pendingPurchases.filter { entry ->
+            val matchId = entry.supplierId.isNotEmpty() && entry.supplierId == selectedSupplier?.id
+            val matchName = entry.supplier.isNotBlank() &&
+                           entry.supplier.trim().equals(selectedSupplier?.name?.trim(), ignoreCase = true)
+            matchId || matchName
+        }.sortedByDescending { it.timestamp }
         if (supplierPurchases.isNotEmpty()) {
             val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
             com.batterysales.ui.stockentry.Dropdown(

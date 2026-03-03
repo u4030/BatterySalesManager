@@ -63,7 +63,11 @@ class BillViewModel @Inject constructor(
     }
 
     private val _allRecentPurchases = stockEntryRepository.getAllStockEntriesFlow()
-        .map { entries -> entries.filter { it.status == "approved" && it.totalCost > 0 }.take(200) }
+        .map { entries ->
+            entries.filter { it.status == "approved" && it.totalCost > 0 }
+                .take(2000)
+        }
+        .distinctUntilChanged()
 
     private val _linkedAmounts = repository.getAllBillsFlow()
         .map { bills ->
@@ -71,6 +75,7 @@ class BillViewModel @Inject constructor(
                 .groupBy { it.relatedEntryId!! }
                 .mapValues { entry -> entry.value.sumOf { it.amount } }
         }
+        .distinctUntilChanged()
     
     val pendingPurchases: StateFlow<List<StockEntry>> = combine(
         _allRecentPurchases,
@@ -92,7 +97,7 @@ class BillViewModel @Inject constructor(
                 null
             }
         }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading = _isLoading.asStateFlow()
