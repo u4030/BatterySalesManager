@@ -68,6 +68,8 @@ class AccountingViewModel @Inject constructor(
     private val _startDate = MutableStateFlow<Long?>(null)
     private val _endDate = MutableStateFlow<Long?>(null)
 
+    private val refreshTrigger = MutableStateFlow(0)
+
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val transactions: Flow<PagingData<Transaction>> = combine(
         _selectedWarehouseId,
@@ -75,7 +77,8 @@ class AccountingViewModel @Inject constructor(
         _selectedPaymentMethod,
         _selectedYear,
         _startDate,
-        _endDate
+        _endDate,
+        refreshTrigger
     ) { args: Array<Any?> ->
         Filters(
             warehouseId = args[0] as String?,
@@ -202,6 +205,7 @@ class AccountingViewModel @Inject constructor(
         if (reset) {
             loadJob?.cancel()
             _isLoading.value = true
+            refreshTrigger.value += 1
         }
 
         loadJob = viewModelScope.launch {

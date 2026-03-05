@@ -187,10 +187,13 @@ class BankViewModel @Inject constructor(
     fun updateTransaction(transaction: BankTransaction) {
         viewModelScope.launch {
             try {
-                // Update the bank transaction
-                // Note: We don't have a specific update in repo, but we can use addTransaction with same ID if repo supported it.
-                // For now, let's just use the bankRepo.delete + add or if there is an updateTransaction.
-                // Assuming we might need an updateTransaction in repository.
+                repository.addTransaction(transaction)
+                // Also update related treasury transaction if it exists
+                accountingRepository.updateTransactionByRelatedId(
+                    relatedId = transaction.id,
+                    newAmount = transaction.amount,
+                    newDescription = "إيداع في البنك: ${transaction.description}"
+                )
                 loadData()
             } catch (e: Exception) {
                 Log.e("BankViewModel", "Error updating transaction", e)
