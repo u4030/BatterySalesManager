@@ -77,7 +77,7 @@ class InvoiceRepository @Inject constructor(
         limit: Long = 20
     ): Pair<List<Invoice>, DocumentSnapshot?> {
         var query: Query = firestore.collection(Invoice.COLLECTION_NAME)
-        
+
         if (!warehouseId.isNullOrBlank()) {
             query = query.whereEqualTo("warehouseId", warehouseId)
         }
@@ -97,7 +97,7 @@ class InvoiceRepository @Inject constructor(
             // Determine if we should search by invoiceNumber or customerPhone
             val isNumeric = searchQuery.all { it.isDigit() }
             val searchField = if (isNumeric && searchQuery.length >= 3) "customerPhone" else "invoiceNumber"
-            
+
             // Prefix search
             query = query.whereGreaterThanOrEqualTo(searchField, searchQuery)
                 .whereLessThanOrEqualTo(searchField, searchQuery + "\uf8ff")
@@ -118,20 +118,27 @@ class InvoiceRepository @Inject constructor(
     }
 
     suspend fun deleteInvoice(invoiceId: String) {
-        // First, delete all payments associated with the invoice
         val payments = firestore.collection(Payment.COLLECTION_NAME)
             .whereEqualTo("invoiceId", invoiceId)
             .get()
             .await()
 
-        val batch = firestore.batch()
-        payments.documents.forEach { doc ->
-            batch.delete(doc.reference)
-        }
+        val stockEntries = firestore.collection(com.batterysales.data.models.StockEntry.COLLECTION_NAME)
+            .whereEqualTo("invoiceId", invoiceId)
+            .get()
+            .await()
 
-        // Then, delete the invoice itself
-        batch.delete(firestore.collection(Invoice.COLLECTION_NAME).document(invoiceId))
+        firestore.runTransaction { transaction ->
+            // 1. Delete associated payments
+            payments.documents.forEach { transaction.delete(it.reference) }
 
-        batch.commit().await()
+            // 2. Delete stock entries
+            stockEntries.documents.forEach { doc ->
+                transaction.delete(doc.reference)
+            }
+
+            // 3. Delete the invoice itself
+            transaction.delete(firestore.collection(Invoice.COLLECTION_NAME).document(invoiceId))
+        }.await()
     }
 }

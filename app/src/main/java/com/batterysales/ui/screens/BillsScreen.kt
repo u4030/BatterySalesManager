@@ -7,7 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,9 +24,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavHostController
 import com.batterysales.data.models.Bill
 import com.batterysales.data.models.BillStatus
@@ -45,45 +48,31 @@ fun BillsScreen(
     navController: NavHostController,
     viewModel: BillViewModel = hiltViewModel()
 ) {
-    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    val pagingItems = viewModel.bills.collectAsLazyPagingItems()
+    val warehouses by viewModel.warehouses.collectAsState()
+    val lifecycleOwner = LocalLifecycleOwner.current
+
     DisposableEffect(lifecycleOwner) {
-        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-                viewModel.loadBills(reset = true)
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.loadData()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
     }
-
-    val bills by viewModel.filteredBills.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val suppliers by viewModel.suppliers.collectAsState()
     val pendingPurchases by viewModel.pendingPurchases.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
-    val isLoadingMore by viewModel.isLoadingMore.collectAsState()
-    val isLastPage by viewModel.isLastPage.collectAsState()
     val listState = rememberLazyListState()
 
     var showAddBillDialog by remember { mutableStateOf(false) }
     var showDateRangePicker by remember { mutableStateOf(false) }
     val dateRangePickerState = rememberDateRangePickerState()
 
-    val filteredBills = remember(bills) { bills }
-
-    // Load more when reaching the end
-    val shouldLoadMore = remember {
-        derivedStateOf {
-            val lastVisibleItem = listState.layoutInfo.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf false
-            lastVisibleItem.index >= listState.layoutInfo.totalItemsCount - 5
-        }
-    }
-
-    LaunchedEffect(shouldLoadMore.value) {
-        if (shouldLoadMore.value && !isLoading && !isLoadingMore && !isLastPage) {
-            viewModel.loadBills()
-        }
-    }
 
     val bgColor = MaterialTheme.colorScheme.background
     val cardBgColor = MaterialTheme.colorScheme.surface
@@ -143,11 +132,11 @@ fun BillsScreen(
             }
 
             item {
-                if (isLoading) {
+                if (pagingItems.loadState.refresh is androidx.paging.LoadState.Loading) {
                     Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = accentColor)
                     }
-                } else if (bills.isEmpty()) {
+                } else if (pagingItems.itemCount == 0) {
                     Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                         Text(
                             "لا توجد كمبيالات أو شيكات مسجلة",
@@ -168,25 +157,26 @@ fun BillsScreen(
                 }
             }
 
-            if (!isLoading && filteredBills.isNotEmpty()) {
-                items(filteredBills, key = { it.id }) { bill ->
-                    val supplier = suppliers.find { it.id == bill.supplierId }
+            items(pagingItems.itemCount) { index ->
+                val billItem = pagingItems[index]
+                billItem?.let { b ->
+                    val supplier = suppliers.find { it.id == b.supplierId }
                     Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                         BillItemCard(
-                            bill = bill,
+                            bill = b,
                             supplierName = supplier?.name ?: "",
-                            onPayClick = { selectedBillForPayment = bill },
-                            onDeleteClick = { billToDelete = bill },
-                            onEditClick = { billToEdit = bill }
+                            onPayClick = { selectedBillForPayment = b },
+                            onDeleteClick = { billToDelete = b },
+                            onEditClick = { billToEdit = b }
                         )
                     }
                 }
+            }
 
-                if (isLoadingMore) {
-                    item {
-                        Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(modifier = Modifier.size(32.dp), color = accentColor)
-                        }
+            if (pagingItems.loadState.append is androidx.paging.LoadState.Loading) {
+                item {
+                    Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(modifier = Modifier.size(32.dp), color = accentColor)
                     }
                 }
             }
@@ -240,9 +230,10 @@ fun BillsScreen(
         AddBillDialog(
             suppliers = suppliers,
             pendingPurchases = pendingPurchases,
+            warehouses = warehouses,
             onDismiss = { showAddBillDialog = false },
-            onAdd = { desc, amount, date, type, ref, supplierId, relatedEntryId ->
-                viewModel.addBill(desc, amount, date, type, ref, supplierId, relatedEntryId)
+            onAdd = { desc, amount, date, type, ref, supplierId, relatedEntryId, warehouseId ->
+                viewModel.addBill(desc, amount, date, type, ref, supplierId, relatedEntryId, warehouseId)
                 showAddBillDialog = false
             }
         )
@@ -349,7 +340,7 @@ fun BillItemCard(bill: Bill, supplierName: String, onPayClick: () -> Unit, onDel
                     
                     if (bill.referenceNumber.isNotEmpty()) {
                         Text(
-                            text = (if (bill.billType == BillType.CHECK) "رقم الشيك: " else "رقم السند/الكمبيالة: ") + bill.referenceNumber,
+                            text = "رقم السند: ${bill.referenceNumber}",
                             style = MaterialTheme.typography.labelSmall,
                             color = Color(0xFFFB8C00)
                         )
@@ -422,12 +413,14 @@ fun PaymentDialog(
 fun AddBillDialog(
     suppliers: List<com.batterysales.data.models.Supplier>,
     pendingPurchases: List<com.batterysales.data.models.StockEntry>,
+    warehouses: List<com.batterysales.data.models.Warehouse>,
     onDismiss: () -> Unit,
-    onAdd: (String, Double, Date, BillType, String, String, String?) -> Unit
+    onAdd: (String, Double, Date, BillType, String, String, String?, String?) -> Unit
 ) {
     var description by remember { mutableStateOf("") }
     var selectedSupplier by remember { mutableStateOf<com.batterysales.data.models.Supplier?>(null) }
     var selectedPurchase by remember { mutableStateOf<com.batterysales.data.models.StockEntry?>(null) }
+    var selectedWarehouseId by remember { mutableStateOf<String?>(null) }
     var amount by remember { mutableStateOf("") }
     var refNum by remember { mutableStateOf("") }
     var selectedType by remember { mutableStateOf(BillType.CHECK) }
@@ -446,7 +439,7 @@ fun AddBillDialog(
         confirmButton = {
             Button(onClick = {
                 val amt = amount.toDoubleOrNull() ?: 0.0
-                if (description.isNotEmpty() && amt > 0) onAdd(description, amt, selectedDate, selectedType, refNum, selectedSupplier?.id ?: "", selectedPurchase?.id)
+                if (description.isNotEmpty() && amt > 0) onAdd(description, amt, selectedDate, selectedType, refNum, selectedSupplier?.id ?: "", selectedPurchase?.id, selectedWarehouseId)
             }) { Text("إضافة") }
         },
         dismissButton = {
@@ -464,9 +457,12 @@ fun AddBillDialog(
             enabled = true
         )
 
-        val supplierPurchases = pendingPurchases
-            .filter { it.supplierId == selectedSupplier?.id || (it.supplierId.isBlank() && it.supplier == selectedSupplier?.name) }
-            .sortedByDescending { it.timestamp }
+        val supplierPurchases = pendingPurchases.filter { entry ->
+            val matchId = entry.supplierId.isNotEmpty() && entry.supplierId == selectedSupplier?.id
+            val matchName = entry.supplier.isNotBlank() &&
+                    entry.supplier.trim().equals(selectedSupplier?.name?.trim(), ignoreCase = true)
+            matchId || matchName
+        }.sortedByDescending { it.timestamp }
         if (supplierPurchases.isNotEmpty()) {
             val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
             com.batterysales.ui.stockentry.Dropdown(
@@ -492,11 +488,17 @@ fun AddBillDialog(
                     modifier = Modifier.padding(horizontal = 4.dp)
                 )
             }
-        }
+
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = amount,
             onValueChange = { amount = it },
             label = "المبلغ"
+        )
+
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = refNum,
+            onValueChange = { refNum = it },
+            label = "رقم السند / الشيك"
         )
 
         com.batterysales.ui.components.CustomKeyboardTextField(
@@ -505,11 +507,18 @@ fun AddBillDialog(
             label = "الوصف"
         )
 
-        com.batterysales.ui.components.CustomKeyboardTextField(
-            value = refNum,
-            onValueChange = { refNum = it },
-            label = if (selectedType == BillType.CHECK) "رقم الشيك" else "رقم الكمبيالة"
-        )
+
+//        if (warehouses.isNotEmpty()) {
+//            com.batterysales.ui.stockentry.Dropdown(
+//                label = "المستودع (للخزينة)",
+//                selectedValue = warehouses.find { it.id == selectedWarehouseId }?.name ?: "اختر المستودع",
+//                options = warehouses.map { it.name },
+//                onOptionSelected = { index -> selectedWarehouseId = warehouses[index].id },
+//                enabled = true
+//            )
+//        }
+
+        }
 
         Text("نوع الالتزام:", fontSize = 14.sp, fontWeight = FontWeight.Medium)
         Row(
@@ -636,7 +645,7 @@ fun EditBillDialog(
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = refNum,
             onValueChange = { refNum = it },
-            label = if (selectedType == BillType.CHECK) "رقم الشيك" else "رقم السند/الكمبيالة"
+            label = "رقم السند / الشيك"
         )
 
         com.batterysales.ui.stockentry.Dropdown(

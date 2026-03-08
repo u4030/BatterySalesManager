@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -20,9 +21,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavHostController
 import com.batterysales.data.models.BankTransaction
 import com.batterysales.data.models.BankTransactionType
@@ -40,18 +44,21 @@ fun BankScreen(
     navController: NavHostController,
     viewModel: BankViewModel = hiltViewModel()
 ) {
-    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    val pagingItems = viewModel.transactions.collectAsLazyPagingItems()
+    val lifecycleOwner = LocalLifecycleOwner.current
+
     DisposableEffect(lifecycleOwner) {
-        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-                viewModel.loadData(reset = true)
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.loadData()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
     }
-
-    val transactions by viewModel.transactions.collectAsState()
+    val warehouses by viewModel.warehouses.collectAsState()
     val balance by viewModel.balance.collectAsState()
     val totalWithdrawals by viewModel.totalWithdrawals.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -62,41 +69,14 @@ fun BankScreen(
     var showAddDialog by remember { mutableStateOf(false) }
     var selectedType by remember { mutableStateOf(com.batterysales.data.models.BankTransactionType.DEPOSIT) }
     var transactionToEdit by remember { mutableStateOf<BankTransaction?>(null) }
-    var transactionToDelete by remember { mutableStateOf<BankTransaction?>(null) }
+    var showDeleteConfirm by remember { mutableStateOf<BankTransaction?>(null) }
 
-    var selectedTab by remember { mutableIntStateOf(0) }
+    val selectedTab by viewModel.selectedTab.collectAsState()
     var showDateRangePicker by remember { mutableStateOf(false) }
     val dateRangePickerState = rememberDateRangePickerState()
 
-    var searchQuery by remember { mutableStateOf("") }
+    val searchQuery by viewModel.searchQuery.collectAsState()
 
-    val filteredTransactions = remember(transactions, selectedTab, searchQuery) {
-        transactions.filter { transaction ->
-            val matchesTab = when (selectedTab) {
-                0 -> true // All
-                1 -> transaction.type == com.batterysales.data.models.BankTransactionType.WITHDRAWAL // Withdrawals
-                else -> true
-            }
-            val matchesSearch = transaction.description.contains(searchQuery, ignoreCase = true) || 
-                               transaction.referenceNumber.contains(searchQuery, ignoreCase = true) ||
-                               transaction.supplierName.contains(searchQuery, ignoreCase = true)
-            matchesTab && matchesSearch
-        }
-    }
-
-    // Load more when reaching the end
-    val shouldLoadMore = remember {
-        derivedStateOf {
-            val lastVisibleItem = listState.layoutInfo.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf false
-            lastVisibleItem.index >= listState.layoutInfo.totalItemsCount - 5
-        }
-    }
-
-    LaunchedEffect(shouldLoadMore.value) {
-        if (shouldLoadMore.value && !isLoading && !isLoadingMore && !isLastPage) {
-            viewModel.loadData()
-        }
-    }
 
     val bgColor = MaterialTheme.colorScheme.background
     val cardBgColor = MaterialTheme.colorScheme.surface
@@ -220,11 +200,11 @@ fun BankScreen(
                                     fontWeight = FontWeight.Bold,
                                     color = Color.White
                                 )
-                                
+
                                 Spacer(modifier = Modifier.height(12.dp))
                                 HorizontalDivider(color = Color.White.copy(alpha = 0.2f))
                                 Spacer(modifier = Modifier.height(12.dp))
-                                
+
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                         Text("إجمالي المسحوبات", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
@@ -234,7 +214,7 @@ fun BankScreen(
                                         Text("حالة الرصيد", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
                                         Text(
                                             if (balance >= 0) "إيجابي" else "مدين",
-                                            color = if (balance >= 0) Color(0xFF10B981) else Color(0xFFEF4444),
+                                            color = if (balance >= 0) Color(0xFF10B948) else Color(0xFFEF4444),
                                             fontWeight = FontWeight.Bold
                                         )
                                     }
@@ -259,10 +239,10 @@ fun BankScreen(
                         },
                         divider = {}
                     ) {
-                        Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }) {
+                        Tab(selected = selectedTab == 0, onClick = { viewModel.onTabSelected(0) }) {
                             Text("الكل", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleSmall, color = if(selectedTab == 0) accentColor else MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) {
+                        Tab(selected = selectedTab == 1, onClick = { viewModel.onTabSelected(1) }) {
                             Text("المسحوبات", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleSmall, color = if(selectedTab == 1) accentColor else MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
@@ -272,7 +252,7 @@ fun BankScreen(
                     // Search Bar
                     CustomKeyboardTextField(
                         value = searchQuery,
-                        onValueChange = { searchQuery = it },
+                        onValueChange = viewModel::onSearchQueryChanged,
                         modifier = Modifier.fillMaxWidth(),
                         label = "بحث بالوصف أو الرقم المرجعي..."
                     )
@@ -288,30 +268,55 @@ fun BankScreen(
                 }
             }
 
-            if (isLoading) {
+            val loadState = pagingItems.loadState
+            if (loadState.refresh is androidx.paging.LoadState.Loading) {
                 item {
                     Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = accentColor)
                     }
                 }
-            } else if (filteredTransactions.isEmpty()) {
+            } else if (loadState.refresh is androidx.paging.LoadState.Error) {
+                val error = (loadState.refresh as androidx.paging.LoadState.Error).error
+                item {
+                    Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                        Text("حدث خطأ أثناء تحميل السجل: ${error.localizedMessage}", color = Color.Red, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    }
+                }
+            } else if (pagingItems.itemCount == 0) {
                 item {
                     Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                         Text(
-                            "لا توجد عمليات تطابق البحث",
+                            "لا توجد عمليات حالياً",
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
                 }
             } else {
-                items(filteredTransactions, key = { it.id }) { transaction ->
-                    Box(modifier = Modifier.padding(horizontal = 16.dp)) {
-                        BankTransactionItemCard(
-                            transaction = transaction,
-                            onEdit = { transactionToEdit = transaction },
-                            onDelete = { transactionToDelete = transaction }
-                        )
+                items(
+                    count = pagingItems.itemCount,
+                    key = { index ->
+                        val item = pagingItems[index]
+                        "${selectedTab}_${item?.id ?: index}"
+                    }
+                ) { index ->
+                    val transaction = pagingItems[index]
+                    transaction?.let {
+                        Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                            BankTransactionItemCard(
+                                transaction = it,
+                                onEdit = { transactionToEdit = it },
+                                onDelete = { showDeleteConfirm = it }
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (pagingItems.loadState.append is androidx.paging.LoadState.Loading) {
+                item {
+                    Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(modifier = Modifier.size(32.dp), color = accentColor)
                     }
                 }
             }
@@ -332,103 +337,108 @@ fun BankScreen(
         )
     }
 
-    val warehouses by viewModel.warehouses.collectAsState()
-
-    if (showAddDialog) {
-        BankTransactionDialog(
-            type = selectedType,
-            warehouses = warehouses,
-            onDismiss = { showAddDialog = false },
-            onConfirm = { type, desc, amount, ref, supplier, warehouseId ->
-                viewModel.addManualTransaction(type, amount, desc, ref, supplier, warehouseId)
-                showAddDialog = false
-            }
-        )
-    }
-
-    transactionToEdit?.let { transaction ->
-        BankTransactionDialog(
-            transaction = transaction,
-            type = transaction.type,
-            warehouses = warehouses,
-            onDismiss = { transactionToEdit = null },
-            onConfirm = { type, desc, amount, ref, supplier, warehouseId ->
-                viewModel.updateTransaction(transaction.copy(
-                    description = desc,
-                    amount = amount,
-                    referenceNumber = ref,
-                    supplierName = supplier
-                ))
-                transactionToEdit = null
-            }
-        )
-    }
-
-    transactionToDelete?.let { transaction ->
+    if (showDeleteConfirm != null) {
         AlertDialog(
-            onDismissRequest = { transactionToDelete = null },
-            title = { Text("تأكيد الحذف") },
-            text = { Text("هل أنت متأكد من حذف هذه العملية؟ سيتم أيضاً حذف العملية المتعلقة بها في الخزينة إن وجدت.") },
+            onDismissRequest = { showDeleteConfirm = null },
+            title = { Text("حذف العملية") },
+            text = { Text("هل أنت متأكد من حذف هذه العملية البنكية؟ إذا كانت مرتبطة بالخزينة سيتم حذف القيد المقابل أيضاً.") },
             confirmButton = {
                 Button(
                     onClick = {
-                        viewModel.deleteTransaction(transaction.id)
-                        transactionToDelete = null
+                        viewModel.deleteTransaction(showDeleteConfirm!!.id)
+                        showDeleteConfirm = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) { Text("حذف") }
             },
             dismissButton = {
-                TextButton(onClick = { transactionToDelete = null }) { Text("إلغاء") }
+                TextButton(onClick = { showDeleteConfirm = null }) { Text("إلغاء") }
+            }
+        )
+    }
+
+    if (transactionToEdit != null) {
+        EditBankTransactionDialog(
+            transaction = transactionToEdit!!,
+            onDismiss = { transactionToEdit = null },
+            onConfirm = { updated ->
+                viewModel.updateTransaction(updated)
+                transactionToEdit = null
+            }
+        )
+    }
+
+    if (showAddDialog) {
+        AddBankTransactionDialog(
+            type = selectedType,
+            warehouses = warehouses,
+            onDismiss = { showAddDialog = false },
+            onAdd = { type, desc, amount, ref, supplier, fromTreasury, warehouseId ->
+                viewModel.addManualTransaction(type, amount, desc, ref, supplier, fromTreasury, warehouseId)
+                showAddDialog = false
             }
         )
     }
 }
 
 @Composable
-fun BankTransactionDialog(
-    transaction: BankTransaction? = null,
+fun AddBankTransactionDialog(
     type: com.batterysales.data.models.BankTransactionType,
     warehouses: List<com.batterysales.data.models.Warehouse>,
     onDismiss: () -> Unit,
-    onConfirm: (com.batterysales.data.models.BankTransactionType, String, Double, String, String, String?) -> Unit
+    onAdd: (com.batterysales.data.models.BankTransactionType, String, Double, String, String, Boolean, String?) -> Unit
 ) {
-    var description by remember { mutableStateOf(transaction?.description ?: "") }
-    var amount by remember { mutableStateOf(transaction?.amount?.toString() ?: "") }
-    var referenceNumber by remember { mutableStateOf(transaction?.referenceNumber ?: "") }
-    var supplierName by remember { mutableStateOf(transaction?.supplierName ?: "") }
-    var selectedWarehouse by remember { mutableStateOf<com.batterysales.data.models.Warehouse?>(null) }
+    var description by remember { mutableStateOf("") }
+    var amount by remember { mutableStateOf("") }
+    var referenceNumber by remember { mutableStateOf("") }
+    var supplierName by remember { mutableStateOf("") }
+    var fromTreasury by remember { mutableStateOf(false) }
+    var selectedWarehouseId by remember { mutableStateOf<String?>(null) }
 
     AppDialog(
         onDismiss = onDismiss,
-        title = if (transaction == null) {
-            if (type == com.batterysales.data.models.BankTransactionType.DEPOSIT) "إيداع في البنك" else "سحب من البنك"
-        } else "تعديل العملية",
+        title = if (type == com.batterysales.data.models.BankTransactionType.DEPOSIT) "إيداع في البنك" else "سحب من البنك",
         confirmButton = {
             Button(onClick = {
                 val amt = amount.toDoubleOrNull() ?: 0.0
-                if (description.isNotEmpty() && amt > 0) {
-                    onConfirm(type, description, amt, referenceNumber, supplierName, selectedWarehouse?.id)
-                }
+                if (description.isNotEmpty() && amt > 0) onAdd(type, description, amt, referenceNumber, supplierName, fromTreasury, selectedWarehouseId)
             }, colors = ButtonDefaults.buttonColors(
                 containerColor = if (type == com.batterysales.data.models.BankTransactionType.DEPOSIT) Color(0xFF4CAF50) else Color(0xFFF44336)
-            )) { Text(if (transaction == null) "إضافة" else "حفظ") }
+            )) { Text("موافق") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("إلغاء") }
         }
     ) {
         if (type == com.batterysales.data.models.BankTransactionType.DEPOSIT) {
-            Text("ملاحظة: سيتم خصم هذا المبلغ من الخزينة التابعة للمستودع المختار.", style = MaterialTheme.typography.labelSmall, color = Color(0xFFFB8C00))
-            com.batterysales.ui.stockentry.Dropdown(
-                label = "المستودع (للخصم من الخزينة)",
-                selectedValue = selectedWarehouse?.name ?: "اختر المستودع",
-                options = warehouses.map { it.name },
-                onOptionSelected = { index -> selectedWarehouse = warehouses[index] },
-                enabled = true
-            )
-            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("إيداع من الخزينة؟", style = MaterialTheme.typography.bodyMedium)
+                Switch(
+                    checked = fromTreasury,
+                    onCheckedChange = { fromTreasury = it }
+                )
+            }
+            if (fromTreasury) {
+                Text("سيتم خصم المبلغ تلقائياً من رصيد الخزينة", style = MaterialTheme.typography.bodySmall, color = Color(0xFFFB8C00))
+                Spacer(modifier = Modifier.height(8.dp))
+
+                if (warehouses.isNotEmpty()) {
+                    com.batterysales.ui.stockentry.Dropdown(
+                        label = "المستودع (الخزينة) المصدر",
+                        selectedValue = warehouses.find { it.id == selectedWarehouseId }?.name ?: "اختر المستودع",
+                        options = warehouses.map { it.name },
+                        onOptionSelected = { index -> selectedWarehouseId = warehouses[index].id },
+                        enabled = true
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
         }
+
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = description,
             onValueChange = { description = it },
@@ -443,6 +453,53 @@ fun BankTransactionDialog(
             value = referenceNumber,
             onValueChange = { referenceNumber = it },
             label = "رقم الشيك/السند (اختياري)"
+        )
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = amount,
+            onValueChange = { amount = it },
+            label = "المبلغ"
+        )
+    }
+}
+
+@Composable
+fun EditBankTransactionDialog(
+    transaction: BankTransaction,
+    onDismiss: () -> Unit,
+    onConfirm: (BankTransaction) -> Unit
+) {
+    var description by remember { mutableStateOf(transaction.description) }
+    var amount by remember { mutableStateOf(transaction.amount.toString()) }
+    var referenceNumber by remember { mutableStateOf(transaction.referenceNumber) }
+    var supplierName by remember { mutableStateOf(transaction.supplierName) }
+
+    AppDialog(
+        onDismiss = onDismiss,
+        title = "تعديل عملية بنكية",
+        confirmButton = {
+            Button(onClick = {
+                val amt = amount.toDoubleOrNull() ?: transaction.amount
+                onConfirm(transaction.copy(description = description, amount = amt, referenceNumber = referenceNumber, supplierName = supplierName))
+            }) { Text("موافق") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("إلغاء") }
+        }
+    ) {
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = description,
+            onValueChange = { description = it },
+            label = "الوصف"
+        )
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = supplierName,
+            onValueChange = { supplierName = it },
+            label = "المورد"
+        )
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = referenceNumber,
+            onValueChange = { referenceNumber = it },
+            label = "رقم الشيك/المرجع"
         )
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = amount,
@@ -494,19 +551,20 @@ fun BankTransactionItemCard(
                     }
                 }
 
-                Row {
-                    IconButton(
-                        onClick = onEdit,
-                        modifier = Modifier.size(36.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), CircleShape)
-                    ) {
-                        Icon(Icons.Default.Edit, contentDescription = "Edit", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    IconButton(
-                        onClick = onDelete,
-                        modifier = Modifier.size(36.dp).background(MaterialTheme.colorScheme.error.copy(alpha = 0.1f), CircleShape)
-                    ) {
-                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                if (transaction.billId == null) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        IconButton(
+                            onClick = onEdit,
+                            modifier = Modifier.size(32.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f), CircleShape)
+                        ) {
+                            Icon(Icons.Default.Edit, contentDescription = "Edit", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                        }
+                        IconButton(
+                            onClick = onDelete,
+                            modifier = Modifier.size(32.dp).background(Color(0xFF3B1F1F), CircleShape)
+                        ) {
+                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color(0xFFEF4444), modifier = Modifier.size(16.dp))
+                        }
                     }
                 }
             }
@@ -541,7 +599,7 @@ fun BankTransactionItemCard(
             if (transaction.referenceNumber.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "رقم الشيك/السند/المرجع: ${transaction.referenceNumber}",
+                    text = "رقم الشيك: ${transaction.referenceNumber}",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color(0xFFFB8C00),
                     fontWeight = FontWeight.Medium
@@ -549,7 +607,7 @@ fun BankTransactionItemCard(
             }
 
             Spacer(modifier = Modifier.height(12.dp))
-            
+
             Text(
                 dateFormatter.format(transaction.date),
                 style = MaterialTheme.typography.labelSmall,

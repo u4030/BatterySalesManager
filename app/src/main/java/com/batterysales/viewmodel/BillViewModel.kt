@@ -2,8 +2,14 @@ package com.batterysales.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.paging.Pager
+import androidx.paging.PagingConfig
+import androidx.paging.PagingData
+import androidx.paging.cachedIn
+import androidx.paging.filter
 import com.batterysales.data.models.*
 import com.batterysales.data.repositories.*
+import com.batterysales.data.paging.BillPagingSource
 import com.google.firebase.firestore.DocumentSnapshot
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
@@ -19,42 +25,63 @@ class BillViewModel @Inject constructor(
     private val stockEntryRepository: StockEntryRepository,
     private val accountingRepository: AccountingRepository,
     private val bankRepository: BankRepository,
-    private val userRepository: UserRepository
+    private val warehouseRepository: com.batterysales.data.repositories.WarehouseRepository,
+    private val userRepository: com.batterysales.data.repositories.UserRepository
 ) : ViewModel() {
 
-    private val _bills = MutableStateFlow<List<Bill>>(emptyList())
     private val _searchQuery = MutableStateFlow("")
     val searchQuery = _searchQuery.asStateFlow()
 
     private val _suppliers = MutableStateFlow<List<Supplier>>(emptyList())
     val suppliers = _suppliers.asStateFlow()
 
-    val filteredBills: StateFlow<List<Bill>> = combine(
-        _bills,
-        _suppliers,
-        _searchQuery
-    ) { bills, suppliers, query ->
-        if (query.isBlank()) return@combine bills
-        
-        val suppliersMap = suppliers.associateBy { it.id }
-        bills.filter { bill ->
-            val supplierName = suppliersMap[bill.supplierId]?.name ?: ""
-            bill.referenceNumber.contains(query, ignoreCase = true) ||
-            supplierName.contains(query, ignoreCase = true) ||
-            bill.description.contains(query, ignoreCase = true)
-        }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val warehouses: StateFlow<List<com.batterysales.data.models.Warehouse>> = warehouseRepository.getWarehouses()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private val _linkedAmounts = MutableStateFlow<Map<String, Double>>(emptyMap())
+    private val refreshTrigger = MutableStateFlow(0)
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val bills: Flow<PagingData<Bill>> = combine(
+        _searchQuery,
+        _suppliers,
+        refreshTrigger
+    ) { query, suppliers, _ ->
+        Pair(query, suppliers)
+    }.flatMapLatest { (query, suppliers) ->
+        val suppliersMap = suppliers.associateBy { it.id }
+        Pager(PagingConfig(pageSize = 20)) {
+            BillPagingSource(repository)
+        }.flow.map { pagingData ->
+            if (query.isBlank()) pagingData
+            else pagingData.filter { bill ->
+                val supplierName = suppliersMap[bill.supplierId]?.name ?: ""
+                bill.referenceNumber.contains(query, ignoreCase = true) ||
+                        supplierName.contains(query, ignoreCase = true) ||
+                        bill.description.contains(query, ignoreCase = true)
+            }
+        }.cachedIn(viewModelScope)
+    }
+
+    private val _allRecentPurchases = stockEntryRepository.getAllStockEntriesFlow()
+        .map { entries -> 
+            entries.filter { it.status == "approved" && it.totalCost > 0 }
+                .take(2000) 
+        }
+        .distinctUntilChanged()
+    
+    private val _linkedAmounts = repository.getAllBillsFlow()
+        .map { bills ->
+            bills.filter { it.relatedEntryId != null }
+                .groupBy { it.relatedEntryId!! }
+                .mapValues { entry -> entry.value.sumOf { it.amount } }
+        }
+        .distinctUntilChanged()
     
     val pendingPurchases: StateFlow<List<StockEntry>> = combine(
-        stockEntryRepository.getAllStockEntriesFlow(),
+        _allRecentPurchases,
         _linkedAmounts
     ) { entries, linkedAmounts ->
-        // Only consider approved purchases (quantity > 0 and status approved)
-        val purchases = entries.filter { it.status == StockEntry.STATUS_APPROVED && it.totalCost > 0 }
-        
-        val grouped = purchases.groupBy { it.orderId.ifEmpty { it.id } }
+        val grouped = entries.groupBy { it.orderId.ifEmpty { it.id } }
         grouped.mapNotNull { (key, group) ->
             val representative = group.first()
             val totalOrderCost = if (representative.grandTotalCost > 0) representative.grandTotalCost else group.sumOf { it.totalCost }
@@ -69,8 +96,8 @@ class BillViewModel @Inject constructor(
             } else {
                 null
             }
-        }.sortedByDescending { it.timestamp }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading = _isLoading.asStateFlow()
@@ -84,26 +111,12 @@ class BillViewModel @Inject constructor(
     private var lastDocument: DocumentSnapshot? = null
 
     init {
-        userRepository.getCurrentUserFlow()
-            .onEach {
-                loadInitialData()
-            }.launchIn(viewModelScope)
+        loadInitialData()
     }
 
     fun loadInitialData() {
         loadBills(reset = true)
         loadSuppliers()
-        loadLinkedIds()
-    }
-
-    private fun loadLinkedIds() {
-        viewModelScope.launch {
-            try {
-                _linkedAmounts.value = repository.getLinkedAmounts()
-            } catch (e: Exception) {
-                Log.e("BillViewModel", "Error loading linked amounts", e)
-            }
-        }
     }
 
     fun onSearchQueryChanged(query: String) {
@@ -114,33 +127,8 @@ class BillViewModel @Inject constructor(
 
     fun loadBills(reset: Boolean = false) {
         if (reset) {
-            lastDocument = null
-            _bills.value = emptyList()
-            _isLastPage.value = false
             _isLoading.value = true
-        }
-
-        if (_isLastPage.value || _isLoadingMore.value) return
-
-        viewModelScope.launch {
-            try {
-                if (!reset) _isLoadingMore.value = true
-
-                val result = repository.getBillsPaginated(
-                    lastDocument = lastDocument,
-                    limit = 20
-                )
-
-                val newBills = result.first
-                lastDocument = result.second
-
-                _bills.update { current -> if (reset) newBills else current + newBills }
-                _isLastPage.value = newBills.size < 20
-
-            } finally {
-                _isLoading.value = false
-                _isLoadingMore.value = false
-            }
+            refreshTrigger.value += 1
         }
     }
 
@@ -152,13 +140,24 @@ class BillViewModel @Inject constructor(
         }
     }
 
-    fun addBill(description: String, amount: Double, dueDate: Date, billType: BillType, referenceNumber: String = "", supplierId: String = "", relatedEntryId: String? = null) {
+    fun addBill(
+        description: String, 
+        amount: Double, 
+        dueDate: Date, 
+        billType: BillType, 
+        referenceNumber: String = "", 
+        supplierId: String = "", 
+        relatedEntryId: String? = null,
+        warehouseId: String? = null
+    ) {
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                val warehouseId = if (relatedEntryId != null) {
-                    pendingPurchases.value.find { it.id == relatedEntryId }?.warehouseId
-                } else null
+                val finalWarehouseId = warehouseId ?: if (relatedEntryId != null) {
+                    pendingPurchases.value.find { it.id == relatedEntryId || it.orderId == relatedEntryId }?.warehouseId
+                } else {
+                    userRepository.getCurrentUser()?.warehouseId
+                }
 
                 val bill = Bill(
                     description = description,
@@ -168,11 +167,12 @@ class BillViewModel @Inject constructor(
                     referenceNumber = referenceNumber,
                     supplierId = supplierId,
                     relatedEntryId = relatedEntryId,
-                    warehouseId = warehouseId
+                    warehouseId = finalWarehouseId
                 )
                 repository.addBill(bill)
                 loadBills(reset = true)
-                loadLinkedIds() // Refresh linked IDs after adding a bill
+            } catch (e: Exception) {
+                Log.e("BillViewModel", "Error adding bill", e)
             } finally {
                 _isLoading.value = false
             }
@@ -182,15 +182,31 @@ class BillViewModel @Inject constructor(
     fun recordPayment(billId: String, amount: Double) {
         viewModelScope.launch {
             try {
-                val bill = _bills.value.find { it.id == billId } ?: return@launch
+                // Fetch the bill once to get details
+                val snapshot = repository.getBill(billId) ?: return@launch
+                val bill = snapshot
                 val supplier = _suppliers.value.find { it.id == bill.supplierId }
                 val supplierName = supplier?.name ?: ""
                 
                 repository.recordPayment(billId, amount)
 
-                // Record in treasury if it's NOT a check (checks come from Bank)
-                // Promissory notes (BILL) and others usually come from Treasury cash
-                if (bill.billType != BillType.CHECK) {
+                // Logic updated based on requirement:
+                // 1. Promissory Notes (BILL/TRANSFER/OTHER) are deducted from Treasury (Accounting)
+                // 2. Checks (CHECK) are deducted from Bank ONLY.
+
+                if (bill.billType == com.batterysales.data.models.BillType.CHECK) {
+                    // Record ONLY in bank if it's a check
+                    val bankTransaction = com.batterysales.data.models.BankTransaction(
+                        type = com.batterysales.data.models.BankTransactionType.WITHDRAWAL,
+                        amount = amount,
+                        description = "تسديد لشيك: ${bill.description} (المورد: $supplierName)",
+                        billId = billId,
+                        referenceNumber = bill.referenceNumber,
+                        supplierName = supplierName
+                    )
+                    bankRepository.addTransaction(bankTransaction)
+                } else {
+                    // Record ONLY in treasury (Accounting) for other types
                     val transaction = Transaction(
                         type = com.batterysales.data.models.TransactionType.EXPENSE,
                         amount = amount,
@@ -200,19 +216,6 @@ class BillViewModel @Inject constructor(
                         warehouseId = bill.warehouseId
                     )
                     accountingRepository.addTransaction(transaction)
-                }
-
-                // Record in bank if it's a check
-                if (bill.billType == com.batterysales.data.models.BillType.CHECK) {
-                    val bankTransaction = com.batterysales.data.models.BankTransaction(
-                        type = com.batterysales.data.models.BankTransactionType.WITHDRAWAL,
-                        amount = amount,
-                        description = "تسديد لشيك: ${bill.description}",
-                        billId = billId,
-                        referenceNumber = bill.referenceNumber,
-                        supplierName = supplierName
-                    )
-                    bankRepository.addTransaction(bankTransaction)
                 }
 
                 loadBills(reset = true)
@@ -230,7 +233,6 @@ class BillViewModel @Inject constructor(
                 accountingRepository.deleteTransactionsByRelatedId(billId)
                 bankRepository.deleteTransactionsByBillId(billId)
                 loadBills(reset = true)
-                loadLinkedIds() // Refresh linking availability
             } catch (e: Exception) {
                 Log.e("BillViewModel", "Error deleting bill", e)
             }

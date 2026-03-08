@@ -273,8 +273,7 @@ class SalesViewModel @Inject constructor(
 
     fun findProductByBarcode(barcode: String) {
         viewModelScope.launch {
-            val allVariants = productVariantRepository.getAllVariants()
-            val variant = allVariants.find { it.barcode == barcode }
+            val variant = productVariantRepository.getVariantByBarcode(barcode)
             if (variant != null) {
                 val product = productRepository.getProduct(variant.productId)
                 if (product != null) {

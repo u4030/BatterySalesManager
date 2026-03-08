@@ -2,14 +2,20 @@ package com.batterysales.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.paging.Pager
+import androidx.paging.PagingConfig
+import androidx.paging.PagingData
+import androidx.paging.cachedIn
 import com.batterysales.data.models.BankTransaction
+import com.batterysales.data.paging.BankPagingSource
 import com.google.firebase.firestore.DocumentSnapshot
 import com.batterysales.data.repositories.BankRepository
+import com.batterysales.utils.Quadruple
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.*
 import android.util.Log
-import kotlinx.coroutines.flow.update
+import androidx.paging.filter
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import java.util.Calendar
 import javax.inject.Inject
@@ -18,11 +24,9 @@ import javax.inject.Inject
 class BankViewModel @Inject constructor(
     private val repository: BankRepository,
     private val accountingRepository: com.batterysales.data.repositories.AccountingRepository,
+    private val userRepository: com.batterysales.data.repositories.UserRepository,
     private val warehouseRepository: com.batterysales.data.repositories.WarehouseRepository
 ) : ViewModel() {
-
-    private val _transactions = MutableStateFlow<List<BankTransaction>>(emptyList())
-    val transactions = _transactions.asStateFlow()
 
     private val _balance = MutableStateFlow(0.0)
     val balance = _balance.asStateFlow()
@@ -42,66 +46,102 @@ class BankViewModel @Inject constructor(
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage = _errorMessage.asStateFlow()
 
-    private val _warehouses = MutableStateFlow<List<com.batterysales.data.models.Warehouse>>(emptyList())
-    val warehouses = _warehouses.asStateFlow()
+    private val _selectedTab = MutableStateFlow(0) // 0: All, 1: Withdrawals
+    val selectedTab = _selectedTab.asStateFlow()
 
-    private var lastDocument: DocumentSnapshot? = null
-    private var currentStartDate: Long? = null
-    private var currentEndDate: Long? = null
+    private val _startDate = MutableStateFlow<Long?>(null)
+    private val _endDate = MutableStateFlow<Long?>(null)
+
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery = _searchQuery.asStateFlow()
+
+    private val refreshTrigger = MutableStateFlow(0)
+
+    val warehouses: StateFlow<List<com.batterysales.data.models.Warehouse>> = warehouseRepository.getWarehouses()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val transactions: Flow<PagingData<BankTransaction>> = combine(
+        _startDate,
+        _endDate,
+        _selectedTab,
+        _searchQuery,
+        refreshTrigger
+    ) { start, end, tab, query, refresh ->
+        BankFilters(start, end, tab, query, refresh)
+    }
+        .distinctUntilChanged()
+        .flatMapLatest { filters ->
+            Log.d("BankViewModel", "Applying filters: tab=${filters.tab}, query=${filters.query}")
+            // Explicit type string for Firestore and local matching
+            val filterType = if (filters.tab == 1) com.batterysales.data.models.BankTransactionType.WITHDRAWAL else null
+
+            Pager(PagingConfig(pageSize = 20, enablePlaceholders = false)) {
+                com.batterysales.data.paging.BankPagingSource(
+                    repository = repository,
+                    startDate = filters.start,
+                    endDate = filters.end,
+                    type = filterType?.name
+                )
+            }.flow
+                .map { pagingData ->
+                    pagingData.filter { trans ->
+                        // Strict local filtering fallback to guarantee tab correctness
+                        val typeMatch = filterType == null || trans.type == filterType
+                        val queryMatch = filters.query.isBlank() ||
+                                trans.description.contains(filters.query, ignoreCase = true) ||
+                                trans.referenceNumber.contains(filters.query, ignoreCase = true) ||
+                                trans.supplierName.contains(filters.query, ignoreCase = true) ||
+                                trans.notes.contains(filters.query, ignoreCase = true)
+
+                        typeMatch && queryMatch
+                    }
+                }
+        }
+        .cachedIn(viewModelScope)
+
+    private data class BankFilters(
+        val start: Long?,
+        val end: Long?,
+        val tab: Int,
+        val query: String,
+        val refresh: Int
+    )
 
     init {
-        loadWarehouses()
         // Default to current year
         val cal = Calendar.getInstance()
         val year = cal.get(Calendar.YEAR)
-        
-        cal.set(year, Calendar.JANUARY, 1, 0, 0, 0)
-        currentStartDate = cal.timeInMillis
-        cal.set(year, Calendar.DECEMBER, 31, 23, 59, 59)
-        currentEndDate = cal.timeInMillis
 
-        loadData(reset = true)
+        cal.set(year, Calendar.JANUARY, 1, 0, 0, 0)
+        _startDate.value = cal.timeInMillis
+        cal.set(year, Calendar.DECEMBER, 31, 23, 59, 59)
+        _endDate.value = cal.timeInMillis
+
+        loadData()
     }
 
-    fun loadData(reset: Boolean = false) {
-        if (reset) {
-            lastDocument = null
-            _transactions.value = emptyList()
-            _isLastPage.value = false
-            _isLoading.value = true
-        }
-
-        if (_isLastPage.value || _isLoadingMore.value) return
-
+    fun loadData() {
+        _isLoading.value = true
         viewModelScope.launch {
             try {
-                if (!reset) _isLoadingMore.value = true
+                val end = _endDate.value
+                val start = _startDate.value
 
-                val result = repository.getTransactionsPaginated(
-                    startDate = currentStartDate,
-                    endDate = currentEndDate,
-                    lastDocument = lastDocument,
-                    limit = 20
-                )
+                kotlinx.coroutines.coroutineScope {
+                    val balanceJob = async { repository.getCurrentBalance(end) }
+                    val withdrawalsJob = async { repository.getTotalWithdrawals(start, end) }
 
-                val newTransactions = result.first
-                lastDocument = result.second
-
-                _transactions.update { current -> if (reset) newTransactions else current + newTransactions }
-                _isLastPage.value = newTransactions.size < 20
-
-                if (reset) {
-                    _balance.value = repository.getCurrentBalance(currentEndDate)
-                    _totalWithdrawals.value = repository.getTotalWithdrawals(currentStartDate, currentEndDate)
+                    _balance.value = balanceJob.await()
+                    _totalWithdrawals.value = withdrawalsJob.await()
                 }
-                
-                _isLoading.value = false
-                _isLoadingMore.value = false
+
+                refreshTrigger.value += 1 // Force Paging 3 to reload
             } catch (e: Exception) {
                 Log.e("BankViewModel", "Error loading data", e)
-                _isLoading.value = false
-                _isLoadingMore.value = false
                 _errorMessage.value = "خطأ في تحميل البيانات: ${e.message}"
+            } finally {
+                _isLoading.value = false
             }
         }
     }
@@ -110,61 +150,24 @@ class BankViewModel @Inject constructor(
         _errorMessage.value = null
     }
 
-    private fun loadWarehouses() {
-        viewModelScope.launch {
-            warehouseRepository.getWarehouses().collect { allWh ->
-                _warehouses.value = allWh.filter { it.isActive }
-            }
-        }
-    }
-
     fun onDateRangeSelected(start: Long?, end: Long?) {
-        currentStartDate = start
-        currentEndDate = end
-        loadData(reset = true)
+        _startDate.value = start
+        _endDate.value = end
+        loadData()
     }
 
-    fun addManualTransaction(
-        type: com.batterysales.data.models.BankTransactionType, 
-        amount: Double, 
-        description: String, 
-        referenceNumber: String = "", 
-        supplierName: String = "",
-        warehouseId: String? = null
-    ) {
-        viewModelScope.launch {
-            _isLoading.value = true
-            try {
-                val transactionId = com.google.firebase.firestore.FirebaseFirestore.getInstance().collection(com.batterysales.data.models.BankTransaction.COLLECTION_NAME).document().id
-                val transaction = com.batterysales.data.models.BankTransaction(
-                    id = transactionId,
-                    type = type,
-                    amount = amount,
-                    description = description,
-                    referenceNumber = referenceNumber,
-                    supplierName = supplierName,
-                    date = java.util.Date()
-                )
-                repository.updateTransaction(transaction)
+    fun onTabSelected(index: Int) {
+        _selectedTab.value = index
+        loadData()
+    }
 
-                // If it's a deposit to the bank, it should be an expense/withdrawal from the treasury
-                if (type == com.batterysales.data.models.BankTransactionType.DEPOSIT) {
-                    val treasuryTransaction = com.batterysales.data.models.Transaction(
-                        type = com.batterysales.data.models.TransactionType.EXPENSE,
-                        amount = amount,
-                        description = "إيداع بنكي: $description",
-                        referenceNumber = referenceNumber,
-                        relatedId = transactionId,
-                        paymentMethod = "cash",
-                        warehouseId = warehouseId // Link to a warehouse so it appears in the accounting ledger
-                    )
-                    accountingRepository.addTransaction(treasuryTransaction)
-                }
-
-                loadData(reset = true)
-            } finally {
-                _isLoading.value = false
-            }
+    private var searchJob: kotlinx.coroutines.Job? = null
+    fun onSearchQueryChanged(query: String) {
+        _searchQuery.value = query
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(500)
+            loadData()
         }
     }
 
@@ -172,28 +175,79 @@ class BankViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 repository.deleteTransaction(id)
+                // Also delete related treasury transaction if it exists
                 accountingRepository.deleteTransactionsByRelatedId(id)
-                loadData(reset = true)
+                loadData()
             } catch (e: Exception) {
                 Log.e("BankViewModel", "Error deleting transaction", e)
             }
         }
     }
 
-    fun updateTransaction(transaction: com.batterysales.data.models.BankTransaction) {
+    fun updateTransaction(transaction: BankTransaction) {
         viewModelScope.launch {
             try {
-                repository.updateTransaction(transaction)
-                if (transaction.type == com.batterysales.data.models.BankTransactionType.DEPOSIT) {
-                    accountingRepository.updateTransactionByRelatedId(
-                        relatedId = transaction.id,
-                        newAmount = transaction.amount,
-                        newDescription = "إيداع بنكي: ${transaction.description}"
-                    )
-                }
-                loadData(reset = true)
+                repository.addTransaction(transaction)
+                // Also update related treasury transaction if it exists
+                accountingRepository.updateTransactionByRelatedId(
+                    relatedId = transaction.id,
+                    newAmount = transaction.amount,
+                    newDescription = "إيداع في البنك: ${transaction.description}"
+                )
+                loadData()
             } catch (e: Exception) {
                 Log.e("BankViewModel", "Error updating transaction", e)
+            }
+        }
+    }
+
+    fun addManualTransaction(
+        type: com.batterysales.data.models.BankTransactionType,
+        amount: Double,
+        description: String,
+        referenceNumber: String = "",
+        supplierName: String = "",
+        fromTreasury: Boolean = false,
+        warehouseId: String? = null
+    ) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                val transaction = com.batterysales.data.models.BankTransaction(
+                    type = type,
+                    amount = amount,
+                    description = description,
+                    referenceNumber = referenceNumber,
+                    supplierName = supplierName,
+                    date = java.util.Date()
+                )
+                val transId = repository.addTransaction(transaction)
+
+                // Requirement: Option to deduct from treasury during deposit
+                if (type == com.batterysales.data.models.BankTransactionType.DEPOSIT && fromTreasury) {
+                    val user = userRepository.getCurrentUser()
+                    val targetWhId = warehouseId ?: user?.warehouseId
+
+                    if (targetWhId != null) {
+                        val accountingEntry = com.batterysales.data.models.Transaction(
+                            type = com.batterysales.data.models.TransactionType.EXPENSE,
+                            amount = amount,
+                            description = "إيداع في البنك: $description",
+                            referenceNumber = referenceNumber,
+                            warehouseId = targetWhId,
+                            relatedId = transId,
+                            paymentMethod = "cash"
+                        )
+                        accountingRepository.addTransaction(accountingEntry)
+                    }
+                }
+
+                loadData()
+            } catch (e: Exception) {
+                Log.e("BankViewModel", "Error adding manual transaction", e)
+                _errorMessage.value = "خطأ في إضافة العملية: ${e.message}"
+            } finally {
+                _isLoading.value = false
             }
         }
     }

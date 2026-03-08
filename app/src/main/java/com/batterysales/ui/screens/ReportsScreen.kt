@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.paging.compose.collectAsLazyPagingItems
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -42,7 +44,8 @@ import com.batterysales.ui.components.KeyboardLanguage
 
 @Composable
 fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hiltViewModel()) {
-    val reportItems by viewModel.inventoryReport.collectAsState()
+    val pagingItems = viewModel.inventoryReport.collectAsLazyPagingItems()
+    val grandTotalQuantity by viewModel.grandTotalInventoryQuantity.collectAsState()
     val supplierItems by viewModel.supplierReport.collectAsState()
     val isSeller by viewModel.isSeller.collectAsState()
     val warehouses by viewModel.filteredWarehouses.collectAsState()
@@ -51,17 +54,15 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
     val isLoading by viewModel.isLoading.collectAsState()
     val barcodeFilter by viewModel.barcodeFilter.collectAsState()
     var showScanner by remember { mutableStateOf(false) }
-    var selectedTab by remember { mutableIntStateOf(0) }
+    val listState = rememberLazyListState()
+    val selectedTab by viewModel.selectedTab.collectAsState()
+
 
     val bgColor = MaterialTheme.colorScheme.background
     val accentColor = Color(0xFFFB8C00)
     val headerGradient = androidx.compose.ui.graphics.Brush.verticalGradient(
         colors = listOf(Color(0xFFE53935), Color(0xFFFB8C00))
     )
-
-    val grandTotalQuantity = remember(reportItems) {
-        reportItems.sumOf { it.totalQuantity }
-    }
 
     if (showScanner) {
         androidx.compose.ui.window.Dialog(
@@ -87,6 +88,7 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
         containerColor = bgColor
     ) { padding ->
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
@@ -102,7 +104,7 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                     actions = {
                         HeaderIconButton(
                             icon = Icons.Default.Refresh,
-                            onClick = { /* Reload logic */ },
+                            onClick = { viewModel.refreshAll() },
                             contentDescription = "Refresh"
                         )
                     }
@@ -121,27 +123,27 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                             title = "المخزون",
                             isSelected = selectedTab == 0,
                             modifier = Modifier.padding(horizontal = 4.dp),
-                            onClick = { selectedTab = 0 }
+                            onClick = { viewModel.onTabSelected(0) }
                         )
                         TabItem(
                             title = "السكراب",
                             isSelected = selectedTab == 1,
                             modifier = Modifier.padding(horizontal = 4.dp),
-                            onClick = { selectedTab = 1 }
+                            onClick = { viewModel.onTabSelected(1) }
                         )
                         if (!isSeller) {
                             TabItem(
                                 title = "الموردين",
                                 isSelected = selectedTab == 2,
                                 modifier = Modifier.padding(horizontal = 4.dp),
-                                onClick = { selectedTab = 2 }
+                                onClick = { viewModel.onTabSelected(2) }
                             )
                         }
                     }
                 }
             }
 
-            if (isLoading) {
+            if (isLoading && selectedTab != 0) {
                 item {
                     Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = accentColor)
@@ -158,27 +160,46 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                             )
                         }
 
-                        if (reportItems.isNotEmpty()) {
+                        if (pagingItems.loadState.refresh is androidx.paging.LoadState.Loading) {
+                            item {
+                                Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                                    CircularProgressIndicator(color = accentColor)
+                                }
+                            }
+                        }
+
+                        if (pagingItems.itemCount > 0) {
                             item {
                                 GrandTotalCard(totalQuantity = grandTotalQuantity, isSeller = isSeller)
                             }
                         }
 
-                        items(reportItems) { item ->
-                            Box(modifier = Modifier.padding(horizontal = 16.dp)) {
-                                ReportItemCard(
-                                    item = item,
-                                    warehouses = warehouses,
-                                    isSeller = isSeller,
-                                    onClick = {
-                                        val capacityStr = item.variant.capacity.toString()
-                                        val productName = item.product.name
-                                        val spec = item.variant.specification.ifEmpty { "no_spec" }
-                                        navController.navigate(
-                                            "product_ledger/${item.variant.id}/$productName/$capacityStr/$spec"
-                                        )
-                                    }
-                                )
+                        items(pagingItems.itemCount) { index ->
+                            val reportItem = pagingItems[index]
+                            reportItem?.let {
+                                Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                                    ReportItemCard(
+                                        item = it,
+                                        warehouses = warehouses,
+                                        isSeller = isSeller,
+                                        onClick = {
+                                            val capacityStr = it.variant.capacity.toString()
+                                            val productName = it.product.name
+                                            val spec = it.variant.specification.ifEmpty { "no_spec" }
+                                            navController.navigate(
+                                                "product_ledger/${it.variant.id}/$productName/$capacityStr/$spec"
+                                            )
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        if (pagingItems.loadState.append is androidx.paging.LoadState.Loading) {
+                            item {
+                                Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                                    CircularProgressIndicator(modifier = Modifier.size(32.dp), color = accentColor)
+                                }
                             }
                         }
                     }
@@ -225,7 +246,7 @@ fun SearchBarRedesigned(
                 label = "تصفية حسب الباركود..."
             )
         }
-        
+
         IconButton(
             onClick = onScan,
             modifier = Modifier
@@ -318,7 +339,7 @@ fun ReportItemCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                
+
                 if (isLowStock) {
                     Surface(
                         color = Color(0xFFEF4444).copy(alpha = 0.1f),
@@ -336,7 +357,7 @@ fun ReportItemCard(
             }
 
             Spacer(modifier = Modifier.height(20.dp))
-            
+
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -364,7 +385,7 @@ fun ReportItemCard(
                 Spacer(modifier = Modifier.height(16.dp))
                 Text("توزيع المستودعات:", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(modifier = Modifier.height(8.dp))
-                
+
                 FlowRow(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -396,7 +417,7 @@ fun OldBatteryReportSectionRedesigned(
 ) {
     var selectedWHIndex by remember { mutableIntStateOf(0) }
     val currentSummary = if (selectedWHIndex == 0) oldBatterySummary
-                        else oldBatteryWarehouseSummary[warehouses[selectedWHIndex - 1].id] ?: Pair(0, 0.0)
+    else oldBatteryWarehouseSummary[warehouses[selectedWHIndex - 1].id] ?: Pair(0, 0.0)
 
     Column(modifier = Modifier.fillMaxWidth()) {
         if (warehouses.isNotEmpty()) {
@@ -439,12 +460,12 @@ fun OldBatteryReportSectionRedesigned(
                         Icon(Icons.Default.BatteryChargingFull, contentDescription = null, tint = Color(0xFFD7CCC8), modifier = Modifier.size(24.dp))
                     }
                 }
-                
+
                 Spacer(modifier = Modifier.height(16.dp))
                 Text("إجمالي مخزون السكراب", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                
+
                 Spacer(modifier = Modifier.height(24.dp))
-                
+
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("الكمية", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -455,9 +476,9 @@ fun OldBatteryReportSectionRedesigned(
                         Text("${String.format("%.1f", currentSummary.second)} A", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Color(0xFFFB8C00))
                     }
                 }
-                
+
                 Spacer(modifier = Modifier.height(32.dp))
-                
+
                 Button(
                     onClick = onNavigate,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
@@ -475,13 +496,13 @@ fun OldBatteryReportSectionRedesigned(
 private fun supplierReportSectionRedesigned(
     scope: androidx.compose.foundation.lazy.LazyListScope,
     viewModel: ReportsViewModel,
-    items: List<com.batterysales.viewmodel.SupplierReportItem>
+    supplierItems: List<com.batterysales.viewmodel.SupplierReportItem>
 ) {
     scope.item {
         SupplierReportControls(viewModel)
     }
 
-    val totalSuppliersDebit = items.sumOf { it.balance }
+    val totalSuppliersDebit = supplierItems.sumOf { it.balance }
     scope.item {
         Card(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
@@ -494,14 +515,14 @@ private fun supplierReportSectionRedesigned(
                 verticalArrangement = Arrangement.Center
             ) {
                 Text(
-                    "إجمالي مستحقات الموردين", 
+                    "إجمالي مستحقات الموردين",
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(vertical = 4.dp)
                 )
                 Text(
-                    "JD ${String.format("%.3f", totalSuppliersDebit)}", 
-                    fontWeight = FontWeight.Bold, 
-                    color = Color(0xFFEF4444), 
+                    "JD ${String.format("%.3f", totalSuppliersDebit)}",
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFFEF4444),
                     style = MaterialTheme.typography.titleLarge,
                     modifier = Modifier.padding(vertical = 4.dp)
                 )
@@ -509,7 +530,7 @@ private fun supplierReportSectionRedesigned(
         }
     }
 
-    scope.items(items) { item ->
+    scope.items(supplierItems) { item ->
         Box(modifier = Modifier.padding(horizontal = 16.dp)) {
             SupplierCardRedesigned(item)
         }
@@ -567,25 +588,6 @@ fun SupplierReportControls(viewModel: ReportsViewModel) {
     }
 }
 
-@Composable
-private fun TargetProgressItem(label: String, target: Double, current: Double) {
-    val progress = if (target > 0) current / target else 0.0
-    Column(modifier = Modifier.padding(top = 12.dp)) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
-            Text("$label: JD ${String.format("%.3f", target)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("${(progress * 100).toInt()}%", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-        }
-        Spacer(modifier = Modifier.height(6.dp))
-        LinearProgressIndicator(
-            progress = { progress.toFloat().coerceIn(0f, 1f) },
-            modifier = Modifier.fillMaxWidth().height(6.dp),
-            color = if (progress >= 1.0) Color(0xFF10B981) else MaterialTheme.colorScheme.primary,
-            trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f),
-            strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
-        )
-    }
-}
-
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SupplierCardRedesigned(item: com.batterysales.viewmodel.SupplierReportItem) {
@@ -621,9 +623,9 @@ fun SupplierCardRedesigned(item: com.batterysales.viewmodel.SupplierReportItem) 
                     }
                 }
             }
-            
+
             Spacer(modifier = Modifier.height(20.dp))
-            
+
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -631,7 +633,7 @@ fun SupplierCardRedesigned(item: com.batterysales.viewmodel.SupplierReportItem) 
             ) {
                 InfoBadge(label = "مدين", value = "JD ${String.format("%.3f", item.totalDebit)}", color = Color(0xFFFB8C00))
                 InfoBadge(label = "دائن", value = "JD ${String.format("%.3f", item.totalCredit)}", color = Color(0xFF10B981))
-                InfoBadge(label = "الرصيد", value = "JD ${String.format("%.3f", item.balance)}", color = if (item.balance > 0) Color(0xFFEF4444) else Color(0xFF10B981))
+                InfoBadge(label = "المتبقي", value = "JD ${String.format("%.3f", item.balance)}", color = if (item.balance > 0) Color(0xFFEF4444) else Color(0xFF10B981))
             }
 
             if (expanded && item.purchaseOrders.isNotEmpty()) {
@@ -640,8 +642,8 @@ fun SupplierCardRedesigned(item: com.batterysales.viewmodel.SupplierReportItem) 
                 Spacer(modifier = Modifier.height(16.dp))
                 Text("تفاصيل طلبيات الشراء:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.height(12.dp))
-                
-                val dateFormatter = java.text.SimpleDateFormat("yyyy/MM/dd", java.util.Locale.getDefault())
+
+                val dateFormatter = java.text.SimpleDateFormat("yyyy/MM/dd hh:mm a", java.util.Locale.getDefault())
                 item.purchaseOrders.forEach { po ->
                     Card(
                         modifier = Modifier
@@ -653,8 +655,8 @@ fun SupplierCardRedesigned(item: com.batterysales.viewmodel.SupplierReportItem) 
                         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    text = dateFormatter.format(po.entry.timestamp), 
-                                    style = MaterialTheme.typography.bodyMedium, 
+                                    text = dateFormatter.format(po.entry.timestamp),
+                                    style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.Bold
                                 )
                                 if (po.entry.invoiceNumber.isNotEmpty()) {
@@ -663,25 +665,25 @@ fun SupplierCardRedesigned(item: com.batterysales.viewmodel.SupplierReportItem) 
                                         shape = RoundedCornerShape(8.dp)
                                     ) {
                                         Text(
-                                            text = "فاتورة: ${po.entry.invoiceNumber}", 
-                                            style = MaterialTheme.typography.labelSmall, 
+                                            text = "فاتورة: ${po.entry.invoiceNumber}",
+                                            style = MaterialTheme.typography.labelSmall,
                                             color = Color(0xFFFB8C00),
                                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                                         )
                                     }
                                 }
                             }
-                            
+
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text("إجمالي الطلبية:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Text("JD ${String.format("%.3f", po.entry.totalCost)}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.ExtraBold)
                             }
 
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("المتبقي بذمة المورد:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("المتبقي:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Text(
-                                    text = "JD ${String.format("%.3f", po.remainingBalance)}", 
-                                    style = MaterialTheme.typography.bodyMedium, 
+                                    text = "JD ${String.format("%.3f", po.remainingBalance)}",
+                                    style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = if (po.remainingBalance > 0) Color(0xFFEF4444) else Color(0xFF10B981)
                                 )
@@ -691,18 +693,19 @@ fun SupplierCardRedesigned(item: com.batterysales.viewmodel.SupplierReportItem) 
                                 HorizontalDivider(modifier = Modifier.alpha(0.1f))
                                 Row(verticalAlignment = Alignment.Top) {
                                     Icon(
-                                        Icons.Default.Payments, 
-                                        contentDescription = null, 
-                                        modifier = Modifier.size(16.dp).padding(top = 2.dp), 
+                                        Icons.Default.Payments,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp).padding(top = 2.dp),
                                         tint = MaterialTheme.colorScheme.primary
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = "الدفعات: " + po.referenceNumbers.joinToString(", "), 
-                                        style = MaterialTheme.typography.labelSmall, 
+                                        text = po.referenceNumbers.joinToString(", "),
+                                        style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.primary,
-                                        fontWeight = FontWeight.Medium,
-                                        lineHeight = 16.sp
+                                        fontWeight = FontWeight.Bold,
+                                        lineHeight = 16.sp,
+                                        fontSize = 13.sp,
                                     )
                                 }
                             }
@@ -711,21 +714,20 @@ fun SupplierCardRedesigned(item: com.batterysales.viewmodel.SupplierReportItem) 
                 }
             }
 
-            if (item.supplier.yearlyTarget > 0 || item.supplier.yearlyTarget2 > 0 || item.supplier.yearlyTarget3 > 0) {
-                Spacer(modifier = Modifier.height(24.dp))
-                HorizontalDivider(modifier = Modifier.alpha(0.05f))
-                Spacer(modifier = Modifier.height(16.dp))
-                Text("تحقيق الأهداف السنوية:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                
-                if (item.supplier.yearlyTarget > 0) {
-                    TargetProgressItem("الهدف 1", item.supplier.yearlyTarget, item.totalDebit)
+            if (item.supplier.yearlyTarget > 0) {
+                Spacer(modifier = Modifier.height(20.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
+                    Text("الهدف السنوي: JD ${String.format("%.3f", item.supplier.yearlyTarget)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("${(item.targetProgress * 100).toInt()}%", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                 }
-                if (item.supplier.yearlyTarget2 > 0) {
-                    TargetProgressItem("الهدف 2", item.supplier.yearlyTarget2, item.totalDebit)
-                }
-                if (item.supplier.yearlyTarget3 > 0) {
-                    TargetProgressItem("الهدف 3", item.supplier.yearlyTarget3, item.totalDebit)
-                }
+                Spacer(modifier = Modifier.height(8.dp))
+                LinearProgressIndicator(
+                    progress = item.targetProgress.toFloat().coerceIn(0f, 1f),
+                    modifier = Modifier.fillMaxWidth().height(6.dp),
+                    color = if (item.targetProgress >= 1.0) Color(0xFF10B981) else MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f),
+                    strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
+                )
             }
         }
     }

@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -22,9 +23,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavHostController
 import com.batterysales.data.models.Transaction
 import com.batterysales.data.models.TransactionType
@@ -42,23 +46,22 @@ fun AccountingScreen(
     navController: NavHostController,
     viewModel: AccountingViewModel = hiltViewModel()
 ) {
-    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    val pagingItems = viewModel.transactions.collectAsLazyPagingItems()
+    val lifecycleOwner = LocalLifecycleOwner.current
+
     DisposableEffect(lifecycleOwner) {
-        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-                viewModel.loadData(reset = true)
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.loadData()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
     }
-
-    val transactions by viewModel.transactions.collectAsState()
     val balance by viewModel.balance.collectAsState()
     val totalExpenses by viewModel.totalExpenses.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
-    val isLoadingMore by viewModel.isLoadingMore.collectAsState()
-    val isLastPage by viewModel.isLastPage.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val listState = rememberLazyListState()
     var showAddTransactionDialog by remember { mutableStateOf(false) }
@@ -78,26 +81,6 @@ fun AccountingScreen(
     val selectedPaymentMethod by viewModel.selectedPaymentMethod.collectAsState()
     val selectedYear by viewModel.selectedYear.collectAsState()
 
-    val filteredTransactions = remember(transactions, searchQuery) {
-        transactions.filter { transaction ->
-            transaction.description.contains(searchQuery, ignoreCase = true) ||
-            transaction.referenceNumber.contains(searchQuery, ignoreCase = true)
-        }
-    }
-
-    // Load more when reaching the end
-    val shouldLoadMore = remember {
-        derivedStateOf {
-            val lastVisibleItem = listState.layoutInfo.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf false
-            lastVisibleItem.index >= listState.layoutInfo.totalItemsCount - 5
-        }
-    }
-
-    LaunchedEffect(shouldLoadMore.value) {
-        if (shouldLoadMore.value && !isLoading && !isLoadingMore && !isLastPage) {
-            viewModel.loadData()
-        }
-    }
 
     val bgColor = MaterialTheme.colorScheme.background
     val cardBgColor = MaterialTheme.colorScheme.surface
@@ -262,11 +245,11 @@ fun AccountingScreen(
                                     fontWeight = FontWeight.Bold,
                                     color = Color.White
                                 )
-
+                                
                                 Spacer(modifier = Modifier.height(12.dp))
                                 HorizontalDivider(color = Color.White.copy(alpha = 0.2f))
                                 Spacer(modifier = Modifier.height(12.dp))
-
+                                
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                         Text("إجمالي المصروفات", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
@@ -310,9 +293,9 @@ fun AccountingScreen(
                             onClick = { viewModel.onTabSelected(1) },
                             label = { Text("المسحوبات") }
                         )
-
+                        
                         Spacer(modifier = Modifier.weight(1f))
-
+                        
                         // Year Selector
                         var yearExpanded by remember { mutableStateOf(false) }
                         Box {
@@ -333,6 +316,7 @@ fun AccountingScreen(
                     }
 
                     // Payment Method Chips
+                    val paymentMethods = listOf("cash" to "كاش", "e-wallet" to "محفظة", "visa" to "فيزا")
                     androidx.compose.foundation.lazy.LazyRow(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -344,7 +328,7 @@ fun AccountingScreen(
                                 label = { Text("جميع طرق الدفع") }
                             )
                         }
-                        items(listOf("cash" to "كاش", "e-wallet" to "محفظة", "visa" to "فيزا")) { (id, label) ->
+                        items(paymentMethods) { (id, label) ->
                             FilterChip(
                                 selected = selectedPaymentMethod == id,
                                 onClick = { viewModel.onPaymentMethodSelected(id) },
@@ -374,30 +358,41 @@ fun AccountingScreen(
                 }
             }
 
-            if (isLoading) {
+            if (pagingItems.loadState.refresh is androidx.paging.LoadState.Loading) {
                 item {
                     Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = accentColor)
                     }
                 }
-            } else if (filteredTransactions.isEmpty()) {
+            } else if (pagingItems.itemCount == 0) {
                 item {
                     Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                         Text(
-                            "لا توجد عمليات تطابق البحث",
+                            "لا توجد عمليات حالياً",
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
                 }
             } else {
-                items(filteredTransactions, key = { it.id }) { transaction ->
-                    Box(modifier = Modifier.padding(horizontal = 16.dp)) {
-                        TransactionItemCard(
-                            transaction = transaction,
-                            onEdit = { transactionToEdit = transaction },
-                            onDelete = { showDeleteConfirm = transaction }
-                        )
+                items(pagingItems.itemCount) { index ->
+                    val trans = pagingItems[index]
+                    trans?.let {
+                        Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                            TransactionItemCard(
+                                transaction = it,
+                                onEdit = { transactionToEdit = it },
+                                onDelete = { showDeleteConfirm = it }
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (pagingItems.loadState.append is androidx.paging.LoadState.Loading) {
+                item {
+                    Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(modifier = Modifier.size(32.dp), color = accentColor)
                     }
                 }
             }
@@ -506,13 +501,13 @@ fun TransactionItemCard(
                 if (transaction.relatedId == null) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         IconButton(
-                            onClick = onEdit,
+                            onClick = onEdit, 
                             modifier = Modifier.size(32.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f), CircleShape)
                         ) {
                             Icon(Icons.Default.Edit, contentDescription = "Edit", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
                         }
                         IconButton(
-                            onClick = onDelete,
+                            onClick = onDelete, 
                             modifier = Modifier.size(32.dp).background(Color(0xFF3B1F1F), CircleShape)
                         ) {
                             Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color(0xFFEF4444), modifier = Modifier.size(16.dp))
@@ -541,7 +536,7 @@ fun TransactionItemCard(
             if (transaction.referenceNumber.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "رقم الشيك: ${transaction.referenceNumber}",
+                    text = "رقم الشيك/السند/المرجع: ${transaction.referenceNumber}",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color(0xFFFB8C00),
                     fontWeight = FontWeight.Medium
@@ -549,7 +544,7 @@ fun TransactionItemCard(
             }
 
             Spacer(modifier = Modifier.height(12.dp))
-
+            
             Text(
                 dateFormatter.format(transaction.createdAt),
                 style = MaterialTheme.typography.labelSmall,

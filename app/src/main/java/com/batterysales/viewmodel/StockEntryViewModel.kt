@@ -84,7 +84,7 @@ class StockEntryViewModel @Inject constructor(
         userRepository.getCurrentUserFlow()
             .onEach { user ->
                 currentUser = user
-                
+
                 // Nest the combine collection inside user change to ensure it reacts to new user role/warehouse
                 combine(
                     productRepository.getProducts(),
@@ -93,13 +93,13 @@ class StockEntryViewModel @Inject constructor(
                     _selectedSupplier
                 ) { products, warehouses, suppliers, selectedSupplier ->
                     val activeProducts = products.filter { !it.archived }
-                    
+
                     val filteredBySupplier = if (selectedSupplier != null) {
                         activeProducts.filter { it.supplierId == selectedSupplier.id || it.supplierId.isBlank() }
                     } else {
                         activeProducts
                     }
-                    
+
                     val selectedWH = warehouses.find { it.id == user?.warehouseId }
 
                     _uiState.update {
@@ -228,8 +228,7 @@ class StockEntryViewModel @Inject constructor(
 
     fun onBarcodeScanned(barcode: String) {
         viewModelScope.launch {
-            val allVariants = productVariantRepository.getAllVariants()
-            val variant = allVariants.find { it.barcode == barcode }
+            val variant = productVariantRepository.getVariantByBarcode(barcode)
             if (variant != null) {
                 val product = productRepository.getProduct(variant.productId)
                 if (product != null) {

@@ -24,10 +24,15 @@ class BankRepository @Inject constructor(
             }
     }
 
-    suspend fun addTransaction(transaction: BankTransaction) {
-        val docRef = firestore.collection(BankTransaction.COLLECTION_NAME).document()
+    suspend fun addTransaction(transaction: BankTransaction): String {
+        val docRef = if (transaction.id.isEmpty()) {
+            firestore.collection(BankTransaction.COLLECTION_NAME).document()
+        } else {
+            firestore.collection(BankTransaction.COLLECTION_NAME).document(transaction.id)
+        }
         val finalTransaction = transaction.copy(id = docRef.id)
         docRef.set(finalTransaction).await()
+        return docRef.id
     }
 
     suspend fun getCurrentBalance(endDate: Long? = null): Double {
@@ -65,16 +70,23 @@ class BankRepository @Inject constructor(
     suspend fun getTransactionsPaginated(
         startDate: Long? = null,
         endDate: Long? = null,
+        type: String? = null,
         lastDocument: DocumentSnapshot? = null,
         limit: Long = 20
     ): Pair<List<BankTransaction>, DocumentSnapshot?> {
         var query: Query = firestore.collection(BankTransaction.COLLECTION_NAME)
+
+        if (!type.isNullOrEmpty()) {
+            // Support both Enum name and potentially lowercase if stored that way
+            query = query.whereIn("type", listOf(type, type.lowercase(), type.uppercase()).distinct())
+        }
 
         if (startDate != null && endDate != null) {
             query = query.whereGreaterThanOrEqualTo("date", java.util.Date(startDate))
                 .whereLessThanOrEqualTo("date", java.util.Date(endDate + 86400000))
         }
 
+        // Add index-safe ordering
         query = query.orderBy("date", Query.Direction.DESCENDING)
 
         if (lastDocument != null) {
@@ -86,13 +98,6 @@ class BankRepository @Inject constructor(
         val lastDoc = snapshot.documents.lastOrNull()
 
         return Pair(transactions, lastDoc)
-    }
-
-    suspend fun updateTransaction(transaction: BankTransaction) {
-        firestore.collection(BankTransaction.COLLECTION_NAME)
-            .document(transaction.id)
-            .set(transaction)
-            .await()
     }
 
     suspend fun deleteTransaction(id: String) {

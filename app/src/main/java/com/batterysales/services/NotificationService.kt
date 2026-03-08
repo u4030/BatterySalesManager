@@ -46,7 +46,7 @@ class NotificationService : Service() {
 
     private fun createNotification(): Notification {
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("نظام الأصصرية نشط")
+            .setContentTitle("نظام العصرية نشط")
             .setContentText("جاري مراقبة التنبيهات والمخزون في الخلفية")
             .setSmallIcon(com.batterysales.R.mipmap.al_asriya)
             .setPriority(NotificationCompat.PRIORITY_LOW)

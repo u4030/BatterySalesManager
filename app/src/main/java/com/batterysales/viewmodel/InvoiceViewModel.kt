@@ -2,8 +2,13 @@ package com.batterysales.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.paging.Pager
+import androidx.paging.PagingConfig
+import androidx.paging.PagingData
+import androidx.paging.cachedIn
 import com.batterysales.data.models.Invoice
 import com.batterysales.data.models.Warehouse
+import com.batterysales.data.paging.InvoicePagingSource
 import com.google.firebase.firestore.DocumentSnapshot
 import com.batterysales.data.repositories.AccountingRepository
 import com.batterysales.data.repositories.InvoiceRepository
@@ -15,10 +20,10 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import android.util.Log
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import androidx.paging.filter
 import javax.inject.Inject
 
 data class InvoiceUiState(
-    val invoices: List<Invoice> = emptyList(),
     val warehouses: List<Warehouse> = emptyList(),
     val isLoading: Boolean = true,
     val errorMessage: String? = null,
@@ -42,26 +47,47 @@ class InvoiceViewModel @Inject constructor(
     private val warehouseRepository: WarehouseRepository,
     private val paymentRepository: PaymentRepository,
     private val accountingRepository: AccountingRepository,
-    private val userRepository: UserRepository,
-    private val oldBatteryRepository: com.batterysales.data.repositories.OldBatteryRepository
+    private val userRepository: UserRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(InvoiceUiState())
     val uiState: StateFlow<InvoiceUiState> = _uiState.asStateFlow()
 
-    private var lastDocument: DocumentSnapshot? = null
+    private val filterState = MutableStateFlow(InvoiceFilters())
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val invoices: Flow<PagingData<Invoice>> = filterState.flatMapLatest { filters ->
+        Pager(PagingConfig(pageSize = 20)) {
+            InvoicePagingSource(
+                repository = invoiceRepository,
+                warehouseId = if (filters.warehouseId == "all") null else filters.warehouseId,
+                status = if (filters.selectedTab == 1) "pending" else null,
+                startDate = filters.startDate,
+                endDate = filters.endDate,
+                searchQuery = filters.searchQuery.ifBlank { null }
+            )
+        }.flow.cachedIn(viewModelScope)
+    }
 
     init {
         checkRoleAndLoadWarehouses()
     }
 
+    data class InvoiceFilters(
+        val warehouseId: String = "",
+        val selectedTab: Int = 0,
+        val startDate: Long? = null,
+        val endDate: Long? = null,
+        val searchQuery: String = ""
+    )
+
     private fun checkRoleAndLoadWarehouses() {
         userRepository.getCurrentUserFlow().onEach { user ->
             val isAdmin = user?.role == "admin"
-            
+
             warehouseRepository.getWarehouses().take(1).collect { allWh ->
                 val warehouses = if (isAdmin) allWh else allWh.filter { it.isActive }
-                
+
                 val oldWhId = _uiState.value.selectedWarehouseId
                 _uiState.update { state ->
                     val initialWarehouseId = if (isAdmin) {
@@ -69,16 +95,16 @@ class InvoiceViewModel @Inject constructor(
                     } else {
                         user?.warehouseId ?: ""
                     }
-                    
+
                     state.copy(
                         warehouses = warehouses,
                         isAdmin = isAdmin,
                         selectedWarehouseId = initialWarehouseId
                     )
                 }
-                
+
                 val newWhId = _uiState.value.selectedWarehouseId
-                if (newWhId.isNotBlank() && (oldWhId.isBlank() || _uiState.value.invoices.isEmpty())) {
+                if (newWhId.isNotBlank() && oldWhId.isBlank()) {
                     loadInvoices(reset = true)
                 }
             }
@@ -87,51 +113,11 @@ class InvoiceViewModel @Inject constructor(
 
     fun loadInvoices(reset: Boolean = false) {
         if (reset) {
-            lastDocument = null
-            _uiState.update { it.copy(invoices = emptyList(), isLastPage = false, isLoading = true) }
+            // Trigger a refresh
+            filterState.value = filterState.value.copy()
+            _uiState.update { it.copy(isLoading = true) }
         }
-
-        if (_uiState.value.isLastPage || _uiState.value.isLoadingMore) return
-
-        viewModelScope.launch {
-            try {
-                if (!reset) _uiState.update { it.copy(isLoadingMore = true) }
-
-                val state = _uiState.value
-                val statusFilter = if (state.selectedTab == 1) "pending" else null
-                
-                val result = invoiceRepository.getInvoicesPaginated(
-                    warehouseId = if (state.selectedWarehouseId == "all") null else state.selectedWarehouseId,
-                    status = statusFilter,
-                    startDate = state.startDate,
-                    endDate = state.endDate,
-                    searchQuery = state.searchQuery.ifBlank { null },
-                    lastDocument = lastDocument,
-                    limit = 20
-                )
-
-                val newInvoices = result.first
-                lastDocument = result.second
-
-                _uiState.update { currentState ->
-                    val combinedInvoices = if (reset) newInvoices else currentState.invoices + newInvoices
-                    
-                    currentState.copy(
-                        invoices = combinedInvoices,
-                        isLoading = false,
-                        isLoadingMore = false,
-                        isLastPage = newInvoices.size < 20
-                    )
-                }
-                
-                // Calculate debt
-                calculateTotalDebt()
-
-            } catch (e: Exception) {
-                Log.e("InvoiceViewModel", "Error loading invoices", e)
-                _uiState.update { it.copy(isLoading = false, isLoadingMore = false, errorMessage = "Failed to load invoices") }
-            }
-        }
+        calculateTotalDebt()
     }
 
     private fun calculateTotalDebt() {
@@ -149,24 +135,31 @@ class InvoiceViewModel @Inject constructor(
 
     fun onWarehouseSelected(warehouseId: String) {
         _uiState.update { it.copy(selectedWarehouseId = warehouseId) }
+        filterState.update { it.copy(warehouseId = warehouseId) }
         loadInvoices(reset = true)
     }
 
     fun onTabSelected(tabIndex: Int) {
         _uiState.update { it.copy(selectedTab = tabIndex) }
+        filterState.update { it.copy(selectedTab = tabIndex) }
         loadInvoices(reset = true)
     }
 
+    private var searchJob: kotlinx.coroutines.Job? = null
     fun onSearchQueryChanged(query: String) {
         _uiState.update { it.copy(searchQuery = query) }
-        // For search, we might want to reload everything or just filter in-memory if the list is small.
-        // Given we are paginating, we should probably reset and load from server if searching is supported there,
-        // but since it's not well supported, we stay with current list or reset.
-        loadInvoices(reset = true)
+        
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(500)
+            filterState.update { it.copy(searchQuery = query) }
+            loadInvoices(reset = true)
+        }
     }
 
     fun onDateRangeSelected(start: Long?, end: Long?) {
         _uiState.update { it.copy(startDate = start, endDate = end) }
+        filterState.update { it.copy(startDate = start, endDate = end) }
         loadInvoices(reset = true)
     }
 
@@ -178,35 +171,16 @@ class InvoiceViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value.invoiceToDelete?.let { invoice ->
                 try {
-                    // 1. Get related stock entries
-                    val saleEntries = stockEntryRepository.getEntriesForInvoice(invoice.id)
-
-                    // 2. Create reversal stock entries
-                    val reversalEntries = saleEntries.map {
-                        it.copy(
-                            id = "", // Let Firestore generate a new ID
-                            quantity = -it.quantity, // Reverse the quantity
-                            supplier = "Reversal for Invoice ${invoice.id}",
-                            invoiceId = null // Clear the invoice ID
-                        )
-                    }
-                    stockEntryRepository.addStockEntries(reversalEntries)
-
-                    // 3. Delete related treasury transactions
-                    // Delete for each payment
-                    val payments = paymentRepository.getPaymentsForInvoice(invoice.id).first()
-                    payments.forEach { payment ->
-                        accountingRepository.deleteTransactionsByRelatedId(payment.id)
-                    }
-                    // Also delete any legacy transactions linked directly to the invoice ID
-                    accountingRepository.deleteTransactionsByRelatedId(invoice.id)
-
-                    // 4. Delete the invoice and associated payments
+                    // Delete the invoice and associated payments/stock entries (Repository handles transactions and balance updates)
                     invoiceRepository.deleteInvoice(invoice.id)
                     
-                    // 5. Delete associated scrap transactions
-                    oldBatteryRepository.deleteTransactionsByInvoiceId(invoice.id)
+                    // Also delete treasury entries linked to payments
+                    paymentRepository.getPaymentsForInvoice(invoice.id).first().forEach { payment ->
+                        accountingRepository.deleteTransactionsByRelatedId(payment.id)
+                    }
+                    accountingRepository.deleteTransactionsByRelatedId(invoice.id)
 
+                    loadInvoices(reset = true)
                 } catch (e: Exception) {
                     Log.e("InvoiceViewModel", "Error confirming delete", e)
                     _uiState.update { it.copy(errorMessage = "Failed to delete invoice") }

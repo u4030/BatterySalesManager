@@ -6,7 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -20,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Color.Companion.Black
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -45,6 +46,7 @@ fun InvoiceScreen(
     viewModel: InvoiceViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val pagingItems = viewModel.invoices.collectAsLazyPagingItems()
     var showEditDialog by remember { mutableStateOf<Invoice?>(null) }
     var showDateRangePicker by remember { mutableStateOf(false) }
     val dateRangePickerState = rememberDateRangePickerState()
@@ -100,20 +102,6 @@ fun InvoiceScreen(
         )
     }
 
-    // Load more when reaching the end
-    val shouldLoadMore = remember {
-        derivedStateOf {
-            val lastVisibleItem = listState.layoutInfo.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf false
-            lastVisibleItem.index >= listState.layoutInfo.totalItemsCount - 5
-        }
-    }
-
-    LaunchedEffect(shouldLoadMore.value) {
-        if (shouldLoadMore.value && !uiState.isLoading && !uiState.isLoadingMore && !uiState.isLastPage) {
-            viewModel.loadInvoices()
-        }
-    }
-
     // Refresh data when screen is focused to update invoice status after payments
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -145,6 +133,11 @@ fun InvoiceScreen(
                     onBackClick = { navController.popBackStack() },
                     actions = {
                         HeaderIconButton(
+                            icon = Icons.Default.Refresh,
+                            onClick = { viewModel.loadInvoices(reset = true) },
+                            contentDescription = "Refresh"
+                        )
+                        HeaderIconButton(
                             icon = Icons.Default.CalendarMonth,
                             onClick = { showDateRangePicker = true },
                             contentDescription = "Date Range"
@@ -158,7 +151,7 @@ fun InvoiceScreen(
 
                             ScrollableTabRow(
                                 selectedTabIndex = selectedIndex,
-                                containerColor = Color.Yellow.copy(alpha = 0.2f),
+                                containerColor = Black.copy(alpha = 0.7f),
                                 contentColor = Color.White,
                                 edgePadding = 16.dp,
                                 divider = {},
@@ -169,7 +162,7 @@ fun InvoiceScreen(
                                                 .tabIndicatorOffset(tabPositions[selectedIndex])
                                                 .height(4.dp)
                                                 .padding(horizontal = 16.dp)
-                                                .background(Color.Green.copy(alpha = 0.2f), RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
+                                                .background(Color.White, RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
                                         )
                                     }
                                 },
@@ -186,8 +179,8 @@ fun InvoiceScreen(
                                                 fontWeight = if (uiState.selectedWarehouseId == warehouse.id) FontWeight.Bold else FontWeight.Medium
                                             )
                                         },
-                                        selectedContentColor = Color.Green.copy(alpha = 0.7f),
-                                        unselectedContentColor = Color.Black.copy(alpha = 0.6f)
+                                        selectedContentColor = Color.White,
+                                        unselectedContentColor = Color.White.copy(alpha = 0.6f)
                                     )
                                 }
                             }
@@ -254,13 +247,13 @@ fun InvoiceScreen(
                 }
             }
 
-            if (uiState.isLoading) {
+            if (pagingItems.loadState.refresh is androidx.paging.LoadState.Loading) {
                 item {
                     Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = accentColor)
                     }
                 }
-            } else if (uiState.invoices.isEmpty()) {
+            } else if (pagingItems.itemCount == 0) {
                 item {
                     Box(modifier = Modifier.fillMaxWidth().height(300.dp), contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -271,19 +264,22 @@ fun InvoiceScreen(
                     }
                 }
             } else {
-                items(uiState.invoices) { invoice ->
-                    Box(modifier = Modifier.padding(horizontal = 16.dp)) {
-                        InvoiceItemCard(
-                            invoice = invoice,
-                            onClick = { navController.navigate("invoice_detail/${invoice.id}") },
-                            onDeleteClick = { viewModel.deleteInvoice(invoice) },
-                            onEditClick = { showEditDialog = invoice }
-                        )
+                items(pagingItems.itemCount) { index ->
+                    val inv = pagingItems[index]
+                    inv?.let {
+                        Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                            InvoiceItemCard(
+                                invoice = it,
+                                onClick = { navController.navigate("invoice_detail/${it.id}") },
+                                onDeleteClick = { viewModel.deleteInvoice(it) },
+                                onEditClick = { showEditDialog = it }
+                            )
+                        }
                     }
                 }
             }
 
-            if (uiState.isLoadingMore) {
+            if (pagingItems.loadState.append is androidx.paging.LoadState.Loading) {
                 item {
                     Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(modifier = Modifier.size(32.dp), color = accentColor)

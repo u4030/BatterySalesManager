@@ -19,8 +19,6 @@ data class WarehouseStats(
     val todayCollectionCount: Int // Number of unique invoices collected today
 )
 
-data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
-
 data class AppNotification(
     val id: String,
     val title: String,
@@ -80,7 +78,6 @@ class DashboardViewModel @Inject constructor(
             productVariantRepository.getAllVariantsFlow(),
             productRepository.getProducts(),
             stockEntryRepository.getPendingEntriesFlow(),
-            stockEntryRepository.getAllStockEntriesFlow(),
             paymentRepository.getAllPaymentsFlow()
         ) { array ->
             val warehouses = array[0] as List<com.batterysales.data.models.Warehouse>
@@ -89,8 +86,7 @@ class DashboardViewModel @Inject constructor(
             val variants = array[3] as List<ProductVariant>
             val products = array[4] as List<com.batterysales.data.models.Product>
             val pendingEntries = array[5] as List<StockEntry>
-            val allStockEntries = array[6] as List<StockEntry>
-            val allPayments = array[7] as List<com.batterysales.data.models.Payment>
+            val allPayments = array[6] as List<com.batterysales.data.models.Payment>
 
             val isAdmin = user?.role == "admin"
             val userWarehouseId = user?.warehouseId
@@ -118,23 +114,23 @@ class DashboardViewModel @Inject constructor(
                             !it.dueDate.after(nextWeek.time)
                 }.sortedBy { it.dueDate }
 
-                // 3. Today's Collections (Optimized via aggregation)
-                val startOfToday = Calendar.getInstance().apply {
-                    set(Calendar.HOUR_OF_DAY, 0)
-                    set(Calendar.MINUTE, 0)
-                    set(Calendar.SECOND, 0)
-                    set(Calendar.MILLISECOND, 0)
-                }.time
+                // 3. Today's Collections (Reactive from Flow)
+                val calendar = Calendar.getInstance()
+                calendar.set(Calendar.HOUR_OF_DAY, 0)
+                calendar.set(Calendar.MINUTE, 0)
+                calendar.set(Calendar.SECOND, 0)
+                calendar.set(Calendar.MILLISECOND, 0)
+                val startOfToday = calendar.time
 
                 val relevantWarehouses = if (isAdmin) warehouses 
                                         else warehouses.filter { it.id == userWarehouseId && it.isActive }
 
                 val warehouseStatsList = relevantWarehouses.map { warehouse ->
-                    val todayPayments = allPayments.filter { 
-                        it.warehouseId == warehouse.id && !it.timestamp.before(startOfToday)
+                    val warehousePayments = allPayments.filter { 
+                        it.warehouseId == warehouse.id && (it.timestamp.after(startOfToday) || it.timestamp.equals(startOfToday))
                     }
-                    val collection = todayPayments.sumOf { it.amount }
-                    val count = todayPayments.mapNotNull { it.invoiceId }.distinct().size
+                    val collection = warehousePayments.sumOf { it.amount }
+                    val count = warehousePayments.map { it.invoiceId }.distinct().size
 
                     WarehouseStats(
                         warehouseId = warehouse.id,
@@ -142,27 +138,12 @@ class DashboardViewModel @Inject constructor(
                         todayCollection = collection,
                         todayCollectionCount = count
                     )
-                }.filter { if (isAdmin) it.todayCollection > 0 else true }
+                }.filter { if (isAdmin) it.todayCollection > 0 || it.todayCollectionCount > 0 else true }
 
-            // 4. Low Stock
-            val lowStock = calculateLowStockFromData(variants, products, warehouses, allStockEntries)
-
+            // 4. Low Stock Notifications (Summarized for speed)
+            // Actual calculation is done in Reports or AppNotificationManager
+            
             val allNotifications = mutableListOf<AppNotification>()
-                
-                // Add Low Stock Notifications
-                lowStock.forEach { item ->
-                    allNotifications.add(
-                        AppNotification(
-                            id = "low_stock_${item.variantId}_${item.warehouseName}",
-                            title = "انخفاض المخزون",
-                            message = "${item.productName} (${item.capacity}A) في ${item.warehouseName}: الكمية ${item.currentQuantity}",
-                            type = NotificationType.LOW_STOCK,
-                            route = "reports"
-                        )
-                    )
-                }
-
-                // Add Pending Approvals Notification
                 if (pendingCount > 0) {
                     allNotifications.add(
                         AppNotification(
@@ -191,7 +172,7 @@ class DashboardViewModel @Inject constructor(
 
                 DashboardUiState(
                     pendingApprovalsCount = pendingCount,
-                    lowStockVariants = lowStock,
+                    lowStockVariants = emptyList(),
                     upcomingBills = upcoming,
                     warehouseStats = warehouseStatsList,
                     notifications = allNotifications,
@@ -202,41 +183,4 @@ class DashboardViewModel @Inject constructor(
             }.launchIn(viewModelScope)
     }
 
-    private fun calculateLowStockFromData(
-        variants: List<ProductVariant>,
-        products: List<com.batterysales.data.models.Product>,
-        warehouses: List<com.batterysales.data.models.Warehouse>,
-        allEntries: List<StockEntry>
-    ): List<LowStockItem> {
-        val stockMap = allEntries.filter { it.status == StockEntry.STATUS_APPROVED }
-            .groupBy { Pair(it.productVariantId, it.warehouseId) }
-            .mapValues { entry -> entry.value.sumOf { it.quantity - it.returnedQuantity } }
-
-        val productMap = products.associateBy { it.id }
-        val lowStock = mutableListOf<LowStockItem>()
-        val activeVariants = variants.filter { !it.archived }
-
-        for (variant in activeVariants) {
-            val product = productMap[variant.productId] ?: continue
-            for (warehouse in warehouses) {
-                val threshold = variant.minQuantities[warehouse.id] ?: variant.minQuantity
-                if (threshold <= 0) continue
-
-                val currentQty = stockMap[Pair(variant.id, warehouse.id)] ?: 0
-                if (currentQty <= threshold) {
-                    lowStock.add(
-                        LowStockItem(
-                            variantId = variant.id,
-                            productName = product.name,
-                            capacity = variant.capacity,
-                            currentQuantity = currentQty,
-                            minQuantity = threshold,
-                            warehouseName = warehouse.name
-                        )
-                    )
-                }
-            }
-        }
-        return lowStock
-    }
 }

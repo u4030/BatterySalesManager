@@ -4,6 +4,7 @@ import com.batterysales.data.models.StockEntry
 import com.google.firebase.firestore.AggregateField
 import com.google.firebase.firestore.AggregateSource
 import com.google.firebase.firestore.DocumentSnapshot
+import android.util.Log
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import kotlinx.coroutines.channels.awaitClose
@@ -34,10 +35,28 @@ class StockEntryRepository @Inject constructor(
 
     fun getAllStockEntriesFlow(): Flow<List<StockEntry>> = callbackFlow {
         val listenerRegistration = firestore.collection(StockEntry.COLLECTION_NAME)
+            .orderBy("timestamp", Query.Direction.DESCENDING)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     close(error)
                     return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    val entries = snapshot.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
+                    trySend(entries).isSuccess
+                }
+            }
+        awaitClose { listenerRegistration.remove() }
+    }
+
+    fun getPurchasesFlow(): Flow<List<StockEntry>> = callbackFlow {
+        val listenerRegistration = firestore.collection(StockEntry.COLLECTION_NAME)
+            .whereGreaterThan("totalCost", 0)
+            .orderBy("totalCost") // Firestore requirement for inequality
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    // Fallback if index missing or complex order required
+                    Log.e("StockEntryRepository", "Error in getPurchasesFlow, trying fallback", error)
                 }
                 if (snapshot != null) {
                     val entries = snapshot.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
@@ -271,4 +290,5 @@ class StockEntryRepository @Inject constructor(
         val snapshot = query.aggregate(AggregateField.sum("totalCost")).get(AggregateSource.SERVER).await()
         return snapshot.getDouble(AggregateField.sum("totalCost")) ?: 0.0
     }
+
 }

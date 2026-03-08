@@ -27,6 +27,11 @@ class WarehouseRepository @Inject constructor(
         awaitClose { listenerRegistration.remove() }
     }
 
+    suspend fun getWarehousesOnce(): List<Warehouse> {
+        val snapshot = firestore.collection(Warehouse.COLLECTION_NAME).get().await()
+        return snapshot.documents.mapNotNull { it.toObject(Warehouse::class.java)?.copy(id = it.id) }
+    }
+
     suspend fun addWarehouse(warehouse: Warehouse) {
         val docRef = firestore.collection(Warehouse.COLLECTION_NAME).document()
         val finalWarehouse = warehouse.copy(id = docRef.id)
