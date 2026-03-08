@@ -99,7 +99,7 @@ fun CustomAppKeyboard(
             listOf("7", "8", "9", "*"),
             listOf(".", "0", "=", "/")
         )
-
+//??
         val currentRows = when (language) {
             KeyboardLanguage.ARABIC -> arabicRows
             KeyboardLanguage.ENGLISH_UPPER -> englishUpperRows
