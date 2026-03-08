@@ -31,6 +31,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.Image
 import androidx.compose.ui.res.painterResource
 import com.batterysales.R
+import com.batterysales.ui.components.CustomKeyboardTextField
+import com.batterysales.ui.components.KeyboardLanguage
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -109,33 +111,22 @@ fun LoginScreen(
                     modifier = Modifier.padding(24.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    OutlinedTextField(
+                    CustomKeyboardTextField(
                         value = email,
                         onValueChange = { email = it },
-                        label = { Text("البريد الإلكتروني") },
+                        label = "البريد الإلكتروني",
                         modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        shape = RoundedCornerShape(16.dp),
-                        leadingIcon = { Icon(Icons.Default.Email, contentDescription = null, tint = accentColor) },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = accentColor,
-                            unfocusedBorderColor = Color.White.copy(alpha = 0.1f),
-                            focusedLabelColor = accentColor,
-                            unfocusedLabelColor = Color.White.copy(alpha = 0.4f),
-                            cursorColor = accentColor,
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
-                        ),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
+                        keyboardType = KeyboardLanguage.ENGLISH_LOWER,
+                        leadingIcon = { Icon(Icons.Default.Email, contentDescription = null, tint = accentColor) }
                     )
 
-                    OutlinedTextField(
+                    CustomKeyboardTextField(
                         value = password,
                         onValueChange = { password = it },
-                        label = { Text("كلمة المرور") },
+                        label = "كلمة المرور",
                         modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        shape = RoundedCornerShape(16.dp),
+                        keyboardType = KeyboardLanguage.ENGLISH_LOWER,
+                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                         leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = accentColor) },
                         trailingIcon = {
                             IconButton(onClick = { passwordVisible = !passwordVisible }) {
@@ -145,18 +136,7 @@ fun LoginScreen(
                                     tint = Color.Gray
                                 )
                             }
-                        },
-                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = accentColor,
-                            unfocusedBorderColor = Color.White.copy(alpha = 0.1f),
-                            focusedLabelColor = accentColor,
-                            unfocusedLabelColor = Color.White.copy(alpha = 0.4f),
-                            cursorColor = accentColor,
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
-                        ),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+                        }
                     )
 
                     if (errorMessage != null) {

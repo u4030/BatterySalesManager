@@ -27,6 +27,8 @@ import com.batterysales.viewmodel.StockEntryUiState
 import com.batterysales.viewmodel.CostInputMode
 import com.batterysales.ui.components.SharedHeader
 import com.batterysales.ui.components.HeaderIconButton
+import com.batterysales.ui.components.CustomKeyboardTextField
+import com.batterysales.ui.components.KeyboardLanguage
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -180,17 +182,12 @@ fun StockEntryContent(
                     }
                 }
 
-                OutlinedTextField(
+                CustomKeyboardTextField(
                     value = uiState.invoiceNumber,
                     onValueChange = viewModel::onInvoiceNumberChanged,
-                    label = { Text("رقم الفاتورة / المرجع") },
+                    label = "رقم الفاتورة / المرجع",
                     modifier = Modifier.fillMaxWidth(),
-                    textStyle = LocalInputTextStyle.current,
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color(0xFFFB8C00),
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline
-                    )
+                    keyboardType = KeyboardLanguage.NUMERIC
                 )
             }
         }
@@ -244,30 +241,22 @@ fun StockEntryContent(
             CostCalculationSection(uiState = uiState, viewModel = viewModel)
 
             if (uiState.isEditMode) {
-                OutlinedTextField(
+                CustomKeyboardTextField(
                     value = uiState.returnedQuantity,
                     onValueChange = viewModel::onReturnedQuantityChanged,
-                    label = { Text("الكمية المرتجعة") },
+                    label = "الكمية المرتجعة",
                     modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
-                    textStyle = LocalInputTextStyle.current,
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = androidx.compose.ui.graphics.Color.Red,
-                        unfocusedBorderColor = androidx.compose.ui.graphics.Color.Red.copy(alpha = 0.5f)
-                    )
+                    keyboardType = KeyboardLanguage.NUMERIC
                 )
             }
         } else {
             // Seller only sees Quantity field
-            OutlinedTextField(
+            CustomKeyboardTextField(
                 value = uiState.quantity,
                 onValueChange = viewModel::onQuantityChanged,
-                label = { Text("الكمية") },
+                label = "الكمية",
                 modifier = Modifier.fillMaxWidth(),
-                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
-                textStyle = LocalInputTextStyle.current,
-                shape = RoundedCornerShape(12.dp)
+                keyboardType = KeyboardLanguage.NUMERIC
             )
         }
 
@@ -391,47 +380,39 @@ fun CostCalculationSection(uiState: StockEntryUiState, viewModel: StockEntryView
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 maxItemsInEachRow = 2
             ) {
-                OutlinedTextField(
+                CustomKeyboardTextField(
                     value = if (uiState.costInputMode == CostInputMode.BY_AMPERE) uiState.costValue else costPerAmpere,
                     onValueChange = viewModel::onCostValueChanged,
-                    label = { Text("سعر الأمبير") },
+                    label = "سعر الأمبير",
                     modifier = Modifier.weight(1f).widthIn(min = 140.dp),
                     readOnly = uiState.costInputMode != CostInputMode.BY_AMPERE,
                     enabled = uiState.selectedVariant != null,
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
-                    textStyle = LocalInputTextStyle.current,
-                    shape = RoundedCornerShape(12.dp)
+                    keyboardType = KeyboardLanguage.NUMERIC
                 )
-                OutlinedTextField(
+                CustomKeyboardTextField(
                     value = if (uiState.costInputMode == CostInputMode.BY_ITEM) uiState.costValue else costPerItem,
                     onValueChange = viewModel::onCostValueChanged,
-                    label = { Text("تكلفة القطعة") },
+                    label = "تكلفة القطعة",
                     modifier = Modifier.weight(1f).widthIn(min = 140.dp),
                     readOnly = uiState.costInputMode != CostInputMode.BY_ITEM,
                     enabled = uiState.selectedVariant != null,
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
-                    textStyle = LocalInputTextStyle.current,
-                    shape = RoundedCornerShape(12.dp)
+                    keyboardType = KeyboardLanguage.NUMERIC
                 )
-                OutlinedTextField(
+                CustomKeyboardTextField(
                     value = uiState.quantity,
                     onValueChange = viewModel::onQuantityChanged,
-                    label = { Text("الكمية") },
+                    label = "الكمية",
                     modifier = Modifier.weight(1f).widthIn(min = 140.dp),
                     enabled = uiState.selectedVariant != null,
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
-                    textStyle = LocalInputTextStyle.current,
-                    shape = RoundedCornerShape(12.dp)
+                    keyboardType = KeyboardLanguage.NUMERIC
                 )
-                OutlinedTextField(
+                CustomKeyboardTextField(
                     value = uiState.minQuantity,
                     onValueChange = viewModel::onMinQuantityChanged,
-                    label = { Text("الحد الأدنى") },
+                    label = "الحد الأدنى",
                     modifier = Modifier.weight(1f).widthIn(min = 140.dp),
                     enabled = uiState.selectedVariant != null,
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
-                    textStyle = LocalInputTextStyle.current,
-                    shape = RoundedCornerShape(12.dp)
+                    keyboardType = KeyboardLanguage.NUMERIC
                 )
             }
 
