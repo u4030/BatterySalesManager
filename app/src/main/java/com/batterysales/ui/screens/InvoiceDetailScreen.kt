@@ -28,6 +28,8 @@ import com.batterysales.data.models.Payment
 import com.batterysales.viewmodel.InvoiceDetailViewModel
 import com.batterysales.ui.components.SharedHeader
 import com.batterysales.ui.components.HeaderIconButton
+import com.batterysales.ui.components.CustomKeyboardTextField
+import com.batterysales.ui.components.KeyboardLanguage
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -271,13 +273,12 @@ fun InvoiceDetailScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("المبلغ المتبقي: JD ${String.format("%.3f", invoice.remainingAmount)}")
                     
-                    OutlinedTextField(
+                    CustomKeyboardTextField(
                         value = paymentAmount,
                         onValueChange = { paymentAmount = it },
-                        label = { Text("المبلغ") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        label = "المبلغ",
                         modifier = Modifier.fillMaxWidth(),
-                        textStyle = MaterialTheme.typography.bodyLarge
+                        keyboardType = KeyboardLanguage.NUMERIC
                     )
 
                     Text("طريقة الدفع:", style = MaterialTheme.typography.labelMedium)
@@ -413,13 +414,12 @@ fun PaymentHistoryDialog(
                 Column {
                     Text("سيتم أيضاً تعديل هذه العملية في الخزينة.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
                     Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
+                    CustomKeyboardTextField(
                         value = newAmount,
                         onValueChange = { newAmount = it },
-                        label = { Text("المبلغ الجديد") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        label = "المبلغ الجديد",
                         modifier = Modifier.fillMaxWidth(),
-                        textStyle = MaterialTheme.typography.bodyLarge
+                        keyboardType = KeyboardLanguage.NUMERIC
                     )
                 }
             },

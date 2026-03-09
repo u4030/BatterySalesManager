@@ -19,6 +19,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -45,6 +46,7 @@ fun ProductManagementScreen(navController: NavHostController, viewModel: Product
 
     var productToEdit by remember { mutableStateOf<Product?>(null) }
     var variantToEdit by remember { mutableStateOf<ProductVariant?>(null) }
+    var variantToPrint by remember { mutableStateOf<ProductVariant?>(null) }
 
     var productToArchive by remember { mutableStateOf<Product?>(null) }
     var variantToArchive by remember { mutableStateOf<ProductVariant?>(null) }
@@ -73,7 +75,8 @@ fun ProductManagementScreen(navController: NavHostController, viewModel: Product
             onDismiss = { showAddVariantDialog = false },
             onAddVariant = { capacity, specification, barcode, minQuantity, minQuantities ->
                 viewModel.addVariant(capacity, 0.0, barcode, minQuantity, minQuantities, specification)
-            }
+            },
+            onGenerateBarcode = { viewModel.generateUniqueBarcode() }
         )
     }
 
@@ -82,7 +85,16 @@ fun ProductManagementScreen(navController: NavHostController, viewModel: Product
             variant = variant,
             warehouses = uiState.warehouses,
             onDismiss = { variantToEdit = null },
-            onUpdateVariant = { updatedVariant -> viewModel.updateVariant(updatedVariant) }
+            onUpdateVariant = { updatedVariant -> viewModel.updateVariant(updatedVariant) },
+            onGenerateBarcode = { viewModel.generateUniqueBarcode() }
+        )
+    }
+
+    variantToPrint?.let { variant ->
+        PrintBarcodeDialog(
+            productName = uiState.selectedProduct?.name ?: "",
+            variant = variant,
+            onDismiss = { variantToPrint = null }
         )
     }
 
@@ -212,7 +224,8 @@ fun ProductManagementScreen(navController: NavHostController, viewModel: Product
                             onProductDelete = { productToArchive = product },
                             onAddVariant = { showAddVariantDialog = true },
                             onVariantEdit = { variantToEdit = it },
-                            onVariantDelete = { variantToArchive = it }
+                            onVariantDelete = { variantToArchive = it },
+                            onVariantPrint = { variantToPrint = it }
                         )
                     }
                 }
@@ -230,7 +243,8 @@ fun ProductCard(
     onProductDelete: () -> Unit,
     onAddVariant: () -> Unit,
     onVariantEdit: (ProductVariant) -> Unit,
-    onVariantDelete: (ProductVariant) -> Unit
+    onVariantDelete: (ProductVariant) -> Unit,
+    onVariantPrint: (ProductVariant) -> Unit
 ) {
     val cardBgColor = MaterialTheme.colorScheme.surface
     val accentColor = Color(0xFFFB8C00)
@@ -330,7 +344,8 @@ fun ProductCard(
                             VariantItemRow(
                                 variant = variant,
                                 onEdit = { onVariantEdit(variant) },
-                                onDelete = { onVariantDelete(variant) }
+                                onDelete = { onVariantDelete(variant) },
+                                onPrint = { onVariantPrint(variant) }
                             )
                         }
                     }
@@ -341,7 +356,7 @@ fun ProductCard(
 }
 
 @Composable
-fun VariantItemRow(variant: ProductVariant, onEdit: () -> Unit, onDelete: () -> Unit) {
+fun VariantItemRow(variant: ProductVariant, onEdit: () -> Unit, onDelete: () -> Unit, onPrint: () -> Unit) {
     val accentColor = Color(0xFFFB8C00)
 
     Card(
@@ -370,6 +385,13 @@ fun VariantItemRow(variant: ProductVariant, onEdit: () -> Unit, onDelete: () -> 
                     modifier = Modifier.size(32.dp).background(accentColor.copy(alpha = 0.1f), CircleShape)
                 ) {
                     Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp), tint = accentColor)
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                IconButton(
+                    onClick = onPrint,
+                    modifier = Modifier.size(32.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), CircleShape)
+                ) {
+                    Icon(Icons.Default.Print, contentDescription = "Print Barcode", modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
                 }
             }
 
@@ -486,7 +508,8 @@ fun EditProductDialog(
 fun AddVariantDialog(
     warehouses: List<Warehouse>,
     onDismiss: () -> Unit,
-    onAddVariant: (Int, String, String, Int, Map<String, Int>) -> Unit
+    onAddVariant: (Int, String, String, Int, Map<String, Int>) -> Unit,
+    onGenerateBarcode: () -> String
 ) {
     var capacity by remember { mutableStateOf("") }
     var specification by remember { mutableStateOf("") }
@@ -557,11 +580,14 @@ fun AddVariantDialog(
                     label = "الباركود",
                     modifier = Modifier.fillMaxWidth()
                 )
-                IconButton(
-                    onClick = { showScanner = true },
-                    modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp)
-                ) {
-                    Icon(Icons.Default.PhotoCamera, contentDescription = "مسح الباركود")
+                Row(modifier = Modifier.align(Alignment.CenterEnd)) {
+                    val accentColor = Color(0xFFFB8C00)
+                    IconButton(onClick = { barcode = onGenerateBarcode() }) {
+                        Icon(Icons.Default.AutoFixHigh, contentDescription = "Generate", tint = accentColor)
+                    }
+                    IconButton(onClick = { showScanner = true }) {
+                        Icon(Icons.Default.PhotoCamera, contentDescription = "Scan", tint = accentColor)
+                    }
                 }
             }
             com.batterysales.ui.components.CustomKeyboardTextField(
@@ -592,7 +618,8 @@ fun EditVariantDialog(
     variant: ProductVariant,
     warehouses: List<Warehouse>,
     onDismiss: () -> Unit,
-    onUpdateVariant: (ProductVariant) -> Unit
+    onUpdateVariant: (ProductVariant) -> Unit,
+    onGenerateBarcode: () -> String
 ) {
     var capacity by remember { mutableStateOf(variant.capacity.toString()) }
     var specification by remember { mutableStateOf(variant.specification) }
@@ -663,11 +690,14 @@ fun EditVariantDialog(
                     label = "الباركود",
                     modifier = Modifier.fillMaxWidth()
                 )
-                IconButton(
-                    onClick = { showScanner = true },
-                    modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp)
-                ) {
-                    Icon(Icons.Default.PhotoCamera, contentDescription = "مسح الباركود")
+                Row(modifier = Modifier.align(Alignment.CenterEnd)) {
+                    val accentColor = Color(0xFFFB8C00)
+                    IconButton(onClick = { barcode = onGenerateBarcode() }) {
+                        Icon(Icons.Default.AutoFixHigh, contentDescription = "Generate", tint = accentColor)
+                    }
+                    IconButton(onClick = { showScanner = true }) {
+                        Icon(Icons.Default.PhotoCamera, contentDescription = "Scan", tint = accentColor)
+                    }
                 }
             }
             com.batterysales.ui.components.CustomKeyboardTextField(
@@ -707,4 +737,51 @@ fun DeleteConfirmationDialog(itemName: String, onDismiss: () -> Unit, onConfirm:
         },
         dismissButton = { Button(onClick = onDismiss) { Text("إلغاء") } }
     )
+}
+
+@Composable
+fun PrintBarcodeDialog(
+    productName: String,
+    variant: ProductVariant,
+    onDismiss: () -> Unit
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    AppDialog(
+        onDismiss = onDismiss,
+        title = "طباعة الباركود",
+        confirmButton = { },
+        dismissButton = { Button(onClick = onDismiss) { Text("إغلاق") } }
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text("اختيار نوع الطباعة لـ: $productName - ${variant.capacity}A", textAlign = TextAlign.Center)
+
+            Button(
+                onClick = {
+                    com.batterysales.utils.PrintUtils.printBarcodeSticker(context, productName, variant)
+                    onDismiss()
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.Print, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("طباعة ستكر (طابعة حرارية)")
+            }
+
+            Button(
+                onClick = {
+                    com.batterysales.utils.PrintUtils.printBarcodeA4(context, productName, variant)
+                    onDismiss()
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.Description, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("طباعة ورق A4 (متعدد)")
+            }
+        }
+    }
 }
