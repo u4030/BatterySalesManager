@@ -355,12 +355,93 @@ object PrintUtils {
         webView.loadDataWithBaseURL(null, htmlContent.toString(), "text/html", "utf-8", null)
     }
 
-    fun printBarcodeSticker(context: Context, productName: String, variant: ProductVariant) {
+    fun printBarcodeA4(context: Context, productName: String, variant: ProductVariant) {
+        val items = List(24) { Pair(productName, variant) }
+        printBarcodeQueueA4(context, items)
+    }
+
+    fun printBarcodeQueueA4(context: Context, items: List<Pair<String, ProductVariant>>) {
         val webView = WebView(context)
         activeWebView = webView
 
-        val barcodeBitmap = BarcodeUtils.generateBarcodeBitmap(variant.barcode, width = 400, height = 150)
-        val barcodeBase64 = barcodeBitmap?.let {
+        val itemsHtml = items.joinToString("") { (productName, variant) ->
+            val barcodeBitmap = BarcodeUtils.generateBarcodeBitmap(variant.barcode, width = 400, height = 150)
+            val barcodeBase64 = barcodeBitmap?.let {
+                val outputStream = java.io.ByteArrayOutputStream()
+                it.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, outputStream)
+                android.util.Base64.encodeToString(outputStream.toByteArray(), android.util.Base64.DEFAULT)
+            } ?: ""
+
+            """
+            <div class="item">
+                <div class="name">$productName</div>
+                <div class="spec">${variant.capacity}A ${variant.specification}</div>
+                <img src="data:image/png;base64,$barcodeBase64" />
+                <div class="code">${variant.barcode}</div>
+            </div>
+            """.trimIndent()
+        }
+
+        val html = """
+            <html>
+            <head>
+                <style>
+                    @page { margin: 0; }
+                    body {
+                        font-family: sans-serif;
+                        display: flex;
+                        flex-wrap: wrap;
+                        justify-content: flex-start;
+                        align-content: flex-start;
+                        padding: 10mm;
+                        margin: 0;
+                    }
+                    .item {
+                        width: 45mm;
+                        height: 35mm;
+                        border: 0.1mm solid #ccc;
+                        margin: 1mm;
+                        padding: 2mm;
+                        text-align: center;
+                        box-sizing: border-box;
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: center;
+                        overflow: hidden;
+                    }
+                    .name { font-size: 10pt; font-weight: bold; max-height: 2.4em; line-height: 1.2; overflow: hidden; margin-bottom: 1mm; }
+                    .spec { font-size: 8pt; margin-bottom: 1mm; }
+                    img { width: 100%; height: 12mm; object-fit: contain; }
+                    .code { font-size: 8pt; margin-top: 1mm; }
+                </style>
+            </head>
+            <body>
+                $itemsHtml
+            </body>
+            </html>
+        """.trimIndent()
+
+        webView.webViewClient = object : WebViewClient() {
+            override fun onPageFinished(view: WebView, url: String) {
+                val printManager = context.getSystemService(Context.PRINT_SERVICE) as PrintManager
+                val printAdapter = webView.createPrintDocumentAdapter("Barcodes_A4")
+                printManager.print("Barcodes_A4", printAdapter, PrintAttributes.Builder().build())
+            }
+        }
+        webView.loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
+    }
+
+    fun printBarcodeSticker(context: Context, productName: String, variant: ProductVariant, useDataMatrix: Boolean = false) {
+        val webView = WebView(context)
+        activeWebView = webView
+
+        val bitmap = if (useDataMatrix) {
+            BarcodeUtils.generateDataMatrixBitmap(variant.barcode, width = 300, height = 300)
+        } else {
+            BarcodeUtils.generateBarcodeBitmap(variant.barcode, width = 400, height = 150)
+        }
+
+        val base64 = bitmap?.let {
             val outputStream = java.io.ByteArrayOutputStream()
             it.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, outputStream)
             android.util.Base64.encodeToString(outputStream.toByteArray(), android.util.Base64.DEFAULT)
@@ -370,17 +451,18 @@ object PrintUtils {
             <html>
             <head>
                 <style>
-                    body { margin: 0; padding: 5px; text-align: center; font-family: sans-serif; }
-                    .name { font-size: 14px; font-weight: bold; margin-bottom: 2px; }
-                    .spec { font-size: 12px; margin-bottom: 5px; }
-                    img { width: 100%; height: auto; max-height: 80px; }
-                    .code { font-size: 12px; margin-top: 2px; }
+                    @page { margin: 0; }
+                    body { margin: 0; padding: 2mm; text-align: center; font-family: sans-serif; }
+                    .name { font-size: 12pt; font-weight: bold; margin-bottom: 1mm; }
+                    .spec { font-size: 10pt; margin-bottom: 2mm; }
+                    img { width: ${if (useDataMatrix) "30mm" else "100%"}; height: auto; max-height: 20mm; object-fit: contain; }
+                    .code { font-size: 10pt; margin-top: 1mm; }
                 </style>
             </head>
             <body>
                 <div class="name">$productName</div>
                 <div class="spec">${variant.capacity}A ${variant.specification}</div>
-                <img src="data:image/png;base64,$barcodeBase64" />
+                <img src="data:image/png;base64,$base64" />
                 <div class="code">${variant.barcode}</div>
             </body>
             </html>
@@ -391,54 +473,6 @@ object PrintUtils {
                 val printManager = context.getSystemService(Context.PRINT_SERVICE) as PrintManager
                 val printAdapter = webView.createPrintDocumentAdapter("Barcode_Sticker_${variant.barcode}")
                 printManager.print("Barcode_Sticker", printAdapter, PrintAttributes.Builder().build())
-            }
-        }
-        webView.loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
-    }
-
-    fun printBarcodeA4(context: Context, productName: String, variant: ProductVariant) {
-        val webView = WebView(context)
-        activeWebView = webView
-
-        val barcodeBitmap = BarcodeUtils.generateBarcodeBitmap(variant.barcode, width = 400, height = 150)
-        val barcodeBase64 = barcodeBitmap?.let {
-            val outputStream = java.io.ByteArrayOutputStream()
-            it.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, outputStream)
-            android.util.Base64.encodeToString(outputStream.toByteArray(), android.util.Base64.DEFAULT)
-        } ?: ""
-
-        val itemHtml = """
-            <div class="item">
-                <div class="name">$productName</div>
-                <div class="spec">${variant.capacity}A ${variant.specification}</div>
-                <img src="data:image/png;base64,$barcodeBase64" />
-                <div class="code">${variant.barcode}</div>
-            </div>
-        """.trimIndent()
-
-        val html = """
-            <html>
-            <head>
-                <style>
-                    body { font-family: sans-serif; display: flex; flex-wrap: wrap; justify-content: flex-start; padding: 20px; }
-                    .item { width: 180px; height: 140px; border: 1px solid #ccc; margin: 5px; padding: 10px; text-align: center; box-sizing: border-box; }
-                    .name { font-size: 12px; font-weight: bold; height: 30px; overflow: hidden; }
-                    .spec { font-size: 10px; }
-                    img { width: 100%; height: 50px; object-fit: contain; }
-                    .code { font-size: 10px; }
-                </style>
-            </head>
-            <body>
-                ${List(24) { itemHtml }.joinToString("")}
-            </body>
-            </html>
-        """.trimIndent()
-
-        webView.webViewClient = object : WebViewClient() {
-            override fun onPageFinished(view: WebView, url: String) {
-                val printManager = context.getSystemService(Context.PRINT_SERVICE) as PrintManager
-                val printAdapter = webView.createPrintDocumentAdapter("Barcode_A4_${variant.barcode}")
-                printManager.print("Barcode_A4", printAdapter, PrintAttributes.Builder().build())
             }
         }
         webView.loadDataWithBaseURL(null, html, "text/html", "utf-8", null)

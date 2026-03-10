@@ -36,10 +36,16 @@ import com.batterysales.ui.components.SharedHeader
 import com.batterysales.ui.components.HeaderIconButton
 import com.batterysales.ui.components.AppDialog
 import com.batterysales.ui.components.CustomKeyboardTextField
+import com.batterysales.viewmodel.PrintQueueViewModel
 
 @Composable
-fun ProductManagementScreen(navController: NavHostController, viewModel: ProductManagementViewModel = hiltViewModel()) {
+fun ProductManagementScreen(
+    navController: NavHostController,
+    viewModel: ProductManagementViewModel = hiltViewModel(),
+    printQueueViewModel: PrintQueueViewModel = hiltViewModel()
+) {
     val uiState by viewModel.uiState.collectAsState()
+    val printQueue by printQueueViewModel.queue.collectAsState()
 
     var showAddProductDialog by remember { mutableStateOf(false) }
     var showAddVariantDialog by remember { mutableStateOf(false) }
@@ -50,6 +56,7 @@ fun ProductManagementScreen(navController: NavHostController, viewModel: Product
 
     var productToArchive by remember { mutableStateOf<Product?>(null) }
     var variantToArchive by remember { mutableStateOf<ProductVariant?>(null) }
+    var showPrintQueueDialog by remember { mutableStateOf(false) }
 
     // Dialogs
     if (showAddProductDialog) {
@@ -94,7 +101,21 @@ fun ProductManagementScreen(navController: NavHostController, viewModel: Product
         PrintBarcodeDialog(
             productName = uiState.selectedProduct?.name ?: "",
             variant = variant,
-            onDismiss = { variantToPrint = null }
+            onDismiss = { variantToPrint = null },
+            onAddToQueue = { qty -> printQueueViewModel.addItem(uiState.selectedProduct?.name ?: "", variant, qty) }
+        )
+    }
+
+    if (showPrintQueueDialog) {
+        PrintQueueDialog(
+            printQueue = printQueue,
+            onDismiss = { showPrintQueueDialog = false },
+            onRemoveItem = { printQueueViewModel.removeItem(it) },
+            onUpdateQuantity = { id, qty -> printQueueViewModel.updateQuantity(id, qty) },
+            onPrintAll = {
+                com.batterysales.utils.PrintUtils.printBarcodeQueueA4(navController.context, printQueueViewModel.getItemsForPrinting())
+            },
+            onClearQueue = { printQueueViewModel.clearQueue() }
         )
     }
 
@@ -135,6 +156,19 @@ fun ProductManagementScreen(navController: NavHostController, viewModel: Product
                     title = "إدارة المنتجات",
                     onBackClick = { navController.popBackStack() },
                     actions = {
+                        BadgedBox(
+                            badge = {
+                                if (printQueue.isNotEmpty()) {
+                                    Badge { Text(printQueue.sumOf { it.quantity }.toString()) }
+                                }
+                            }
+                        ) {
+                            HeaderIconButton(
+                                icon = Icons.Default.Print,
+                                onClick = { showPrintQueueDialog = true },
+                                contentDescription = "Print Queue"
+                            )
+                        }
                         HeaderIconButton(
                             icon = Icons.Default.Refresh,
                             onClick = { /* Refresh handled by flow */ },
@@ -743,9 +777,12 @@ fun DeleteConfirmationDialog(itemName: String, onDismiss: () -> Unit, onConfirm:
 fun PrintBarcodeDialog(
     productName: String,
     variant: ProductVariant,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onAddToQueue: (Int) -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    var queueQty by remember { mutableStateOf("1") }
+
     AppDialog(
         onDismiss = onDismiss,
         title = "طباعة الباركود",
@@ -780,7 +817,120 @@ fun PrintBarcodeDialog(
             ) {
                 Icon(Icons.Default.Description, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("طباعة ورق A4 (متعدد)")
+                Text("طباعة ورق A4 (صفحة كاملة)")
+            }
+
+            HorizontalDivider()
+
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("أو إضافة للائحة الطباعة:")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    CustomKeyboardTextField(
+                        value = queueQty,
+                        onValueChange = { queueQty = it },
+                        label = "العدد",
+                        modifier = Modifier.weight(1f),
+                        keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
+                    )
+                    Button(
+                        onClick = {
+                            onAddToQueue(queueQty.toIntOrNull() ?: 1)
+                            onDismiss()
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.AddShoppingCart, contentDescription = null)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("إضافة")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun PrintQueueDialog(
+    printQueue: List<com.batterysales.viewmodel.PrintQueueItem>,
+    onDismiss: () -> Unit,
+    onRemoveItem: (String) -> Unit,
+    onUpdateQuantity: (String, Int) -> Unit,
+    onPrintAll: () -> Unit,
+    onClearQueue: () -> Unit
+) {
+    AppDialog(
+        onDismiss = onDismiss,
+        title = "لائحة الطباعة",
+        confirmButton = {
+            if (printQueue.isNotEmpty()) {
+                Button(onClick = {
+                    onPrintAll()
+                    onDismiss()
+                }) {
+                    Icon(Icons.Default.Print, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("طباعة الكل")
+                }
+            }
+        },
+        dismissButton = {
+            Button(onClick = onDismiss) { Text("إغلاق") }
+        }
+    ) {
+        if (printQueue.isEmpty()) {
+            Box(modifier = Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
+                Text("اللائحة فارغة")
+            }
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                printQueue.forEach { item ->
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(item.productName, fontWeight = FontWeight.Bold)
+                                Text("${item.variant.capacity}A ${item.variant.specification}", style = MaterialTheme.typography.bodySmall)
+                            }
+
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(onClick = { onUpdateQuantity(item.variant.id, item.quantity - 1) }) {
+                                    Icon(Icons.Default.Remove, contentDescription = null)
+                                }
+                                Text(item.quantity.toString(), modifier = Modifier.padding(horizontal = 8.dp))
+                                IconButton(onClick = { onUpdateQuantity(item.variant.id, item.quantity + 1) }) {
+                                    Icon(Icons.Default.Add, contentDescription = null)
+                                }
+                            }
+
+                            IconButton(onClick = { onRemoveItem(item.variant.id) }) {
+                                Icon(Icons.Default.Delete, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                TextButton(
+                    onClick = onClearQueue,
+                    modifier = Modifier.align(Alignment.End),
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("تفريغ اللائحة")
+                }
             }
         }
     }
