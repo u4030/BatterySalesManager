@@ -783,6 +783,12 @@ fun PrintBarcodeDialog(
     val context = androidx.compose.ui.platform.LocalContext.current
     var queueQty by remember { mutableStateOf("1") }
 
+    // Sticker dimensions
+    var widthMm by remember { mutableStateOf("50") }
+    var heightMm by remember { mutableStateOf("30") }
+    var fontSizePt by remember { mutableStateOf("10") }
+    var useDataMatrix by remember { mutableStateOf(false) }
+
     AppDialog(
         onDismiss = onDismiss,
         title = "طباعة الباركود",
@@ -794,18 +800,65 @@ fun PrintBarcodeDialog(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text("اختيار نوع الطباعة لـ: $productName - ${variant.capacity}A", textAlign = TextAlign.Center)
+            Text("اختيار نوع الطباعة لـ: $productName - ${variant.capacity}A", textAlign = TextAlign.Center, fontWeight = FontWeight.Bold)
 
-            Button(
-                onClick = {
-                    com.batterysales.utils.PrintUtils.printBarcodeSticker(context, productName, variant)
-                    onDismiss()
-                },
-                modifier = Modifier.fillMaxWidth()
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
             ) {
-                Icon(Icons.Default.Print, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("طباعة ستكر (طابعة حرارية)")
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("إعدادات الستكر (طابعة حرارية)", style = MaterialTheme.typography.titleSmall)
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        CustomKeyboardTextField(
+                            value = widthMm,
+                            onValueChange = { widthMm = it },
+                            label = "العرض (mm)",
+                            modifier = Modifier.weight(1f),
+                            keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
+                        )
+                        CustomKeyboardTextField(
+                            value = heightMm,
+                            onValueChange = { heightMm = it },
+                            label = "الارتفاع (mm)",
+                            modifier = Modifier.weight(1f),
+                            keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
+                        )
+                        CustomKeyboardTextField(
+                            value = fontSizePt,
+                            onValueChange = { fontSizePt = it },
+                            label = "الخط (pt)",
+                            modifier = Modifier.weight(1f),
+                            keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
+                        )
+                    }
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = useDataMatrix, onCheckedChange = { useDataMatrix = it })
+                        Text("استخدام DataMatrix بدلاً من الباركود")
+                    }
+
+                    Button(
+                        onClick = {
+                            com.batterysales.utils.PrintUtils.printBarcodeSticker(
+                                context,
+                                productName,
+                                variant,
+                                widthMm = widthMm.toIntOrNull() ?: 50,
+                                heightMm = heightMm.toIntOrNull() ?: 30,
+                                fontSizePt = fontSizePt.toIntOrNull() ?: 10,
+                                useDataMatrix = useDataMatrix
+                            )
+                            onDismiss()
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Print, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("طباعة ستكر الآن")
+                    }
+                }
             }
 
             Button(

@@ -431,7 +431,15 @@ object PrintUtils {
         webView.loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
     }
 
-    fun printBarcodeSticker(context: Context, productName: String, variant: ProductVariant, useDataMatrix: Boolean = false) {
+    fun printBarcodeSticker(
+        context: Context,
+        productName: String,
+        variant: ProductVariant,
+        widthMm: Int = 50,
+        heightMm: Int = 30,
+        fontSizePt: Int = 10,
+        useDataMatrix: Boolean = false
+    ) {
         val webView = WebView(context)
         activeWebView = webView
 
@@ -451,12 +459,32 @@ object PrintUtils {
             <html>
             <head>
                 <style>
-                    @page { margin: 0; }
-                    body { margin: 0; padding: 2mm; text-align: center; font-family: sans-serif; }
-                    .name { font-size: 12pt; font-weight: bold; margin-bottom: 1mm; }
-                    .spec { font-size: 10pt; margin-bottom: 2mm; }
-                    img { width: ${if (useDataMatrix) "30mm" else "100%"}; height: auto; max-height: 20mm; object-fit: contain; }
-                    .code { font-size: 10pt; margin-top: 1mm; }
+                    @page {
+                        size: ${widthMm}mm ${heightMm}mm;
+                        margin: 0;
+                    }
+                    body {
+                        margin: 0;
+                        padding: 1mm;
+                        text-align: center;
+                        font-family: sans-serif;
+                        width: ${widthMm}mm;
+                        height: ${heightMm}mm;
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: center;
+                        align-items: center;
+                        box-sizing: border-box;
+                    }
+                    .name { font-size: ${fontSizePt + 2}pt; font-weight: bold; margin-bottom: 0.5mm; width: 100%; overflow: hidden; white-space: nowrap; }
+                    .spec { font-size: ${fontSizePt}pt; margin-bottom: 1mm; width: 100%; overflow: hidden; white-space: nowrap; }
+                    img {
+                        width: ${if (useDataMatrix) "${heightMm / 1.5}mm" else "90%"};
+                        height: auto;
+                        max-height: ${heightMm / 2}mm;
+                        object-fit: contain;
+                    }
+                    .code { font-size: ${fontSizePt - 1}pt; margin-top: 0.5mm; width: 100%; }
                 </style>
             </head>
             <body>
@@ -472,7 +500,12 @@ object PrintUtils {
             override fun onPageFinished(view: WebView, url: String) {
                 val printManager = context.getSystemService(Context.PRINT_SERVICE) as PrintManager
                 val printAdapter = webView.createPrintDocumentAdapter("Barcode_Sticker_${variant.barcode}")
-                printManager.print("Barcode_Sticker", printAdapter, PrintAttributes.Builder().build())
+
+                val printAttributes = PrintAttributes.Builder()
+                    .setMediaSize(PrintAttributes.MediaSize("custom", "Sticker", (widthMm * 1000 / 25.4).toInt(), (heightMm * 1000 / 25.4).toInt()))
+                    .build()
+
+                printManager.print("Barcode_Sticker", printAdapter, printAttributes)
             }
         }
         webView.loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
