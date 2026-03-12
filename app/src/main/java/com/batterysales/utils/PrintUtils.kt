@@ -438,13 +438,13 @@ object PrintUtils {
         widthMm: Int = 50,
         heightMm: Int = 30,
         fontSizePt: Int = 10,
-        useDataMatrix: Boolean = false
+        useQrCode: Boolean = false
     ) {
         val webView = WebView(context)
         activeWebView = webView
 
-        val bitmap = if (useDataMatrix) {
-            BarcodeUtils.generateDataMatrixBitmap(variant.barcode, width = 300, height = 300)
+        val bitmap = if (useQrCode) {
+            BarcodeUtils.generateQrCodeBitmap(variant.barcode, width = 300, height = 300)
         } else {
             BarcodeUtils.generateBarcodeBitmap(variant.barcode, width = 400, height = 150)
         }
@@ -479,7 +479,7 @@ object PrintUtils {
                     .name { font-size: ${fontSizePt + 2}pt; font-weight: bold; margin-bottom: 0.5mm; width: 100%; overflow: hidden; white-space: nowrap; }
                     .spec { font-size: ${fontSizePt}pt; margin-bottom: 1mm; width: 100%; overflow: hidden; white-space: nowrap; }
                     img {
-                        width: ${if (useDataMatrix) "${heightMm / 1.5}mm" else "90%"};
+                        width: ${if (useQrCode) "${heightMm / 1.5}mm" else "90%"};
                         height: auto;
                         max-height: ${heightMm / 2}mm;
                         object-fit: contain;

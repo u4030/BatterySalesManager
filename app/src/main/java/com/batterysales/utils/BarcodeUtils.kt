@@ -37,4 +37,12 @@ object BarcodeUtils {
     ): Bitmap? {
         return generateBarcodeBitmap(content, BarcodeFormat.DATA_MATRIX, width, height)
     }
+
+    fun generateQrCodeBitmap(
+        content: String,
+        width: Int = 300,
+        height: Int = 300
+    ): Bitmap? {
+        return generateBarcodeBitmap(content, BarcodeFormat.QR_CODE, width, height)
+    }
 }

@@ -787,7 +787,7 @@ fun PrintBarcodeDialog(
     var widthMm by remember { mutableStateOf("50") }
     var heightMm by remember { mutableStateOf("30") }
     var fontSizePt by remember { mutableStateOf("10") }
-    var useDataMatrix by remember { mutableStateOf(false) }
+    var useQrCode by remember { mutableStateOf(false) }
 
     AppDialog(
         onDismiss = onDismiss,
@@ -807,36 +807,34 @@ fun PrintBarcodeDialog(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp)
             ) {
-                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("إعدادات الستكر (طابعة حرارية)", style = MaterialTheme.typography.titleSmall)
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        CustomKeyboardTextField(
-                            value = widthMm,
-                            onValueChange = { widthMm = it },
-                            label = "العرض (mm)",
-                            modifier = Modifier.weight(1f),
-                            keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
-                        )
-                        CustomKeyboardTextField(
-                            value = heightMm,
-                            onValueChange = { heightMm = it },
-                            label = "الارتفاع (mm)",
-                            modifier = Modifier.weight(1f),
-                            keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
-                        )
-                        CustomKeyboardTextField(
-                            value = fontSizePt,
-                            onValueChange = { fontSizePt = it },
-                            label = "الخط (pt)",
-                            modifier = Modifier.weight(1f),
-                            keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
-                        )
-                    }
+                    CustomKeyboardTextField(
+                        value = widthMm,
+                        onValueChange = { widthMm = it },
+                        label = "العرض (mm)",
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
+                    )
+                    CustomKeyboardTextField(
+                        value = heightMm,
+                        onValueChange = { heightMm = it },
+                        label = "الارتفاع (mm)",
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
+                    )
+                    CustomKeyboardTextField(
+                        value = fontSizePt,
+                        onValueChange = { fontSizePt = it },
+                        label = "حجم الخط (pt)",
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
+                    )
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = useDataMatrix, onCheckedChange = { useDataMatrix = it })
-                        Text("استخدام DataMatrix بدلاً من الباركود")
+                        Checkbox(checked = useQrCode, onCheckedChange = { useQrCode = it })
+                        Text("استخدام QR Code بدلاً من الباركود")
                     }
 
                     Button(
@@ -848,7 +846,7 @@ fun PrintBarcodeDialog(
                                 widthMm = widthMm.toIntOrNull() ?: 50,
                                 heightMm = heightMm.toIntOrNull() ?: 30,
                                 fontSizePt = fontSizePt.toIntOrNull() ?: 10,
-                                useDataMatrix = useDataMatrix
+                                useQrCode = useQrCode
                             )
                             onDismiss()
                         },
