@@ -1,10 +1,8 @@
 package com.batterysales.data.models
 
-import com.google.firebase.firestore.DocumentId
 import java.util.Date
 
 data class StockEntry(
-//    @DocumentId
     val id: String = "",
     val productVariantId: String = "",
     val productName: String = "", // Denormalized product name

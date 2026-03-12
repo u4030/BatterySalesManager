@@ -225,8 +225,10 @@ class AccountingViewModel @Inject constructor(
                     _expenses.value = expensesJob.await()
                 }
             } catch (e: Exception) {
-                Log.e("AccountingViewModel", "Error loading data", e)
-                _errorMessage.value = "خطأ في تحميل البيانات: ${e.message}"
+                if (e !is kotlinx.coroutines.CancellationException) {
+                    Log.e("AccountingViewModel", "Error loading data", e)
+                    _errorMessage.value = "خطأ في تحميل البيانات: ${e.message}"
+                }
             } finally {
                 _isLoading.value = false
                 _isLoadingMore.value = false
@@ -315,6 +317,65 @@ class AccountingViewModel @Inject constructor(
                 loadData(reset = true)
             } catch (e: Exception) {
                 Log.e("AccountingViewModel", "Error updating transaction", e)
+            }
+        }
+    }
+
+    fun transferDailyIncomeToMain() {
+        viewModelScope.launch {
+            val warehouseId = _selectedWarehouseId.value ?: return@launch
+            try {
+                _isLoading.value = true
+                
+                // 1. Get current balance for this warehouse
+                val balance = repository.getCurrentBalance(warehouseId, "cash", null)
+                if (balance <= 0) {
+                    _errorMessage.value = "لا يوجد رصيد كاش للتحويل"
+                    return@launch
+                }
+
+                // 2. Find Main Warehouse
+                val allWarehouses = warehouseRepository.getWarehousesOnce()
+                val mainWarehouse = allWarehouses.find { it.isMain && it.isActive }
+                if (mainWarehouse == null) {
+                    _errorMessage.value = "لم يتم تحديد مستودع رئيسي نشط"
+                    return@launch
+                }
+
+                if (mainWarehouse.id == warehouseId) {
+                    _errorMessage.value = "أنت بالفعل في المستودع الرئيسي"
+                    return@launch
+                }
+
+                // 3. Prepare Transactions
+                val branchTransId = UUID.randomUUID().toString()
+                val branchWithdrawal = Transaction(
+                    id = branchTransId,
+                    type = com.batterysales.data.models.TransactionType.EXPENSE,
+                    amount = balance,
+                    description = "تحويل رصيد اليوم إلى المستودع الرئيسي (${mainWarehouse.name})",
+                    warehouseId = warehouseId,
+                    paymentMethod = "cash"
+                )
+
+                val mainDeposit = Transaction(
+                    type = com.batterysales.data.models.TransactionType.INCOME,
+                    amount = balance,
+                    description = "استلام رصيد محول من مستودع: ${_warehouses.value.find { it.id == warehouseId }?.name ?: warehouseId}",
+                    warehouseId = mainWarehouse.id,
+                    paymentMethod = "cash",
+                    relatedId = branchTransId
+                )
+
+                // 4. Execute as Batch
+                repository.addTransactionsBatch(listOf(branchWithdrawal, mainDeposit))
+
+                loadData(reset = true)
+            } catch (e: Exception) {
+                Log.e("AccountingViewModel", "Transfer error", e)
+                _errorMessage.value = "فشل التحويل: ${e.message}"
+            } finally {
+                _isLoading.value = false
             }
         }
     }

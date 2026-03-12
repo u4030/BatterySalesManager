@@ -45,6 +45,19 @@ import com.batterysales.ui.components.KeyboardLanguage
 @Composable
 fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hiltViewModel()) {
     val pagingItems = viewModel.inventoryReport.collectAsLazyPagingItems()
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshAll()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
     val grandTotalQuantity by viewModel.grandTotalInventoryQuantity.collectAsState()
     val supplierItems by viewModel.supplierReport.collectAsState()
     val isSeller by viewModel.isSeller.collectAsState()
@@ -171,6 +184,14 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                         if (pagingItems.itemCount > 0) {
                             item {
                                 GrandTotalCard(totalQuantity = grandTotalQuantity, isSeller = isSeller)
+                            }
+                        }
+                        
+                        if (isLoading) {
+                            item {
+                                Box(modifier = Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
+                                    CircularProgressIndicator(color = accentColor)
+                                }
                             }
                         }
 
@@ -328,7 +349,7 @@ fun ReportItemCard(
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = item.product.name,
+                        text = "${item.product.name}${if (item.product.specification.isNotEmpty()) " (${item.product.specification})" else ""}",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface

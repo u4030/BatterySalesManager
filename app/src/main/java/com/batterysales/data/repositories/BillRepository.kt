@@ -69,7 +69,7 @@ class BillRepository @Inject constructor(
 
         firestore.runTransaction { transaction ->
             val snapshot = transaction.get(billRef)
-            val bill = snapshot.toObject(Bill::class.java) ?: return@runTransaction
+            val bill = snapshot.toObject(Bill::class.java)?.copy(id = snapshot.id) ?: return@runTransaction
 
             val newPaidAmount = bill.paidAmount + paymentAmount
             val newStatus = when {
@@ -158,7 +158,7 @@ class BillRepository @Inject constructor(
             .whereNotEqualTo("relatedEntryId", null)
             .get()
             .await()
-        val bills = snapshot.documents.mapNotNull { it.toObject(Bill::class.java) }
+        val bills = snapshot.documents.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) }
         return bills.groupBy { it.relatedEntryId!! }
             .mapValues { entry -> entry.value.sumOf { it.amount } }
     }

@@ -121,10 +121,22 @@ class AccountingRepository @Inject constructor(
         return Pair(transactions, lastDoc)
     }
 
-    suspend fun addTransaction(transaction: Transaction) {
-        val docRef = firestore.collection(Transaction.COLLECTION_NAME).document()
+    suspend fun addTransaction(transaction: Transaction): String {
+        val docRef = if (transaction.id.isEmpty()) firestore.collection(Transaction.COLLECTION_NAME).document() 
+                     else firestore.collection(Transaction.COLLECTION_NAME).document(transaction.id)
         val finalTransaction = transaction.copy(id = docRef.id)
         docRef.set(finalTransaction).await()
+        return docRef.id
+    }
+
+    suspend fun addTransactionsBatch(transactions: List<Transaction>) {
+        val batch = firestore.batch()
+        transactions.forEach { transaction ->
+            val docRef = if (transaction.id.isEmpty()) firestore.collection(Transaction.COLLECTION_NAME).document() 
+                         else firestore.collection(Transaction.COLLECTION_NAME).document(transaction.id)
+            batch.set(docRef, transaction.copy(id = docRef.id))
+        }
+        batch.commit().await()
     }
 
     suspend fun addExpense(expense: Expense) {

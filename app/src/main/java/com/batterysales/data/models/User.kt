@@ -1,7 +1,5 @@
 package com.batterysales.data.models
 
-import com.google.firebase.firestore.DocumentId
-import com.google.firebase.firestore.PropertyName
 import java.util.Date
 
 /**
@@ -37,7 +35,6 @@ data class User(
      *
      * يتم إنشاؤه بواسطة Firebase Authentication
      */
-//    @DocumentId
     val id: String = "",
 
     /**
@@ -109,8 +106,6 @@ data class User(
      * true = المستخدم يمكنه تسجيل الدخول
      * false = المستخدم محظور (حذف منطقي)
      */
-    @get:PropertyName("isActive")
-    @set:PropertyName("isActive")
     var isActive: Boolean = true,
 
     /**

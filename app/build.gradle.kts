@@ -94,6 +94,7 @@ dependencies {
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
     implementation("com.google.mlkit:vision-common:17.3.0")
     implementation("com.google.guava:guava:33.4.0-android")
+    implementation("com.google.zxing:core:3.5.3")
 
     val cameraVersion = "1.4.0"
     implementation("androidx.camera:camera-core:$cameraVersion")

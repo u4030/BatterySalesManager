@@ -176,11 +176,20 @@ fun AccountingScreen(
                                     fontWeight = FontWeight.Bold
                                 )
                             }
-                            HeaderIconButton(
-                                icon = Icons.Default.CalendarMonth,
-                                onClick = { showDateRangePicker = true },
-                                contentDescription = "Date Range"
-                            )
+                            Row {
+                                if (currentUser?.role == "admin") {
+                                    HeaderIconButton(
+                                        icon = Icons.Default.Send,
+                                        onClick = { viewModel.transferDailyIncomeToMain() },
+                                        contentDescription = "Transfer to Main"
+                                    )
+                                }
+                                HeaderIconButton(
+                                    icon = Icons.Default.CalendarMonth,
+                                    onClick = { showDateRangePicker = true },
+                                    contentDescription = "Date Range"
+                                )
+                            }
                         }
 
                         // Warehouse selection for admins - Primary Filter as Tabs

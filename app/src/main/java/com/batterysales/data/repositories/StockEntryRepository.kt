@@ -166,11 +166,11 @@ class StockEntryRepository @Inject constructor(
 
 
     suspend fun getStockEntryById(entryId: String): StockEntry? {
-        return firestore.collection(StockEntry.COLLECTION_NAME)
+        val snapshot = firestore.collection(StockEntry.COLLECTION_NAME)
             .document(entryId)
             .get()
             .await()
-            .toObject(StockEntry::class.java)
+        return snapshot.toObject(StockEntry::class.java)?.copy(id = snapshot.id)
     }
 
     suspend fun updateStockEntry(entry: StockEntry) {
@@ -229,39 +229,44 @@ class StockEntryRepository @Inject constructor(
     }
 
     suspend fun getVariantSummary(variantId: String, warehouseId: String? = null): Triple<Int, Double, Double> {
-        var baseQuery = firestore.collection(StockEntry.COLLECTION_NAME)
-            .whereEqualTo("productVariantId", variantId)
-            .whereEqualTo("status", "approved")
+        // Fallback or specific lookup
+        val entries = getEntriesForVariants(listOf(variantId), warehouseId)
+        return calculateSummary(entries[variantId] ?: emptyList())
+    }
 
-        if (warehouseId != null) {
-            baseQuery = baseQuery.whereEqualTo("warehouseId", warehouseId)
-        }
-
-        // 1. Current Quantity (Sum all quantity - sum all returnedQuantity)
-        val qtySnap = baseQuery.aggregate(
-            AggregateField.sum("quantity"),
-            AggregateField.sum("returnedQuantity")
-        ).get(AggregateSource.SERVER).await()
+    suspend fun getEntriesForVariants(variantIds: List<String>, warehouseId: String? = null): Map<String, List<StockEntry>> {
+        if (variantIds.isEmpty()) return emptyMap()
         
-        val totalQty = (qtySnap.getLong(AggregateField.sum("quantity")) ?: 0).toInt()
-        val totalRet = (qtySnap.getLong(AggregateField.sum("returnedQuantity")) ?: 0).toInt()
+        // Firestore 'in' limit is 30
+        val chunks = variantIds.chunked(30)
+        val allEntries = mutableListOf<StockEntry>()
+        
+        chunks.forEach { chunk ->
+            var query = firestore.collection(StockEntry.COLLECTION_NAME)
+                .whereIn("productVariantId", chunk)
+                .whereEqualTo("status", "approved")
+            
+            if (warehouseId != null) {
+                query = query.whereEqualTo("warehouseId", warehouseId)
+            }
+            
+            val snap = query.get().await()
+            allEntries.addAll(snap.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) })
+        }
+        
+        return allEntries.groupBy { it.productVariantId }
+    }
+
+    fun calculateSummary(entries: List<StockEntry>): Triple<Int, Double, Double> {
+        val totalQty = entries.sumOf { it.quantity }
+        val totalRet = entries.sumOf { it.returnedQuantity }
         val currentQty = totalQty - totalRet
 
-        // 2. Average Cost (Sum of totalCost / sum of (quantity - returnedQuantity) where quantity > 0)
-        val purchaseQuery = baseQuery.whereGreaterThan("quantity", 0)
-        val costSnap = purchaseQuery.aggregate(
-            AggregateField.sum("totalCost"),
-            AggregateField.sum("quantity"),
-            AggregateField.sum("returnedQuantity")
-        ).get(AggregateSource.SERVER).await()
-
-        val sumTotalCost = costSnap.getDouble(AggregateField.sum("totalCost")) ?: 0.0
-        val sumPurchasedQty = (costSnap.getLong(AggregateField.sum("quantity")) ?: 0).toInt()
-        val sumReturnedPurchasedQty = (costSnap.getLong(AggregateField.sum("returnedQuantity")) ?: 0).toInt()
+        val purchaseEntries = entries.filter { it.quantity > 0 }
+        val sumTotalCost = purchaseEntries.sumOf { it.totalCost }
+        val netPurchasedQty = purchaseEntries.sumOf { it.quantity - it.returnedQuantity }
         
-        val netPurchasedQty = sumPurchasedQty - sumReturnedPurchasedQty
         val averageCost = if (netPurchasedQty > 0) sumTotalCost / netPurchasedQty else 0.0
-
         return Triple(currentQty, averageCost, currentQty * averageCost)
     }
 

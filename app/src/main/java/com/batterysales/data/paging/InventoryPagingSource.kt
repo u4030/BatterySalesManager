@@ -12,46 +12,97 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.tasks.await
 
+import com.batterysales.viewmodel.ReportsViewModel
+import kotlinx.coroutines.sync.withPermit
+
 class InventoryPagingSource(
     private val firestore: FirebaseFirestore,
     private val stockEntryRepository: StockEntryRepository,
     private val productsMap: Map<String, Product>,
     private val warehouseList: List<Warehouse>,
-    private val barcode: String?
+    private val barcode: String?,
+    private val viewModel: ReportsViewModel? = null
 ) : PagingSource<DocumentSnapshot, InventoryReportItem>() {
 
     override fun getRefreshKey(state: PagingState<DocumentSnapshot, InventoryReportItem>): DocumentSnapshot? = null
 
     override suspend fun load(params: LoadParams<DocumentSnapshot>): LoadResult<DocumentSnapshot, InventoryReportItem> {
         return try {
-            var query = firestore.collection(ProductVariant.COLLECTION_NAME)
-                .whereEqualTo("archived", false)
-            
+            val variants = mutableListOf<ProductVariant>()
+            val products = mutableListOf<Product>()
+            var lastDoc: DocumentSnapshot? = null
+
+            var rawFetchedSize = 0
             if (barcode != null) {
-                query = query.whereEqualTo("barcode", barcode)
+                var query = firestore.collection(ProductVariant.COLLECTION_NAME)
+                    .whereEqualTo("barcode", barcode)
+
+                if (params.key != null) {
+                    query = query.startAfter(params.key!!)
+                }
+
+                val snapshot = query.limit(params.loadSize.toLong()).get().await()
+                rawFetchedSize = snapshot.size()
+                variants.addAll(snapshot.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }.filter { !it.archived })
+                lastDoc = snapshot.documents.lastOrNull()
+
+                // Fetch products for these variants
+                val productIds = variants.map { it.productId }.distinct()
+                productIds.forEach { pid ->
+                    productsMap[pid]?.let { products.add(it) } ?: run {
+                        val doc = firestore.collection(Product.COLLECTION_NAME).document(pid).get().await()
+                        doc.toObject(Product::class.java)?.copy(id = doc.id)?.let { products.add(it) }
+                    }
+                }
+            } else {
+                var query = firestore.collection(Product.COLLECTION_NAME)
+                    .orderBy("name")
+
+                if (params.key != null) {
+                    query = query.startAfter(params.key!!)
+                }
+
+                val snapshot = query.limit(params.loadSize.toLong()).get().await()
+                rawFetchedSize = snapshot.size()
+                val fetchedProducts = snapshot.documents.mapNotNull { it.toObject(Product::class.java)?.copy(id = it.id) }
+                    .filter { !it.archived } // Filter in memory to avoid index requirements and missing field issues
+
+                products.addAll(fetchedProducts)
+                lastDoc = snapshot.documents.lastOrNull()
+
+                // For each product, fetch its variants
+                for (product in fetchedProducts) {
+                    val vSnap = firestore.collection(ProductVariant.COLLECTION_NAME)
+                        .whereEqualTo("productId", product.id)
+                        .get()
+                        .await()
+
+                    val pVariants = vSnap.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }
+                        .filter { !it.archived }
+                        .sortedBy { it.capacity }
+
+                    variants.addAll(pVariants)
+                }
             }
 
-            if (params.key != null) {
-                query = query.startAfter(params.key!!)
-            }
-
-            val snapshot = query.limit(params.loadSize.toLong()).get().await()
-            val variants = snapshot.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }
-            
             val data = coroutineScope {
+                val variantIds = variants.map { it.id }
+                val allEntriesMap = stockEntryRepository.getEntriesForVariants(variantIds)
+                val pLookup = products.associateBy { it.id }
+
                 variants.map { variant ->
                     async {
-                        val product = productsMap[variant.productId] ?: Product(name = "Unknown")
-                        val globalSummary = stockEntryRepository.getVariantSummary(variant.id, null)
-                        
-                        val whSummaries = warehouseList.map { wh ->
-                            wh.id to async { stockEntryRepository.getVariantSummary(variant.id, wh.id).first }
+                        val finalProduct = pLookup[variant.productId] ?: productsMap[variant.productId] ?: Product(name = "Unknown")
+                        val entries = allEntriesMap[variant.id] ?: emptyList()
+                        val globalSummary = stockEntryRepository.calculateSummary(entries)
+                        val whQuantities = warehouseList.associate { wh ->
+                            wh.id to stockEntryRepository.calculateSummary(entries.filter { it.warehouseId == wh.id }).first
                         }
 
                         InventoryReportItem(
-                            product = product,
+                            product = finalProduct,
                             variant = variant,
-                            warehouseQuantities = whSummaries.associate { it.first to it.second.await() },
+                            warehouseQuantities = whQuantities,
                             totalQuantity = globalSummary.first,
                             averageCost = globalSummary.second,
                             totalCostValue = globalSummary.third
@@ -63,9 +114,10 @@ class InventoryPagingSource(
             LoadResult.Page(
                 data = data,
                 prevKey = null,
-                nextKey = if (variants.size < params.loadSize) null else snapshot.documents.lastOrNull()
+                nextKey = if (rawFetchedSize < params.loadSize) null else lastDoc
             )
         } catch (e: Exception) {
+            android.util.Log.e("InventoryPagingSource", "Load error", e)
             LoadResult.Error(e)
         }
     }

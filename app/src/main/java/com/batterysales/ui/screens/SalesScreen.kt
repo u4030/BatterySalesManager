@@ -163,21 +163,19 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
                                 Text("$availableQty", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 18.sp)
                             }
 
-                            SalesTextField(
+                            CustomKeyboardTextField(
                                 value = uiState.quantity,
                                 onValueChange = viewModel::onQuantityChanged,
                                 label = "الكمية",
-                                keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
-                                textAlign = TextAlign.Center
+                                keyboardType = KeyboardLanguage.NUMERIC
                             )
 
-                            SalesTextField(
+                            CustomKeyboardTextField(
                                 value = uiState.sellingPrice,
                                 onValueChange = viewModel::onSellingPriceChanged,
                                 label = "سعر البيع",
-                                keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal,
-                                suffix = "JD",
-                                textAlign = TextAlign.Center
+                                keyboardType = KeyboardLanguage.NUMERIC,
+                                suffix = "JD"
                             )
 
                             // Total Box
@@ -274,13 +272,12 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
                                 modifier = Modifier.fillMaxWidth(),
                                 keyboardType = KeyboardLanguage.NUMERIC
                             )
-                            SalesTextField(
+                            CustomKeyboardTextField(
                                 value = paidAmount,
                                 onValueChange = { paidAmount = it },
                                 label = "المبلغ المدفوع",
-                                keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal,
-                                suffix = "JD",
-                                textAlign = TextAlign.Center
+                                keyboardType = KeyboardLanguage.NUMERIC,
+                                suffix = "JD"
                             )
                         }
                     }
@@ -318,32 +315,34 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
                                 verticalArrangement = Arrangement.spacedBy(12.dp),
                                 maxItemsInEachRow = 2
                             ) {
-                                SalesTextField(
+                                CustomKeyboardTextField(
                                     value = uiState.oldBatteriesQuantity,
                                     onValueChange = viewModel::onOldBatteriesQuantityChanged,
                                     label = "الكمية",
+                                    placeholder = "0",
                                     modifier = Modifier.widthIn(min = 120.dp).weight(1f),
-                                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
-                                    textAlign = TextAlign.Center
+                                    keyboardType = KeyboardLanguage.NUMERIC
                                 )
-                                SalesTextField(
+                                CustomKeyboardTextField(
                                     value = uiState.oldBatteriesTotalAmps,
                                     onValueChange = viewModel::onOldBatteriesTotalAmpsChanged,
                                     label = "إجمالي الأمبيرات",
+                                    placeholder = "0.0",
                                     modifier = Modifier.widthIn(min = 120.dp).weight(1f),
-                                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal,
-                                    textAlign = TextAlign.Center
+                                    keyboardType = KeyboardLanguage.NUMERIC
                                 )
                             }
 
-                            SalesTextField(
-                                value = uiState.oldBatteriesValue,
-                                onValueChange = viewModel::onOldBatteriesValueChanged,
-                                label = "قيمة الخصم",
-                                keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal,
-                                suffix = "JD",
-                                textAlign = TextAlign.Center
-                            )
+                            if (uiState.userRole != "seller") {
+                                CustomKeyboardTextField(
+                                    value = uiState.oldBatteriesValue,
+                                    onValueChange = viewModel::onOldBatteriesValueChanged,
+                                    label = "قيمة الخصم",
+                                    placeholder = "0.0",
+                                    keyboardType = KeyboardLanguage.NUMERIC,
+                                    suffix = "JD"
+                                )
+                            }
                         }
                     }
                 }
@@ -404,12 +403,14 @@ fun SalesDropdown(
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = accentColor,
                     unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                    disabledBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                    disabledBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface
                 ),
                 leadingIcon = { Icon(icon, contentDescription = null, tint = accentColor, modifier = Modifier.size(20.dp)) },
                 trailingIcon = { Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = accentColor) },
                 enabled = enabled,
-                textStyle = LocalInputTextStyle.current.copy(color = MaterialTheme.colorScheme.onSurface)
+                textStyle = LocalInputTextStyle.current
             )
             Box(
                 modifier = Modifier
@@ -421,6 +422,7 @@ fun SalesDropdown(
                 onDismissRequest = { expanded = false },
                 modifier = Modifier
                     .fillMaxWidth(0.9f)
+                    .heightIn(max = 400.dp)
                     .background(MaterialTheme.colorScheme.surface)
             ) {
                 options.forEachIndexed { index, text ->
@@ -434,38 +436,5 @@ fun SalesDropdown(
                 }
             }
         }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun SalesTextField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    label: String,
-    modifier: Modifier = Modifier,
-    keyboardType: androidx.compose.ui.text.input.KeyboardType = androidx.compose.ui.text.input.KeyboardType.Text,
-    suffix: String? = null,
-    textAlign: TextAlign = TextAlign.Start
-) {
-    val accentColor = Color(0xFFFB8C00)
-
-    Column(modifier = modifier.fillMaxWidth()) {
-        Text(label, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f), modifier = Modifier.padding(bottom = 8.dp))
-        OutlinedTextField(
-            value = value,
-            onValueChange = onValueChange,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = accentColor,
-                unfocusedBorderColor = MaterialTheme.colorScheme.outline
-            ),
-            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = keyboardType),
-            textStyle = LocalInputTextStyle.current.copy(color = MaterialTheme.colorScheme.onSurface, textAlign = textAlign),
-            trailingIcon = if (suffix != null) {
-                { Text(suffix, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f), modifier = Modifier.padding(end = 12.dp)) }
-            } else null
-        )
     }
 }

@@ -14,6 +14,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -38,7 +39,7 @@ fun SharedHeader(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Spacer(modifier = Modifier.height(16.dp))
-            
+
             // Using FlowRow to prevent displacement at high font scales
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
@@ -86,7 +87,8 @@ fun HeaderIconButton(
     onClick: () -> Unit,
     contentDescription: String?,
     tint: Color = Color.White,
-    containerColor: Color = Color.White.copy(alpha = 0.2f)
+    containerColor: Color = Color.White.copy(alpha = 0.2f),
+    badgeCount: Int = 0
 ) {
     Surface(
         onClick = onClick,
@@ -101,6 +103,26 @@ fun HeaderIconButton(
                 tint = tint,
                 modifier = Modifier.size(20.dp)
             )
+
+            if (badgeCount > 0) {
+                Surface(
+                    color = Color.Red,
+                    shape = CircleShape,
+                    modifier = Modifier
+                        .size(16.dp)
+                        .align(Alignment.TopEnd)
+                        .offset(x = 2.dp, y = (-2).dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = if (badgeCount > 9) "+9" else badgeCount.toString(),
+                            color = Color.White,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
         }
     }
 }

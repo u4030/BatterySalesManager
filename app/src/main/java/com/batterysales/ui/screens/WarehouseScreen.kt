@@ -17,6 +17,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -37,8 +38,19 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
     val warehouses by viewModel.warehouses.collectAsState()
     val stockLevels by viewModel.stockLevels.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val currentUser by viewModel.currentUser.collectAsState()
+    val isAdmin = currentUser?.role == "admin"
+
     var selectedTab by remember { mutableIntStateOf(0) } // 0: Stock, 1: Manage
+
+    LaunchedEffect(isAdmin) {
+        if (!isAdmin) {
+            selectedTab = 0
+        }
+    }
+
     var warehouseToDelete by remember { mutableStateOf<com.batterysales.data.models.Warehouse?>(null) }
+    var showAddWarehouseDialog by remember { mutableStateOf(false) }
 
     val bgColor = MaterialTheme.colorScheme.background
     val cardBgColor = MaterialTheme.colorScheme.surface
@@ -60,6 +72,13 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
                     title = if (selectedTab == 0) "مخزون المستودعات" else "إدارة المستودعات",
                     onBackClick = { navController.popBackStack() },
                     actions = {
+                        if (selectedTab == 1) {
+                            HeaderIconButton(
+                                icon = Icons.Default.AddBusiness,
+                                onClick = { showAddWarehouseDialog = true },
+                                contentDescription = "Add Warehouse"
+                            )
+                        }
                         HeaderIconButton(
                             icon = Icons.Default.Refresh,
                             onClick = { /* Refresh handled by flow */ },
@@ -86,8 +105,10 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
                         Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }) {
                             Text("المخزون", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleSmall, color = if(selectedTab == 0) accentColor else MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) {
-                            Text("الإدارة", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleSmall, color = if(selectedTab == 1) accentColor else MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (isAdmin) {
+                            Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) {
+                                Text("الإدارة", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleSmall, color = if(selectedTab == 1) accentColor else MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
                         }
                     }
                     Spacer(modifier = Modifier.height(16.dp))
@@ -196,6 +217,7 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
                     WarehouseManagementCard(
                         warehouse = warehouse,
                         onToggleStatus = { viewModel.toggleWarehouseStatus(warehouse) },
+                        onToggleMain = { viewModel.toggleMainWarehouse(warehouse) },
                         onDelete = { warehouseToDelete = warehouse }
                     )
                 }
@@ -213,6 +235,16 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
                 Spacer(modifier = Modifier.height(16.dp))
             }
         }
+    }
+
+    if (showAddWarehouseDialog) {
+        AddWarehouseDialog(
+            onDismiss = { showAddWarehouseDialog = false },
+            onConfirm = { name, location, isMain ->
+                viewModel.addWarehouse(name, location, isMain)
+                showAddWarehouseDialog = false
+            }
+        )
     }
 
     if (warehouseToDelete != null) {
@@ -240,6 +272,7 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
 fun WarehouseManagementCard(
     warehouse: com.batterysales.data.models.Warehouse,
     onToggleStatus: () -> Unit,
+    onToggleMain: () -> Unit,
     onDelete: () -> Unit
 ) {
     Card(
@@ -271,21 +304,46 @@ fun WarehouseManagementCard(
                 
                 Spacer(modifier = Modifier.height(8.dp))
                 
-                Surface(
-                    color = if (warehouse.isActive) Color(0xFF10B981).copy(alpha = 0.1f) else Color(0xFFEF4444).copy(alpha = 0.1f),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Text(
-                        text = if (warehouse.isActive) "نشط" else "متوقف / معلق",
-                        style = MaterialTheme.typography.labelSmall,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        color = if (warehouse.isActive) Color(0xFF10B981) else Color(0xFFEF4444),
-                        fontWeight = FontWeight.Bold
-                    )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Surface(
+                        color = if (warehouse.isActive) Color(0xFF10B981).copy(alpha = 0.1f) else Color(0xFFEF4444).copy(alpha = 0.1f),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            text = if (warehouse.isActive) "نشط" else "متوقف",
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            color = if (warehouse.isActive) Color(0xFF10B981) else Color(0xFFEF4444),
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Surface(
+                        color = (if (warehouse.isMain) Color(0xFF3B82F6) else Color(0xFF64748B)).copy(alpha = 0.1f),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            text = if (warehouse.isMain) "رئيسي" else "فرعي",
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            color = if (warehouse.isMain) Color(0xFF3B82F6) else Color(0xFF64748B),
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
             
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                IconButton(
+                    onClick = onToggleMain,
+                    modifier = Modifier.size(40.dp).background(if (warehouse.isMain) Color(0xFF3B82F6).copy(alpha = 0.1f) else Color.Transparent, CircleShape)
+                ) {
+                    Icon(
+                        imageVector = if (warehouse.isMain) Icons.Default.Star else Icons.Default.StarOutline,
+                        contentDescription = "Main",
+                        tint = if (warehouse.isMain) Color(0xFF3B82F6) else Color.Gray
+                    )
+                }
+
                 IconButton(
                     onClick = onToggleStatus,
                     modifier = Modifier.size(40.dp).background(if (warehouse.isActive) Color(0xFFEF4444).copy(alpha = 0.1f) else Color(0xFF10B981).copy(alpha = 0.1f), CircleShape)
@@ -304,6 +362,46 @@ fun WarehouseManagementCard(
                     Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color(0xFFEF4444))
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun AddWarehouseDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (String, String, Boolean) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var location by remember { mutableStateOf("") }
+    var isMain by remember { mutableStateOf(false) }
+
+    com.batterysales.ui.components.AppDialog(
+        onDismiss = onDismiss,
+        title = "إضافة مستودع جديد",
+        confirmButton = {
+            Button(onClick = { if (name.isNotBlank()) onConfirm(name, location, isMain) }) {
+                Text("إضافة")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("إلغاء") }
+        }
+    ) {
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = name,
+            onValueChange = { name = it },
+            label = "اسم المستودع"
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = location,
+            onValueChange = { location = it },
+            label = "الموقع (اختياري)"
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(checked = isMain, onCheckedChange = { isMain = it })
+            Text("تعيين كمستودع رئيسي")
         }
     }
 }

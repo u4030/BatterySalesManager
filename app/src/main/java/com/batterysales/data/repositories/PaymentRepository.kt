@@ -25,7 +25,7 @@ class PaymentRepository @Inject constructor(
                     return@addSnapshotListener
                 }
                 if (snapshot != null) {
-                    val payments = snapshot.toObjects(Payment::class.java)
+                    val payments = snapshot.documents.mapNotNull { it.toObject(Payment::class.java)?.copy(id = it.id) }
                     trySend(payments).isSuccess
                 }
             }
@@ -40,7 +40,7 @@ class PaymentRepository @Inject constructor(
                     return@addSnapshotListener
                 }
                 if (snapshot != null) {
-                    val payments = snapshot.toObjects(Payment::class.java)
+                    val payments = snapshot.documents.mapNotNull { it.toObject(Payment::class.java)?.copy(id = it.id) }
                     trySend(payments).isSuccess
                 }
             }

@@ -9,6 +9,7 @@ import androidx.paging.cachedIn
 import com.batterysales.data.models.*
 import com.batterysales.data.repositories.*
 import com.batterysales.data.paging.InventoryPagingSource
+import android.content.Context
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -84,6 +85,9 @@ class ReportsViewModel @Inject constructor(
     private val _grandTotalInventoryQuantity = MutableStateFlow(0)
     val grandTotalInventoryQuantity = _grandTotalInventoryQuantity.asStateFlow()
 
+    private val _grandTotalInventoryValue = MutableStateFlow(0.0)
+    val grandTotalInventoryValue = _grandTotalInventoryValue.asStateFlow()
+
     private val _supplierReport = MutableStateFlow<List<SupplierReportItem>>(emptyList())
     val supplierReport = _supplierReport.asStateFlow()
 
@@ -96,7 +100,7 @@ class ReportsViewModel @Inject constructor(
     private val _oldBatteryWarehouseSummary = MutableStateFlow<Map<String, Pair<Int, Double>>>(emptyMap())
     val oldBatteryWarehouseSummary = _oldBatteryWarehouseSummary.asStateFlow()
 
-    private val aggregationSemaphore = Semaphore(10)
+    private val refreshTrigger = MutableStateFlow(0)
 
     val warehouses: StateFlow<List<Warehouse>> = warehouseRepository.getWarehouses()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -107,19 +111,25 @@ class ReportsViewModel @Inject constructor(
         userRepository.getCurrentUserFlow()
     ) { allWh, seller, user ->
         val active = allWh.filter { it.isActive }
-        if (seller) active.filter { it.id == user?.warehouseId } else active
+        val result = if (seller) active.filter { it.id == user?.warehouseId } else active
+        result.sortedBy { it.name }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val productsMap: StateFlow<Map<String, Product>> = productRepository.getProducts()
+        .map { list -> list.associateBy { it.id } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val inventoryReport: Flow<PagingData<InventoryReportItem>> = combine(
         barcodeFilter,
-        filteredWarehouses
-    ) { barcode, warehouseList ->
-        Pair(barcode, warehouseList)
-    }.flatMapLatest { (barcode, warehouseList) ->
-        val productsMap = productRepository.getProductsOnce().associateBy { it.id }
-        Pager(PagingConfig(pageSize = 20)) {
-            InventoryPagingSource(firestore, stockEntryRepository, productsMap, warehouseList, barcode)
+        filteredWarehouses,
+        productsMap,
+        refreshTrigger
+    ) { barcode, warehouseList, pMap, _ ->
+        Triple(barcode, warehouseList, pMap)
+    }.flatMapLatest { (barcode, warehouseList, pMap) ->
+        Pager(PagingConfig(pageSize = 25)) {
+            InventoryPagingSource(firestore, stockEntryRepository, pMap, warehouseList, barcode)
         }.flow.cachedIn(viewModelScope)
     }
 
@@ -130,6 +140,17 @@ class ReportsViewModel @Inject constructor(
                 refreshAll()
             }.launchIn(viewModelScope)
         
+        // Reactively refresh inventory when stock changes (Lightweight listener)
+        firestore.collection(StockEntry.COLLECTION_NAME)
+            .orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING)
+            .limit(1)
+            .addSnapshotListener { snapshot, e ->
+                if (e == null && snapshot != null && !snapshot.metadata.hasPendingWrites()) {
+                    Log.d("ReportsViewModel", "Stock changed detected via lightweight listener, refreshing")
+                    refreshTrigger.value += 1
+                }
+            }
+
         _selectedTab.onEach { tab ->
             if (tab == 2 && _supplierReport.value.isEmpty()) {
                 loadSupplierReport()
@@ -142,6 +163,7 @@ class ReportsViewModel @Inject constructor(
     }
 
     fun refreshAll() {
+        refreshTrigger.value += 1
         loadInventoryReport(reset = true)
         loadScrapReport()
         loadSupplierReport()
@@ -166,13 +188,23 @@ class ReportsViewModel @Inject constructor(
     fun loadInventoryReport(reset: Boolean = false) {
         if (reset) {
             _grandTotalInventoryQuantity.value = 0
+            _grandTotalInventoryValue.value = 0.0
             
             // Calculate Global Grand Total once
             viewModelScope.launch {
                 try {
-                    val qtySnap = firestore.collection(StockEntry.COLLECTION_NAME)
+                    val user = userRepository.getCurrentUser()
+                    val seller = user?.role == "seller"
+                    val targetWarehouseId = if (seller) user?.warehouseId else null
+
+                    var baseQuery = firestore.collection(StockEntry.COLLECTION_NAME)
                         .whereEqualTo("status", "approved")
-                        .aggregate(
+                    
+                    if (targetWarehouseId != null) {
+                        baseQuery = baseQuery.whereEqualTo("warehouseId", targetWarehouseId)
+                    }
+
+                    val qtySnap = baseQuery.aggregate(
                             AggregateField.sum("quantity"),
                             AggregateField.sum("returnedQuantity")
                         ).get(AggregateSource.SERVER).await()
@@ -180,6 +212,9 @@ class ReportsViewModel @Inject constructor(
                     val totalQty = (qtySnap.getLong(AggregateField.sum("quantity")) ?: 0).toInt()
                     val totalRet = (qtySnap.getLong(AggregateField.sum("returnedQuantity")) ?: 0).toInt()
                     _grandTotalInventoryQuantity.value = totalQty - totalRet
+
+                    // Note: Value is harder to aggregate server-side due to weighted average.
+                    // But we can approximate or let the paging source handle individual sums for the current view.
                 } catch (e: Exception) {
                     Log.e("ReportsViewModel", "Error calculating grand total", e)
                 }
@@ -201,8 +236,9 @@ class ReportsViewModel @Inject constructor(
                 val globalSummary = oldBatteryRepository.getStockSummary(null)
                 _oldBatterySummary.value = globalSummary
 
+                val activeWarehouses = warehouses.value.filter { it.isActive }.sortedBy { it.name }
                 val whSummaries = mutableMapOf<String, Pair<Int, Double>>()
-                for (wh in warehouses.value.filter { it.isActive }) {
+                for (wh in activeWarehouses) {
                     whSummaries[wh.id] = oldBatteryRepository.getStockSummary(wh.id)
                 }
                 _oldBatteryWarehouseSummary.value = whSummaries
@@ -307,7 +343,9 @@ class ReportsViewModel @Inject constructor(
                     }
                 }.awaitAll()
                 
-                _supplierReport.value = report.filter { it.totalDebit > 0 || it.totalCredit > 0 || query.isNotBlank() }
+                _supplierReport.value = report
+                    .filter { it.totalDebit > 0 || it.totalCredit > 0 || query.isNotBlank() }
+                    .sortedBy { it.supplier.name }
             } catch (e: Exception) {
                 Log.e("ReportsViewModel", "Error loading supplier report", e)
             } finally {

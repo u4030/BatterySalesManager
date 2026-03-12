@@ -228,7 +228,7 @@ fun SupplierItemCard(
                         }
                     }
                 }
-                
+
                 Row {
                     IconButton(
                         onClick = onReset,
@@ -252,12 +252,12 @@ fun SupplierItemCard(
                     }
                 }
             }
-            
+
             if (supplier.yearlyTarget > 0 || supplier.yearlyTarget2 > 0 || supplier.yearlyTarget3 > 0) {
                 Spacer(modifier = Modifier.height(12.dp))
                 HorizontalDivider(modifier = Modifier.alpha(0.1f))
                 Spacer(modifier = Modifier.height(12.dp))
-                
+
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     if (supplier.yearlyTarget > 0) {
                         TargetRow(label = "الهدف 1", amount = supplier.yearlyTarget)
@@ -314,7 +314,7 @@ fun SupplierDialog(
             Button(onClick = {
                 if (name.isNotBlank()) {
                     onConfirm(
-                        name, phone, email, address, 
+                        name, phone, email, address,
                         target1.toDoubleOrNull() ?: 0.0,
                         target2.toDoubleOrNull() ?: 0.0,
                         target3.toDoubleOrNull() ?: 0.0
@@ -327,12 +327,12 @@ fun SupplierDialog(
             TextButton(onClick = onDismiss) { Text("إلغاء") }
         }
     ) {
-        CustomKeyboardTextField(value = name, onValueChange = { name = it }, label = "اسم المورد")
-        CustomKeyboardTextField(value = phone, onValueChange = { phone = it }, label = "رقم الهاتف")
-        CustomKeyboardTextField(value = email, onValueChange = { email = it }, label = "البريد الإلكتروني")
-        CustomKeyboardTextField(value = address, onValueChange = { address = it }, label = "العنوان")
-        CustomKeyboardTextField(value = target1, onValueChange = { target1 = it }, label = "الهدف السنوي 1")
-        CustomKeyboardTextField(value = target2, onValueChange = { target2 = it }, label = "الهدف السنوي 2")
-        CustomKeyboardTextField(value = target3, onValueChange = { target3 = it }, label = "الهدف السنوي 3")
+        CustomKeyboardTextField(value = name, onValueChange = { name = it }, label = "اسم المورد", keyboardType = com.batterysales.ui.components.KeyboardLanguage.ARABIC)
+        CustomKeyboardTextField(value = phone, onValueChange = { phone = it }, label = "رقم الهاتف", keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC)
+        CustomKeyboardTextField(value = email, onValueChange = { email = it }, label = "البريد الإلكتروني", keyboardType = com.batterysales.ui.components.KeyboardLanguage.ENGLISH_LOWER)
+        CustomKeyboardTextField(value = address, onValueChange = { address = it }, label = "العنوان", keyboardType = com.batterysales.ui.components.KeyboardLanguage.ARABIC)
+        CustomKeyboardTextField(value = target1, onValueChange = { target1 = it }, label = "الهدف السنوي 1", keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC)
+        CustomKeyboardTextField(value = target2, onValueChange = { target2 = it }, label = "الهدف السنوي 2", keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC)
+        CustomKeyboardTextField(value = target3, onValueChange = { target3 = it }, label = "الهدف السنوي 3", keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC)
     }
 }

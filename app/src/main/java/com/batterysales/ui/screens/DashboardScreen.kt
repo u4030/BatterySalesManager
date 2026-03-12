@@ -114,17 +114,22 @@ fun DashboardScreen(
                                     color = Color.Red,
                                     shape = CircleShape,
                                     modifier = Modifier
-                                        .align(Alignment.TopEnd)
-                                        .size(16.dp)
-                                        .offset(x = (-4).dp, y = 4.dp),
+                                        .align(Alignment.BottomEnd)
+                                        .size(24.dp)
+                                        .offset(x = (9).dp, y = (5).dp),
                                     border = androidx.compose.foundation.BorderStroke(1.dp, Color.White)
                                 ) {
-                                    Box(contentAlignment = Alignment.Center) {
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier.fillMaxSize()
+                                    ) {
                                         Text(
                                             text = dashboardState.notifications.size.toString(),
                                             color = Color.White,
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Bold
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                            modifier = Modifier.wrapContentSize(Alignment.Center)
                                         )
                                     }
                                 }
@@ -156,6 +161,88 @@ fun DashboardScreen(
 
                 // Summary content below header
                 Column(modifier = Modifier.padding(16.dp)) {
+                    // Important Notifications Banner
+                    if (dashboardState.notifications.isNotEmpty()) {
+                        val lowStockNotifications = dashboardState.notifications.filter { it.type == NotificationType.LOW_STOCK }
+                        val otherCriticalNotifications = dashboardState.notifications.filter {
+                            it.type == NotificationType.OVERDUE_BILL || it.type == NotificationType.UPCOMING_BILL || it.type == NotificationType.PENDING_APPROVAL
+                        }.sortedBy { if (it.type == NotificationType.OVERDUE_BILL) 0 else 1 }
+
+                        // Show Bills/Approvals First
+                        otherCriticalNotifications.forEach { notification ->
+                            NotificationBanner(notification) {
+                                if (notification.route != null) navController.navigate(notification.route)
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                        }
+
+                        // Show Expandable Low Stock Section
+                        if (lowStockNotifications.isNotEmpty()) {
+                            var isExpanded by remember { mutableStateOf(false) }
+
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFFEF4444).copy(alpha = 0.1f)),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.2f))
+                            ) {
+                                Column {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { isExpanded = !isExpanded }
+                                            .padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFEF4444))
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Text(
+                                            "تنبيهات مخزون منخفض (${lowStockNotifications.size})",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFFEF4444),
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Icon(
+                                            if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                            contentDescription = null,
+                                            tint = Color(0xFFEF4444)
+                                        )
+                                    }
+
+                                    if (isExpanded) {
+                                        lowStockNotifications.forEach { notification ->
+                                            HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp), color = Color(0xFFEF4444).copy(alpha = 0.1f))
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clickable { if (notification.route != null) navController.navigate(notification.route) }
+                                                    .padding(12.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(
+                                                        notification.title,
+                                                        style = MaterialTheme.typography.labelMedium,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = MaterialTheme.colorScheme.onSurface
+                                                    )
+                                                    Text(
+                                                        notification.message,
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                                    )
+                                                }
+                                                Icon(Icons.Default.ChevronLeft, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(16.dp))
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                        }
+                    }
+
                     if (dashboardState.warehouseStats.isNotEmpty()) {
                         androidx.compose.foundation.lazy.LazyRow(
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -177,53 +264,53 @@ fun DashboardScreen(
                                             )
                                         )
                                     ) {
-                                    Column(modifier = Modifier.padding(16.dp)) {
-                                        Text(
-                                            stats.warehouseName,
-                                            color = Color.White,
-                                            fontWeight = FontWeight.ExtraBold,
-                                            style = MaterialTheme.typography.titleMedium
-                                        )
-                                        Spacer(modifier = Modifier.height(12.dp))
+                                        Column(modifier = Modifier.padding(16.dp)) {
+                                            Text(
+                                                stats.warehouseName,
+                                                color = Color.White,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                style = MaterialTheme.typography.titleMedium
+                                            )
+                                            Spacer(modifier = Modifier.height(12.dp))
 
-                                        androidx.compose.foundation.layout.FlowRow(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                                        ) {
-                                            Column {
-                                                Text(
-                                                    "إجمالي التحصيل | ",
-                                                    color = Color.White.copy(alpha = 0.6f),
-                                                    style = MaterialTheme.typography.labelSmall
-                                                )
-                                                Text(
-                                                    "JD ${
-                                                        String.format(
-                                                            "%,.2f",
-                                                            stats.todayCollection
-                                                        )
-                                                    }",
-                                                    color = Color(0xFF10B981),
-                                                    fontWeight = FontWeight.Bold,
-                                                    style = MaterialTheme.typography.bodyLarge
-                                                )
-                                            }
-                                            Column(horizontalAlignment = Alignment.End) {
-                                                Text(
-                                                    "عدد الفواتير",
-                                                    color = Color.White.copy(alpha = 0.6f),
-                                                    style = MaterialTheme.typography.labelSmall
-                                                )
-                                                Text(
-                                                    "${stats.todayCollectionCount}",
-                                                    color = Color.White,
-                                                    fontWeight = FontWeight.Bold,
-                                                    style = MaterialTheme.typography.bodyLarge
-                                                )
+                                            androidx.compose.foundation.layout.FlowRow(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                Column {
+                                                    Text(
+                                                        "إجمالي التحصيل | ",
+                                                        color = Color.White.copy(alpha = 0.6f),
+                                                        style = MaterialTheme.typography.labelSmall
+                                                    )
+                                                    Text(
+                                                        "JD ${
+                                                            String.format(
+                                                                "%,.2f",
+                                                                stats.todayCollection
+                                                            )
+                                                        }",
+                                                        color = Color(0xFF10B981),
+                                                        fontWeight = FontWeight.Bold,
+                                                        style = MaterialTheme.typography.bodyLarge
+                                                    )
+                                                }
+                                                Column(horizontalAlignment = Alignment.End) {
+                                                    Text(
+                                                        "عدد الفواتير",
+                                                        color = Color.White.copy(alpha = 0.6f),
+                                                        style = MaterialTheme.typography.labelSmall
+                                                    )
+                                                    Text(
+                                                        "${stats.todayCollectionCount}",
+                                                        color = Color.White,
+                                                        fontWeight = FontWeight.Bold,
+                                                        style = MaterialTheme.typography.bodyLarge
+                                                    )
+                                                }
                                             }
                                         }
-                                    }
                                     }
                                 }
                             }
@@ -283,6 +370,51 @@ fun DashboardScreen(
 }
 
 @Composable
+fun NotificationBanner(notification: AppNotification, onClick: () -> Unit) {
+    val color = when (notification.type) {
+        NotificationType.LOW_STOCK -> Color(0xFFEF4444)
+        NotificationType.OVERDUE_BILL -> Color(0xFFEF4444)
+        else -> Color(0xFFF59E0B)
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.1f)),
+        border = androidx.compose.foundation.BorderStroke(1.dp, color.copy(alpha = 0.2f))
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = if (notification.type == NotificationType.LOW_STOCK) Icons.Default.Warning else Icons.Default.Error,
+                contentDescription = null,
+                tint = color,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    notification.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = color
+                )
+                Text(
+                    notification.message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            Icon(Icons.Default.ChevronLeft, contentDescription = null, tint = color)
+        }
+    }
+}
+
+@Composable
 fun NotificationDialog(
     notifications: List<AppNotification>,
     onDismiss: () -> Unit,
@@ -290,7 +422,7 @@ fun NotificationDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { 
+        title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.Notifications, contentDescription = null, tint = Color(0xFFFB8C00))
                 Spacer(modifier = Modifier.width(8.dp))

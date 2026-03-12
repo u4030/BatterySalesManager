@@ -26,11 +26,15 @@ class WarehouseViewModel @Inject constructor(
     private val productRepository: ProductRepository,
     private val productVariantRepository: ProductVariantRepository,
     private val warehouseRepository: WarehouseRepository,
-    private val stockEntryRepository: StockEntryRepository
+    private val stockEntryRepository: StockEntryRepository,
+    private val userRepository: com.batterysales.data.repositories.UserRepository
 ) : ViewModel() {
 
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    val currentUser = userRepository.getCurrentUserFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val warehouses: StateFlow<List<Warehouse>> = warehouseRepository.getWarehouses()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -77,6 +81,33 @@ class WarehouseViewModel @Inject constructor(
     fun toggleWarehouseStatus(warehouse: Warehouse) {
         viewModelScope.launch {
             warehouseRepository.updateWarehouse(warehouse.copy(isActive = !warehouse.isActive))
+        }
+    }
+
+    fun toggleMainWarehouse(warehouse: Warehouse) {
+        viewModelScope.launch {
+            val isCurrentlyMain = warehouse.isMain
+            if (!isCurrentlyMain) {
+                // Ensure only one is main
+                val all = warehouseRepository.getWarehousesOnce()
+                all.forEach { 
+                    if (it.isMain) warehouseRepository.updateWarehouse(it.copy(isMain = false))
+                }
+            }
+            warehouseRepository.updateWarehouse(warehouse.copy(isMain = !isCurrentlyMain))
+        }
+    }
+
+    fun addWarehouse(name: String, location: String, isMain: Boolean) {
+        viewModelScope.launch {
+            if (isMain) {
+                val all = warehouseRepository.getWarehousesOnce()
+                all.forEach { 
+                    if (it.isMain) warehouseRepository.updateWarehouse(it.copy(isMain = false))
+                }
+            }
+            val warehouse = Warehouse(name = name, location = location, isMain = isMain)
+            warehouseRepository.addWarehouse(warehouse)
         }
     }
 

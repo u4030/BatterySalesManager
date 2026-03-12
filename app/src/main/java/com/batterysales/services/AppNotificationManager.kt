@@ -12,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -33,6 +34,7 @@ class AppNotificationManager @Inject constructor(
     private val notifiedBillIds = mutableSetOf<String>()
 
     private var pendingEntriesListener: com.google.firebase.firestore.ListenerRegistration? = null
+    private var pendingRequestsListener: com.google.firebase.firestore.ListenerRegistration? = null
     private var upcomingBillsListener: com.google.firebase.firestore.ListenerRegistration? = null
     private var lowStockJob: kotlinx.coroutines.Job? = null
 
@@ -45,6 +47,7 @@ class AppNotificationManager @Inject constructor(
             .onEach { user ->
                 Log.d("AppNotificationManager", "User changed: ${user?.displayName}, role: ${user?.role}")
                 pendingEntriesListener?.remove()
+                pendingRequestsListener?.remove()
                 upcomingBillsListener?.remove()
                 lowStockJob?.cancel()
 
@@ -93,7 +96,7 @@ class AppNotificationManager @Inject constructor(
                         if (overdueCount > 0) {
                             message.append("يوجد عدد $overdueCount كمبيالات متأخرة! ")
                         }
-                        
+
                         if (upcomingBills.isNotEmpty()) {
                             val minDaysRemaining = upcomingBills.minOf { bill ->
                                 val diff = bill.dueDate.time - now.time.time
@@ -143,20 +146,19 @@ class AppNotificationManager @Inject constructor(
 
     private fun setupRealtimeListeners(user: User) {
         pendingEntriesListener?.remove()
+        pendingRequestsListener?.remove()
 
-        // Listener for NEW Pending Stock Entries (For Admins)
+        // Listener for NEW Pending Stock Entries and Approval Requests (For Admins)
         if (user.role == User.ROLE_ADMIN) {
-            var isFirstSnapshot = true
+            var isFirstSnapshotEntries = true
             pendingEntriesListener = firestore.collection(StockEntry.COLLECTION_NAME)
                 .whereEqualTo("status", StockEntry.STATUS_PENDING)
                 .addSnapshotListener { snapshot, e ->
                     if (e != null) return@addSnapshotListener
-
-                    if (isFirstSnapshot) {
-                        isFirstSnapshot = false
+                    if (isFirstSnapshotEntries) {
+                        isFirstSnapshotEntries = false
                         return@addSnapshotListener
                     }
-
                     snapshot?.documentChanges?.forEach { change ->
                         if (change.type == com.google.firebase.firestore.DocumentChange.Type.ADDED) {
                             val entry = change.document.toObject(StockEntry::class.java)
@@ -169,21 +171,44 @@ class AppNotificationManager @Inject constructor(
                         }
                     }
                 }
+
+            var isFirstSnapshotRequests = true
+            pendingRequestsListener = firestore.collection(ApprovalRequest.COLLECTION_NAME)
+                .whereEqualTo("status", ApprovalRequest.STATUS_PENDING)
+                .addSnapshotListener { snapshot, e ->
+                    if (e != null) return@addSnapshotListener
+                    if (isFirstSnapshotRequests) {
+                        isFirstSnapshotRequests = false
+                        return@addSnapshotListener
+                    }
+                    snapshot?.documentChanges?.forEach { change ->
+                        if (change.type == com.google.firebase.firestore.DocumentChange.Type.ADDED) {
+                            val req = change.document.toObject(ApprovalRequest::class.java)
+                            val action = if (req.actionType == ApprovalRequest.ACTION_EDIT) "تعديل" else "حذف"
+                            val target = if (req.targetType == ApprovalRequest.TARGET_PRODUCT) "منتج" else "سعة"
+                            NotificationHelper.showNotification(
+                                context,
+                                "طلب موافقة جديد",
+                                "يوجد طلب $action $target (${req.productName}) بانتظار الموافقة بواسطة ${req.requesterName}"
+                            )
+                        }
+                    }
+                }
         }
     }
 
     private fun setupLowStockListener() {
         lowStockJob?.cancel()
-        
+
         // Setup a listener for NEW Stock Entries to trigger targeted low stock checks
         // This avoids periodic full-database scans while maintaining near real-time accuracy.
         var isFirstSnapshot = true
         lowStockJob = firestore.collection(StockEntry.COLLECTION_NAME)
             .orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING)
-            .limit(10)
+            .limit(1)
             .addSnapshotListener { snapshot, e ->
                 if (e != null) return@addSnapshotListener
-                
+
                 if (isFirstSnapshot) {
                     isFirstSnapshot = false
                     // Perform initial check on startup
@@ -191,21 +216,21 @@ class AppNotificationManager @Inject constructor(
                     return@addSnapshotListener
                 }
 
-                snapshot?.documentChanges?.forEach { change ->
-                    if (change.type == com.google.firebase.firestore.DocumentChange.Type.ADDED) {
-                        val entry = change.document.toObject(StockEntry::class.java)
-                        // Trigger check for the specific variant/warehouse affected
-                        scope.launch { checkVariantLowStock(entry.productVariantId, entry.warehouseId) }
-                    }
+                // If not first snapshot and no error, a new stock movement happened
+                // We perform a full check to ensure no missed notifications,
+                // but only after a slight debounce to handle batches.
+                scope.launch {
+                    delay(2000)
+                    performFullLowStockCheck()
                 }
             }.let { registration ->
                 // Return a job that removes the listener when cancelled
-                scope.launch { 
-                    try { 
-                        kotlinx.coroutines.awaitCancellation() 
-                    } finally { 
-                        registration.remove() 
-                    } 
+                scope.launch {
+                    try {
+                        kotlinx.coroutines.awaitCancellation()
+                    } finally {
+                        registration.remove()
+                    }
                 }
             }
     }
@@ -214,21 +239,22 @@ class AppNotificationManager @Inject constructor(
         try {
             val variant = productVariantRepository.getVariant(variantId) ?: return
             if (variant.archived) return
-            
+
             val threshold = variant.minQuantities[warehouseId] ?: variant.minQuantity
             if (threshold <= 0) return
 
             val whSummary = stockEntryRepository.getVariantSummary(variantId, warehouseId)
             val qty = whSummary.first
-            
+
             val key = "$variantId:$warehouseId"
             if (qty <= threshold) {
                 if (!notifiedLowStockKeys.contains(key)) {
                     val product = productRepository.getProduct(variant.productId)
+                    val warehouse = warehouseRepository.getWarehouse(warehouseId)
                     NotificationHelper.showNotification(
                         context,
-                        "تنبيه مخزون منخفض",
-                        "المنتج ${product?.name ?: ""} (${variant.capacity}A) وصل للحد الأدنى في المستودع"
+                        "مخزون منخفض: ${product?.name ?: ""}",
+                        "السعة: ${variant.capacity}A | الكمية المتبقية: $qty (الحد: $threshold) في ${warehouse?.name ?: ""}"
                     )
                     notifiedLowStockKeys.add(key)
                 }
@@ -245,27 +271,36 @@ class AppNotificationManager @Inject constructor(
         try {
             val allVariants = productVariantRepository.getAllVariants().filter { !it.archived }
             val allWarehouses = warehouseRepository.getWarehousesOnce()
-            
-            var lowStockCount = 0
+            val variantIds = allVariants.map { it.id }
+            val productsMap = productRepository.getProductsOnce().associateBy { it.id }
+
+            // Bulk fetch all entries for these variants to avoid N+1 queries
+            val allEntriesMap = stockEntryRepository.getEntriesForVariants(variantIds)
+
             for (variant in allVariants) {
+                val variantEntries = allEntriesMap[variant.id] ?: emptyList()
                 for (warehouse in allWarehouses) {
                     val threshold = variant.minQuantities[warehouse.id] ?: variant.minQuantity
                     if (threshold <= 0) continue
 
-                    val whSummary = stockEntryRepository.getVariantSummary(variant.id, warehouse.id)
-                    if (whSummary.first <= threshold) {
-                        lowStockCount++
-                        notifiedLowStockKeys.add("${variant.id}:${warehouse.id}")
+                    val whEntries = variantEntries.filter { it.warehouseId == warehouse.id }
+                    val qty = stockEntryRepository.calculateSummary(whEntries).first
+
+                    val key = "${variant.id}:${warehouse.id}"
+                    if (qty <= threshold) {
+                        if (!notifiedLowStockKeys.contains(key)) {
+                            val product = productsMap[variant.productId]
+                            NotificationHelper.showNotification(
+                                context,
+                                "مخزون منخفض: ${product?.name ?: ""}",
+                                "السعة: ${variant.capacity}A | الكمية المتبقية: $qty (الحد: $threshold) في ${warehouse.name}"
+                            )
+                            notifiedLowStockKeys.add(key)
+                        }
+                    } else {
+                        notifiedLowStockKeys.remove(key)
                     }
                 }
-            }
-
-            if (lowStockCount > 0) {
-                NotificationHelper.showNotification(
-                    context,
-                    "ملخص المخزون المنخفض",
-                    "يوجد عدد $lowStockCount أصناف وصلت للحد الأدنى للمخزون"
-                )
             }
         } catch (e: Exception) {
             Log.e("AppNotificationManager", "Error in full low stock check", e)

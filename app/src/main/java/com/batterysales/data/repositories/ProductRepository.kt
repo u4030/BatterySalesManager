@@ -32,6 +32,11 @@ class ProductRepository @Inject constructor(
         return snapshot.documents.mapNotNull { it.toObject(Product::class.java)?.copy(id = it.id) }
     }
 
+    suspend fun getAllProducts(): List<Product> {
+        val snapshot = firestore.collection(Product.COLLECTION_NAME).get().await()
+        return snapshot.documents.mapNotNull { it.toObject(Product::class.java)?.copy(id = it.id) }
+    }
+
     suspend fun getProduct(productId: String): Product? {
         val snapshot = firestore.collection(Product.COLLECTION_NAME)
             .document(productId)

@@ -19,6 +19,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -35,19 +36,27 @@ import com.batterysales.ui.components.SharedHeader
 import com.batterysales.ui.components.HeaderIconButton
 import com.batterysales.ui.components.AppDialog
 import com.batterysales.ui.components.CustomKeyboardTextField
+import com.batterysales.viewmodel.PrintQueueViewModel
 
 @Composable
-fun ProductManagementScreen(navController: NavHostController, viewModel: ProductManagementViewModel = hiltViewModel()) {
+fun ProductManagementScreen(
+    navController: NavHostController,
+    viewModel: ProductManagementViewModel = hiltViewModel(),
+    printQueueViewModel: PrintQueueViewModel = hiltViewModel()
+) {
     val uiState by viewModel.uiState.collectAsState()
+    val printQueue by printQueueViewModel.queue.collectAsState()
 
     var showAddProductDialog by remember { mutableStateOf(false) }
     var showAddVariantDialog by remember { mutableStateOf(false) }
 
     var productToEdit by remember { mutableStateOf<Product?>(null) }
     var variantToEdit by remember { mutableStateOf<ProductVariant?>(null) }
+    var variantToPrint by remember { mutableStateOf<ProductVariant?>(null) }
 
     var productToArchive by remember { mutableStateOf<Product?>(null) }
     var variantToArchive by remember { mutableStateOf<ProductVariant?>(null) }
+    var showPrintQueueDialog by remember { mutableStateOf(false) }
 
     // Dialogs
     if (showAddProductDialog) {
@@ -73,7 +82,8 @@ fun ProductManagementScreen(navController: NavHostController, viewModel: Product
             onDismiss = { showAddVariantDialog = false },
             onAddVariant = { capacity, specification, barcode, minQuantity, minQuantities ->
                 viewModel.addVariant(capacity, 0.0, barcode, minQuantity, minQuantities, specification)
-            }
+            },
+            onGenerateBarcode = { viewModel.generateUniqueBarcode() }
         )
     }
 
@@ -82,7 +92,30 @@ fun ProductManagementScreen(navController: NavHostController, viewModel: Product
             variant = variant,
             warehouses = uiState.warehouses,
             onDismiss = { variantToEdit = null },
-            onUpdateVariant = { updatedVariant -> viewModel.updateVariant(updatedVariant) }
+            onUpdateVariant = { updatedVariant -> viewModel.updateVariant(updatedVariant) },
+            onGenerateBarcode = { viewModel.generateUniqueBarcode() }
+        )
+    }
+
+    variantToPrint?.let { variant ->
+        PrintBarcodeDialog(
+            productName = uiState.selectedProduct?.name ?: "",
+            variant = variant,
+            onDismiss = { variantToPrint = null },
+            onAddToQueue = { qty -> printQueueViewModel.addItem(uiState.selectedProduct?.name ?: "", variant, qty) }
+        )
+    }
+
+    if (showPrintQueueDialog) {
+        PrintQueueDialog(
+            printQueue = printQueue,
+            onDismiss = { showPrintQueueDialog = false },
+            onRemoveItem = { printQueueViewModel.removeItem(it) },
+            onUpdateQuantity = { id, qty -> printQueueViewModel.updateQuantity(id, qty) },
+            onPrintAll = {
+                com.batterysales.utils.PrintUtils.printBarcodeQueueA4(navController.context, printQueueViewModel.getItemsForPrinting())
+            },
+            onClearQueue = { printQueueViewModel.clearQueue() }
         )
     }
 
@@ -123,6 +156,19 @@ fun ProductManagementScreen(navController: NavHostController, viewModel: Product
                     title = "إدارة المنتجات",
                     onBackClick = { navController.popBackStack() },
                     actions = {
+                        BadgedBox(
+                            badge = {
+                                if (printQueue.isNotEmpty()) {
+                                    Badge { Text(printQueue.sumOf { it.quantity }.toString()) }
+                                }
+                            }
+                        ) {
+                            HeaderIconButton(
+                                icon = Icons.Default.Print,
+                                onClick = { showPrintQueueDialog = true },
+                                contentDescription = "Print Queue"
+                            )
+                        }
                         HeaderIconButton(
                             icon = Icons.Default.Refresh,
                             onClick = { /* Refresh handled by flow */ },
@@ -134,48 +180,48 @@ fun ProductManagementScreen(navController: NavHostController, viewModel: Product
                 Column(modifier = Modifier.padding(16.dp)) {
                     // Search Bar
                     var searchQuery by remember { mutableStateOf("") }
-                        var showSearchScanner by remember { mutableStateOf(false) }
+                    var showSearchScanner by remember { mutableStateOf(false) }
 
-                        if (showSearchScanner) {
-                            androidx.compose.ui.window.Dialog(
-                                onDismissRequest = { showSearchScanner = false },
-                                properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
-                            ) {
-                                Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-                                    BarcodeScanner(onBarcodeScanned = {
-                                        searchQuery = it
-                                        viewModel.onBarcodeFilterChanged(it)
-                                        showSearchScanner = false
-                                    })
-                                    IconButton(
-                                        onClick = { showSearchScanner = false },
-                                        modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)
-                                    ) {
-                                        Icon(Icons.Default.Close, contentDescription = "إغلاق", tint = Color.White)
-                                    }
+                    if (showSearchScanner) {
+                        androidx.compose.ui.window.Dialog(
+                            onDismissRequest = { showSearchScanner = false },
+                            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+                        ) {
+                            Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+                                BarcodeScanner(onBarcodeScanned = {
+                                    searchQuery = it
+                                    viewModel.onBarcodeFilterChanged(it)
+                                    showSearchScanner = false
+                                })
+                                IconButton(
+                                    onClick = { showSearchScanner = false },
+                                    modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)
+                                ) {
+                                    Icon(Icons.Default.Close, contentDescription = "إغلاق", tint = Color.White)
                                 }
                             }
                         }
+                    }
 
-                        Box(modifier = Modifier.fillMaxWidth()) {
-                            CustomKeyboardTextField(
-                                value = searchQuery,
-                                onValueChange = {
-                                    searchQuery = it
-                                    viewModel.onBarcodeFilterChanged(it)
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                label = "بحث بالاسم أو الباركود"
-                            )
-                            IconButton(
-                                onClick = { showSearchScanner = true },
-                                modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp)
-                            ) {
-                                Icon(Icons.Default.PhotoCamera, contentDescription = "Scan", tint = accentColor)
-                            }
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        CustomKeyboardTextField(
+                            value = searchQuery,
+                            onValueChange = {
+                                searchQuery = it
+                                viewModel.onBarcodeFilterChanged(it)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = "بحث بالاسم أو الباركود"
+                        )
+                        IconButton(
+                            onClick = { showSearchScanner = true },
+                            modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp)
+                        ) {
+                            Icon(Icons.Default.PhotoCamera, contentDescription = "Scan", tint = accentColor)
                         }
                     }
                 }
+            }
 
             item {
                 Column(modifier = Modifier.padding(horizontal = 16.dp)) {
@@ -193,6 +239,25 @@ fun ProductManagementScreen(navController: NavHostController, viewModel: Product
                 }
             }
 
+            if (uiState.errorMessage != null) {
+                item {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                        modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Error, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(text = uiState.errorMessage!!, color = MaterialTheme.colorScheme.onErrorContainer, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                            IconButton(onClick = viewModel::clearError) {
+                                Icon(Icons.Default.Close, contentDescription = null, tint = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
+                }
+            }
+
             if (uiState.isLoading) {
                 item {
                     Box(modifier = Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
@@ -203,22 +268,23 @@ fun ProductManagementScreen(navController: NavHostController, viewModel: Product
 
             items(uiState.products) { product ->
                 Box(modifier = Modifier.padding(horizontal = 16.dp)) {
-                        ProductCard(
-                            product = product,
-                            isSelected = uiState.selectedProduct?.id == product.id,
-                            variants = if (uiState.selectedProduct?.id == product.id) uiState.variants else emptyList(),
-                            onProductClick = { viewModel.selectProduct(product) },
-                            onProductEdit = { productToEdit = product },
-                            onProductDelete = { productToArchive = product },
-                            onAddVariant = { showAddVariantDialog = true },
-                            onVariantEdit = { variantToEdit = it },
-                            onVariantDelete = { variantToArchive = it }
-                        )
-                    }
+                    ProductCard(
+                        product = product,
+                        isSelected = uiState.selectedProduct?.id == product.id,
+                        variants = if (uiState.selectedProduct?.id == product.id) uiState.variants else emptyList(),
+                        onProductClick = { viewModel.selectProduct(product) },
+                        onProductEdit = { productToEdit = product },
+                        onProductDelete = { productToArchive = product },
+                        onAddVariant = { showAddVariantDialog = true },
+                        onVariantEdit = { variantToEdit = it },
+                        onVariantDelete = { variantToArchive = it },
+                        onVariantPrint = { variantToPrint = it }
+                    )
                 }
             }
         }
     }
+}
 
 @Composable
 fun ProductCard(
@@ -230,7 +296,8 @@ fun ProductCard(
     onProductDelete: () -> Unit,
     onAddVariant: () -> Unit,
     onVariantEdit: (ProductVariant) -> Unit,
-    onVariantDelete: (ProductVariant) -> Unit
+    onVariantDelete: (ProductVariant) -> Unit,
+    onVariantPrint: (ProductVariant) -> Unit
 ) {
     val cardBgColor = MaterialTheme.colorScheme.surface
     val accentColor = Color(0xFFFB8C00)
@@ -330,7 +397,8 @@ fun ProductCard(
                             VariantItemRow(
                                 variant = variant,
                                 onEdit = { onVariantEdit(variant) },
-                                onDelete = { onVariantDelete(variant) }
+                                onDelete = { onVariantDelete(variant) },
+                                onPrint = { onVariantPrint(variant) }
                             )
                         }
                     }
@@ -341,7 +409,7 @@ fun ProductCard(
 }
 
 @Composable
-fun VariantItemRow(variant: ProductVariant, onEdit: () -> Unit, onDelete: () -> Unit) {
+fun VariantItemRow(variant: ProductVariant, onEdit: () -> Unit, onDelete: () -> Unit, onPrint: () -> Unit) {
     val accentColor = Color(0xFFFB8C00)
 
     Card(
@@ -370,6 +438,13 @@ fun VariantItemRow(variant: ProductVariant, onEdit: () -> Unit, onDelete: () -> 
                     modifier = Modifier.size(32.dp).background(accentColor.copy(alpha = 0.1f), CircleShape)
                 ) {
                     Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp), tint = accentColor)
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                IconButton(
+                    onClick = onPrint,
+                    modifier = Modifier.size(32.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), CircleShape)
+                ) {
+                    Icon(Icons.Default.Print, contentDescription = "Print Barcode", modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
                 }
             }
 
@@ -427,9 +502,9 @@ fun AddProductDialog(
             onValueChange = { name = it },
             label = "اسم المنتج"
         )
-        
+
         Spacer(modifier = Modifier.height(8.dp))
-        
+
         com.batterysales.ui.stockentry.Dropdown(
             label = "المورد",
             selectedValue = selectedSupplier?.name ?: "",
@@ -448,8 +523,8 @@ fun EditProductDialog(
     onUpdateProduct: (Product) -> Unit
 ) {
     var name by remember { mutableStateOf(product.name) }
-    var selectedSupplier by remember { 
-        mutableStateOf(suppliers.find { it.id == product.supplierId }) 
+    var selectedSupplier by remember {
+        mutableStateOf(suppliers.find { it.id == product.supplierId })
     }
 
     AppDialog(
@@ -468,9 +543,9 @@ fun EditProductDialog(
             onValueChange = { name = it },
             label = "اسم المنتج"
         )
-        
+
         Spacer(modifier = Modifier.height(8.dp))
-        
+
         com.batterysales.ui.stockentry.Dropdown(
             label = "المورد",
             selectedValue = selectedSupplier?.name ?: "",
@@ -486,7 +561,8 @@ fun EditProductDialog(
 fun AddVariantDialog(
     warehouses: List<Warehouse>,
     onDismiss: () -> Unit,
-    onAddVariant: (Int, String, String, Int, Map<String, Int>) -> Unit
+    onAddVariant: (Int, String, String, Int, Map<String, Int>) -> Unit,
+    onGenerateBarcode: () -> String
 ) {
     var capacity by remember { mutableStateOf("") }
     var specification by remember { mutableStateOf("") }
@@ -542,7 +618,8 @@ fun AddVariantDialog(
                 value = capacity,
                 onValueChange = { capacity = it },
                 label = "السعة (أمبير)",
-                modifier = Modifier.widthIn(min = 120.dp)
+                modifier = Modifier.widthIn(min = 120.dp),
+                keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
             )
             com.batterysales.ui.components.CustomKeyboardTextField(
                 value = specification,
@@ -557,18 +634,22 @@ fun AddVariantDialog(
                     label = "الباركود",
                     modifier = Modifier.fillMaxWidth()
                 )
-                IconButton(
-                    onClick = { showScanner = true },
-                    modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp)
-                ) {
-                    Icon(Icons.Default.PhotoCamera, contentDescription = "مسح الباركود")
+                Row(modifier = Modifier.align(Alignment.CenterEnd)) {
+                    val accentColor = Color(0xFFFB8C00)
+                    IconButton(onClick = { barcode = onGenerateBarcode() }) {
+                        Icon(Icons.Default.AutoFixHigh, contentDescription = "Generate", tint = accentColor)
+                    }
+                    IconButton(onClick = { showScanner = true }) {
+                        Icon(Icons.Default.PhotoCamera, contentDescription = "Scan", tint = accentColor)
+                    }
                 }
             }
             com.batterysales.ui.components.CustomKeyboardTextField(
                 value = minQuantity,
                 onValueChange = { minQuantity = it },
                 label = "الحد الأدنى العام",
-                modifier = Modifier.widthIn(min = 120.dp)
+                modifier = Modifier.widthIn(min = 120.dp),
+                keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
             )
 
             warehouses.forEach { warehouse ->
@@ -580,7 +661,8 @@ fun AddVariantDialog(
                         minQuantities = newMap
                     },
                     label = "الحد الأدنى (${warehouse.name})",
-                    modifier = Modifier.widthIn(min = 120.dp)
+                    modifier = Modifier.widthIn(min = 120.dp),
+                    keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
                 )
             }
         }
@@ -592,7 +674,8 @@ fun EditVariantDialog(
     variant: ProductVariant,
     warehouses: List<Warehouse>,
     onDismiss: () -> Unit,
-    onUpdateVariant: (ProductVariant) -> Unit
+    onUpdateVariant: (ProductVariant) -> Unit,
+    onGenerateBarcode: () -> String
 ) {
     var capacity by remember { mutableStateOf(variant.capacity.toString()) }
     var specification by remember { mutableStateOf(variant.specification) }
@@ -648,7 +731,8 @@ fun EditVariantDialog(
                 value = capacity,
                 onValueChange = { capacity = it },
                 label = "السعة (أمبير)",
-                modifier = Modifier.widthIn(min = 120.dp)
+                modifier = Modifier.widthIn(min = 120.dp),
+                keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
             )
             com.batterysales.ui.components.CustomKeyboardTextField(
                 value = specification,
@@ -663,18 +747,22 @@ fun EditVariantDialog(
                     label = "الباركود",
                     modifier = Modifier.fillMaxWidth()
                 )
-                IconButton(
-                    onClick = { showScanner = true },
-                    modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp)
-                ) {
-                    Icon(Icons.Default.PhotoCamera, contentDescription = "مسح الباركود")
+                Row(modifier = Modifier.align(Alignment.CenterEnd)) {
+                    val accentColor = Color(0xFFFB8C00)
+                    IconButton(onClick = { barcode = onGenerateBarcode() }) {
+                        Icon(Icons.Default.AutoFixHigh, contentDescription = "Generate", tint = accentColor)
+                    }
+                    IconButton(onClick = { showScanner = true }) {
+                        Icon(Icons.Default.PhotoCamera, contentDescription = "Scan", tint = accentColor)
+                    }
                 }
             }
             com.batterysales.ui.components.CustomKeyboardTextField(
                 value = minQuantity,
                 onValueChange = { minQuantity = it },
                 label = "الحد الأدنى العام",
-                modifier = Modifier.widthIn(min = 120.dp)
+                modifier = Modifier.widthIn(min = 120.dp),
+                keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
             )
 
             warehouses.forEach { warehouse ->
@@ -686,7 +774,8 @@ fun EditVariantDialog(
                         minQuantities = newMap
                     },
                     label = "الحد الأدنى (${warehouse.name})",
-                    modifier = Modifier.widthIn(min = 120.dp)
+                    modifier = Modifier.widthIn(min = 120.dp),
+                    keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
                 )
             }
         }
@@ -707,4 +796,218 @@ fun DeleteConfirmationDialog(itemName: String, onDismiss: () -> Unit, onConfirm:
         },
         dismissButton = { Button(onClick = onDismiss) { Text("إلغاء") } }
     )
+}
+
+@Composable
+fun PrintBarcodeDialog(
+    productName: String,
+    variant: ProductVariant,
+    onDismiss: () -> Unit,
+    onAddToQueue: (Int) -> Unit
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var queueQty by remember { mutableStateOf("1") }
+
+    // Sticker dimensions
+    var widthMm by remember { mutableStateOf("50") }
+    var heightMm by remember { mutableStateOf("30") }
+    var fontSizePt by remember { mutableStateOf("10") }
+    var useQrCode by remember { mutableStateOf(false) }
+
+    AppDialog(
+        onDismiss = onDismiss,
+        title = "طباعة الباركود",
+        confirmButton = { },
+        dismissButton = { Button(onClick = onDismiss) { Text("إغلاق") } }
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text("اختيار نوع الطباعة لـ: $productName - ${variant.capacity}A", textAlign = TextAlign.Center, fontWeight = FontWeight.Bold)
+
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("إعدادات الستكر (طابعة حرارية)", style = MaterialTheme.typography.titleSmall)
+
+                    CustomKeyboardTextField(
+                        value = widthMm,
+                        onValueChange = { widthMm = it },
+                        label = "العرض (mm)",
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
+                    )
+                    CustomKeyboardTextField(
+                        value = heightMm,
+                        onValueChange = { heightMm = it },
+                        label = "الارتفاع (mm)",
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
+                    )
+                    CustomKeyboardTextField(
+                        value = fontSizePt,
+                        onValueChange = { fontSizePt = it },
+                        label = "حجم الخط (pt)",
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
+                    )
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = useQrCode, onCheckedChange = { useQrCode = it })
+                        Text("استخدام QR Code بدلاً من الباركود")
+                    }
+
+                    Button(
+                        onClick = {
+                            com.batterysales.utils.PrintUtils.printBarcodeSticker(
+                                context,
+                                productName,
+                                variant,
+                                widthMm = widthMm.toIntOrNull() ?: 50,
+                                heightMm = heightMm.toIntOrNull() ?: 30,
+                                fontSizePt = fontSizePt.toIntOrNull() ?: 10,
+                                useQrCode = useQrCode
+                            )
+                            onDismiss()
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Print, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("طباعة ستكر الآن")
+                    }
+                }
+            }
+
+            Button(
+                onClick = {
+                    com.batterysales.utils.PrintUtils.printBarcodeA4(context, productName, variant)
+                    onDismiss()
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.Description, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("طباعة ورق A4 (صفحة كاملة)")
+            }
+
+            HorizontalDivider()
+
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("أو إضافة للائحة الطباعة:")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    CustomKeyboardTextField(
+                        value = queueQty,
+                        onValueChange = { queueQty = it },
+                        label = "العدد",
+                        modifier = Modifier.weight(1f),
+                        keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
+                    )
+                    Button(
+                        onClick = {
+                            onAddToQueue(queueQty.toIntOrNull() ?: 1)
+                            onDismiss()
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.AddShoppingCart, contentDescription = null)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("إضافة")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun PrintQueueDialog(
+    printQueue: List<com.batterysales.viewmodel.PrintQueueItem>,
+    onDismiss: () -> Unit,
+    onRemoveItem: (String) -> Unit,
+    onUpdateQuantity: (String, Int) -> Unit,
+    onPrintAll: () -> Unit,
+    onClearQueue: () -> Unit
+) {
+    AppDialog(
+        onDismiss = onDismiss,
+        title = "لائحة الطباعة",
+        confirmButton = {
+            if (printQueue.isNotEmpty()) {
+                Button(onClick = {
+                    onPrintAll()
+                    onDismiss()
+                }) {
+                    Icon(Icons.Default.Print, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("طباعة الكل")
+                }
+            }
+        },
+        dismissButton = {
+            Button(onClick = onDismiss) { Text("إغلاق") }
+        }
+    ) {
+        if (printQueue.isEmpty()) {
+            Box(modifier = Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
+                Text("اللائحة فارغة")
+            }
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                printQueue.forEach { item ->
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(item.productName, fontWeight = FontWeight.Bold)
+                                Text("${item.variant.capacity}A ${item.variant.specification}", style = MaterialTheme.typography.bodySmall)
+                            }
+
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(onClick = { onUpdateQuantity(item.variant.id, item.quantity - 1) }) {
+                                    Icon(Icons.Default.Remove, contentDescription = null)
+                                }
+                                Text(item.quantity.toString(), modifier = Modifier.padding(horizontal = 8.dp))
+                                IconButton(onClick = { onUpdateQuantity(item.variant.id, item.quantity + 1) }) {
+                                    Icon(Icons.Default.Add, contentDescription = null)
+                                }
+                            }
+
+                            IconButton(onClick = { onRemoveItem(item.variant.id) }) {
+                                Icon(Icons.Default.Delete, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                TextButton(
+                    onClick = onClearQueue,
+                    modifier = Modifier.align(Alignment.End),
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("تفريغ اللائحة")
+                }
+            }
+        }
+    }
 }
