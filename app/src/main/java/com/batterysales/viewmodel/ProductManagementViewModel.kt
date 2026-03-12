@@ -85,6 +85,10 @@ class ProductManagementViewModel @Inject constructor(
         _barcodeFilter.value = query
     }
 
+    fun generateUniqueBarcode(): String {
+        return System.currentTimeMillis().toString()
+    }
+
 
     fun selectProduct(product: Product) {
         _selectedProduct.value = product

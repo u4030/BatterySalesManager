@@ -442,22 +442,26 @@ fun AddBankTransactionDialog(
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = description,
             onValueChange = { description = it },
-            label = "الوصف"
+            label = "الوصف",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.ARABIC
         )
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = supplierName,
             onValueChange = { supplierName = it },
-            label = "اسم المورد (اختياري)"
+            label = "اسم المورد (اختياري)",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.ARABIC
         )
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = referenceNumber,
             onValueChange = { referenceNumber = it },
-            label = "رقم الشيك/السند (اختياري)"
+            label = "رقم الشيك/السند (اختياري)",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
         )
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = amount,
             onValueChange = { amount = it },
-            label = "المبلغ"
+            label = "المبلغ",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
         )
     }
 }
@@ -489,22 +493,26 @@ fun EditBankTransactionDialog(
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = description,
             onValueChange = { description = it },
-            label = "الوصف"
+            label = "الوصف",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.ARABIC
         )
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = supplierName,
             onValueChange = { supplierName = it },
-            label = "المورد"
+            label = "المورد",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.ARABIC
         )
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = referenceNumber,
             onValueChange = { referenceNumber = it },
-            label = "رقم الشيك/المرجع"
+            label = "رقم الشيك/المرجع",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
         )
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = amount,
             onValueChange = { amount = it },
-            label = "المبلغ"
+            label = "المبلغ",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
         )
     }
 }

@@ -403,7 +403,8 @@ fun PaymentDialog(
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = amount,
             onValueChange = { amount = it },
-            label = "مبلغ الدفع"
+            label = "مبلغ الدفع",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
         )
     }
 }
@@ -492,19 +493,22 @@ fun AddBillDialog(
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = amount,
             onValueChange = { amount = it },
-            label = "المبلغ"
+            label = "المبلغ",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
         )
 
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = refNum,
             onValueChange = { refNum = it },
-            label = "رقم السند / الشيك"
+            label = "رقم السند / الشيك",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
         )
 
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = description,
             onValueChange = { description = it },
-            label = "الوصف"
+            label = "الوصف",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.ARABIC
         )
 
 
@@ -635,17 +639,20 @@ fun EditBillDialog(
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = description,
             onValueChange = { description = it },
-            label = "الوصف"
+            label = "الوصف",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.ARABIC
         )
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = amount,
             onValueChange = { amount = it },
-            label = "المبلغ الإجمالي"
+            label = "المبلغ الإجمالي",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
         )
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = refNum,
             onValueChange = { refNum = it },
-            label = "رقم السند / الشيك"
+            label = "رقم السند / الشيك",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
         )
 
         com.batterysales.ui.stockentry.Dropdown(

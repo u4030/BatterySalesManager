@@ -43,7 +43,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
 
 enum class KeyboardLanguage {
-    ARABIC, ENGLISH_UPPER, ENGLISH_LOWER, NUMERIC
+    ARABIC, ENGLISH_UPPER, ENGLISH_LOWER, NUMERIC, SYMBOLS
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -99,12 +99,19 @@ fun CustomAppKeyboard(
             listOf("7", "8", "9", "*"),
             listOf(".", "0", "=", "/")
         )
-//??
+
+        val symbolsRows = listOf(
+            listOf("@", "#", "$", "%", "&", "-", "+", "(", ")"),
+            listOf("*", "\"", "'", ":", ";", "!", "?", "\\", "/"),
+            listOf("_", "=", "<", ">", "{", "}", "[", "]", "^")
+        )
+
         val currentRows = when (language) {
             KeyboardLanguage.ARABIC -> arabicRows
             KeyboardLanguage.ENGLISH_UPPER -> englishUpperRows
             KeyboardLanguage.ENGLISH_LOWER -> englishLowerRows
             KeyboardLanguage.NUMERIC -> numericRows
+            KeyboardLanguage.SYMBOLS -> symbolsRows
         }
 
         Card(
@@ -141,6 +148,11 @@ fun CustomAppKeyboard(
                             text = "123",
                             isSelected = language == KeyboardLanguage.NUMERIC,
                             onClick = { language = KeyboardLanguage.NUMERIC }
+                        )
+                        KeyboardControlBtn(
+                            text = "#@!",
+                            isSelected = language == KeyboardLanguage.SYMBOLS,
+                            onClick = { language = KeyboardLanguage.SYMBOLS }
                         )
                     }
 

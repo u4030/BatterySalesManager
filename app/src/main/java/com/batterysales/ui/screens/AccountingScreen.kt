@@ -579,12 +579,14 @@ fun EditTransactionDialog(
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = description,
             onValueChange = { description = it },
-            label = "الوصف"
+            label = "الوصف",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.ARABIC
         )
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = amount,
             onValueChange = { amount = it },
-            label = "المبلغ"
+            label = "المبلغ",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
         )
     }
 }
@@ -619,17 +621,20 @@ fun AddTransactionDialog(
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = description,
             onValueChange = { description = it },
-            label = "الوصف"
+            label = "الوصف",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.ARABIC
         )
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = referenceNumber,
             onValueChange = { referenceNumber = it },
-            label = "رقم المرجع (اختياري)"
+            label = "رقم المرجع (اختياري)",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
         )
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = amount,
             onValueChange = { amount = it },
-            label = "المبلغ"
+            label = "المبلغ",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
         )
 
         Text("طريقة الدفع:", style = MaterialTheme.typography.labelMedium)

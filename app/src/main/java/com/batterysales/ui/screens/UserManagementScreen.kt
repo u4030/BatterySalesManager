@@ -390,19 +390,22 @@ fun CreateUserDialog(
             value = displayName,
             onValueChange = { displayName = it },
             label = "الاسم الكامل",
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.ARABIC
         )
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = email,
             onValueChange = { email = it },
             label = "البريد الإلكتروني",
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.ENGLISH_LOWER
         )
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = password,
             onValueChange = { password = it },
             label = "كلمة المرور",
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.ENGLISH_LOWER
         )
         
         Text("الدور:", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)

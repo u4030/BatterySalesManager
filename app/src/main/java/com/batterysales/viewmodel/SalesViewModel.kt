@@ -22,11 +22,12 @@ data class SalesUiState(
     val selectedWarehouse: Warehouse? = null,
     val quantity: String = "1",
     val sellingPrice: String = "",
-    val oldBatteriesQuantity: String = "0",
-    val oldBatteriesTotalAmps: String = "0.0",
-    val oldBatteriesValue: String = "0.0",
+    val oldBatteriesQuantity: String = "",
+    val oldBatteriesTotalAmps: String = "",
+    val oldBatteriesValue: String = "",
     val paymentMethod: String = "cash",
     val isWarehouseFixed: Boolean = false,
+    val userRole: String = "",
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
     val isFinished: Boolean = false
@@ -81,6 +82,7 @@ class SalesViewModel @Inject constructor(
                         warehouses = warehouses.filter { w -> w.isActive },
                         selectedWarehouse = if (user?.role == "seller") selectedWH else it.selectedWarehouse,
                         isWarehouseFixed = user?.role == "seller",
+                        userRole = user?.role ?: "",
                         stockLevels = stockMap,
                         isLoading = false
                     )

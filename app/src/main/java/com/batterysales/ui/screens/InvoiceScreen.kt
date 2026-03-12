@@ -308,12 +308,14 @@ fun EditCustomerDialog(invoice: Invoice, onDismiss: () -> Unit, onConfirm: (Invo
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = customerName,
             onValueChange = { customerName = it },
-            label = "اسم العميل"
+            label = "اسم العميل",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.ARABIC
         )
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = customerPhone,
             onValueChange = { customerPhone = it },
-            label = "رقم الهاتف"
+            label = "رقم الهاتف",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
         )
     }
 }
