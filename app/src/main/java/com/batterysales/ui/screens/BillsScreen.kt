@@ -488,6 +488,7 @@ fun AddBillDialog(
                     modifier = Modifier.padding(horizontal = 4.dp)
                 )
             }
+        }
 
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = amount,
@@ -506,19 +507,6 @@ fun AddBillDialog(
             onValueChange = { description = it },
             label = "الوصف"
         )
-
-
-//        if (warehouses.isNotEmpty()) {
-//            com.batterysales.ui.stockentry.Dropdown(
-//                label = "المستودع (للخزينة)",
-//                selectedValue = warehouses.find { it.id == selectedWarehouseId }?.name ?: "اختر المستودع",
-//                options = warehouses.map { it.name },
-//                onOptionSelected = { index -> selectedWarehouseId = warehouses[index].id },
-//                enabled = true
-//            )
-//        }
-
-        }
 
         Text("نوع الالتزام:", fontSize = 14.sp, fontWeight = FontWeight.Medium)
         Row(
