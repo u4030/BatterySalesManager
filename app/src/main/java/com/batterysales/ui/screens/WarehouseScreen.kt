@@ -39,6 +39,7 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
     val isLoading by viewModel.isLoading.collectAsState()
     var selectedTab by remember { mutableIntStateOf(0) } // 0: Stock, 1: Manage
     var warehouseToDelete by remember { mutableStateOf<com.batterysales.data.models.Warehouse?>(null) }
+    var showAddWarehouseDialog by remember { mutableStateOf(false) }
 
     val bgColor = MaterialTheme.colorScheme.background
     val cardBgColor = MaterialTheme.colorScheme.surface
@@ -60,6 +61,13 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
                     title = if (selectedTab == 0) "مخزون المستودعات" else "إدارة المستودعات",
                     onBackClick = { navController.popBackStack() },
                     actions = {
+                        if (selectedTab == 1) {
+                            HeaderIconButton(
+                                icon = Icons.Default.AddBusiness,
+                                onClick = { showAddWarehouseDialog = true },
+                                contentDescription = "Add Warehouse"
+                            )
+                        }
                         HeaderIconButton(
                             icon = Icons.Default.Refresh,
                             onClick = { /* Refresh handled by flow */ },
@@ -216,6 +224,16 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
         }
     }
 
+    if (showAddWarehouseDialog) {
+        AddWarehouseDialog(
+            onDismiss = { showAddWarehouseDialog = false },
+            onConfirm = { name, location, isMain ->
+                viewModel.addWarehouse(name, location, isMain)
+                showAddWarehouseDialog = false
+            }
+        )
+    }
+
     if (warehouseToDelete != null) {
         AlertDialog(
             onDismissRequest = { warehouseToDelete = null },
@@ -286,19 +304,17 @@ fun WarehouseManagementCard(
                             fontWeight = FontWeight.Bold
                         )
                     }
-                    if (warehouse.isMain) {
-                        Surface(
-                            color = Color(0xFF3B82F6).copy(alpha = 0.1f),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text(
-                                text = "رئيسي",
-                                style = MaterialTheme.typography.labelSmall,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                color = Color(0xFF3B82F6),
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
+                    Surface(
+                        color = (if (warehouse.isMain) Color(0xFF3B82F6) else Color(0xFF64748B)).copy(alpha = 0.1f),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            text = if (warehouse.isMain) "رئيسي" else "فرعي",
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            color = if (warehouse.isMain) Color(0xFF3B82F6) else Color(0xFF64748B),
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }
@@ -333,6 +349,46 @@ fun WarehouseManagementCard(
                     Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color(0xFFEF4444))
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun AddWarehouseDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (String, String, Boolean) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var location by remember { mutableStateOf("") }
+    var isMain by remember { mutableStateOf(false) }
+
+    com.batterysales.ui.components.AppDialog(
+        onDismiss = onDismiss,
+        title = "إضافة مستودع جديد",
+        confirmButton = {
+            Button(onClick = { if (name.isNotBlank()) onConfirm(name, location, isMain) }) {
+                Text("إضافة")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("إلغاء") }
+        }
+    ) {
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = name,
+            onValueChange = { name = it },
+            label = "اسم المستودع"
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = location,
+            onValueChange = { location = it },
+            label = "الموقع (اختياري)"
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(checked = isMain, onCheckedChange = { isMain = it })
+            Text("تعيين كمستودع رئيسي")
         }
     }
 }

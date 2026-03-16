@@ -151,6 +151,12 @@ class ProductManagementViewModel @Inject constructor(
     fun updateProduct(product: Product) {
         viewModelScope.launch {
             try {
+                val existing = productRepository.getProductsOnce()
+                if (existing.any { it.name.equals(product.name, ignoreCase = true) && it.id != product.id && !it.archived }) {
+                    _errorMessage.value = "يوجد منتج آخر بنفس هذا الاسم"
+                    return@launch
+                }
+
                 if (product.isValid()) {
                     productRepository.updateProduct(product)
                 } else {
@@ -179,6 +185,12 @@ class ProductManagementViewModel @Inject constructor(
     fun updateVariant(variant: ProductVariant) {
         viewModelScope.launch {
             try {
+                val existing = productVariantRepository.getVariantsForProduct(variant.productId)
+                if (existing.any { it.capacity == variant.capacity && it.specification.equals(variant.specification, ignoreCase = true) && it.id != variant.id && !it.archived }) {
+                    _errorMessage.value = "هذه السعة والمواصفة موجودة مسبقاً لهذا المنتج"
+                    return@launch
+                }
+
                 if (variant.isValid()) {
                     productVariantRepository.updateVariant(variant)
                 } else {

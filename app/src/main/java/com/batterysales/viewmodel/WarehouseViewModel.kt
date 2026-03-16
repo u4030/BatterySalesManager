@@ -94,6 +94,19 @@ class WarehouseViewModel @Inject constructor(
         }
     }
 
+    fun addWarehouse(name: String, location: String, isMain: Boolean) {
+        viewModelScope.launch {
+            if (isMain) {
+                val all = warehouseRepository.getWarehousesOnce()
+                all.forEach {
+                    if (it.isMain) warehouseRepository.updateWarehouse(it.copy(isMain = false))
+                }
+            }
+            val warehouse = Warehouse(name = name, location = location, isMain = isMain)
+            warehouseRepository.addWarehouse(warehouse)
+        }
+    }
+
     fun deleteWarehouse(warehouseId: String) {
         viewModelScope.launch {
             warehouseRepository.deleteWarehouse(warehouseId)
