@@ -97,6 +97,12 @@ class ProductManagementViewModel @Inject constructor(
     fun addProduct(name: String, supplierId: String) {
         viewModelScope.launch {
             try {
+                val existing = productRepository.getProductsOnce()
+                if (existing.any { it.name.equals(name, ignoreCase = true) && !it.archived }) {
+                    _errorMessage.value = "هذا المنتج موجود مسبقاً"
+                    return@launch
+                }
+
                 val product = Product(name = name, supplierId = supplierId)
                 if (product.isValid()) {
                     productRepository.addProduct(product)
@@ -114,6 +120,12 @@ class ProductManagementViewModel @Inject constructor(
         viewModelScope.launch {
             _selectedProduct.value?.let { product ->
                 try {
+                    val existing = productVariantRepository.getVariantsForProduct(product.id)
+                    if (existing.any { it.capacity == capacity && it.specification.equals(specification, ignoreCase = true) && !it.archived }) {
+                        _errorMessage.value = "هذه السعة والمواصفة موجودة مسبقاً لهذا المنتج"
+                        return@launch
+                    }
+
                     val variant = ProductVariant(
                         productId = product.id,
                         capacity = capacity,

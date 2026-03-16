@@ -80,6 +80,20 @@ class WarehouseViewModel @Inject constructor(
         }
     }
 
+    fun toggleMainWarehouse(warehouse: Warehouse) {
+        viewModelScope.launch {
+            val isCurrentlyMain = warehouse.isMain
+            if (!isCurrentlyMain) {
+                // Ensure only one is main
+                val all = warehouseRepository.getWarehousesOnce()
+                all.forEach {
+                    if (it.isMain) warehouseRepository.updateWarehouse(it.copy(isMain = false))
+                }
+            }
+            warehouseRepository.updateWarehouse(warehouse.copy(isMain = !isCurrentlyMain))
+        }
+    }
+
     fun deleteWarehouse(warehouseId: String) {
         viewModelScope.launch {
             warehouseRepository.deleteWarehouse(warehouseId)

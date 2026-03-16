@@ -447,11 +447,11 @@ fun AddBillDialog(
         }
     ) {
         com.batterysales.ui.stockentry.Dropdown(
-            label = "المورد",
-            selectedValue = selectedSupplier?.name ?: "",
-            options = suppliers.map { it.name },
+            label = "المورد (اختياري)",
+            selectedValue = selectedSupplier?.name ?: "بدون مورد",
+            options = listOf("بدون مورد") + suppliers.map { it.name },
             onOptionSelected = { index ->
-                selectedSupplier = suppliers[index]
+                selectedSupplier = if (index == 0) null else suppliers[index - 1]
                 selectedPurchase = null // Reset purchase if supplier changes
             },
             enabled = true
@@ -649,10 +649,10 @@ fun EditBillDialog(
         )
 
         com.batterysales.ui.stockentry.Dropdown(
-            label = "المورد",
-            selectedValue = selectedSupplier?.name ?: "",
-            options = suppliers.map { it.name },
-            onOptionSelected = { index -> selectedSupplier = suppliers[index] },
+            label = "المورد (اختياري)",
+            selectedValue = selectedSupplier?.name ?: "بدون مورد",
+            options = listOf("بدون مورد") + suppliers.map { it.name },
+            onOptionSelected = { index -> selectedSupplier = if (index == 0) null else suppliers[index - 1] },
             enabled = true
         )
 

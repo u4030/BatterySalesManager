@@ -121,10 +121,11 @@ class AccountingRepository @Inject constructor(
         return Pair(transactions, lastDoc)
     }
 
-    suspend fun addTransaction(transaction: Transaction) {
+    suspend fun addTransaction(transaction: Transaction): String {
         val docRef = firestore.collection(Transaction.COLLECTION_NAME).document()
         val finalTransaction = transaction.copy(id = docRef.id)
         docRef.set(finalTransaction).await()
+        return docRef.id
     }
 
     suspend fun addExpense(expense: Expense) {

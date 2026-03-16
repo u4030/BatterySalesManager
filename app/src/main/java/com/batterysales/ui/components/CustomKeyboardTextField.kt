@@ -14,6 +14,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.batterysales.ui.theme.LocalInputTextStyle
+import com.batterysales.utils.StringUtils
 
 @Composable
 fun BlinkingCursor() {
@@ -110,7 +111,9 @@ fun CustomKeyboardTextField(
                             initialValue = value,
                             label = label,
                             keyboardType = keyboardType,
-                            onValueChange = onValueChange,
+                            onValueChange = { newValue ->
+                                onValueChange(StringUtils.normalizeDigits(newValue))
+                            },
                             onSearch = onSearch
                         )
                     }

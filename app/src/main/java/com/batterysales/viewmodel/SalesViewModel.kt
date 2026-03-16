@@ -91,9 +91,20 @@ class SalesViewModel @Inject constructor(
         }
     }
 
+    private var variantsJob: kotlinx.coroutines.Job? = null
+
     fun onProductSelected(product: Product) {
-        viewModelScope.launch {
-            _uiState.update { it.copy(selectedProduct = product, selectedVariant = null, variants = emptyList(), isLoading = true) }
+        variantsJob?.cancel()
+        variantsJob = viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    selectedProduct = product,
+                    selectedVariant = null,
+                    variants = emptyList(),
+                    sellingPrice = "",
+                    isLoading = true
+                )
+            }
             productVariantRepository.getVariantsForProductFlow(product.id)
                 .map { variants -> variants.filter { !it.archived } }
                 .onEach { variants ->

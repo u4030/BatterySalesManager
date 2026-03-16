@@ -196,6 +196,7 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
                     WarehouseManagementCard(
                         warehouse = warehouse,
                         onToggleStatus = { viewModel.toggleWarehouseStatus(warehouse) },
+                        onToggleMain = { viewModel.toggleMainWarehouse(warehouse) },
                         onDelete = { warehouseToDelete = warehouse }
                     )
                 }
@@ -240,6 +241,7 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
 fun WarehouseManagementCard(
     warehouse: com.batterysales.data.models.Warehouse,
     onToggleStatus: () -> Unit,
+    onToggleMain: () -> Unit,
     onDelete: () -> Unit
 ) {
     Card(
@@ -271,21 +273,48 @@ fun WarehouseManagementCard(
                 
                 Spacer(modifier = Modifier.height(8.dp))
                 
-                Surface(
-                    color = if (warehouse.isActive) Color(0xFF10B981).copy(alpha = 0.1f) else Color(0xFFEF4444).copy(alpha = 0.1f),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Text(
-                        text = if (warehouse.isActive) "نشط" else "متوقف / معلق",
-                        style = MaterialTheme.typography.labelSmall,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        color = if (warehouse.isActive) Color(0xFF10B981) else Color(0xFFEF4444),
-                        fontWeight = FontWeight.Bold
-                    )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Surface(
+                        color = if (warehouse.isActive) Color(0xFF10B981).copy(alpha = 0.1f) else Color(0xFFEF4444).copy(alpha = 0.1f),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            text = if (warehouse.isActive) "نشط" else "متوقف",
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            color = if (warehouse.isActive) Color(0xFF10B981) else Color(0xFFEF4444),
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    if (warehouse.isMain) {
+                        Surface(
+                            color = Color(0xFF3B82F6).copy(alpha = 0.1f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(
+                                text = "رئيسي",
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                color = Color(0xFF3B82F6),
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
                 }
             }
             
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                IconButton(
+                    onClick = onToggleMain,
+                    modifier = Modifier.size(40.dp).background(if (warehouse.isMain) Color(0xFF3B82F6).copy(alpha = 0.1f) else Color.Transparent, CircleShape)
+                ) {
+                    Icon(
+                        imageVector = if (warehouse.isMain) Icons.Default.Star else Icons.Default.StarOutline,
+                        contentDescription = "Main",
+                        tint = if (warehouse.isMain) Color(0xFF3B82F6) else Color.Gray
+                    )
+                }
+
                 IconButton(
                     onClick = onToggleStatus,
                     modifier = Modifier.size(40.dp).background(if (warehouse.isActive) Color(0xFFEF4444).copy(alpha = 0.1f) else Color(0xFF10B981).copy(alpha = 0.1f), CircleShape)

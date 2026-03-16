@@ -10,7 +10,10 @@ data class Warehouse(
     val location: String = "",
     @get:PropertyName("isActive")
     @set:PropertyName("isActive")
-    var isActive: Boolean = true
+    var isActive: Boolean = true,
+    @get:PropertyName("isMain")
+    @set:PropertyName("isMain")
+    var isMain: Boolean = false
 ) {
     companion object {
         const val COLLECTION_NAME = "warehouses"
