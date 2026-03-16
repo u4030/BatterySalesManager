@@ -7,6 +7,7 @@ import com.batterysales.data.repositories.*
 import android.util.Log
 import com.batterysales.data.repositories.OldBatteryRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.Date
@@ -33,6 +34,7 @@ data class SalesUiState(
     val isFinished: Boolean = false
 )
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class SalesViewModel @Inject constructor(
     private val productRepository: ProductRepository,
@@ -46,113 +48,144 @@ class SalesViewModel @Inject constructor(
     private val oldBatteryRepository: OldBatteryRepository
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(SalesUiState(isLoading = true))
-    val uiState: StateFlow<SalesUiState> = _uiState.asStateFlow()
+    private val _selectedProduct = MutableStateFlow<Product?>(null)
+    private val _selectedVariant = MutableStateFlow<ProductVariant?>(null)
+    private val _selectedWarehouse = MutableStateFlow<Warehouse?>(null)
+    private val _quantity = MutableStateFlow("1")
+    private val _sellingPrice = MutableStateFlow("")
+    private val _oldBatteriesQuantity = MutableStateFlow("")
+    private val _oldBatteriesTotalAmps = MutableStateFlow("")
+    private val _oldBatteriesValue = MutableStateFlow("")
+    private val _paymentMethod = MutableStateFlow("cash")
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    private val _isLoading = MutableStateFlow(false)
+    private val _isFinished = MutableStateFlow(false)
 
     private var allStockEntries: List<StockEntry> = emptyList()
     private var currentUser: User? = null
 
-    init {
-        viewModelScope.launch {
-            val user = userRepository.getCurrentUser()
-            currentUser = user
-
-            combine(
-                productRepository.getProducts(),
-                warehouseRepository.getWarehouses(),
-                stockEntryRepository.getAllStockEntriesFlow()
-            ) { products, warehouses, stockEntries ->
-
-                allStockEntries = stockEntries // Cache for COGS calculation
-
-                // Only count approved entries for available stock
-                val approvedEntries = stockEntries.filter { it.status == "approved" }
-
-                val stockMap = mutableMapOf<Pair<String, String>, Int>()
-                for (entry in approvedEntries) {
-                    val key = Pair(entry.productVariantId, entry.warehouseId)
-                    stockMap[key] = (stockMap[key] ?: 0) + (entry.quantity - entry.returnedQuantity)
-                }
-
-                val selectedWH = warehouses.find { it.id == user?.warehouseId }
-
-                _uiState.update {
-                    it.copy(
-                        products = products.filter { p -> !p.archived },
-                        warehouses = warehouses.filter { w -> w.isActive },
-                        selectedWarehouse = if (user?.role == "seller") selectedWH else it.selectedWarehouse,
-                        isWarehouseFixed = user?.role == "seller",
-                        userRole = user?.role ?: "",
-                        stockLevels = stockMap,
-                        isLoading = false
-                    )
-                }
-            }.collect()
+    val uiState: StateFlow<SalesUiState> = combine(
+        productRepository.getProducts(),
+        warehouseRepository.getWarehouses(),
+        stockEntryRepository.getAllStockEntriesFlow(),
+        userRepository.getCurrentUserFlow(),
+        _selectedProduct,
+        _selectedVariant,
+        _selectedWarehouse,
+        _quantity,
+        _sellingPrice,
+        _oldBatteriesQuantity,
+        _oldBatteriesTotalAmps,
+        _oldBatteriesValue,
+        _paymentMethod,
+        _errorMessage,
+        _isLoading,
+        _isFinished,
+        _selectedProduct.flatMapLatest { product ->
+            if (product == null) flowOf(emptyList())
+            else productVariantRepository.getVariantsForProductFlow(product.id)
+                .map { variants -> variants.filter { !it.archived } }
         }
-    }
+    ) { args ->
+        val products = args[0] as List<Product>
+        val warehouses = args[1] as List<Warehouse>
+        val stockEntries = args[2] as List<StockEntry>
+        val user = args[3] as User?
+        val selectedProduct = args[4] as Product?
+        val selectedVariant = args[5] as ProductVariant?
+        val selectedWarehouse = args[6] as Warehouse?
+        val quantity = args[7] as String
+        val sellingPrice = args[8] as String
+        val oldBatteriesQuantity = args[9] as String
+        val oldBatteriesTotalAmps = args[10] as String
+        val oldBatteriesValue = args[11] as String
+        val paymentMethod = args[12] as String
+        val errorMessage = args[13] as String?
+        val isLoading = args[14] as Boolean
+        val isFinished = args[15] as Boolean
+        val variants = args[16] as List<ProductVariant>
 
-    private var variantsJob: kotlinx.coroutines.Job? = null
+        allStockEntries = stockEntries
+        currentUser = user
+
+        val approvedEntries = stockEntries.filter { it.status == "approved" }
+        val stockMap = mutableMapOf<Pair<String, String>, Int>()
+        for (entry in approvedEntries) {
+            val key = Pair(entry.productVariantId, entry.warehouseId)
+            stockMap[key] = (stockMap[key] ?: 0) + (entry.quantity - entry.returnedQuantity)
+        }
+
+        val isSeller = user?.role == "seller"
+        val autoSelectedWarehouse = if (isSeller && selectedWarehouse == null) {
+            warehouses.find { it.id == user?.warehouseId }
+        } else {
+            selectedWarehouse
+        }
+
+        SalesUiState(
+            products = products.filter { !it.archived },
+            variants = variants,
+            warehouses = warehouses.filter { it.isActive },
+            stockLevels = stockMap,
+            selectedProduct = selectedProduct,
+            selectedVariant = selectedVariant,
+            selectedWarehouse = autoSelectedWarehouse,
+            quantity = quantity,
+            sellingPrice = sellingPrice,
+            oldBatteriesQuantity = oldBatteriesQuantity,
+            oldBatteriesTotalAmps = oldBatteriesTotalAmps,
+            oldBatteriesValue = oldBatteriesValue,
+            paymentMethod = paymentMethod,
+            isWarehouseFixed = isSeller,
+            userRole = user?.role ?: "",
+            isLoading = isLoading,
+            errorMessage = errorMessage,
+            isFinished = isFinished
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SalesUiState(isLoading = true))
 
     fun onProductSelected(product: Product) {
-        variantsJob?.cancel()
-        variantsJob = viewModelScope.launch {
-            _uiState.update {
-                it.copy(
-                    selectedProduct = product,
-                    selectedVariant = null,
-                    variants = emptyList(),
-                    sellingPrice = "",
-                    isLoading = true
-                )
-            }
-            productVariantRepository.getVariantsForProductFlow(product.id)
-                .map { variants -> variants.filter { !it.archived } }
-                .onEach { variants ->
-                    _uiState.update { it.copy(variants = variants, isLoading = false) }
-                }
-                .catch { e ->
-                    Log.e("SalesViewModel", "Error fetching variants", e)
-                    _uiState.update { it.copy(errorMessage = "Failed to fetch variants", isLoading = false) }
-                }
-                .collect()
-        }
+        _selectedProduct.value = product
+        _selectedVariant.value = null
+        _sellingPrice.value = ""
     }
 
     fun onVariantSelected(variant: ProductVariant) {
-        _uiState.update { it.copy(selectedVariant = variant, sellingPrice = variant.sellingPrice.toString()) }
+        _selectedVariant.value = variant
+        _sellingPrice.value = variant.sellingPrice.toString()
     }
 
     fun onWarehouseSelected(warehouse: Warehouse) {
-        _uiState.update { it.copy(selectedWarehouse = warehouse) }
+        _selectedWarehouse.value = warehouse
     }
 
     fun onQuantityChanged(quantity: String) {
-        _uiState.update { it.copy(quantity = quantity) }
+        _quantity.value = quantity
     }
 
     fun onSellingPriceChanged(price: String) {
-        _uiState.update { it.copy(sellingPrice = price) }
+        _sellingPrice.value = price
     }
 
     fun onOldBatteriesQuantityChanged(qty: String) {
-        _uiState.update { it.copy(oldBatteriesQuantity = qty) }
+        _oldBatteriesQuantity.value = qty
     }
 
     fun onOldBatteriesTotalAmpsChanged(amps: String) {
-        _uiState.update { it.copy(oldBatteriesTotalAmps = amps) }
+        _oldBatteriesTotalAmps.value = amps
     }
 
     fun onOldBatteriesValueChanged(value: String) {
-        _uiState.update { it.copy(oldBatteriesValue = value) }
+        _oldBatteriesValue.value = value
     }
 
     fun onPaymentMethodChanged(method: String) {
-        _uiState.update { it.copy(paymentMethod = method) }
+        _paymentMethod.value = method
     }
 
     fun createSale(customerName: String, customerPhone: String, paidAmount: Double) {
         viewModelScope.launch {
-            val state = _uiState.value
+            val state = uiState.value
             val product = state.selectedProduct ?: return@launch
             val variant = state.selectedVariant ?: return@launch
             val warehouse = state.selectedWarehouse ?: return@launch
@@ -161,18 +194,18 @@ class SalesViewModel @Inject constructor(
 
             val available = state.stockLevels[Pair(variant.id, warehouse.id)] ?: 0
             if (qty <= 0 || qty > available) {
-                _uiState.update { it.copy(errorMessage = "Insufficient stock. Available: $available, Requested: $qty") }
+                _errorMessage.value = "Insufficient stock. Available: $available, Requested: $qty"
                 return@launch
             }
 
-            _uiState.update { it.copy(isLoading = true) }
+            _isLoading.value = true
             try {
                 if (!warehouse.isActive) {
-                    _uiState.update { it.copy(errorMessage = "عذراً، هذا المستودع متوقف حالياً ولا يمكن إجراء عمليات عليه.", isLoading = false) }
+                    _errorMessage.value = "عذراً، هذا المستودع متوقف حالياً ولا يمكن إجراء عمليات عليه."
+                    _isLoading.value = false
                     return@launch
                 }
 
-                // --- Correct COGS Calculation ---
                 val positiveEntries = allStockEntries.filter {
                     it.productVariantId == variant.id && it.warehouseId == warehouse.id && it.quantity > 0
                 }
@@ -180,13 +213,13 @@ class SalesViewModel @Inject constructor(
                 val totalItemsPurchased = positiveEntries.sumOf { it.quantity - it.returnedQuantity }
                 val weightedAverageCost = if (totalItemsPurchased > 0) totalCostOfPurchases / totalItemsPurchased else 0.0
 
-                // First, create the invoice to get an ID
                 val total = qty * price
                 val oldBatteriesVal = state.oldBatteriesValue.toDoubleOrNull() ?: 0.0
                 val finalTotal = (total - oldBatteriesVal).coerceAtLeast(0.0)
 
                 if (paidAmount > finalTotal) {
-                    _uiState.update { it.copy(errorMessage = "المبلغ المدفوع (JD $paidAmount) لا يمكن أن يتجاوز صافي الإجمالي (JD $finalTotal)", isLoading = false) }
+                    _errorMessage.value = "المبلغ المدفوع (JD $paidAmount) لا يمكن أن يتجاوز صافي الإجمالي (JD $finalTotal)"
+                    _isLoading.value = false
                     return@launch
                 }
 
@@ -217,7 +250,6 @@ class SalesViewModel @Inject constructor(
                 )
                 val createdInvoice = invoiceRepository.createInvoice(newInvoice)
 
-                // Record old batteries intake if any
                 if (newInvoice.oldBatteriesQuantity > 0) {
                     oldBatteryRepository.addTransaction(
                         OldBatteryTransaction(
@@ -232,7 +264,6 @@ class SalesViewModel @Inject constructor(
                     )
                 }
 
-                // If there's a paid amount, record it as a payment
                 if (paidAmount > 0) {
                     val payment = Payment(
                         invoiceId = createdInvoice.id,
@@ -244,7 +275,6 @@ class SalesViewModel @Inject constructor(
                     )
                     paymentRepository.addPayment(payment)
 
-                    // Record in treasury
                     val transaction = Transaction(
                         type = TransactionType.INCOME,
                         amount = paidAmount,
@@ -256,7 +286,6 @@ class SalesViewModel @Inject constructor(
                     accountingRepository.addTransaction(transaction)
                 }
 
-                // Now, create a single stock entry linked to the new invoice
                 val stockEntry = StockEntry(
                     productVariantId = variant.id,
                     productName = product.name,
@@ -267,21 +296,22 @@ class SalesViewModel @Inject constructor(
                     supplier = "Sale",
                     timestamp = Date(),
                     invoiceId = createdInvoice.id,
-                    status = "approved", // Sales auto-approved as requested
+                    status = "approved",
                     createdBy = currentUser?.id ?: ""
                 )
                 stockEntryRepository.addStockEntry(stockEntry)
 
-                _uiState.update { it.copy(isFinished = true) }
+                _isFinished.value = true
             } catch (e: Exception) {
                 Log.e("SalesViewModel", "Error creating sale", e)
-                _uiState.update { it.copy(errorMessage = "Failed to create sale: ${e.message}", isLoading = false) }
+                _errorMessage.value = "Failed to create sale: ${e.message}"
+                _isLoading.value = false
             }
         }
     }
 
     fun onDismissError() {
-        _uiState.update { it.copy(errorMessage = null) }
+        _errorMessage.value = null
     }
 
     fun findProductByBarcode(barcode: String) {
@@ -294,7 +324,7 @@ class SalesViewModel @Inject constructor(
                     onVariantSelected(variant)
                 }
             } else {
-                _uiState.update { it.copy(errorMessage = "لم يتم العثور على منتج بهذا الباركود") }
+                _errorMessage.value = "لم يتم العثور على منتج بهذا الباركود"
             }
         }
     }

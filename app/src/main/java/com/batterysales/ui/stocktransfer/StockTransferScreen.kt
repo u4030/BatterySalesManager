@@ -272,12 +272,11 @@ fun StockTransferScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(modifier = Modifier.padding(20.dp)) {
-                             com.batterysales.ui.screens.SalesTextField(
+                             com.batterysales.ui.components.CustomKeyboardTextField(
                                 value = uiState.quantity,
                                 onValueChange = viewModel::onQuantityChanged,
                                 label = "الكمية المراد ترحيلها",
-                                keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
                             )
                         }
                     }

@@ -403,12 +403,14 @@ fun SalesDropdown(
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = accentColor,
                     unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                    disabledBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                    disabledBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface
                 ),
                 leadingIcon = { Icon(icon, contentDescription = null, tint = accentColor, modifier = Modifier.size(20.dp)) },
                 trailingIcon = { Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = accentColor) },
                 enabled = enabled,
-                textStyle = LocalInputTextStyle.current.copy(color = MaterialTheme.colorScheme.onSurface)
+                textStyle = LocalInputTextStyle.current
             )
             Box(
                 modifier = Modifier
@@ -433,40 +435,5 @@ fun SalesDropdown(
                 }
             }
         }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun SalesTextField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    label: String,
-    modifier: Modifier = Modifier,
-    placeholder: String? = null,
-    keyboardType: androidx.compose.ui.text.input.KeyboardType = androidx.compose.ui.text.input.KeyboardType.Text,
-    suffix: String? = null,
-    textAlign: TextAlign = TextAlign.Start
-) {
-    val accentColor = Color(0xFFFB8C00)
-
-    Column(modifier = modifier.fillMaxWidth()) {
-        Text(label, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f), modifier = Modifier.padding(bottom = 8.dp))
-        OutlinedTextField(
-            value = value,
-            onValueChange = onValueChange,
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = placeholder?.let { { Text(it, textAlign = textAlign, modifier = Modifier.fillMaxWidth()) } },
-            shape = RoundedCornerShape(12.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = accentColor,
-                unfocusedBorderColor = MaterialTheme.colorScheme.outline
-            ),
-            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = keyboardType),
-            textStyle = LocalInputTextStyle.current.copy(color = MaterialTheme.colorScheme.onSurface, textAlign = textAlign),
-            trailingIcon = if (suffix != null) {
-                { Text(suffix, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f), modifier = Modifier.padding(end = 12.dp)) }
-            } else null
-        )
     }
 }
