@@ -41,7 +41,15 @@ class InventoryPagingSource(
             val data = coroutineScope {
                 variants.map { variant ->
                     async {
-                        val product = productsMap[variant.productId] ?: Product(name = "Unknown")
+                        var product = productsMap[variant.productId]
+                        if (product == null) {
+                            product = firestore.collection(Product.COLLECTION_NAME)
+                                .document(variant.productId)
+                                .get()
+                                .await()
+                                .toObject(Product::class.java)
+                                ?.copy(id = variant.productId) ?: Product(name = "Unknown")
+                        }
                         val globalSummary = stockEntryRepository.getVariantSummary(variant.id, null)
                         
                         val whSummaries = warehouseList.map { wh ->

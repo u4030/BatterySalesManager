@@ -328,7 +328,7 @@ fun ReportItemCard(
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = item.product.name,
+                        text = "${item.product.name}${if (item.product.specification.isNotEmpty()) " (${item.product.specification})" else ""}",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface

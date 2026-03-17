@@ -117,7 +117,7 @@ class ReportsViewModel @Inject constructor(
     ) { barcode, warehouseList ->
         Pair(barcode, warehouseList)
     }.flatMapLatest { (barcode, warehouseList) ->
-        val productsMap = productRepository.getProductsOnce().associateBy { it.id }
+        val productsMap = productRepository.getAllProducts().associateBy { it.id }
         Pager(PagingConfig(pageSize = 20)) {
             InventoryPagingSource(firestore, stockEntryRepository, productsMap, warehouseList, barcode)
         }.flow.cachedIn(viewModelScope)
