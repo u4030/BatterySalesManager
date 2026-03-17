@@ -422,6 +422,7 @@ fun SalesDropdown(
                 onDismissRequest = { expanded = false },
                 modifier = Modifier
                     .fillMaxWidth(0.9f)
+                    .heightIn(max = 400.dp)
                     .background(MaterialTheme.colorScheme.surface)
             ) {
                 options.forEachIndexed { index, text ->
