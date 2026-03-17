@@ -45,6 +45,19 @@ import com.batterysales.ui.components.KeyboardLanguage
 @Composable
 fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hiltViewModel()) {
     val pagingItems = viewModel.inventoryReport.collectAsLazyPagingItems()
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshAll()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
     val grandTotalQuantity by viewModel.grandTotalInventoryQuantity.collectAsState()
     val supplierItems by viewModel.supplierReport.collectAsState()
     val isSeller by viewModel.isSeller.collectAsState()

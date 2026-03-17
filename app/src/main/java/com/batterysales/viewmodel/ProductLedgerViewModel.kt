@@ -71,11 +71,14 @@ class ProductLedgerViewModel @Inject constructor(
     private val _searchQuery = MutableStateFlow("")
     val searchQuery = _searchQuery.asStateFlow()
 
+    private val refreshTrigger = MutableStateFlow(0)
+
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val ledgerItems: Flow<PagingData<LedgerItem>> = combine(
         _selectedCategory,
-        _searchQuery
-    ) { category, query ->
+        _searchQuery,
+        refreshTrigger
+    ) { category, query, _ ->
         category to query
     }.flatMapLatest { (category, query) ->
         val warehouseMap = allWarehouses.associateBy { it.id }
@@ -128,8 +131,7 @@ class ProductLedgerViewModel @Inject constructor(
     fun loadData(reset: Boolean = false) {
         if (reset) {
             _isLoading.value = true
-            // Trigger refresh
-            _selectedCategory.value = _selectedCategory.value
+            refreshTrigger.value += 1
         }
         _isLoading.value = false
     }

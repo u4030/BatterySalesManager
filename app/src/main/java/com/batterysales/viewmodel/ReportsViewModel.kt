@@ -96,6 +96,7 @@ class ReportsViewModel @Inject constructor(
     private val _oldBatteryWarehouseSummary = MutableStateFlow<Map<String, Pair<Int, Double>>>(emptyMap())
     val oldBatteryWarehouseSummary = _oldBatteryWarehouseSummary.asStateFlow()
 
+    private val refreshTrigger = MutableStateFlow(0)
     private val aggregationSemaphore = Semaphore(10)
 
     val warehouses: StateFlow<List<Warehouse>> = warehouseRepository.getWarehouses()
@@ -113,8 +114,9 @@ class ReportsViewModel @Inject constructor(
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val inventoryReport: Flow<PagingData<InventoryReportItem>> = combine(
         barcodeFilter,
-        filteredWarehouses
-    ) { barcode, warehouseList ->
+        filteredWarehouses,
+        refreshTrigger
+    ) { barcode, warehouseList, _ ->
         Pair(barcode, warehouseList)
     }.flatMapLatest { (barcode, warehouseList) ->
         val productsMap = productRepository.getAllProducts().associateBy { it.id }
@@ -142,6 +144,7 @@ class ReportsViewModel @Inject constructor(
     }
 
     fun refreshAll() {
+        refreshTrigger.value += 1
         loadInventoryReport(reset = true)
         loadScrapReport()
         loadSupplierReport()
