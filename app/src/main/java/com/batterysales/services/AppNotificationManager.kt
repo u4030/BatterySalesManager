@@ -33,6 +33,7 @@ class AppNotificationManager @Inject constructor(
     private val notifiedBillIds = mutableSetOf<String>()
 
     private var pendingEntriesListener: com.google.firebase.firestore.ListenerRegistration? = null
+    private var pendingRequestsListener: com.google.firebase.firestore.ListenerRegistration? = null
     private var upcomingBillsListener: com.google.firebase.firestore.ListenerRegistration? = null
     private var lowStockJob: kotlinx.coroutines.Job? = null
 
@@ -45,6 +46,7 @@ class AppNotificationManager @Inject constructor(
             .onEach { user ->
                 Log.d("AppNotificationManager", "User changed: ${user?.displayName}, role: ${user?.role}")
                 pendingEntriesListener?.remove()
+                pendingRequestsListener?.remove()
                 upcomingBillsListener?.remove()
                 lowStockJob?.cancel()
 
@@ -143,20 +145,19 @@ class AppNotificationManager @Inject constructor(
 
     private fun setupRealtimeListeners(user: User) {
         pendingEntriesListener?.remove()
+        pendingRequestsListener?.remove()
 
-        // Listener for NEW Pending Stock Entries (For Admins)
+        // Listener for NEW Pending Stock Entries and Approval Requests (For Admins)
         if (user.role == User.ROLE_ADMIN) {
-            var isFirstSnapshot = true
+            var isFirstSnapshotEntries = true
             pendingEntriesListener = firestore.collection(StockEntry.COLLECTION_NAME)
                 .whereEqualTo("status", StockEntry.STATUS_PENDING)
                 .addSnapshotListener { snapshot, e ->
                     if (e != null) return@addSnapshotListener
-
-                    if (isFirstSnapshot) {
-                        isFirstSnapshot = false
+                    if (isFirstSnapshotEntries) {
+                        isFirstSnapshotEntries = false
                         return@addSnapshotListener
                     }
-
                     snapshot?.documentChanges?.forEach { change ->
                         if (change.type == com.google.firebase.firestore.DocumentChange.Type.ADDED) {
                             val entry = change.document.toObject(StockEntry::class.java)
@@ -165,6 +166,29 @@ class AppNotificationManager @Inject constructor(
                                 context,
                                 "طلب موافقة جديد",
                                 "يوجد طلب ${if (entry.supplier == "Transfer") "ترحيل" else "إدخال"} مخزون جديد بانتظار الموافقة$userSuffix"
+                            )
+                        }
+                    }
+                }
+
+            var isFirstSnapshotRequests = true
+            pendingRequestsListener = firestore.collection(ApprovalRequest.COLLECTION_NAME)
+                .whereEqualTo("status", ApprovalRequest.STATUS_PENDING)
+                .addSnapshotListener { snapshot, e ->
+                    if (e != null) return@addSnapshotListener
+                    if (isFirstSnapshotRequests) {
+                        isFirstSnapshotRequests = false
+                        return@addSnapshotListener
+                    }
+                    snapshot?.documentChanges?.forEach { change ->
+                        if (change.type == com.google.firebase.firestore.DocumentChange.Type.ADDED) {
+                            val req = change.document.toObject(ApprovalRequest::class.java)
+                            val action = if (req.actionType == ApprovalRequest.ACTION_EDIT) "تعديل" else "حذف"
+                            val target = if (req.targetType == ApprovalRequest.TARGET_PRODUCT) "منتج" else "سعة"
+                            NotificationHelper.showNotification(
+                                context,
+                                "طلب موافقة جديد",
+                                "يوجد طلب $action $target (${req.productName}) بانتظار الموافقة بواسطة ${req.requesterName}"
                             )
                         }
                     }

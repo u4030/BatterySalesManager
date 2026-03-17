@@ -10,6 +10,9 @@ import com.batterysales.data.repositories.ProductRepository
 import com.batterysales.data.repositories.ProductVariantRepository
 import com.batterysales.data.repositories.WarehouseRepository
 import com.batterysales.data.repositories.SupplierRepository
+import com.batterysales.data.repositories.UserRepository
+import com.batterysales.data.repositories.ApprovalRepository
+import com.batterysales.data.models.ApprovalRequest
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import android.util.Log
@@ -33,13 +36,22 @@ class ProductManagementViewModel @Inject constructor(
     private val productRepository: ProductRepository,
     private val productVariantRepository: ProductVariantRepository,
     private val warehouseRepository: WarehouseRepository,
-    private val supplierRepository: SupplierRepository
+    private val supplierRepository: SupplierRepository,
+    private val userRepository: UserRepository,
+    private val approvalRepository: ApprovalRepository
 ) : ViewModel() {
 
     private val _selectedProduct = MutableStateFlow<Product?>(null)
     private val _errorMessage = MutableStateFlow<String?>(null)
     private val _isLoading = MutableStateFlow(false)
     private val _barcodeFilter = MutableStateFlow("")
+    private var currentUser: com.batterysales.data.models.User? = null
+
+    init {
+        userRepository.getCurrentUserFlow().onEach {
+            currentUser = it
+        }.launchIn(viewModelScope)
+    }
 
     val uiState: StateFlow<ProductManagementUiState> = combine(
         combine(
@@ -161,10 +173,24 @@ class ProductManagementViewModel @Inject constructor(
                     return@launch
                 }
 
-                if (product.isValid()) {
-                    productRepository.updateProduct(product)
-                } else {
+                if (!product.isValid()) {
                     _errorMessage.value = product.getValidationError()
+                    return@launch
+                }
+
+                if (currentUser?.role == "seller") {
+                    approvalRepository.addRequest(ApprovalRequest(
+                        requesterId = currentUser?.id ?: "",
+                        requesterName = currentUser?.displayName ?: "",
+                        targetType = ApprovalRequest.TARGET_PRODUCT,
+                        actionType = ApprovalRequest.ACTION_EDIT,
+                        targetId = product.id,
+                        productName = product.name,
+                        productData = product
+                    ))
+                    _errorMessage.value = "تم إرسال طلب التعديل للمدير للموافقة"
+                } else {
+                    productRepository.updateProduct(product)
                 }
             } catch (e: Exception) {
                 Log.e("ProductMgmtVM", "Error updating product", e)
@@ -176,9 +202,21 @@ class ProductManagementViewModel @Inject constructor(
     fun archiveProduct(product: Product) {
         viewModelScope.launch {
             try {
-                val archivedProduct = product.copy(archived = true)
-                productRepository.updateProduct(archivedProduct)
-                _selectedProduct.value = null // Deselect after archiving
+                if (currentUser?.role == "seller") {
+                    approvalRepository.addRequest(ApprovalRequest(
+                        requesterId = currentUser?.id ?: "",
+                        requesterName = currentUser?.displayName ?: "",
+                        targetType = ApprovalRequest.TARGET_PRODUCT,
+                        actionType = ApprovalRequest.ACTION_DELETE,
+                        targetId = product.id,
+                        productName = product.name
+                    ))
+                    _errorMessage.value = "تم إرسال طلب الحذف للمدير للموافقة"
+                } else {
+                    val archivedProduct = product.copy(archived = true)
+                    productRepository.updateProduct(archivedProduct)
+                    _selectedProduct.value = null // Deselect after archiving
+                }
             } catch (e: Exception) {
                 Log.e("ProductMgmtVM", "Error archiving product", e)
                 _errorMessage.value = "Failed to archive product: ${e.message}"
@@ -195,10 +233,26 @@ class ProductManagementViewModel @Inject constructor(
                     return@launch
                 }
 
-                if (variant.isValid()) {
-                    productVariantRepository.updateVariant(variant)
-                } else {
+                if (!variant.isValid()) {
                     _errorMessage.value = variant.getValidationError()
+                    return@launch
+                }
+
+                if (currentUser?.role == "seller") {
+                    val product = productRepository.getProduct(variant.productId)
+                    approvalRepository.addRequest(ApprovalRequest(
+                        requesterId = currentUser?.id ?: "",
+                        requesterName = currentUser?.displayName ?: "",
+                        targetType = ApprovalRequest.TARGET_VARIANT,
+                        actionType = ApprovalRequest.ACTION_EDIT,
+                        targetId = variant.id,
+                        productName = product?.name ?: "",
+                        variantCapacity = variant.capacity.toString(),
+                        variantData = variant
+                    ))
+                    _errorMessage.value = "تم إرسال طلب التعديل للمدير للموافقة"
+                } else {
+                    productVariantRepository.updateVariant(variant)
                 }
             } catch (e: Exception) {
                 Log.e("ProductMgmtVM", "Error updating variant", e)
@@ -210,8 +264,22 @@ class ProductManagementViewModel @Inject constructor(
     fun archiveVariant(variant: ProductVariant) {
         viewModelScope.launch {
             try {
-                val archivedVariant = variant.copy(archived = true)
-                productVariantRepository.updateVariant(archivedVariant)
+                if (currentUser?.role == "seller") {
+                    val product = productRepository.getProduct(variant.productId)
+                    approvalRepository.addRequest(ApprovalRequest(
+                        requesterId = currentUser?.id ?: "",
+                        requesterName = currentUser?.displayName ?: "",
+                        targetType = ApprovalRequest.TARGET_VARIANT,
+                        actionType = ApprovalRequest.ACTION_DELETE,
+                        targetId = variant.id,
+                        productName = product?.name ?: "",
+                        variantCapacity = variant.capacity.toString()
+                    ))
+                    _errorMessage.value = "تم إرسال طلب الحذف للمدير للموافقة"
+                } else {
+                    val archivedVariant = variant.copy(archived = true)
+                    productVariantRepository.updateVariant(archivedVariant)
+                }
             } catch (e: Exception) {
                 Log.e("ProductMgmtVM", "Error archiving variant", e)
                 _errorMessage.value = "Failed to archive variant: ${e.message}"

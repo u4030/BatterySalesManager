@@ -85,9 +85,25 @@ fun ApprovalsScreen(
                     Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                         ApprovalCard(
                             item = item,
-                            onApprove = { viewModel.approveEntry(item.entry.id) },
-                            onReject = { viewModel.rejectEntry(item.entry.id) },
-                            onEdit = { navController.navigate("stock_entry?entryId=${item.entry.id}") }
+                            onApprove = {
+                                if (item.type == "STOCK_ENTRY") {
+                                    viewModel.approveEntry(item.entry!!.id)
+                                } else {
+                                    viewModel.approveRequest(item.request!!)
+                                }
+                            },
+                            onReject = {
+                                if (item.type == "STOCK_ENTRY") {
+                                    viewModel.rejectEntry(item.entry!!.id)
+                                } else {
+                                    viewModel.rejectRequest(item.request!!.id)
+                                }
+                            },
+                            onEdit = {
+                                if (item.type == "STOCK_ENTRY") {
+                                    navController.navigate("stock_entry?entryId=${item.entry!!.id}")
+                                }
+                            }
                         )
                     }
                 }
@@ -100,7 +116,12 @@ fun ApprovalsScreen(
 @Composable
 fun ApprovalCard(item: ApprovalItem, onApprove: () -> Unit, onReject: () -> Unit, onEdit: () -> Unit) {
     val dateFormatter = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault())
-    val quantityColor = if (item.entry.quantity > 0) Color(0xFF10B981) else Color(0xFFEF4444)
+    val isStockEntry = item.type == "STOCK_ENTRY"
+    val actionColor = if (isStockEntry) {
+        if ((item.entry?.quantity ?: 0) > 0) Color(0xFF10B981) else Color(0xFFEF4444)
+    } else {
+        if (item.request?.actionType == com.batterysales.data.models.ApprovalRequest.ACTION_EDIT) Color(0xFFFB8C00) else Color(0xFFEF4444)
+    }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -122,20 +143,28 @@ fun ApprovalCard(item: ApprovalItem, onApprove: () -> Unit, onReject: () -> Unit
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "${item.variantCapacity} أمبير | ${item.warehouseName}",
+                        text = if (isStockEntry) {
+                            "${item.variantCapacity} | ${item.warehouseName}"
+                        } else {
+                            if (item.variantCapacity.isNotEmpty()) "${item.variantCapacity} | طلب تعديل/حذف" else "طلب تعديل/حذف منتج"
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 
                 Surface(
-                    color = quantityColor.copy(alpha = 0.1f),
+                    color = actionColor.copy(alpha = 0.1f),
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Text(
-                        text = if (item.entry.quantity > 0) "+${item.entry.quantity}" else "${item.entry.quantity}",
-                        color = quantityColor,
-                        style = MaterialTheme.typography.titleMedium,
+                        text = if (isStockEntry) {
+                            if ((item.entry?.quantity ?: 0) > 0) "+${item.entry?.quantity}" else "${item.entry?.quantity}"
+                        } else {
+                            if (item.request?.actionType == com.batterysales.data.models.ApprovalRequest.ACTION_EDIT) "تعديل" else "حذف"
+                        },
+                        color = actionColor,
+                        style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                     )
@@ -145,21 +174,25 @@ fun ApprovalCard(item: ApprovalItem, onApprove: () -> Unit, onReject: () -> Unit
             Spacer(modifier = Modifier.height(16.dp))
             
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Business, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(text = "المورد: ${item.entry.supplier}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (isStockEntry) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Business, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(text = "المورد: ${item.entry?.supplier}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.AccessTime, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text(text = dateFormatter.format(item.entry.timestamp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(text = dateFormatter.format(if (isStockEntry) item.entry!!.timestamp else item.request!!.timestamp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                if (item.entry.createdByUserName.isNotEmpty()) {
+
+                val requesterName = if (isStockEntry) item.entry!!.createdByUserName else item.request!!.requesterName
+                if (requesterName.isNotEmpty()) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text(text = "بواسطة: ${item.entry.createdByUserName}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(text = "بواسطة: $requesterName", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -173,14 +206,16 @@ fun ApprovalCard(item: ApprovalItem, onApprove: () -> Unit, onReject: () -> Unit
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                OutlinedButton(
-                    onClick = onEdit,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.weight(1f).height(44.dp)
-                ) {
-                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("تعديل", fontSize = 12.sp)
+                if (isStockEntry) {
+                    OutlinedButton(
+                        onClick = onEdit,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f).height(44.dp)
+                    ) {
+                        Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("تعديل", fontSize = 12.sp)
+                    }
                 }
 
                 OutlinedButton(
