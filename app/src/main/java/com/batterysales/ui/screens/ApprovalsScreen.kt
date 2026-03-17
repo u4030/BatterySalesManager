@@ -112,6 +112,18 @@ fun ApprovalsScreen(
     }
 }
 
+@Composable
+fun ProposedDataRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(text = "$label:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(text = value, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ApprovalCard(item: ApprovalItem, onApprove: () -> Unit, onReject: () -> Unit, onEdit: () -> Unit) {
@@ -146,7 +158,9 @@ fun ApprovalCard(item: ApprovalItem, onApprove: () -> Unit, onReject: () -> Unit
                         text = if (isStockEntry) {
                             "${item.variantCapacity} | ${item.warehouseName}"
                         } else {
-                            if (item.variantCapacity.isNotEmpty()) "${item.variantCapacity} | طلب تعديل/حذف" else "طلب تعديل/حذف منتج"
+                            val target = if (item.request?.targetType == com.batterysales.data.models.ApprovalRequest.TARGET_PRODUCT) "منتج" else "سعة"
+                            val action = if (item.request?.actionType == com.batterysales.data.models.ApprovalRequest.ACTION_EDIT) "تعديل" else "حذف"
+                            "طلب $action $target"
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -154,20 +168,35 @@ fun ApprovalCard(item: ApprovalItem, onApprove: () -> Unit, onReject: () -> Unit
                 }
                 
                 Surface(
-                    color = actionColor.copy(alpha = 0.1f),
+                    color = actionColor.copy(alpha = 0.15f),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text(
-                        text = if (isStockEntry) {
-                            if ((item.entry?.quantity ?: 0) > 0) "+${item.entry?.quantity}" else "${item.entry?.quantity}"
-                        } else {
-                            if (item.request?.actionType == com.batterysales.data.models.ApprovalRequest.ACTION_EDIT) "تعديل" else "حذف"
-                        },
-                        color = actionColor,
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                    )
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isStockEntry) {
+                                if ((item.entry?.quantity ?: 0) > 0) Icons.Default.Add else Icons.Default.Remove
+                            } else {
+                                if (item.request?.actionType == com.batterysales.data.models.ApprovalRequest.ACTION_EDIT) Icons.Default.EditNote else Icons.Default.DeleteForever
+                            },
+                            contentDescription = null,
+                            tint = actionColor,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = if (isStockEntry) {
+                                if ((item.entry?.quantity ?: 0) > 0) "${item.entry?.quantity}" else "${item.entry?.quantity}"
+                            } else {
+                                if (item.request?.actionType == com.batterysales.data.models.ApprovalRequest.ACTION_EDIT) "تعديل" else "حذف"
+                            },
+                            color = actionColor,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
 
@@ -183,38 +212,59 @@ fun ApprovalCard(item: ApprovalItem, onApprove: () -> Unit, onReject: () -> Unit
                 } else if (item.request?.actionType == com.batterysales.data.models.ApprovalRequest.ACTION_EDIT) {
                     // Show proposed changes
                     Surface(
-                        color = Color(0xFFFB8C00).copy(alpha = 0.05f),
+                        color = Color(0xFFFB8C00).copy(alpha = 0.08f),
                         shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFB8C00).copy(alpha = 0.2f))
                     ) {
-                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("البيانات المقترحة الجديدة:", style = MaterialTheme.typography.labelSmall, color = Color(0xFFFB8C00), fontWeight = FontWeight.Bold)
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Icon(Icons.Default.Info, contentDescription = null, tint = Color(0xFFFB8C00), modifier = Modifier.size(16.dp))
+                                Text("البيانات المقترحة الجديدة:", style = MaterialTheme.typography.titleSmall, color = Color(0xFFFB8C00), fontWeight = FontWeight.Bold)
+                            }
+
+                            HorizontalDivider(color = Color(0xFFFB8C00).copy(alpha = 0.1f))
 
                             if (item.type == "PRODUCT_REQUEST") {
-                                Text("الاسم الجديد: ${item.request.productData?.name}", style = MaterialTheme.typography.bodySmall)
+                                ProposedDataRow("اسم المنتج", item.request.productData?.name ?: "")
+                                ProposedDataRow("المواصفة", item.request.productData?.specification ?: "---")
                             } else {
                                 val v = item.request.variantData
-                                Text("السعة: ${v?.capacity}A", style = MaterialTheme.typography.bodySmall)
-                                Text("المواصفة: ${v?.specification}", style = MaterialTheme.typography.bodySmall)
-                                Text("الباركود: ${v?.barcode}", style = MaterialTheme.typography.bodySmall)
+                                ProposedDataRow("السعة", "${v?.capacity}A")
+                                ProposedDataRow("المواصفة", v?.specification?.ifEmpty { "---" } ?: "---")
+                                ProposedDataRow("الباركود", v?.barcode?.ifEmpty { "---" } ?: "---")
+                                ProposedDataRow("سعر البيع", "JD ${v?.sellingPrice}")
                             }
                         }
                     }
                 } else if (item.request?.actionType == com.batterysales.data.models.ApprovalRequest.ACTION_DELETE) {
                     Surface(
-                        color = Color(0xFFEF4444).copy(alpha = 0.05f),
+                        color = Color(0xFFEF4444).copy(alpha = 0.1f),
                         shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.2f))
                     ) {
-                        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = if (item.type == "PRODUCT_REQUEST") "تنبيه: سيتم أرشفة (حذف) هذا المنتج بالكامل!" else "تنبيه: سيتم أرشفة (حذف) هذه السعة!",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color(0xFFEF4444),
-                                fontWeight = FontWeight.Bold
-                            )
+                        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Box(
+                                modifier = Modifier.size(40.dp).background(Color(0xFFEF4444).copy(alpha = 0.1f), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(24.dp))
+                            }
+                            Column {
+                                val target = if (item.type == "PRODUCT_REQUEST") "هذا المنتج بالكامل" else "هذه السعة"
+                                Text(
+                                    text = "تنبيه: حذف نهائي",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = Color(0xFFEF4444),
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "سيتم أرشفة $target من النظام.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color(0xFFEF4444).copy(alpha = 0.8f)
+                                )
+                            }
                         }
                     }
                 }
