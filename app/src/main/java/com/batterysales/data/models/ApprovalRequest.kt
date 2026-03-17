@@ -13,6 +13,8 @@ data class ApprovalRequest(
     val variantCapacity: String = "",
     val productData: Product? = null,
     val variantData: ProductVariant? = null,
+    val oldProductData: Product? = null,
+    val oldVariantData: ProductVariant? = null,
     val status: String = STATUS_PENDING,
     val timestamp: Date = Date(),
     val adminId: String? = null,

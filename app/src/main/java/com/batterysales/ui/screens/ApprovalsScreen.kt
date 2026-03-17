@@ -113,14 +113,30 @@ fun ApprovalsScreen(
 }
 
 @Composable
-fun ProposedDataRow(label: String, value: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
+fun ComparisonDataRow(label: String, oldValue: String, newValue: String) {
+    Column(modifier = Modifier.fillMaxWidth()) {
         Text(text = "$label:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(text = value, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = oldValue,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+                textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough
+            )
+            Icon(Icons.Default.ArrowForward, contentDescription = null, modifier = Modifier.size(12.dp), tint = Color(0xFFFB8C00))
+            Text(
+                text = newValue,
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f)
+            )
+        }
     }
 }
 
@@ -226,14 +242,15 @@ fun ApprovalCard(item: ApprovalItem, onApprove: () -> Unit, onReject: () -> Unit
                             HorizontalDivider(color = Color(0xFFFB8C00).copy(alpha = 0.1f))
 
                             if (item.type == "PRODUCT_REQUEST") {
-                                ProposedDataRow("اسم المنتج", item.request.productData?.name ?: "")
-                                ProposedDataRow("المواصفة", item.request.productData?.specification ?: "---")
+                                ComparisonDataRow("اسم المنتج", item.request.oldProductData?.name ?: "---", item.request.productData?.name ?: "---")
+                                ComparisonDataRow("المواصفة", item.request.oldProductData?.specification ?: "---", item.request.productData?.specification ?: "---")
                             } else {
-                                val v = item.request.variantData
-                                ProposedDataRow("السعة", "${v?.capacity}A")
-                                ProposedDataRow("المواصفة", v?.specification?.ifEmpty { "---" } ?: "---")
-                                ProposedDataRow("الباركود", v?.barcode?.ifEmpty { "---" } ?: "---")
-                                ProposedDataRow("سعر البيع", "JD ${v?.sellingPrice}")
+                                val old = item.request.oldVariantData
+                                val new = item.request.variantData
+                                ComparisonDataRow("السعة", "${old?.capacity}A", "${new?.capacity}A")
+                                ComparisonDataRow("المواصفة", old?.specification?.ifEmpty { "---" } ?: "---", new?.specification?.ifEmpty { "---" } ?: "---")
+                                ComparisonDataRow("الباركود", old?.barcode?.ifEmpty { "---" } ?: "---", new?.barcode?.ifEmpty { "---" } ?: "---")
+                                ComparisonDataRow("سعر البيع", "JD ${old?.sellingPrice}", "JD ${new?.sellingPrice}")
                             }
                         }
                     }
@@ -264,6 +281,20 @@ fun ApprovalCard(item: ApprovalItem, onApprove: () -> Unit, onReject: () -> Unit
                                     style = MaterialTheme.typography.bodySmall,
                                     color = Color(0xFFEF4444).copy(alpha = 0.8f)
                                 )
+
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Surface(
+                                    color = Color.White.copy(alpha = 0.5f),
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Text(
+                                        text = if (item.type == "PRODUCT_REQUEST") item.request?.productName ?: "" else "${item.productName} (${item.request?.variantCapacity}A)",
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFEF4444)
+                                    )
+                                }
                             }
                         }
                     }

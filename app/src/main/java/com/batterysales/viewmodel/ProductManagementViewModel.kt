@@ -179,6 +179,7 @@ class ProductManagementViewModel @Inject constructor(
                 }
 
                 if (currentUser?.role == "seller") {
+                    val oldProduct = productRepository.getProduct(product.id)
                     approvalRepository.addRequest(ApprovalRequest(
                         requesterId = currentUser?.id ?: "",
                         requesterName = currentUser?.displayName ?: "",
@@ -186,7 +187,8 @@ class ProductManagementViewModel @Inject constructor(
                         actionType = ApprovalRequest.ACTION_EDIT,
                         targetId = product.id,
                         productName = product.name,
-                        productData = product
+                        productData = product,
+                        oldProductData = oldProduct
                     ))
                     _errorMessage.value = "تم إرسال طلب التعديل للمدير للموافقة"
                 } else {
@@ -203,13 +205,15 @@ class ProductManagementViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 if (currentUser?.role == "seller") {
+                    val oldProduct = productRepository.getProduct(product.id)
                     approvalRepository.addRequest(ApprovalRequest(
                         requesterId = currentUser?.id ?: "",
                         requesterName = currentUser?.displayName ?: "",
                         targetType = ApprovalRequest.TARGET_PRODUCT,
                         actionType = ApprovalRequest.ACTION_DELETE,
                         targetId = product.id,
-                        productName = product.name
+                        productName = product.name,
+                        oldProductData = oldProduct
                     ))
                     _errorMessage.value = "تم إرسال طلب الحذف للمدير للموافقة"
                 } else {
@@ -240,6 +244,7 @@ class ProductManagementViewModel @Inject constructor(
 
                 if (currentUser?.role == "seller") {
                     val product = productRepository.getProduct(variant.productId)
+                    val oldVariant = productVariantRepository.getVariant(variant.id)
                     approvalRepository.addRequest(ApprovalRequest(
                         requesterId = currentUser?.id ?: "",
                         requesterName = currentUser?.displayName ?: "",
@@ -248,7 +253,8 @@ class ProductManagementViewModel @Inject constructor(
                         targetId = variant.id,
                         productName = product?.name ?: "",
                         variantCapacity = variant.capacity.toString(),
-                        variantData = variant
+                        variantData = variant,
+                        oldVariantData = oldVariant
                     ))
                     _errorMessage.value = "تم إرسال طلب التعديل للمدير للموافقة"
                 } else {
@@ -266,6 +272,7 @@ class ProductManagementViewModel @Inject constructor(
             try {
                 if (currentUser?.role == "seller") {
                     val product = productRepository.getProduct(variant.productId)
+                    val oldVariant = productVariantRepository.getVariant(variant.id)
                     approvalRepository.addRequest(ApprovalRequest(
                         requesterId = currentUser?.id ?: "",
                         requesterName = currentUser?.displayName ?: "",
@@ -273,7 +280,8 @@ class ProductManagementViewModel @Inject constructor(
                         actionType = ApprovalRequest.ACTION_DELETE,
                         targetId = variant.id,
                         productName = product?.name ?: "",
-                        variantCapacity = variant.capacity.toString()
+                        variantCapacity = variant.capacity.toString(),
+                        oldVariantData = oldVariant
                     ))
                     _errorMessage.value = "تم إرسال طلب الحذف للمدير للموافقة"
                 } else {
