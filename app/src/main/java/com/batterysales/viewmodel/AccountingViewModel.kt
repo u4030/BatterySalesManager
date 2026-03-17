@@ -347,17 +347,17 @@ class AccountingViewModel @Inject constructor(
                     return@launch
                 }
 
-                // 3. Create Withdrawal from Branch
+                // 3. Prepare Transactions
+                val branchTransId = UUID.randomUUID().toString()
                 val branchWithdrawal = Transaction(
+                    id = branchTransId,
                     type = com.batterysales.data.models.TransactionType.EXPENSE,
                     amount = balance,
                     description = "تحويل رصيد اليوم إلى المستودع الرئيسي (${mainWarehouse.name})",
                     warehouseId = warehouseId,
                     paymentMethod = "cash"
                 )
-                val branchTransId = repository.addTransaction(branchWithdrawal)
 
-                // 4. Create Deposit in Main
                 val mainDeposit = Transaction(
                     type = com.batterysales.data.models.TransactionType.INCOME,
                     amount = balance,
@@ -366,7 +366,9 @@ class AccountingViewModel @Inject constructor(
                     paymentMethod = "cash",
                     relatedId = branchTransId
                 )
-                repository.addTransaction(mainDeposit)
+
+                // 4. Execute as Batch
+                repository.addTransactionsBatch(listOf(branchWithdrawal, mainDeposit))
 
                 loadData(reset = true)
             } catch (e: Exception) {

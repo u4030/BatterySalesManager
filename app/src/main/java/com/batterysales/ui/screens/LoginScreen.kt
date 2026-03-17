@@ -125,7 +125,7 @@ fun LoginScreen(
                         onValueChange = { password = it },
                         label = "كلمة المرور",
                         modifier = Modifier.fillMaxWidth(),
-                        keyboardType = KeyboardLanguage.ENGLISH_LOWER,
+                        keyboardType = KeyboardLanguage.ENGLISH_UPPER,
                         visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                         leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = accentColor) },
                         trailingIcon = {
