@@ -1,10 +1,8 @@
 package com.batterysales.data.models
 
-import com.google.firebase.firestore.DocumentId
 import java.util.Date
 
 data class BankTransaction(
-//    @DocumentId
     val id: String = "",
     val billId: String? = null,
     val amount: Double = 0.0,

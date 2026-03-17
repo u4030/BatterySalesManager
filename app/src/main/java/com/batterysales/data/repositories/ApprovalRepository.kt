@@ -50,10 +50,10 @@ class ApprovalRepository @Inject constructor(
     }
 
     suspend fun getRequest(requestId: String): ApprovalRequest? {
-        return firestore.collection(ApprovalRequest.COLLECTION_NAME)
+        val snapshot = firestore.collection(ApprovalRequest.COLLECTION_NAME)
             .document(requestId)
             .get()
             .await()
-            .toObject(ApprovalRequest::class.java)
+        return snapshot.toObject(ApprovalRequest::class.java)?.copy(id = snapshot.id)
     }
 }

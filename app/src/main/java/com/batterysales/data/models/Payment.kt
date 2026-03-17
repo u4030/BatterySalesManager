@@ -1,10 +1,8 @@
 package com.batterysales.data.models
 
-import com.google.firebase.firestore.DocumentId
 import java.util.Date
 
 data class Payment(
-//    @DocumentId
     val id: String = "",
     val invoiceId: String = "", // معرف الفاتورة المرتبطة
     val warehouseId: String = "", // Denormalized for dashboard stats

@@ -166,11 +166,11 @@ class StockEntryRepository @Inject constructor(
 
 
     suspend fun getStockEntryById(entryId: String): StockEntry? {
-        return firestore.collection(StockEntry.COLLECTION_NAME)
+        val snapshot = firestore.collection(StockEntry.COLLECTION_NAME)
             .document(entryId)
             .get()
             .await()
-            .toObject(StockEntry::class.java)
+        return snapshot.toObject(StockEntry::class.java)?.copy(id = snapshot.id)
     }
 
     suspend fun updateStockEntry(entry: StockEntry) {

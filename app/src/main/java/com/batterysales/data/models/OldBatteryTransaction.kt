@@ -1,10 +1,8 @@
 package com.batterysales.data.models
 
-import com.google.firebase.firestore.DocumentId
 import java.util.Date
 
 data class OldBatteryTransaction(
-//    @DocumentId
     val id: String = "",
     val invoiceId: String? = null,
     val quantity: Int = 0,
