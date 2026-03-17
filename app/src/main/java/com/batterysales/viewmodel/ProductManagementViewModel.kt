@@ -73,7 +73,7 @@ class ProductManagementViewModel @Inject constructor(
         ProductManagementUiState(
             products = filteredProducts,
             selectedProduct = selectedProduct,
-            variants = variants.filter { !it.archived },
+            variants = variants.filter { !it.archived }.sortedBy { it.capacity },
             warehouses = warehouses,
             suppliers = suppliers,
             isLoading = isLoading,
@@ -91,7 +91,11 @@ class ProductManagementViewModel @Inject constructor(
 
 
     fun selectProduct(product: Product) {
-        _selectedProduct.value = product
+        if (_selectedProduct.value?.id == product.id) {
+            _selectedProduct.value = null
+        } else {
+            _selectedProduct.value = product
+        }
     }
 
     fun addProduct(name: String, supplierId: String) {
