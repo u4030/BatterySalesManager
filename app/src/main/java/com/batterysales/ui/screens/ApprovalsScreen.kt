@@ -113,28 +113,75 @@ fun ApprovalsScreen(
 }
 
 @Composable
+fun ComparisonHeader() {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(modifier = Modifier.width(80.dp)) // Label width
+        Text(
+            "الحالي",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+            modifier = Modifier.weight(1f),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+        Spacer(modifier = Modifier.width(16.dp)) // Arrow spacer
+        Text(
+            "المقترح",
+            style = MaterialTheme.typography.labelSmall,
+            color = Color(0xFFFB8C00),
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.weight(1f),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+    }
+}
+
+@Composable
 fun ComparisonDataRow(label: String, oldValue: String, newValue: String) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text(text = "$label:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "$label:",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.width(80.dp)
+        )
+
+        Surface(
+            modifier = Modifier.weight(1f),
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.03f),
+            shape = RoundedCornerShape(4.dp)
         ) {
             Text(
                 text = oldValue,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.padding(4.dp),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough
             )
-            Icon(Icons.Default.ArrowForward, contentDescription = null, modifier = Modifier.size(12.dp), tint = Color(0xFFFB8C00))
+        }
+
+        Icon(Icons.Default.ArrowForward, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFFFB8C00))
+
+        Surface(
+            modifier = Modifier.weight(1f),
+            color = Color(0xFFFB8C00).copy(alpha = 0.1f),
+            shape = RoundedCornerShape(4.dp)
+        ) {
             Text(
                 text = newValue,
                 style = MaterialTheme.typography.bodySmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.padding(4.dp),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
             )
         }
     }
@@ -174,9 +221,9 @@ fun ApprovalCard(item: ApprovalItem, onApprove: () -> Unit, onReject: () -> Unit
                         text = if (isStockEntry) {
                             "${item.variantCapacity} | ${item.warehouseName}"
                         } else {
-                            val target = if (item.request?.targetType == com.batterysales.data.models.ApprovalRequest.TARGET_PRODUCT) "منتج" else "سعة"
                             val action = if (item.request?.actionType == com.batterysales.data.models.ApprovalRequest.ACTION_EDIT) "تعديل" else "حذف"
-                            "طلب $action $target"
+                            val target = if (item.request?.targetType == com.batterysales.data.models.ApprovalRequest.TARGET_PRODUCT) "منتج" else "سعة"
+                            "طلب $action $target: ${item.variantCapacity}"
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -240,6 +287,8 @@ fun ApprovalCard(item: ApprovalItem, onApprove: () -> Unit, onReject: () -> Unit
                             }
 
                             HorizontalDivider(color = Color(0xFFFB8C00).copy(alpha = 0.1f))
+
+                            ComparisonHeader()
 
                             if (item.type == "PRODUCT_REQUEST") {
                                 ComparisonDataRow("اسم المنتج", item.request.oldProductData?.name ?: "---", item.request.productData?.name ?: "---")
