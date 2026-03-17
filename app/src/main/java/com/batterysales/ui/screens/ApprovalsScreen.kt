@@ -173,14 +173,52 @@ fun ApprovalCard(item: ApprovalItem, onApprove: () -> Unit, onReject: () -> Unit
 
             Spacer(modifier = Modifier.height(16.dp))
             
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (isStockEntry) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Business, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(text = "المورد: ${item.entry?.supplier}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                } else if (item.request?.actionType == com.batterysales.data.models.ApprovalRequest.ACTION_EDIT) {
+                    // Show proposed changes
+                    Surface(
+                        color = Color(0xFFFB8C00).copy(alpha = 0.05f),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("البيانات المقترحة الجديدة:", style = MaterialTheme.typography.labelSmall, color = Color(0xFFFB8C00), fontWeight = FontWeight.Bold)
+
+                            if (item.type == "PRODUCT_REQUEST") {
+                                Text("الاسم الجديد: ${item.request.productData?.name}", style = MaterialTheme.typography.bodySmall)
+                            } else {
+                                val v = item.request.variantData
+                                Text("السعة: ${v?.capacity}A", style = MaterialTheme.typography.bodySmall)
+                                Text("المواصفة: ${v?.specification}", style = MaterialTheme.typography.bodySmall)
+                                Text("الباركود: ${v?.barcode}", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                } else if (item.request?.actionType == com.batterysales.data.models.ApprovalRequest.ACTION_DELETE) {
+                    Surface(
+                        color = Color(0xFFEF4444).copy(alpha = 0.05f),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (item.type == "PRODUCT_REQUEST") "تنبيه: سيتم أرشفة (حذف) هذا المنتج بالكامل!" else "تنبيه: سيتم أرشفة (حذف) هذه السعة!",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color(0xFFEF4444),
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
                 }
+
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.AccessTime, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(modifier = Modifier.width(6.dp))
