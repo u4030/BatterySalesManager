@@ -26,11 +26,15 @@ class WarehouseViewModel @Inject constructor(
     private val productRepository: ProductRepository,
     private val productVariantRepository: ProductVariantRepository,
     private val warehouseRepository: WarehouseRepository,
-    private val stockEntryRepository: StockEntryRepository
+    private val stockEntryRepository: StockEntryRepository,
+    private val userRepository: com.batterysales.data.repositories.UserRepository
 ) : ViewModel() {
 
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    val currentUser = userRepository.getCurrentUserFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val warehouses: StateFlow<List<Warehouse>> = warehouseRepository.getWarehouses()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())

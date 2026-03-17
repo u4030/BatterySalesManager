@@ -37,7 +37,17 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
     val warehouses by viewModel.warehouses.collectAsState()
     val stockLevels by viewModel.stockLevels.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val currentUser by viewModel.currentUser.collectAsState()
+    val isAdmin = currentUser?.role == "admin"
+
     var selectedTab by remember { mutableIntStateOf(0) } // 0: Stock, 1: Manage
+
+    LaunchedEffect(isAdmin) {
+        if (!isAdmin) {
+            selectedTab = 0
+        }
+    }
+
     var warehouseToDelete by remember { mutableStateOf<com.batterysales.data.models.Warehouse?>(null) }
     var showAddWarehouseDialog by remember { mutableStateOf(false) }
 
@@ -94,8 +104,10 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
                         Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }) {
                             Text("المخزون", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleSmall, color = if(selectedTab == 0) accentColor else MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) {
-                            Text("الإدارة", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleSmall, color = if(selectedTab == 1) accentColor else MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (isAdmin) {
+                            Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) {
+                                Text("الإدارة", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleSmall, color = if(selectedTab == 1) accentColor else MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
                         }
                     }
                     Spacer(modifier = Modifier.height(16.dp))
