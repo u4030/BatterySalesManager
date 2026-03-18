@@ -111,7 +111,8 @@ class ReportsViewModel @Inject constructor(
         userRepository.getCurrentUserFlow()
     ) { allWh, seller, user ->
         val active = allWh.filter { it.isActive }
-        if (seller) active.filter { it.id == user?.warehouseId } else active
+        val result = if (seller) active.filter { it.id == user?.warehouseId } else active
+        result.sortedBy { it.name }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val productsMap: StateFlow<Map<String, Product>> = productRepository.getProducts()
@@ -235,8 +236,9 @@ class ReportsViewModel @Inject constructor(
                 val globalSummary = oldBatteryRepository.getStockSummary(null)
                 _oldBatterySummary.value = globalSummary
 
+                val activeWarehouses = warehouses.value.filter { it.isActive }.sortedBy { it.name }
                 val whSummaries = mutableMapOf<String, Pair<Int, Double>>()
-                for (wh in warehouses.value.filter { it.isActive }) {
+                for (wh in activeWarehouses) {
                     whSummaries[wh.id] = oldBatteryRepository.getStockSummary(wh.id)
                 }
                 _oldBatteryWarehouseSummary.value = whSummaries
@@ -341,7 +343,9 @@ class ReportsViewModel @Inject constructor(
                     }
                 }.awaitAll()
                 
-                _supplierReport.value = report.filter { it.totalDebit > 0 || it.totalCredit > 0 || query.isNotBlank() }
+                _supplierReport.value = report
+                    .filter { it.totalDebit > 0 || it.totalCredit > 0 || query.isNotBlank() }
+                    .sortedBy { it.supplier.name }
             } catch (e: Exception) {
                 Log.e("ReportsViewModel", "Error loading supplier report", e)
             } finally {
