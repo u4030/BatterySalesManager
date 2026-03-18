@@ -187,6 +187,14 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                             }
                         }
 
+                        if (isLoading) {
+                            item {
+                                Box(modifier = Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
+                                    CircularProgressIndicator(color = accentColor)
+                                }
+                            }
+                        }
+
                         items(pagingItems.itemCount) { index ->
                             val reportItem = pagingItems[index]
                             reportItem?.let {

@@ -12,12 +12,16 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.tasks.await
 
+import com.batterysales.viewmodel.ReportsViewModel
+import kotlinx.coroutines.sync.withPermit
+
 class InventoryPagingSource(
     private val firestore: FirebaseFirestore,
     private val stockEntryRepository: StockEntryRepository,
     private val productsMap: Map<String, Product>,
     private val warehouseList: List<Warehouse>,
-    private val barcode: String?
+    private val barcode: String?,
+    private val viewModel: ReportsViewModel? = null
 ) : PagingSource<DocumentSnapshot, InventoryReportItem>() {
 
     override fun getRefreshKey(state: PagingState<DocumentSnapshot, InventoryReportItem>): DocumentSnapshot? = null
@@ -39,27 +43,39 @@ class InventoryPagingSource(
             val variants = snapshot.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }
             
             val data = coroutineScope {
+                val variantIds = variants.map { it.id }
+
+                // Fetch all approved entries for these variants at once
+                val allEntriesMap = stockEntryRepository.getEntriesForVariants(variantIds)
+
                 variants.map { variant ->
                     async {
                         var product = productsMap[variant.productId]
-                        if (product == null) {
-                            product = firestore.collection(Product.COLLECTION_NAME)
-                                .document(variant.productId)
-                                .get()
-                                .await()
-                                .toObject(Product::class.java)
-                                ?.copy(id = variant.productId) ?: Product(name = "Unknown")
+                        if (product == null && variant.productId.isNotBlank()) {
+                            try {
+                                val doc = firestore.collection(Product.COLLECTION_NAME)
+                                    .document(variant.productId)
+                                    .get()
+                                    .await()
+                                product = doc.toObject(Product::class.java)?.copy(id = doc.id)
+                            } catch (e: Exception) {
+                                Log.e("InventoryPagingSource", "Error fetching product ${variant.productId}", e)
+                            }
                         }
-                        val globalSummary = stockEntryRepository.getVariantSummary(variant.id, null)
+
+                        val finalProduct = product ?: Product(name = "Unknown (${variant.productId.take(5)})")
+
+                        val entries = allEntriesMap[variant.id] ?: emptyList()
+                        val globalSummary = stockEntryRepository.calculateSummary(entries)
                         
-                        val whSummaries = warehouseList.map { wh ->
-                            wh.id to async { stockEntryRepository.getVariantSummary(variant.id, wh.id).first }
+                        val whQuantities = warehouseList.associate { wh ->
+                            wh.id to stockEntryRepository.calculateSummary(entries.filter { it.warehouseId == wh.id }).first
                         }
 
                         InventoryReportItem(
-                            product = product,
+                            product = finalProduct,
                             variant = variant,
-                            warehouseQuantities = whSummaries.associate { it.first to it.second.await() },
+                            warehouseQuantities = whQuantities,
                             totalQuantity = globalSummary.first,
                             averageCost = globalSummary.second,
                             totalCostValue = globalSummary.third
