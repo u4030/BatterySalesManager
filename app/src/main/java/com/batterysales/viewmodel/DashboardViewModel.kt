@@ -179,18 +179,13 @@ class DashboardViewModel @Inject constructor(
             }
 
             val allNotifications = mutableListOf<AppNotification>()
-                if (lowStockItems.isNotEmpty()) {
-                    val count = lowStockItems.size
+                // Individual Low Stock Notifications
+                lowStockItems.forEach { item ->
                     allNotifications.add(
                         AppNotification(
-                            id = "low_stock_summary",
-                            title = "تنبيه مخزون منخفض",
-                            message = if (count == 1) {
-                                val item = lowStockItems.first()
-                                "المنتج ${item.productName} (${item.capacity}A) وصل للحد الأدنى في ${item.warehouseName}"
-                            } else {
-                                "يوجد عدد $count أصناف وصلت للحد الأدنى للمخزون"
-                            },
+                            id = "low_stock_${item.variantId}_${item.warehouseName}",
+                            title = "مخزون منخفض: ${item.productName}",
+                            message = "السعة: ${item.capacity}A | الكمية المتبقية: ${item.currentQuantity} (الحد: ${item.minQuantity}) في ${item.warehouseName}",
                             type = NotificationType.LOW_STOCK,
                             route = "reports"
                         )
