@@ -32,17 +32,18 @@ class InventoryPagingSource(
             val products = mutableListOf<Product>()
             var lastDoc: DocumentSnapshot? = null
 
+            var rawFetchedSize = 0
             if (barcode != null) {
                 var query = firestore.collection(ProductVariant.COLLECTION_NAME)
                     .whereEqualTo("barcode", barcode)
-                    .whereEqualTo("archived", false)
 
                 if (params.key != null) {
                     query = query.startAfter(params.key!!)
                 }
 
                 val snapshot = query.limit(params.loadSize.toLong()).get().await()
-                variants.addAll(snapshot.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) })
+                rawFetchedSize = snapshot.size()
+                variants.addAll(snapshot.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }.filter { !it.archived })
                 lastDoc = snapshot.documents.lastOrNull()
 
                 // Fetch products for these variants
@@ -55,7 +56,6 @@ class InventoryPagingSource(
                 }
             } else {
                 var query = firestore.collection(Product.COLLECTION_NAME)
-                    .whereEqualTo("archived", false)
                     .orderBy("name")
 
                 if (params.key != null) {
@@ -63,7 +63,10 @@ class InventoryPagingSource(
                 }
 
                 val snapshot = query.limit(params.loadSize.toLong()).get().await()
+                rawFetchedSize = snapshot.size()
                 val fetchedProducts = snapshot.documents.mapNotNull { it.toObject(Product::class.java)?.copy(id = it.id) }
+                    .filter { !it.archived } // Filter in memory to avoid index requirements and missing field issues
+
                 products.addAll(fetchedProducts)
                 lastDoc = snapshot.documents.lastOrNull()
 
@@ -71,11 +74,14 @@ class InventoryPagingSource(
                 for (product in fetchedProducts) {
                     val vSnap = firestore.collection(ProductVariant.COLLECTION_NAME)
                         .whereEqualTo("productId", product.id)
-                        .whereEqualTo("archived", false)
-                        .orderBy("capacity")
                         .get()
                         .await()
-                    variants.addAll(vSnap.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) })
+
+                    val pVariants = vSnap.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }
+                        .filter { !it.archived }
+                        .sortedBy { it.capacity }
+
+                    variants.addAll(pVariants)
                 }
             }
 
@@ -105,11 +111,10 @@ class InventoryPagingSource(
                 }.awaitAll()
             }
 
-            val currentSize = if (barcode != null) variants.size else products.size
             LoadResult.Page(
                 data = data,
                 prevKey = null,
-                nextKey = if (currentSize < params.loadSize) null else lastDoc
+                nextKey = if (rawFetchedSize < params.loadSize) null else lastDoc
             )
         } catch (e: Exception) {
             android.util.Log.e("InventoryPagingSource", "Load error", e)
