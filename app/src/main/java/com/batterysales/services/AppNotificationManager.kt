@@ -12,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -204,7 +205,7 @@ class AppNotificationManager @Inject constructor(
         var isFirstSnapshot = true
         lowStockJob = firestore.collection(StockEntry.COLLECTION_NAME)
             .orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING)
-            .limit(10)
+            .limit(1)
             .addSnapshotListener { snapshot, e ->
                 if (e != null) return@addSnapshotListener
                 
@@ -215,12 +216,12 @@ class AppNotificationManager @Inject constructor(
                     return@addSnapshotListener
                 }
 
-                snapshot?.documentChanges?.forEach { change ->
-                    if (change.type == com.google.firebase.firestore.DocumentChange.Type.ADDED) {
-                        val entry = change.document.toObject(StockEntry::class.java)
-                        // Trigger check for the specific variant/warehouse affected
-                        scope.launch { checkVariantLowStock(entry.productVariantId, entry.warehouseId) }
-                    }
+                // If not first snapshot and no error, a new stock movement happened
+                // We perform a full check to ensure no missed notifications,
+                // but only after a slight debounce to handle batches.
+                scope.launch {
+                    delay(2000)
+                    performFullLowStockCheck()
                 }
             }.let { registration ->
                 // Return a job that removes the listener when cancelled
@@ -269,15 +270,22 @@ class AppNotificationManager @Inject constructor(
         try {
             val allVariants = productVariantRepository.getAllVariants().filter { !it.archived }
             val allWarehouses = warehouseRepository.getWarehousesOnce()
+            val variantIds = allVariants.map { it.id }
             
+            // Bulk fetch all entries for these variants to avoid N+1 queries
+            val allEntriesMap = stockEntryRepository.getEntriesForVariants(variantIds)
+
             var lowStockCount = 0
             for (variant in allVariants) {
+                val variantEntries = allEntriesMap[variant.id] ?: emptyList()
                 for (warehouse in allWarehouses) {
                     val threshold = variant.minQuantities[warehouse.id] ?: variant.minQuantity
                     if (threshold <= 0) continue
 
-                    val whSummary = stockEntryRepository.getVariantSummary(variant.id, warehouse.id)
-                    if (whSummary.first <= threshold) {
+                    val whEntries = variantEntries.filter { it.warehouseId == warehouse.id }
+                    val qty = stockEntryRepository.calculateSummary(whEntries).first
+
+                    if (qty <= threshold) {
                         lowStockCount++
                         notifiedLowStockKeys.add("${variant.id}:${warehouse.id}")
                     }

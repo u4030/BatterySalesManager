@@ -156,6 +156,20 @@ fun DashboardScreen(
 
                 // Summary content below header
                 Column(modifier = Modifier.padding(16.dp)) {
+                    // Important Notifications Banner
+                    if (dashboardState.notifications.isNotEmpty()) {
+                        val criticalNotifications = dashboardState.notifications.filter {
+                            it.type == NotificationType.LOW_STOCK || it.type == NotificationType.OVERDUE_BILL
+                        }
+
+                        criticalNotifications.forEach { notification ->
+                            NotificationBanner(notification) {
+                                if (notification.route != null) navController.navigate(notification.route)
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                        }
+                    }
+
                     if (dashboardState.warehouseStats.isNotEmpty()) {
                         androidx.compose.foundation.lazy.LazyRow(
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -279,6 +293,51 @@ fun DashboardScreen(
                 showNotificationDialog = false
             }
         )
+    }
+}
+
+@Composable
+fun NotificationBanner(notification: AppNotification, onClick: () -> Unit) {
+    val color = when (notification.type) {
+        NotificationType.LOW_STOCK -> Color(0xFFEF4444)
+        NotificationType.OVERDUE_BILL -> Color(0xFFEF4444)
+        else -> Color(0xFFF59E0B)
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.1f)),
+        border = androidx.compose.foundation.BorderStroke(1.dp, color.copy(alpha = 0.2f))
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = if (notification.type == NotificationType.LOW_STOCK) Icons.Default.Warning else Icons.Default.Error,
+                contentDescription = null,
+                tint = color,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    notification.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = color
+                )
+                Text(
+                    notification.message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            Icon(Icons.Default.ChevronLeft, contentDescription = null, tint = color)
+        }
     }
 }
 

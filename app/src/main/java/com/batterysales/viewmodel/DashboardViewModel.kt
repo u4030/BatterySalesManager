@@ -78,7 +78,8 @@ class DashboardViewModel @Inject constructor(
             productVariantRepository.getAllVariantsFlow(),
             productRepository.getProducts(),
             stockEntryRepository.getPendingEntriesFlow(),
-            paymentRepository.getAllPaymentsFlow()
+            paymentRepository.getAllPaymentsFlow(),
+            stockEntryRepository.getAllStockEntriesFlow()
         ) { array ->
             val warehouses = array[0] as List<com.batterysales.data.models.Warehouse>
             val user = array[1] as com.batterysales.data.models.User?
@@ -87,6 +88,7 @@ class DashboardViewModel @Inject constructor(
             val products = array[4] as List<com.batterysales.data.models.Product>
             val pendingEntries = array[5] as List<StockEntry>
             val allPayments = array[6] as List<com.batterysales.data.models.Payment>
+            val allStockEntries = array[7] as List<StockEntry>
 
             val isAdmin = user?.role == "admin"
             val userWarehouseId = user?.warehouseId
@@ -140,10 +142,61 @@ class DashboardViewModel @Inject constructor(
                     )
                 }.filter { if (isAdmin) it.todayCollection > 0 || it.todayCollectionCount > 0 else true }
 
-            // 4. Low Stock Notifications (Summarized for speed)
-            // Actual calculation is done in Reports or AppNotificationManager
+            // 4. Low Stock Notifications
+            val approvedEntries = allStockEntries.filter { it.status == "approved" }
+            val entriesByVariant = approvedEntries.groupBy { it.productVariantId }
+            val pMap = products.associateBy { it.id }
+
+            val lowStockItems = mutableListOf<LowStockItem>()
+            val activeVariants = variants.filter { !it.archived }
             
+            for (variant in activeVariants) {
+                val variantEntries = entriesByVariant[variant.id] ?: emptyList()
+                val targetWarehouses = if (isAdmin) warehouses.filter { it.isActive }
+                                      else warehouses.filter { it.id == userWarehouseId && it.isActive }
+
+                for (warehouse in targetWarehouses) {
+                    val whEntries = variantEntries.filter { it.warehouseId == warehouse.id }
+                    val totalQty = whEntries.sumOf { it.quantity }
+                    val totalRet = whEntries.sumOf { it.returnedQuantity }
+                    val currentQty = totalQty - totalRet
+
+                    val threshold = variant.minQuantities[warehouse.id] ?: variant.minQuantity
+
+                    if (threshold > 0 && currentQty <= threshold) {
+                        lowStockItems.add(
+                            LowStockItem(
+                                variantId = variant.id,
+                                productName = pMap[variant.productId]?.name ?: "منتج غير معروف",
+                                capacity = variant.capacity,
+                                currentQuantity = currentQty,
+                                minQuantity = threshold,
+                                warehouseName = warehouse.name
+                            )
+                        )
+                    }
+                }
+            }
+
             val allNotifications = mutableListOf<AppNotification>()
+                if (lowStockItems.isNotEmpty()) {
+                    val count = lowStockItems.size
+                    allNotifications.add(
+                        AppNotification(
+                            id = "low_stock_summary",
+                            title = "تنبيه مخزون منخفض",
+                            message = if (count == 1) {
+                                val item = lowStockItems.first()
+                                "المنتج ${item.productName} (${item.capacity}A) وصل للحد الأدنى في ${item.warehouseName}"
+                            } else {
+                                "يوجد عدد $count أصناف وصلت للحد الأدنى للمخزون"
+                            },
+                            type = NotificationType.LOW_STOCK,
+                            route = "reports"
+                        )
+                    )
+                }
+
                 if (pendingCount > 0) {
                     allNotifications.add(
                         AppNotification(
