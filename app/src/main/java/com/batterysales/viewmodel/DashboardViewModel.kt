@@ -58,6 +58,7 @@ class DashboardViewModel @Inject constructor(
     private val productVariantRepository: ProductVariantRepository,
     private val productRepository: ProductRepository,
     private val billRepository: BillRepository,
+    private val approvalRepository: ApprovalRepository,
     private val warehouseRepository: WarehouseRepository,
     private val userRepository: UserRepository,
     private val paymentRepository: PaymentRepository
@@ -79,7 +80,8 @@ class DashboardViewModel @Inject constructor(
             productRepository.getProducts(),
             stockEntryRepository.getPendingEntriesFlow(),
             paymentRepository.getAllPaymentsFlow(),
-            stockEntryRepository.getAllStockEntriesFlow()
+            stockEntryRepository.getAllStockEntriesFlow(),
+            approvalRepository.getPendingRequestsFlow()
         ) { array ->
             val warehouses = array[0] as List<com.batterysales.data.models.Warehouse>
             val user = array[1] as com.batterysales.data.models.User?
@@ -89,12 +91,13 @@ class DashboardViewModel @Inject constructor(
             val pendingEntries = array[5] as List<StockEntry>
             val allPayments = array[6] as List<com.batterysales.data.models.Payment>
             val allStockEntries = array[7] as List<StockEntry>
+            val pendingRequests = array[8] as List<com.batterysales.data.models.ApprovalRequest>
 
             val isAdmin = user?.role == "admin"
             val userWarehouseId = user?.warehouseId
 
-            // 1. Pending Approvals Count
-            val pendingCount = pendingEntries.size
+            // 1. Pending Approvals Count (Stock Entries + Product Requests)
+            val pendingCount = pendingEntries.size + pendingRequests.size
 
             // 2. Upcoming Bills
                 val today = Calendar.getInstance().apply {

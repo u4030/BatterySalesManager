@@ -114,17 +114,22 @@ fun DashboardScreen(
                                     color = Color.Red,
                                     shape = CircleShape,
                                     modifier = Modifier
-                                        .align(Alignment.TopEnd)
-                                        .size(16.dp)
-                                        .offset(x = (-4).dp, y = 4.dp),
+                                        .align(Alignment.BottomEnd)
+                                        .size(18.dp)
+                                        .offset(x = (-4).dp, y = (-4).dp),
                                     border = androidx.compose.foundation.BorderStroke(1.dp, Color.White)
                                 ) {
-                                    Box(contentAlignment = Alignment.Center) {
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier.fillMaxSize()
+                                    ) {
                                         Text(
                                             text = dashboardState.notifications.size.toString(),
                                             color = Color.White,
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Bold
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                            modifier = Modifier.wrapContentSize(Alignment.Center)
                                         )
                                     }
                                 }
