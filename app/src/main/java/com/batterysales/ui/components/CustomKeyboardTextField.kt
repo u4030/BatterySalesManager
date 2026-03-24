@@ -39,7 +39,6 @@ fun BlinkingCursor() {
 
     Box(
         modifier = Modifier
-            .padding(end = 12.dp)
             .width(2.dp)
             .height(24.dp)
             .background(Color(0xFFFB8C00).copy(alpha = alpha))
@@ -69,6 +68,7 @@ fun CustomKeyboardTextField(
     val isFocused = isKeyboardVisible && currentKeyboardLabel == label
 
     var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
+    val isRtl = keyboardType == KeyboardLanguage.ARABIC
 
     Box(modifier = modifier) {
         OutlinedTextField(
@@ -80,7 +80,9 @@ fun CustomKeyboardTextField(
             enabled = enabled,
             modifier = Modifier.fillMaxWidth(),
             onTextLayout = { textLayoutResult = it },
-            textStyle = LocalInputTextStyle.current,
+            textStyle = LocalInputTextStyle.current.copy(
+                textAlign = if (isRtl) androidx.compose.ui.text.style.TextAlign.End else androidx.compose.ui.text.style.TextAlign.Start
+            ),
             shape = RoundedCornerShape(12.dp),
             visualTransformation = visualTransformation,
             leadingIcon = leadingIcon,
@@ -114,14 +116,16 @@ fun CustomKeyboardTextField(
                 val cursorRect = layout.getCursorRect(cursorPosition.coerceIn(0, value.length))
                 val density = androidx.compose.ui.platform.LocalDensity.current
 
+                // OutlinedTextField has specific internal padding: 16dp horizontal, 24dp vertical (with label)
+                val xOffset = cursorRect.left + with(density) { 16.dp.toPx() }
+                val yOffset = cursorRect.top + with(density) { 24.dp.toPx() }
+
                 Box(
                     modifier = Modifier
                         .offset {
-                            IntOffset(
-                                x = (cursorRect.left + with(density) { 16.dp.toPx() }).roundToInt(),
-                                y = (cursorRect.top + with(density) { 24.dp.toPx() }).roundToInt()
-                            )
+                            IntOffset(xOffset.roundToInt(), yOffset.roundToInt())
                         }
+                        .align(Alignment.TopStart)
                 ) {
                     BlinkingCursor()
                 }

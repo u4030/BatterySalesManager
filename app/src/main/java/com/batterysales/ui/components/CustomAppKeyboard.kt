@@ -261,12 +261,12 @@ fun CustomAppKeyboard(
                         }
 
                         Surface(
-                            onClick = {
-                                if (onSearch != null) onSearch() else onDone()
-                            },
                             modifier = Modifier
                                 .height(55.dp)
-                                .weight(1.5f),
+                                .weight(1.5f)
+                                .pointerInput(onSearch, onDone) {
+                                    detectTapGestures(onPress = { if (onSearch != null) onSearch() else onDone() })
+                                },
                             shape = RoundedCornerShape(8.dp),
                             color = if (onSearch != null) Color(0xFFFB8C00) else MaterialTheme.colorScheme.primary
                         ) {
