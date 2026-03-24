@@ -122,8 +122,8 @@ class AccountingRepository @Inject constructor(
     }
 
     suspend fun addTransaction(transaction: Transaction): String {
-        val docRef = if (transaction.id.isEmpty()) firestore.collection(Transaction.COLLECTION_NAME).document() 
-                     else firestore.collection(Transaction.COLLECTION_NAME).document(transaction.id)
+        val docRef = if (transaction.id.isEmpty()) firestore.collection(Transaction.COLLECTION_NAME).document()
+        else firestore.collection(Transaction.COLLECTION_NAME).document(transaction.id)
         val finalTransaction = transaction.copy(id = docRef.id)
         docRef.set(finalTransaction).await()
         return docRef.id
@@ -132,8 +132,8 @@ class AccountingRepository @Inject constructor(
     suspend fun addTransactionsBatch(transactions: List<Transaction>) {
         val batch = firestore.batch()
         transactions.forEach { transaction ->
-            val docRef = if (transaction.id.isEmpty()) firestore.collection(Transaction.COLLECTION_NAME).document() 
-                         else firestore.collection(Transaction.COLLECTION_NAME).document(transaction.id)
+            val docRef = if (transaction.id.isEmpty()) firestore.collection(Transaction.COLLECTION_NAME).document()
+            else firestore.collection(Transaction.COLLECTION_NAME).document(transaction.id)
             batch.set(docRef, transaction.copy(id = docRef.id))
         }
         batch.commit().await()
@@ -161,17 +161,63 @@ class AccountingRepository @Inject constructor(
     }
 
     suspend fun updateTransaction(transaction: Transaction) {
-        firestore.collection(Transaction.COLLECTION_NAME)
-            .document(transaction.id)
-            .set(transaction)
-            .await()
+        val batch = firestore.batch()
+        val docRef = firestore.collection(Transaction.COLLECTION_NAME).document(transaction.id)
+        batch.set(docRef, transaction)
+
+        // If this transaction has a relatedId, or is pointed to by another transaction via relatedId, sync them.
+        // For simple transfers, we sync amount and part of description if they are linked.
+        val relatedId = transaction.relatedId
+        if (relatedId != null) {
+            val relatedDoc = firestore.collection(Transaction.COLLECTION_NAME).document(relatedId).get().await()
+            if (relatedDoc.exists()) {
+                val relatedTrans = relatedDoc.toObject(Transaction::class.java)
+                if (relatedTrans != null) {
+                    batch.update(relatedDoc.reference, "amount", transaction.amount)
+                }
+            }
+        }
+
+        // Also check if any transaction points TO this one
+        val pointingSnap = firestore.collection(Transaction.COLLECTION_NAME)
+            .whereEqualTo("relatedId", transaction.id)
+            .get().await()
+
+        pointingSnap.documents.forEach { doc ->
+            batch.update(doc.reference, "amount", transaction.amount)
+        }
+
+        batch.commit().await()
     }
 
     suspend fun deleteTransaction(transactionId: String) {
-        firestore.collection(Transaction.COLLECTION_NAME)
-            .document(transactionId)
-            .delete()
-            .await()
+        val batch = firestore.batch()
+        val docRef = firestore.collection(Transaction.COLLECTION_NAME).document(transactionId)
+
+        // Get the transaction to check for relatedId
+        val doc = docRef.get().await()
+        if (doc.exists()) {
+            val trans = doc.toObject(Transaction::class.java)
+            val relatedId = trans?.relatedId
+
+            batch.delete(docRef)
+
+            // Delete the counterpart if it exists
+            if (relatedId != null) {
+                batch.delete(firestore.collection(Transaction.COLLECTION_NAME).document(relatedId))
+            }
+
+            // Also delete any transaction that points TO this one
+            val pointingSnap = firestore.collection(Transaction.COLLECTION_NAME)
+                .whereEqualTo("relatedId", transactionId)
+                .get().await()
+
+            pointingSnap.documents.forEach { pointingDoc ->
+                batch.delete(pointingDoc.reference)
+            }
+        }
+
+        batch.commit().await()
     }
 
     suspend fun deleteTransactionsByRelatedId(relatedId: String) {

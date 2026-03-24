@@ -67,7 +67,13 @@ class SalesViewModel @Inject constructor(
     val uiState: StateFlow<SalesUiState> = combine(
         productRepository.getProducts(),
         warehouseRepository.getWarehouses(),
-        stockEntryRepository.getAllStockEntriesFlow(),
+        userRepository.getCurrentUserFlow().flatMapLatest { user ->
+            if (user?.role == User.ROLE_SELLER && user.warehouseId != null) {
+                stockEntryRepository.getStockEntriesByWarehouseFlow(user.warehouseId)
+            } else {
+                stockEntryRepository.getAllStockEntriesFlow()
+            }
+        },
         userRepository.getCurrentUserFlow(),
         _selectedProduct,
         _selectedVariant,
@@ -81,6 +87,7 @@ class SalesViewModel @Inject constructor(
         _errorMessage,
         _isLoading,
         _isFinished,
+        productVariantRepository.getAllVariantsFlow(),
         _selectedProduct.flatMapLatest { product ->
             if (product == null) flowOf(emptyList())
             else productVariantRepository.getVariantsForProductFlow(product.id)
@@ -103,27 +110,43 @@ class SalesViewModel @Inject constructor(
         val errorMessage = args[13] as String?
         val isLoading = args[14] as Boolean
         val isFinished = args[15] as Boolean
-        val variants = args[16] as List<ProductVariant>
+        val allVariants = args[16] as List<ProductVariant>
+        val variants = args[17] as List<ProductVariant>
 
         allStockEntries = stockEntries
         currentUser = user
 
         val approvedEntries = stockEntries.filter { it.status == "approved" }
         val stockMap = mutableMapOf<Pair<String, String>, Int>()
-        for (entry in approvedEntries) {
-            val key = Pair(entry.productVariantId, entry.warehouseId)
-            stockMap[key] = (stockMap[key] ?: 0) + (entry.quantity - entry.returnedQuantity)
+        allVariants.forEach { variant ->
+            variant.currentStock?.forEach { (warehouseId, qty) ->
+                stockMap[Pair(variant.id, warehouseId)] = qty
+            }
         }
 
-        val isSeller = user?.role == "seller"
+        val isSeller = user?.role == User.ROLE_SELLER
         val autoSelectedWarehouse = if (isSeller && selectedWarehouse == null) {
             warehouses.find { it.id == user?.warehouseId }
         } else {
             selectedWarehouse
         }
 
+        val filteredProducts = if (isSeller && user?.warehouseId != null) {
+            // Filter products that have any approved stock entry in this warehouse with quantity > 0
+            val availableVariantIds = approvedEntries
+                .filter { it.warehouseId == user.warehouseId }
+                .groupBy { it.productVariantId }
+                .filter { (_, entries) -> entries.sumOf { it.quantity - it.returnedQuantity } > 0 }
+                .keys
+
+            val availableProductIds = allVariants.filter { availableVariantIds.contains(it.id) }.map { it.productId }.toSet()
+            products.filter { !it.archived && availableProductIds.contains(it.id) }
+        } else {
+            products.filter { !it.archived }
+        }
+
         SalesUiState(
-            products = products.filter { !it.archived },
+            products = filteredProducts,
             variants = variants,
             warehouses = warehouses.filter { it.isActive },
             stockLevels = stockMap,
@@ -152,7 +175,7 @@ class SalesViewModel @Inject constructor(
 
     fun onVariantSelected(variant: ProductVariant) {
         _selectedVariant.value = variant
-        _sellingPrice.value = variant.sellingPrice.toString()
+        _sellingPrice.value = if (variant.sellingPrice > 0.0) variant.sellingPrice.toString() else ""
     }
 
     fun onWarehouseSelected(warehouse: Warehouse) {
@@ -248,43 +271,6 @@ class SalesViewModel @Inject constructor(
                     warehouseId = warehouse.id,
                     invoiceDate = Date()
                 )
-                val createdInvoice = invoiceRepository.createInvoice(newInvoice)
-
-                if (newInvoice.oldBatteriesQuantity > 0) {
-                    oldBatteryRepository.addTransaction(
-                        OldBatteryTransaction(
-                            invoiceId = createdInvoice.id,
-                            quantity = newInvoice.oldBatteriesQuantity,
-                            warehouseId = warehouse.id,
-                            totalAmperes = newInvoice.oldBatteriesTotalAmperes,
-                            type = OldBatteryTransactionType.INTAKE,
-                            notes = "مستلم من فاتورة: $customerName",
-                            createdByUserName = currentUser?.displayName ?: ""
-                        )
-                    )
-                }
-
-                if (paidAmount > 0) {
-                    val payment = Payment(
-                        invoiceId = createdInvoice.id,
-                        warehouseId = warehouse.id,
-                        amount = paidAmount,
-                        timestamp = Date(),
-                        paymentMethod = state.paymentMethod,
-                        notes = "الدفعة الأولى عند البيع"
-                    )
-                    paymentRepository.addPayment(payment)
-
-                    val transaction = Transaction(
-                        type = TransactionType.INCOME,
-                        amount = paidAmount,
-                        description = "دفعة مبيعات: $customerName",
-                        relatedId = createdInvoice.id,
-                        warehouseId = warehouse.id,
-                        paymentMethod = state.paymentMethod
-                    )
-                    accountingRepository.addTransaction(transaction)
-                }
 
                 val stockEntry = StockEntry(
                     productVariantId = variant.id,
@@ -295,11 +281,48 @@ class SalesViewModel @Inject constructor(
                     costPrice = weightedAverageCost,
                     supplier = "Sale",
                     timestamp = Date(),
-                    invoiceId = createdInvoice.id,
                     status = "approved",
                     createdBy = currentUser?.id ?: ""
                 )
-                stockEntryRepository.addStockEntry(stockEntry)
+
+                val payment = if (paidAmount > 0) {
+                    Payment(
+                        warehouseId = warehouse.id,
+                        amount = paidAmount,
+                        timestamp = Date(),
+                        paymentMethod = state.paymentMethod,
+                        notes = "الدفعة الأولى عند البيع"
+                    )
+                } else null
+
+                val treasuryTransaction = if (paidAmount > 0) {
+                    Transaction(
+                        type = TransactionType.INCOME,
+                        amount = paidAmount,
+                        description = "دفعة مبيعات: $customerName",
+                        warehouseId = warehouse.id,
+                        paymentMethod = state.paymentMethod
+                    )
+                } else null
+
+                val oldBatteryTransaction = if (newInvoice.oldBatteriesQuantity > 0) {
+                    OldBatteryTransaction(
+                        quantity = newInvoice.oldBatteriesQuantity,
+                        warehouseId = warehouse.id,
+                        totalAmperes = newInvoice.oldBatteriesTotalAmperes,
+                        type = OldBatteryTransactionType.INTAKE,
+                        notes = "مستلم من فاتورة: $customerName",
+                        createdByUserName = currentUser?.displayName ?: ""
+                    )
+                } else null
+
+                invoiceRepository.createFullSale(
+                    invoice = newInvoice,
+                    stockEntry = stockEntry,
+                    payment = payment,
+                    treasuryTransaction = treasuryTransaction,
+                    oldBatteryTransaction = oldBatteryTransaction
+                )
 
                 _isFinished.value = true
             } catch (e: Exception) {

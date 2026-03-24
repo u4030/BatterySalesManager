@@ -254,11 +254,11 @@ fun AccountingScreen(
                                     fontWeight = FontWeight.Bold,
                                     color = Color.White
                                 )
-                                
+
                                 Spacer(modifier = Modifier.height(12.dp))
                                 HorizontalDivider(color = Color.White.copy(alpha = 0.2f))
                                 Spacer(modifier = Modifier.height(12.dp))
-                                
+
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                         Text("إجمالي المصروفات", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
@@ -302,9 +302,9 @@ fun AccountingScreen(
                             onClick = { viewModel.onTabSelected(1) },
                             label = { Text("المسحوبات") }
                         )
-                        
+
                         Spacer(modifier = Modifier.weight(1f))
-                        
+
                         // Year Selector
                         var yearExpanded by remember { mutableStateOf(false) }
                         Box {
@@ -507,20 +507,18 @@ fun TransactionItemCard(
                     }
                 }
 
-                if (transaction.relatedId == null) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        IconButton(
-                            onClick = onEdit, 
-                            modifier = Modifier.size(32.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f), CircleShape)
-                        ) {
-                            Icon(Icons.Default.Edit, contentDescription = "Edit", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
-                        }
-                        IconButton(
-                            onClick = onDelete, 
-                            modifier = Modifier.size(32.dp).background(Color(0xFF3B1F1F), CircleShape)
-                        ) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color(0xFFEF4444), modifier = Modifier.size(16.dp))
-                        }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    IconButton(
+                        onClick = onEdit,
+                        modifier = Modifier.size(32.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f), CircleShape)
+                    ) {
+                        Icon(Icons.Default.Edit, contentDescription = "Edit", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                    }
+                    IconButton(
+                        onClick = onDelete,
+                        modifier = Modifier.size(32.dp).background(Color(0xFF3B1F1F), CircleShape)
+                    ) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color(0xFFEF4444), modifier = Modifier.size(16.dp))
                     }
                 }
             }
@@ -553,7 +551,7 @@ fun TransactionItemCard(
             }
 
             Spacer(modifier = Modifier.height(12.dp))
-            
+
             Text(
                 dateFormatter.format(transaction.createdAt),
                 style = MaterialTheme.typography.labelSmall,
