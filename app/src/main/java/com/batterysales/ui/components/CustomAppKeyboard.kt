@@ -188,8 +188,9 @@ fun CustomAppKeyboard(
                     ) {
                         // Cursor Left
                         Surface(
-                            onClick = { keyboardController.moveCursorLeft() },
-                            modifier = Modifier.height(55.dp).weight(1f),
+                            modifier = Modifier.height(55.dp).weight(1f).pointerInput(Unit) {
+                                detectTapGestures(onPress = { keyboardController.moveCursorLeft() })
+                            },
                             shape = RoundedCornerShape(8.dp),
                             color = MaterialTheme.colorScheme.surface
                         ) {
@@ -200,8 +201,9 @@ fun CustomAppKeyboard(
 
                         // Cursor Right
                         Surface(
-                            onClick = { keyboardController.moveCursorRight() },
-                            modifier = Modifier.height(55.dp).weight(1f),
+                            modifier = Modifier.height(55.dp).weight(1f).pointerInput(Unit) {
+                                detectTapGestures(onPress = { keyboardController.moveCursorRight() })
+                            },
                             shape = RoundedCornerShape(8.dp),
                             color = MaterialTheme.colorScheme.surface
                         ) {
@@ -244,10 +246,12 @@ fun CustomAppKeyboard(
 
                         // SPACE BAR
                         Surface(
-                            onClick = { keyboardController.insertText(" ") },
                             modifier = Modifier
                                 .height(55.dp)
-                                .weight(3f),
+                                .weight(3f)
+                                .pointerInput(Unit) {
+                                    detectTapGestures(onPress = { keyboardController.insertText(" ") })
+                                },
                             shape = RoundedCornerShape(8.dp),
                             color = MaterialTheme.colorScheme.surface
                         ) {
