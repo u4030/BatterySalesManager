@@ -57,6 +57,7 @@ fun CustomAppKeyboard(
     onSearch: (() -> Unit)? = null
 ) {
     if (!isVisible) return
+    val keyboardController = LocalCustomKeyboardController.current
 
     var language by remember { mutableStateOf(initialLanguage) }
 
@@ -172,29 +173,52 @@ fun CustomAppKeyboard(
                                 KeyboardKey(
                                     text = key,
                                     modifier = Modifier.weight(1f),
-                                    onClick = { onValueChange(currentValue + key) },
-                                    onAltClick = { onValueChange(currentValue + it) }
+                                    onClick = { keyboardController.insertText(key) },
+                                    onAltClick = { keyboardController.insertText(it) }
                                 )
                             }
                         }
                     }
 
-                    // Bottom Row (Space, Delete, Done)
+                    // Bottom Row (Cursor, Space, Delete, Done)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        // Cursor Left
+                        Surface(
+                            onClick = { keyboardController.moveCursorLeft() },
+                            modifier = Modifier.height(55.dp).weight(1f),
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surface
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Default.KeyboardArrowLeft, contentDescription = null)
+                            }
+                        }
+
+                        // Cursor Right
+                        Surface(
+                            onClick = { keyboardController.moveCursorRight() },
+                            modifier = Modifier.height(55.dp).weight(1f),
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surface
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Default.KeyboardArrowRight, contentDescription = null)
+                            }
+                        }
+
                         val interactionSource = remember { MutableInteractionSource() }
                         val isPressed by interactionSource.collectIsPressedAsState()
-                        val currentTextState = rememberUpdatedState(currentValue)
 
                         // Continuous delete on long press
                         LaunchedEffect(isPressed) {
                             if (isPressed) {
-                                while (currentTextState.value.isNotEmpty()) {
-                                    onValueChange(currentTextState.value.dropLast(1))
-                                    delay(100) // Adjust delay for deletion speed
+                                while (true) {
+                                    keyboardController.deleteAtCursor()
+                                    delay(100)
                                 }
                             }
                         }
@@ -206,13 +230,9 @@ fun CustomAppKeyboard(
                                 .weight(1.5f)
                                 .combinedClickable(
                                     interactionSource = interactionSource,
-                                    indication = null, // Disable ripple for custom feedback
-                                    onClick = {
-                                        if (currentValue.isNotEmpty()) {
-                                            onValueChange(currentValue.dropLast(1))
-                                        }
-                                    },
-                                    onLongClick = {} // Handled by LaunchedEffect
+                                    indication = null,
+                                    onClick = { keyboardController.deleteAtCursor() },
+                                    onLongClick = {}
                                 ),
                             shape = RoundedCornerShape(8.dp),
                             color = MaterialTheme.colorScheme.errorContainer
@@ -222,12 +242,12 @@ fun CustomAppKeyboard(
                             }
                         }
 
-                        // SPACE BAR (Centered and Longer)
+                        // SPACE BAR
                         Surface(
-                            onClick = { onValueChange(currentValue + " ") },
+                            onClick = { keyboardController.insertText(" ") },
                             modifier = Modifier
                                 .height(55.dp)
-                                .weight(4f),
+                                .weight(3f),
                             shape = RoundedCornerShape(8.dp),
                             color = MaterialTheme.colorScheme.surface
                         ) {
@@ -269,6 +289,8 @@ fun KeyboardKey(
     onClick: () -> Unit,
     onAltClick: (String) -> Unit
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
     var showAlternatives by remember { mutableStateOf(false) }
     val alternatives = when (text) {
         "ا" -> listOf("أ", "إ", "آ")
@@ -316,12 +338,14 @@ fun KeyboardKey(
                 .fillMaxWidth()
                 .pointerInput(onClick, onAltClick) {
                     detectTapGestures(
-                        onTap = { onClick() },
+                        onPress = {
+                            onClick() // Immediate trigger on press for speed
+                        },
                         onLongPress = { if (alternatives.isNotEmpty()) showAlternatives = true }
                     )
                 },
             shape = RoundedCornerShape(8.dp),
-            color = MaterialTheme.colorScheme.surface,
+            color = if (isPressed) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
             tonalElevation = 2.dp
         ) {
             Box(contentAlignment = Alignment.Center) {

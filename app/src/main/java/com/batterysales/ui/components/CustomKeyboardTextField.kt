@@ -60,6 +60,7 @@ fun CustomKeyboardTextField(
     val keyboardController = LocalCustomKeyboardController.current
     val isKeyboardVisible by keyboardController.isVisible
     val currentKeyboardLabel by keyboardController.label
+    val cursorPosition by keyboardController.cursorPosition
     val isFocused = isKeyboardVisible && currentKeyboardLabel == label
 
     Box(modifier = modifier) {
@@ -68,7 +69,7 @@ fun CustomKeyboardTextField(
             onValueChange = { },
             label = { Text(label) },
             placeholder = placeholder?.let { { Text(it) } },
-            readOnly = true, // Always readOnly for system keyboard
+            readOnly = true,
             enabled = enabled,
             modifier = Modifier.fillMaxWidth(),
             textStyle = LocalInputTextStyle.current,
@@ -86,9 +87,6 @@ fun CustomKeyboardTextField(
             ),
             trailingIcon = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (isFocused) {
-                        BlinkingCursor()
-                    }
                     if (suffix != null) {
                         Text(
                             text = suffix,
@@ -101,6 +99,25 @@ fun CustomKeyboardTextField(
                 }
             }
         )
+
+        // Overlay for Blinking Cursor inside text
+        if (isFocused) {
+            val isRtl = keyboardController.keyboardType.value == KeyboardLanguage.ARABIC
+            Box(modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 16.dp, vertical = 24.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = if (isRtl) Arrangement.End else Arrangement.Start
+                ) {
+                    if (isRtl) {
+                        BlinkingCursor()
+                        Spacer(modifier = Modifier.width((cursorPosition * 9.5).dp))
+                    } else {
+                        Spacer(modifier = Modifier.width((cursorPosition * 9.5).dp))
+                        BlinkingCursor()
+                    }
+                }
+            }
+        }
         // Transparent overlay to capture clicks
         if (enabled && !readOnly) {
             Box(
