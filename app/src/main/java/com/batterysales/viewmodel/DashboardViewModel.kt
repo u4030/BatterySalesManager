@@ -115,7 +115,6 @@ class DashboardViewModel @Inject constructor(
             }
             val upcoming = bills.filter {
                 it.status != BillStatus.PAID &&
-                        !it.dueDate.before(today.time) &&
                         !it.dueDate.after(nextWeek.time)
             }.sortedBy { it.dueDate }
 
