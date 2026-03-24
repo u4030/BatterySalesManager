@@ -182,19 +182,23 @@ class DashboardViewModel @Inject constructor(
             }
 
             val allNotifications = mutableListOf<AppNotification>()
-                // Individual Low Stock Notifications
-                lowStockItems.forEach { item ->
+
+                // 1. PRIORITY: Bill Notifications (Overdue first, then upcoming)
+                upcoming.forEach { bill ->
+                    val isOverdue = bill.dueDate.before(today.time)
                     allNotifications.add(
                         AppNotification(
-                            id = "low_stock_${item.variantId}_${item.warehouseName}",
-                            title = "مخزون منخفض: ${item.productName}",
-                            message = "السعة: ${item.capacity}A | الكمية المتبقية: ${item.currentQuantity} (الحد: ${item.minQuantity}) في ${item.warehouseName}",
-                            type = NotificationType.LOW_STOCK,
-                            route = "reports"
+                            id = "bill_${bill.id}",
+                            title = if (isOverdue) "كمبيالة متأخرة" else "موعد استحقاق قريب",
+                            message = "الكمبيالة: ${bill.description} تستحق بتاريخ ${java.text.SimpleDateFormat("yyyy/MM/dd").format(bill.dueDate)}",
+                            type = if (isOverdue) NotificationType.OVERDUE_BILL else NotificationType.UPCOMING_BILL,
+                            route = "bills"
                         )
                     )
                 }
+                allNotifications.sortBy { if (it.type == NotificationType.OVERDUE_BILL) 0 else 1 }
 
+                // 2. Pending Approvals
                 if (pendingCount > 0) {
                     allNotifications.add(
                         AppNotification(
@@ -207,16 +211,15 @@ class DashboardViewModel @Inject constructor(
                     )
                 }
 
-                // Add Bill Notifications
-                upcoming.forEach { bill ->
-                    val isOverdue = bill.dueDate.before(today.time)
+                // 3. Low Stock Notifications (Placed last)
+                lowStockItems.forEach { item ->
                     allNotifications.add(
                         AppNotification(
-                            id = "bill_${bill.id}",
-                            title = if (isOverdue) "كمبيالة متأخرة" else "موعد استحقاق قريب",
-                            message = "الكمبيالة: ${bill.description} تستحق بتاريخ ${java.text.SimpleDateFormat("yyyy/MM/dd").format(bill.dueDate)}",
-                            type = if (isOverdue) NotificationType.OVERDUE_BILL else NotificationType.UPCOMING_BILL,
-                            route = "bills"
+                            id = "low_stock_${item.variantId}_${item.warehouseName}",
+                            title = "مخزون منخفض: ${item.productName}",
+                            message = "السعة: ${item.capacity}A | الكمية المتبقية: ${item.currentQuantity} (الحد: ${item.minQuantity}) في ${item.warehouseName}",
+                            type = NotificationType.LOW_STOCK,
+                            route = "reports"
                         )
                     )
                 }

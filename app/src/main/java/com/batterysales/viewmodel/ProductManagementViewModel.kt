@@ -232,7 +232,14 @@ class ProductManagementViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val existing = productVariantRepository.getVariantsForProduct(variant.productId)
-                if (existing.any { it.capacity == variant.capacity && it.specification.equals(variant.specification, ignoreCase = true) && it.id != variant.id && !it.archived }) {
+                val isDuplicate = existing.any {
+                    it.capacity == variant.capacity &&
+                    it.specification.trim().equals(variant.specification.trim(), ignoreCase = true) &&
+                    it.id != variant.id &&
+                    !it.archived
+                }
+
+                if (isDuplicate) {
                     _errorMessage.value = "هذه السعة والمواصفة موجودة مسبقاً لهذا المنتج"
                     return@launch
                 }

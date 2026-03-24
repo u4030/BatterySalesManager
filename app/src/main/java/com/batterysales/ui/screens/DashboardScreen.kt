@@ -163,13 +163,81 @@ fun DashboardScreen(
                 Column(modifier = Modifier.padding(16.dp)) {
                     // Important Notifications Banner
                     if (dashboardState.notifications.isNotEmpty()) {
-                        val criticalNotifications = dashboardState.notifications.filter {
-                            it.type == NotificationType.LOW_STOCK || it.type == NotificationType.OVERDUE_BILL
-                        }
+                        val lowStockNotifications = dashboardState.notifications.filter { it.type == NotificationType.LOW_STOCK }
+                        val otherCriticalNotifications = dashboardState.notifications.filter {
+                            it.type == NotificationType.OVERDUE_BILL || it.type == NotificationType.UPCOMING_BILL || it.type == NotificationType.PENDING_APPROVAL
+                        }.sortedBy { if (it.type == NotificationType.OVERDUE_BILL) 0 else 1 }
 
-                        criticalNotifications.forEach { notification ->
+                        // Show Bills/Approvals First
+                        otherCriticalNotifications.forEach { notification ->
                             NotificationBanner(notification) {
                                 if (notification.route != null) navController.navigate(notification.route)
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                        }
+
+                        // Show Expandable Low Stock Section
+                        if (lowStockNotifications.isNotEmpty()) {
+                            var isExpanded by remember { mutableStateOf(false) }
+
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFFEF4444).copy(alpha = 0.1f)),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.2f))
+                            ) {
+                                Column {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { isExpanded = !isExpanded }
+                                            .padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFEF4444))
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Text(
+                                            "تنبيهات مخزون منخفض (${lowStockNotifications.size})",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFFEF4444),
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Icon(
+                                            if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                            contentDescription = null,
+                                            tint = Color(0xFFEF4444)
+                                        )
+                                    }
+
+                                    if (isExpanded) {
+                                        lowStockNotifications.forEach { notification ->
+                                            HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp), color = Color(0xFFEF4444).copy(alpha = 0.1f))
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clickable { if (notification.route != null) navController.navigate(notification.route) }
+                                                    .padding(12.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(
+                                                        notification.title,
+                                                        style = MaterialTheme.typography.labelMedium,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = MaterialTheme.colorScheme.onSurface
+                                                    )
+                                                    Text(
+                                                        notification.message,
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                                    )
+                                                }
+                                                Icon(Icons.Default.ChevronLeft, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(16.dp))
+                                            }
+                                        }
+                                    }
+                                }
                             }
                             Spacer(modifier = Modifier.height(12.dp))
                         }

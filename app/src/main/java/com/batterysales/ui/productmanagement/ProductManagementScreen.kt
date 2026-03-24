@@ -618,7 +618,8 @@ fun AddVariantDialog(
                 value = capacity,
                 onValueChange = { capacity = it },
                 label = "السعة (أمبير)",
-                modifier = Modifier.widthIn(min = 120.dp)
+                modifier = Modifier.widthIn(min = 120.dp),
+                keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
             )
             com.batterysales.ui.components.CustomKeyboardTextField(
                 value = specification,
@@ -647,7 +648,8 @@ fun AddVariantDialog(
                 value = minQuantity,
                 onValueChange = { minQuantity = it },
                 label = "الحد الأدنى العام",
-                modifier = Modifier.widthIn(min = 120.dp)
+                modifier = Modifier.widthIn(min = 120.dp),
+                keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
             )
 
             warehouses.forEach { warehouse ->
@@ -659,7 +661,8 @@ fun AddVariantDialog(
                         minQuantities = newMap
                     },
                     label = "الحد الأدنى (${warehouse.name})",
-                    modifier = Modifier.widthIn(min = 120.dp)
+                    modifier = Modifier.widthIn(min = 120.dp),
+                    keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
                 )
             }
         }
@@ -728,7 +731,8 @@ fun EditVariantDialog(
                 value = capacity,
                 onValueChange = { capacity = it },
                 label = "السعة (أمبير)",
-                modifier = Modifier.widthIn(min = 120.dp)
+                modifier = Modifier.widthIn(min = 120.dp),
+                keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
             )
             com.batterysales.ui.components.CustomKeyboardTextField(
                 value = specification,
@@ -757,7 +761,8 @@ fun EditVariantDialog(
                 value = minQuantity,
                 onValueChange = { minQuantity = it },
                 label = "الحد الأدنى العام",
-                modifier = Modifier.widthIn(min = 120.dp)
+                modifier = Modifier.widthIn(min = 120.dp),
+                keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
             )
 
             warehouses.forEach { warehouse ->
@@ -769,7 +774,8 @@ fun EditVariantDialog(
                         minQuantities = newMap
                     },
                     label = "الحد الأدنى (${warehouse.name})",
-                    modifier = Modifier.widthIn(min = 120.dp)
+                    modifier = Modifier.widthIn(min = 120.dp),
+                    keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
                 )
             }
         }
