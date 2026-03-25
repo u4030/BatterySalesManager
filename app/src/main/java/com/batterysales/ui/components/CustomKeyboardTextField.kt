@@ -147,20 +147,30 @@ fun CustomKeyboardTextField(
             // Precision Blinking Cursor Overlay
             if (isFocused) {
                 val layout = textLayoutResult
-                if (layout != null) {
-                    val pos = cursorPosition.coerceIn(0, value.length)
-                    val cursorRect = layout.getCursorRect(pos)
-                    val density = androidx.compose.ui.platform.LocalDensity.current
+                // Safety: Only draw cursor if layout is synchronized with the current text value
+                // and the cursor position is within current layout text bounds.
+                if (layout != null && layout.layoutInput.text.text == value) {
+                    val layoutTextLength = layout.layoutInput.text.length
+                    val safePos = cursorPosition.coerceIn(0, layoutTextLength)
+                    val cursorRect = try {
+                        layout.getCursorRect(safePos)
+                    } catch (e: Exception) {
+                        null
+                    }
 
-                    // OutlinedTextField standard padding is 16.dp horizontal
-                    val xOffsetPx = cursorRect.left + with(density) { 16.dp.toPx() }
-                    val yOffsetPx = cursorRect.top + with(density) { 16.dp.toPx() } // Adjusted vertical padding
+                    if (cursorRect != null) {
+                        val density = androidx.compose.ui.platform.LocalDensity.current
 
-                    androidx.compose.runtime.CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                        Box(
-                            modifier = Modifier.offset { IntOffset(xOffsetPx.roundToInt(), yOffsetPx.roundToInt()) }
-                        ) {
-                            BlinkingCursor()
+                        // OutlinedTextField standard padding is 16.dp horizontal
+                        val xOffsetPx = cursorRect.left + with(density) { 16.dp.toPx() }
+                        val yOffsetPx = cursorRect.top + with(density) { 16.dp.toPx() } // Adjusted vertical padding
+
+                        androidx.compose.runtime.CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                            Box(
+                                modifier = Modifier.offset { IntOffset(xOffsetPx.roundToInt(), yOffsetPx.roundToInt()) }
+                            ) {
+                                BlinkingCursor()
+                            }
                         }
                     }
                 }
