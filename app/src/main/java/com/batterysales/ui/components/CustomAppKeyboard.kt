@@ -230,14 +230,21 @@ fun CustomAppKeyboard(
                             modifier = Modifier
                                 .height(55.dp)
                                 .weight(1.5f)
+                                .pointerInput(Unit) {
+                                    detectTapGestures(
+                                        onPress = {
+                                            keyboardController.deleteAtCursor()
+                                        }
+                                    )
+                                }
                                 .combinedClickable(
                                     interactionSource = interactionSource,
                                     indication = null,
-                                    onClick = { keyboardController.deleteAtCursor() },
+                                    onClick = { /* Handled by pointerInput for speed */ },
                                     onLongClick = {}
                                 ),
                             shape = RoundedCornerShape(8.dp),
-                            color = MaterialTheme.colorScheme.errorContainer
+                            color = if (isPressed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.errorContainer
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(Icons.AutoMirrored.Filled.Backspace, contentDescription = "Delete", tint = MaterialTheme.colorScheme.onErrorContainer)
