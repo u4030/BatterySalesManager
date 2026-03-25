@@ -507,20 +507,18 @@ fun TransactionItemCard(
                     }
                 }
 
-                if (transaction.relatedId == null) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        IconButton(
-                            onClick = onEdit, 
-                            modifier = Modifier.size(32.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f), CircleShape)
-                        ) {
-                            Icon(Icons.Default.Edit, contentDescription = "Edit", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
-                        }
-                        IconButton(
-                            onClick = onDelete, 
-                            modifier = Modifier.size(32.dp).background(Color(0xFF3B1F1F), CircleShape)
-                        ) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color(0xFFEF4444), modifier = Modifier.size(16.dp))
-                        }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    IconButton(
+                        onClick = onEdit,
+                        modifier = Modifier.size(32.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f), CircleShape)
+                    ) {
+                        Icon(Icons.Default.Edit, contentDescription = "Edit", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                    }
+                    IconButton(
+                        onClick = onDelete,
+                        modifier = Modifier.size(32.dp).background(Color(0xFF3B1F1F), CircleShape)
+                    ) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color(0xFFEF4444), modifier = Modifier.size(16.dp))
                     }
                 }
             }
