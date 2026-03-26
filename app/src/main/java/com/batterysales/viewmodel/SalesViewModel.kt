@@ -81,6 +81,7 @@ class SalesViewModel @Inject constructor(
         _errorMessage,
         _isLoading,
         _isFinished,
+        productVariantRepository.getAllVariantsFlow(),
         _selectedProduct.flatMapLatest { product ->
             if (product == null) flowOf(emptyList())
             else productVariantRepository.getVariantsForProductFlow(product.id)
@@ -103,7 +104,8 @@ class SalesViewModel @Inject constructor(
         val errorMessage = args[13] as String?
         val isLoading = args[14] as Boolean
         val isFinished = args[15] as Boolean
-        val variants = args[16] as List<ProductVariant>
+        val allVariants = args[16] as List<ProductVariant>
+        val variants = args[17] as List<ProductVariant>
 
         allStockEntries = stockEntries
         currentUser = user
@@ -115,15 +117,29 @@ class SalesViewModel @Inject constructor(
             stockMap[key] = (stockMap[key] ?: 0) + (entry.quantity - entry.returnedQuantity)
         }
 
-        val isSeller = user?.role == "seller"
+        val isSeller = user?.role == User.ROLE_SELLER
         val autoSelectedWarehouse = if (isSeller && selectedWarehouse == null) {
             warehouses.find { it.id == user?.warehouseId }
         } else {
             selectedWarehouse
         }
 
+        val filteredProducts = if (isSeller && user?.warehouseId != null) {
+            // Filter products that have any approved stock entry in this warehouse with quantity > 0
+            val availableVariantIds = approvedEntries
+                .filter { it.warehouseId == user.warehouseId }
+                .groupBy { it.productVariantId }
+                .filter { (_, entries) -> entries.sumOf { it.quantity - it.returnedQuantity } > 0 }
+                .keys
+
+            val availableProductIds = allVariants.filter { availableVariantIds.contains(it.id) }.map { it.productId }.toSet()
+            products.filter { !it.archived && availableProductIds.contains(it.id) }
+        } else {
+            products.filter { !it.archived }
+        }
+
         SalesUiState(
-            products = products.filter { !it.archived },
+            products = filteredProducts,
             variants = variants,
             warehouses = warehouses.filter { it.isActive },
             stockLevels = stockMap,

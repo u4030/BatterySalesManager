@@ -64,6 +64,7 @@ object NotificationHelper {
             .setContentTitle(styledTitle)
             .setContentText(styledMessage)
             .setAutoCancel(true)
+            .setSilent(!playSound)
             .apply {
                 if (playSound) {
                     setSound(soundUri)
