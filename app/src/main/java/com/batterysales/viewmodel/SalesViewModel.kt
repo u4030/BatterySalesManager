@@ -119,7 +119,7 @@ class SalesViewModel @Inject constructor(
         val approvedEntries = stockEntries.filter { it.status == "approved" }
         val stockMap = mutableMapOf<Pair<String, String>, Int>()
         allVariants.forEach { variant ->
-            variant.currentStock.forEach { (warehouseId, qty) ->
+            variant.currentStock?.forEach { (warehouseId, qty) ->
                 stockMap[Pair(variant.id, warehouseId)] = qty
             }
         }
