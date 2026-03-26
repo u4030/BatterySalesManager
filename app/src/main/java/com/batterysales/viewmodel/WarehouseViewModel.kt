@@ -56,10 +56,10 @@ class WarehouseViewModel @Inject constructor(
         _isLoading.value = true
         val activeProducts = products.filter { !it.archived }
         val productMap = activeProducts.associateBy { it.id }
-        val activeVariants = allVariants.filter { !it.archived }
+        val activeVariantsMap = allVariants.filter { !it.archived }.associateBy { it.id }
 
         val stockMap = mutableMapOf<Pair<String, String>, Int>()
-        for (variant in activeVariants) {
+        for (variant in activeVariantsMap.values) {
             variant.currentStock.forEach { (warehouseId, quantity) ->
                 // If user is a seller, filter by their warehouse
                 if (user?.role == com.batterysales.data.models.User.ROLE_SELLER) {
@@ -73,7 +73,7 @@ class WarehouseViewModel @Inject constructor(
         val stockList = stockMap.mapNotNull { (key, quantity) ->
             val variantId = key.first
             val warehouseId = key.second
-            val variant = activeVariants[variantId]
+            val variant = activeVariantsMap[variantId]
             val warehouse = allWarehouses.find { it.id == warehouseId }
             if (variant != null && warehouse != null) {
                 val product = productMap[variant.productId]
