@@ -94,7 +94,17 @@ class InventoryPagingSource(
                     async {
                         val finalProduct = pLookup[variant.productId] ?: productsMap[variant.productId] ?: Product(name = "Unknown")
                         val entries = allEntriesMap[variant.id] ?: emptyList()
-                        val globalSummary = stockEntryRepository.calculateSummary(entries)
+
+                        // If we are filtering for a specific set of warehouses (e.g. for a seller),
+                        // the "total" should only represent those warehouses.
+                        val relevantEntries = if (warehouseList.isNotEmpty()) {
+                            val warehouseIds = warehouseList.map { it.id }.toSet()
+                            entries.filter { warehouseIds.contains(it.warehouseId) }
+                        } else {
+                            entries
+                        }
+
+                        val summary = stockEntryRepository.calculateSummary(relevantEntries)
                         val whQuantities = warehouseList.associate { wh ->
                             wh.id to stockEntryRepository.calculateSummary(entries.filter { it.warehouseId == wh.id }).first
                         }
@@ -103,9 +113,9 @@ class InventoryPagingSource(
                             product = finalProduct,
                             variant = variant,
                             warehouseQuantities = whQuantities,
-                            totalQuantity = globalSummary.first,
-                            averageCost = globalSummary.second,
-                            totalCostValue = globalSummary.third
+                            totalQuantity = summary.first,
+                            averageCost = summary.second,
+                            totalCostValue = summary.third
                         )
                     }
                 }.awaitAll()
