@@ -14,6 +14,7 @@ data class ProductVariant(
     val minQuantity: Int = 0,
     val minQuantities: Map<String, Int> = emptyMap(),
     var specification: String = "",
+    val currentStock: Map<String, Int> = emptyMap(), // WarehouseId to Quantity
     val createdAt: Date = Date(),
     val updatedAt: Date = Date(),
     val archived: Boolean = false

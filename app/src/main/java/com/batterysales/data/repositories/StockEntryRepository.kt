@@ -18,24 +18,65 @@ class StockEntryRepository @Inject constructor(
 ) {
 
     suspend fun addStockEntry(stockEntry: StockEntry) {
-        val docRef = firestore.collection(StockEntry.COLLECTION_NAME).document()
-        val finalEntry = stockEntry.copy(id = docRef.id)
-        docRef.set(finalEntry).await()
+        firestore.runTransaction { transaction ->
+            val docRef = firestore.collection(StockEntry.COLLECTION_NAME).document()
+            val finalEntry = stockEntry.copy(id = docRef.id)
+            transaction.set(docRef, finalEntry)
+
+            if (finalEntry.status == "approved") {
+                updateVariantStock(transaction, finalEntry.productVariantId, finalEntry.warehouseId, finalEntry.quantity)
+            }
+        }.await()
     }
 
     suspend fun addStockEntries(stockEntries: List<StockEntry>) {
-        val batch = firestore.batch()
-        stockEntries.forEach { entry ->
-            val docRef = firestore.collection(StockEntry.COLLECTION_NAME).document()
-            val finalEntry = entry.copy(id = docRef.id)
-            batch.set(docRef, finalEntry)
-        }
-        batch.commit().await()
+        firestore.runTransaction { transaction ->
+            stockEntries.forEach { entry ->
+                val docRef = firestore.collection(StockEntry.COLLECTION_NAME).document()
+                val finalEntry = entry.copy(id = docRef.id)
+                transaction.set(docRef, finalEntry)
+
+                if (finalEntry.status == "approved") {
+                    updateVariantStock(transaction, finalEntry.productVariantId, finalEntry.warehouseId, finalEntry.quantity)
+                }
+            }
+        }.await()
     }
 
-    fun getAllStockEntriesFlow(): Flow<List<StockEntry>> = callbackFlow {
+    private fun updateVariantStock(transaction: com.google.firebase.firestore.Transaction, variantId: String, warehouseId: String, quantityChange: Int) {
+        val variantRef = firestore.collection("product_variants").document(variantId)
+        val variantSnap = transaction.get(variantRef)
+        val variant = variantSnap.toObject(com.batterysales.data.models.ProductVariant::class.java)
+        if (variant != null) {
+            val newStockMap = variant.currentStock.toMutableMap()
+            val currentQty = newStockMap[warehouseId] ?: 0
+            newStockMap[warehouseId] = currentQty + quantityChange
+            transaction.update(variantRef, "currentStock", newStockMap)
+        }
+    }
+
+    fun getAllStockEntriesFlow(limit: Long = 5000): Flow<List<StockEntry>> = callbackFlow {
         val listenerRegistration = firestore.collection(StockEntry.COLLECTION_NAME)
             .orderBy("timestamp", Query.Direction.DESCENDING)
+            .limit(limit)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    val entries = snapshot.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
+                    trySend(entries).isSuccess
+                }
+            }
+        awaitClose { listenerRegistration.remove() }
+    }
+
+    fun getStockEntriesByWarehouseFlow(warehouseId: String, limit: Long = 5000): Flow<List<StockEntry>> = callbackFlow {
+        val listenerRegistration = firestore.collection(StockEntry.COLLECTION_NAME)
+            .whereEqualTo("warehouseId", warehouseId)
+            .orderBy("timestamp", Query.Direction.DESCENDING)
+            .limit(limit)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     close(error)
@@ -84,41 +125,44 @@ class StockEntryRepository @Inject constructor(
         createdBy: String = "",
         createdByUserName: String = ""
     ) {
-        val batch = firestore.batch()
+        firestore.runTransaction { transaction ->
+            // Create a negative stock entry for the source warehouse
+            val sourceDocRef = firestore.collection(StockEntry.COLLECTION_NAME).document()
+            val sourceStockEntry = StockEntry(
+                id = sourceDocRef.id,
+                productVariantId = productVariantId,
+                productName = productName,
+                capacity = capacity,
+                warehouseId = sourceWarehouseId,
+                quantity = -quantity,
+                costPrice = 0.0, // Cost is already accounted for
+                status = status,
+                createdBy = createdBy,
+                createdByUserName = createdByUserName
+            )
+            transaction.set(sourceDocRef, sourceStockEntry)
 
-        // Create a negative stock entry for the source warehouse
-        val sourceDocRef = firestore.collection(StockEntry.COLLECTION_NAME).document()
-        val sourceStockEntry = StockEntry(
-            id = sourceDocRef.id,
-            productVariantId = productVariantId,
-            productName = productName,
-            capacity = capacity,
-            warehouseId = sourceWarehouseId,
-            quantity = -quantity,
-            costPrice = 0.0, // Cost is already accounted for
-            status = status,
-            createdBy = createdBy,
-            createdByUserName = createdByUserName
-        )
-        batch.set(sourceDocRef, sourceStockEntry)
+            // Create a positive stock entry for the destination warehouse
+            val destinationDocRef = firestore.collection(StockEntry.COLLECTION_NAME).document()
+            val destinationStockEntry = StockEntry(
+                id = destinationDocRef.id,
+                productVariantId = productVariantId,
+                productName = productName,
+                capacity = capacity,
+                warehouseId = destinationWarehouseId,
+                quantity = quantity,
+                costPrice = 0.0, // Cost is already accounted for
+                status = status,
+                createdBy = createdBy,
+                createdByUserName = createdByUserName
+            )
+            transaction.set(destinationDocRef, destinationStockEntry)
 
-        // Create a positive stock entry for the destination warehouse
-        val destinationDocRef = firestore.collection(StockEntry.COLLECTION_NAME).document()
-        val destinationStockEntry = StockEntry(
-            id = destinationDocRef.id,
-            productVariantId = productVariantId,
-            productName = productName,
-            capacity = capacity,
-            warehouseId = destinationWarehouseId,
-            quantity = quantity,
-            costPrice = 0.0, // Cost is already accounted for
-            status = status,
-            createdBy = createdBy,
-            createdByUserName = createdByUserName
-        )
-        batch.set(destinationDocRef, destinationStockEntry)
-
-        batch.commit().await()
+            if (status == "approved") {
+                updateVariantStock(transaction, productVariantId, sourceWarehouseId, -quantity)
+                updateVariantStock(transaction, productVariantId, destinationWarehouseId, quantity)
+            }
+        }.await()
     }
 
     suspend fun getEntriesPaginated(
@@ -174,17 +218,37 @@ class StockEntryRepository @Inject constructor(
     }
 
     suspend fun updateStockEntry(entry: StockEntry) {
-        firestore.collection(StockEntry.COLLECTION_NAME)
-            .document(entry.id)
-            .set(entry)
-            .await()
+        firestore.runTransaction { transaction ->
+            val docRef = firestore.collection(StockEntry.COLLECTION_NAME).document(entry.id)
+            val oldEntrySnap = transaction.get(docRef)
+            val oldEntry = oldEntrySnap.toObject(StockEntry::class.java)
+
+            transaction.set(docRef, entry)
+
+            if (oldEntry != null && oldEntry.status == "approved") {
+                // Reverse old stock
+                updateVariantStock(transaction, oldEntry.productVariantId, oldEntry.warehouseId, -(oldEntry.quantity))
+            }
+
+            if (entry.status == "approved") {
+                // Apply new stock
+                updateVariantStock(transaction, entry.productVariantId, entry.warehouseId, entry.quantity)
+            }
+        }.await()
     }
 
     suspend fun deleteStockEntry(entryId: String) {
-        firestore.collection(StockEntry.COLLECTION_NAME)
-            .document(entryId)
-            .delete()
-            .await()
+        firestore.runTransaction { transaction ->
+            val docRef = firestore.collection(StockEntry.COLLECTION_NAME).document(entryId)
+            val oldEntrySnap = transaction.get(docRef)
+            val oldEntry = oldEntrySnap.toObject(StockEntry::class.java)
+
+            transaction.delete(docRef)
+
+            if (oldEntry != null && oldEntry.status == "approved") {
+                updateVariantStock(transaction, oldEntry.productVariantId, oldEntry.warehouseId, -(oldEntry.quantity))
+            }
+        }.await()
     }
 
     suspend fun getEntriesForInvoice(invoiceId: String): List<StockEntry> {
@@ -213,10 +277,16 @@ class StockEntryRepository @Inject constructor(
     }
 
     suspend fun approveEntry(entryId: String) {
-        firestore.collection(StockEntry.COLLECTION_NAME)
-            .document(entryId)
-            .update("status", "approved")
-            .await()
+        firestore.runTransaction { transaction ->
+            val docRef = firestore.collection(StockEntry.COLLECTION_NAME).document(entryId)
+            val entrySnap = transaction.get(docRef)
+            val entry = entrySnap.toObject(StockEntry::class.java)
+
+            if (entry != null && entry.status != "approved") {
+                transaction.update(docRef, "status", "approved")
+                updateVariantStock(transaction, entry.productVariantId, entry.warehouseId, entry.quantity)
+            }
+        }.await()
     }
 
     suspend fun getPendingCount(): Int {

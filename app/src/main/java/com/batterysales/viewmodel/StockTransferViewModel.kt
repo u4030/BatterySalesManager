@@ -55,13 +55,13 @@ class StockTransferViewModel @Inject constructor(
             combine(
                 productRepository.getProducts(),
                 warehouseRepository.getWarehouses(),
-                stockEntryRepository.getAllStockEntriesFlow()
-            ) { products, warehouses, stockEntries ->
-                val approvedEntries = stockEntries.filter { it.status == "approved" }
+                productVariantRepository.getAllVariantsFlow()
+            ) { products, warehouses, variants ->
                 val stockMap = mutableMapOf<Pair<String, String>, Int>()
-                for (entry in approvedEntries) {
-                    val key = Pair(entry.productVariantId, entry.warehouseId)
-                    stockMap[key] = (stockMap[key] ?: 0) + entry.quantity
+                variants.forEach { variant ->
+                    variant.currentStock.forEach { (warehouseId, qty) ->
+                        stockMap[Pair(variant.id, warehouseId)] = qty
+                    }
                 }
 
                 _uiState.update {

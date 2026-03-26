@@ -274,22 +274,16 @@ class AppNotificationManager @Inject constructor(
         try {
             val allVariants = productVariantRepository.getAllVariants().filter { !it.archived }
             val allWarehouses = warehouseRepository.getWarehousesOnce()
-            val variantIds = allVariants.map { it.id }
             val productsMap = productRepository.getProductsOnce().associateBy { it.id }
-
-            // Bulk fetch all entries for these variants to avoid N+1 queries
-            val allEntriesMap = stockEntryRepository.getEntriesForVariants(variantIds)
 
             val lowStockMessages = mutableListOf<String>()
 
             for (variant in allVariants) {
-                val variantEntries = allEntriesMap[variant.id] ?: emptyList()
                 for (warehouse in allWarehouses) {
                     val threshold = variant.minQuantities[warehouse.id] ?: variant.minQuantity
                     if (threshold <= 0) continue
 
-                    val whEntries = variantEntries.filter { it.warehouseId == warehouse.id }
-                    val qty = stockEntryRepository.calculateSummary(whEntries).first
+                    val qty = variant.currentStock[warehouse.id] ?: 0
 
                     val key = "${variant.id}:${warehouse.id}"
                     if (qty <= threshold) {

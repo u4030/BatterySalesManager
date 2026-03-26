@@ -51,23 +51,22 @@ class WarehouseViewModel @Inject constructor(
         productRepository.getProducts(),
         productVariantRepository.getAllVariantsFlow(),
         warehouseRepository.getWarehouses(),
-        stockEntryRepository.getAllStockEntriesFlow(),
         currentUser
-    ) { products, allVariants, allWarehouses, allStockEntries, user ->
+    ) { products, allVariants, allWarehouses, user ->
         _isLoading.value = true
         val activeProducts = products.filter { !it.archived }
         val productMap = activeProducts.associateBy { it.id }
-        val activeVariants = allVariants.filter { !it.archived }.associateBy { it.id }
+        val activeVariants = allVariants.filter { !it.archived }
 
         val stockMap = mutableMapOf<Pair<String, String>, Int>()
-        for (entry in allStockEntries) {
-            if (entry.status == "approved") {
+        for (variant in activeVariants) {
+            variant.currentStock.forEach { (warehouseId, quantity) ->
                 // If user is a seller, filter by their warehouse
                 if (user?.role == com.batterysales.data.models.User.ROLE_SELLER) {
-                    if (entry.warehouseId != user.warehouseId) continue
+                    if (warehouseId != user.warehouseId) return@forEach
                 }
-                val key = Pair(entry.productVariantId, entry.warehouseId)
-                stockMap[key] = (stockMap[key] ?: 0) + (entry.quantity - entry.returnedQuantity)
+                val key = Pair(variant.id, warehouseId)
+                stockMap[key] = quantity
             }
         }
 

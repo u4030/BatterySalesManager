@@ -94,29 +94,27 @@ class InventoryPagingSource(
                 variants.map { variant ->
                     async {
                         val finalProduct = pLookup[variant.productId] ?: productsMap[variant.productId] ?: Product(name = "Unknown")
-                        val entries = allEntriesMap[variant.id] ?: emptyList()
 
-                        // If we are filtering for a specific set of warehouses (e.g. for a seller),
-                        // the "total" should only represent those warehouses.
+                        val warehouseIds = warehouseList.map { it.id }.toSet()
+                        val whQuantities = variant.currentStock.filter { warehouseIds.contains(it.key) }
+                        val totalQty = whQuantities.values.sum()
+
+                        // For cost, we still need entries (weighted average calculation)
+                        val entries = allEntriesMap[variant.id] ?: emptyList()
                         val relevantEntries = if (warehouseList.isNotEmpty()) {
-                            val warehouseIds = warehouseList.map { it.id }.toSet()
                             entries.filter { warehouseIds.contains(it.warehouseId) }
                         } else {
                             entries
                         }
-
                         val summary = stockEntryRepository.calculateSummary(relevantEntries)
-                        val whQuantities = warehouseList.associate { wh ->
-                            wh.id to stockEntryRepository.calculateSummary(entries.filter { it.warehouseId == wh.id }).first
-                        }
 
                         InventoryReportItem(
                             product = finalProduct,
                             variant = variant,
                             warehouseQuantities = whQuantities,
-                            totalQuantity = summary.first,
+                            totalQuantity = totalQty,
                             averageCost = summary.second,
-                            totalCostValue = summary.third
+                            totalCostValue = totalQty * summary.second
                         )
                     }
                 }.awaitAll().filter { !isSeller || it.totalQuantity > 0 }

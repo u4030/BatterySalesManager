@@ -145,24 +145,17 @@ class DashboardViewModel @Inject constructor(
             }.filter { if (isAdmin) it.todayCollection > 0 || it.todayCollectionCount > 0 else true }
 
             // 4. Low Stock Notifications
-            val approvedEntries = allStockEntries.filter { it.status == "approved" }
-            val entriesByVariant = approvedEntries.groupBy { it.productVariantId }
             val pMap = products.associateBy { it.id }
 
             val lowStockItems = mutableListOf<LowStockItem>()
             val activeVariants = variants.filter { !it.archived }
 
             for (variant in activeVariants) {
-                val variantEntries = entriesByVariant[variant.id] ?: emptyList()
                 val targetWarehouses = if (isAdmin) warehouses.filter { it.isActive }
                 else warehouses.filter { it.id == userWarehouseId && it.isActive }
 
                 for (warehouse in targetWarehouses) {
-                    val whEntries = variantEntries.filter { it.warehouseId == warehouse.id }
-                    val totalQty = whEntries.sumOf { it.quantity }
-                    val totalRet = whEntries.sumOf { it.returnedQuantity }
-                    val currentQty = totalQty - totalRet
-
+                    val currentQty = variant.currentStock[warehouse.id] ?: 0
                     val threshold = variant.minQuantities[warehouse.id] ?: variant.minQuantity
 
                     if (threshold > 0 && currentQty <= threshold) {
