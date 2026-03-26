@@ -124,19 +124,22 @@ class ReportsViewModel @Inject constructor(
         barcodeFilter,
         filteredWarehouses,
         productsMap,
+        _isSeller,
         refreshTrigger
-    ) { barcode, warehouseList, pMap, _ ->
-        Triple(barcode, warehouseList, pMap)
-    }.flatMapLatest { (barcode, warehouseList, pMap) ->
+    ) { barcode, warehouseList, pMap, seller, _ ->
+        Pair(barcode, warehouseList) to (pMap to seller)
+    }.flatMapLatest { (pair1, pair2) ->
+        val (barcode, warehouseList) = pair1
+        val (pMap, seller) = pair2
         Pager(PagingConfig(pageSize = 25)) {
-            InventoryPagingSource(firestore, stockEntryRepository, pMap, warehouseList, barcode)
+            InventoryPagingSource(firestore, stockEntryRepository, pMap, warehouseList, barcode, seller)
         }.flow.cachedIn(viewModelScope)
     }
 
     init {
         userRepository.getCurrentUserFlow()
             .onEach { user ->
-                _isSeller.value = user?.role == "seller"
+                _isSeller.value = user?.role == com.batterysales.data.models.User.ROLE_SELLER
                 refreshAll()
             }.launchIn(viewModelScope)
         

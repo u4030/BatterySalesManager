@@ -21,6 +21,7 @@ class InventoryPagingSource(
     private val productsMap: Map<String, Product>,
     private val warehouseList: List<Warehouse>,
     private val barcode: String?,
+    private val isSeller: Boolean = false,
     private val viewModel: ReportsViewModel? = null
 ) : PagingSource<DocumentSnapshot, InventoryReportItem>() {
 
@@ -118,7 +119,7 @@ class InventoryPagingSource(
                             totalCostValue = summary.third
                         )
                     }
-                }.awaitAll()
+                }.awaitAll().filter { !isSeller || it.totalQuantity > 0 }
             }
 
             LoadResult.Page(
