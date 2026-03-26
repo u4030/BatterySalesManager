@@ -251,7 +251,7 @@ class StockEntryViewModel @Inject constructor(
             return
         }
 
-        if (state.isAdmin && newItem.costPrice <= 0) {
+        if (state.isAdmin && (newItem.costPrice <= 0 || newItem.costPerAmpere <= 0)) {
             _uiState.update { it.copy(errorMessage = "الرجاء إدخال التكلفة") }
             return
         }

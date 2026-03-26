@@ -19,7 +19,7 @@ object NotificationHelper {
     private const val CHANNEL_ID = "battery_sales_notifications"
     private const val CHANNEL_NAME = "Battery Sales Notifications"
 
-    fun showNotification(context: Context, title: String, message: String) {
+    fun showNotification(context: Context, title: String, message: String, playSound: Boolean = true) {
         val prefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
         val fontSizeScale = prefs.getFloat("font_size_scale", 1.0f)
         val isBold = prefs.getBoolean("is_bold", false)
@@ -57,14 +57,19 @@ object NotificationHelper {
             PendingIntent.FLAG_IMMUTABLE
         )
 
-        val soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+        val soundUri = if (playSound) RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION) else null
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.mipmap.al_asriya)
             .setContentTitle(styledTitle)
             .setContentText(styledMessage)
             .setAutoCancel(true)
-            .setSound(soundUri)
+            .setSilent(!playSound)
+            .apply {
+                if (playSound) {
+                    setSound(soundUri)
+                }
+            }
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(pendingIntent)
             .build()

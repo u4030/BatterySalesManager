@@ -21,6 +21,7 @@ class InventoryPagingSource(
     private val productsMap: Map<String, Product>,
     private val warehouseList: List<Warehouse>,
     private val barcode: String?,
+    private val isSeller: Boolean = false,
     private val viewModel: ReportsViewModel? = null
 ) : PagingSource<DocumentSnapshot, InventoryReportItem>() {
 
@@ -93,22 +94,38 @@ class InventoryPagingSource(
                 variants.map { variant ->
                     async {
                         val finalProduct = pLookup[variant.productId] ?: productsMap[variant.productId] ?: Product(name = "Unknown")
+                        val warehouseIds = warehouseList.map { it.id }.toSet()
                         val entries = allEntriesMap[variant.id] ?: emptyList()
-                        val globalSummary = stockEntryRepository.calculateSummary(entries)
-                        val whQuantities = warehouseList.associate { wh ->
-                            wh.id to stockEntryRepository.calculateSummary(entries.filter { it.warehouseId == wh.id }).first
+
+                        val (whQuantities, totalQty) = if (variant.currentStock != null) {
+                            val filtered = variant.currentStock.filter { warehouseIds.contains(it.key) }
+                            filtered to filtered.values.sum()
+                        } else {
+                            // Fallback to calculation
+                            val quantities = warehouseList.associate { wh ->
+                                wh.id to stockEntryRepository.calculateSummary(entries.filter { it.warehouseId == wh.id }).first
+                            }
+                            quantities to stockEntryRepository.calculateSummary(if (warehouseList.isNotEmpty()) entries.filter { warehouseIds.contains(it.warehouseId) } else entries).first
                         }
+
+                        // For cost, we still need entries (weighted average calculation)
+                        val relevantEntries = if (warehouseList.isNotEmpty()) {
+                            entries.filter { warehouseIds.contains(it.warehouseId) }
+                        } else {
+                            entries
+                        }
+                        val summary = stockEntryRepository.calculateSummary(relevantEntries)
 
                         InventoryReportItem(
                             product = finalProduct,
                             variant = variant,
                             warehouseQuantities = whQuantities,
-                            totalQuantity = globalSummary.first,
-                            averageCost = globalSummary.second,
-                            totalCostValue = globalSummary.third
+                            totalQuantity = totalQty,
+                            averageCost = summary.second,
+                            totalCostValue = totalQty * summary.second
                         )
                     }
-                }.awaitAll()
+                }.awaitAll().filter { !isSeller || it.totalQuantity > 0 }
             }
 
             LoadResult.Page(
