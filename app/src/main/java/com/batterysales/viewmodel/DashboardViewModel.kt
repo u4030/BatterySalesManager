@@ -183,17 +183,19 @@ class DashboardViewModel @Inject constructor(
             val allNotifications = mutableListOf<AppNotification>()
 
             // 1. PRIORITY: Bill Notifications (Overdue first, then upcoming)
-            upcoming.forEach { bill ->
-                val isOverdue = bill.dueDate.before(today.time)
-                allNotifications.add(
-                    AppNotification(
-                        id = "bill_${bill.id}",
-                        title = if (isOverdue) "كمبيالة متأخرة" else "موعد استحقاق قريب",
-                        message = "الكمبيالة: ${bill.description} تستحق بتاريخ ${java.text.SimpleDateFormat("yyyy/MM/dd").format(bill.dueDate)}",
-                        type = if (isOverdue) NotificationType.OVERDUE_BILL else NotificationType.UPCOMING_BILL,
-                        route = "bills"
+            if (user?.role != com.batterysales.data.models.User.ROLE_SELLER) {
+                upcoming.forEach { bill ->
+                    val isOverdue = bill.dueDate.before(today.time)
+                    allNotifications.add(
+                        AppNotification(
+                            id = "bill_${bill.id}",
+                            title = if (isOverdue) "كمبيالة متأخرة" else "موعد استحقاق قريب",
+                            message = "الكمبيالة: ${bill.description} تستحق بتاريخ ${java.text.SimpleDateFormat("yyyy/MM/dd").format(bill.dueDate)}",
+                            type = if (isOverdue) NotificationType.OVERDUE_BILL else NotificationType.UPCOMING_BILL,
+                            route = "bills"
+                        )
                     )
-                )
+                }
             }
             allNotifications.sortBy { if (it.type == NotificationType.OVERDUE_BILL) 0 else 1 }
 
