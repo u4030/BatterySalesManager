@@ -55,12 +55,25 @@ class StockTransferViewModel @Inject constructor(
             combine(
                 productRepository.getProducts(),
                 warehouseRepository.getWarehouses(),
-                productVariantRepository.getAllVariantsFlow()
-            ) { products, warehouses, variants ->
+                productVariantRepository.getAllVariantsFlow(),
+                stockEntryRepository.getAllStockEntriesFlow()
+            ) { products, warehouses, variants, stockEntries ->
                 val stockMap = mutableMapOf<Pair<String, String>, Int>()
+                val approvedEntries = stockEntries.filter { it.status == "approved" }
+                val entriesByVariant = approvedEntries.groupBy { it.productVariantId }
+
                 variants.forEach { variant ->
-                    variant.currentStock.forEach { (warehouseId, qty) ->
-                        stockMap[Pair(variant.id, warehouseId)] = qty
+                    if (variant.currentStock != null) {
+                        variant.currentStock.forEach { (warehouseId, qty) ->
+                            stockMap[Pair(variant.id, warehouseId)] = qty
+                        }
+                    } else {
+                        // Fallback
+                        val variantEntries = entriesByVariant[variant.id] ?: emptyList()
+                        warehouses.forEach { wh ->
+                            val qty = variantEntries.filter { it.warehouseId == wh.id }.sumOf { it.quantity - it.returnedQuantity }
+                            stockMap[Pair(variant.id, wh.id)] = qty
+                        }
                     }
                 }
 

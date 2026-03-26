@@ -150,12 +150,21 @@ class DashboardViewModel @Inject constructor(
             val lowStockItems = mutableListOf<LowStockItem>()
             val activeVariants = variants.filter { !it.archived }
 
+            val approvedEntries = allStockEntries.filter { it.status == "approved" }
+            val entriesByVariant = approvedEntries.groupBy { it.productVariantId }
+
             for (variant in activeVariants) {
                 val targetWarehouses = if (isAdmin) warehouses.filter { it.isActive }
                 else warehouses.filter { it.id == userWarehouseId && it.isActive }
 
                 for (warehouse in targetWarehouses) {
-                    val currentQty = variant.currentStock[warehouse.id] ?: 0
+                    val currentQty = if (variant.currentStock != null) {
+                        variant.currentStock[warehouse.id] ?: 0
+                    } else {
+                        val whEntries = entriesByVariant[variant.id]?.filter { it.warehouseId == warehouse.id } ?: emptyList()
+                        whEntries.sumOf { it.quantity - it.returnedQuantity }
+                    }
+
                     val threshold = variant.minQuantities[warehouse.id] ?: variant.minQuantity
 
                     if (threshold > 0 && currentQty <= threshold) {

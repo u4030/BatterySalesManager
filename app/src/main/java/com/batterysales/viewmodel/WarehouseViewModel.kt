@@ -51,16 +51,39 @@ class WarehouseViewModel @Inject constructor(
         productRepository.getProducts(),
         productVariantRepository.getAllVariantsFlow(),
         warehouseRepository.getWarehouses(),
+        stockEntryRepository.getAllStockEntriesFlow(),
         currentUser
-    ) { products, allVariants, allWarehouses, user ->
+    ) { products, allVariants, allWarehouses, allStockEntries, user ->
         _isLoading.value = true
         val activeProducts = products.filter { !it.archived }
         val productMap = activeProducts.associateBy { it.id }
         val activeVariantsMap = allVariants.filter { !it.archived }.associateBy { it.id }
 
         val stockMap = mutableMapOf<Pair<String, String>, Int>()
+
+        // 1. First, identify which variants need historical calculation
+        val variantsNeedingCalculation = activeVariantsMap.values.filter { it.currentStock == null }
+
+        if (variantsNeedingCalculation.isNotEmpty()) {
+            val approvedEntries = allStockEntries.filter { it.status == "approved" }
+            for (entry in approvedEntries) {
+                if (activeVariantsMap.containsKey(entry.productVariantId)) {
+                    val variant = activeVariantsMap[entry.productVariantId]!!
+                    if (variant.currentStock == null) {
+                        // If user is a seller, filter by their warehouse
+                        if (user?.role == com.batterysales.data.models.User.ROLE_SELLER) {
+                            if (entry.warehouseId != user.warehouseId) continue
+                        }
+                        val key = Pair(entry.productVariantId, entry.warehouseId)
+                        stockMap[key] = (stockMap[key] ?: 0) + (entry.quantity - entry.returnedQuantity)
+                    }
+                }
+            }
+        }
+
+        // 2. Then, add data from variants that already have denormalized stock
         for (variant in activeVariantsMap.values) {
-            variant.currentStock.forEach { (warehouseId, quantity) ->
+            variant.currentStock?.forEach { (warehouseId, quantity) ->
                 // If user is a seller, filter by their warehouse
                 if (user?.role == com.batterysales.data.models.User.ROLE_SELLER) {
                     if (warehouseId != user.warehouseId) return@forEach

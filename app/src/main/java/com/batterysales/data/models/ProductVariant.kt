@@ -14,7 +14,7 @@ data class ProductVariant(
     val minQuantity: Int = 0,
     val minQuantities: Map<String, Int> = emptyMap(),
     var specification: String = "",
-    val currentStock: Map<String, Int> = emptyMap(), // WarehouseId to Quantity
+    val currentStock: Map<String, Int>? = null, // WarehouseId to Quantity. Null means migration needed.
     val createdAt: Date = Date(),
     val updatedAt: Date = Date(),
     val archived: Boolean = false

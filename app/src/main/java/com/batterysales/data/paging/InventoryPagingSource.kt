@@ -94,13 +94,21 @@ class InventoryPagingSource(
                 variants.map { variant ->
                     async {
                         val finalProduct = pLookup[variant.productId] ?: productsMap[variant.productId] ?: Product(name = "Unknown")
-
                         val warehouseIds = warehouseList.map { it.id }.toSet()
-                        val whQuantities = variant.currentStock.filter { warehouseIds.contains(it.key) }
-                        val totalQty = whQuantities.values.sum()
+                        val entries = allEntriesMap[variant.id] ?: emptyList()
+
+                        val (whQuantities, totalQty) = if (variant.currentStock != null) {
+                            val filtered = variant.currentStock.filter { warehouseIds.contains(it.key) }
+                            filtered to filtered.values.sum()
+                        } else {
+                            // Fallback to calculation
+                            val quantities = warehouseList.associate { wh ->
+                                wh.id to stockEntryRepository.calculateSummary(entries.filter { it.warehouseId == wh.id }).first
+                            }
+                            quantities to stockEntryRepository.calculateSummary(if (warehouseList.isNotEmpty()) entries.filter { warehouseIds.contains(it.warehouseId) } else entries).first
+                        }
 
                         // For cost, we still need entries (weighted average calculation)
-                        val entries = allEntriesMap[variant.id] ?: emptyList()
                         val relevantEntries = if (warehouseList.isNotEmpty()) {
                             entries.filter { warehouseIds.contains(it.warehouseId) }
                         } else {
