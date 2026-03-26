@@ -152,7 +152,7 @@ class SalesViewModel @Inject constructor(
 
     fun onVariantSelected(variant: ProductVariant) {
         _selectedVariant.value = variant
-        _sellingPrice.value = variant.sellingPrice.toString()
+        _sellingPrice.value = if (variant.sellingPrice > 0.0) variant.sellingPrice.toString() else ""
     }
 
     fun onWarehouseSelected(warehouse: Warehouse) {

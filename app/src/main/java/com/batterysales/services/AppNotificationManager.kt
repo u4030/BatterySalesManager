@@ -53,7 +53,9 @@ class AppNotificationManager @Inject constructor(
 
                 if (user != null) {
                     setupRealtimeListeners(user)
-                    setupUpcomingBillsListener()
+                    if (user.role != User.ROLE_SELLER) {
+                        setupUpcomingBillsListener()
+                    }
                     setupLowStockListener()
                 } else {
                     notifiedLowStockKeys.clear()
@@ -112,7 +114,8 @@ class AppNotificationManager @Inject constructor(
                         NotificationHelper.showNotification(
                             context,
                             "تنبيه الالتزامات المالية",
-                            message.toString()
+                            message.toString(),
+                            playSound = false // Mute initial batch on startup
                         )
                         // Add to notified list to avoid individual notifications immediately
                         allRelevantBills.forEach { notifiedBillIds.add(it.id) }
@@ -212,7 +215,7 @@ class AppNotificationManager @Inject constructor(
                 if (isFirstSnapshot) {
                     isFirstSnapshot = false
                     // Perform initial check on startup
-                    scope.launch { performFullLowStockCheck() }
+                    scope.launch { performFullLowStockCheck(isStartup = true) }
                     return@addSnapshotListener
                 }
 
@@ -221,7 +224,7 @@ class AppNotificationManager @Inject constructor(
                 // but only after a slight debounce to handle batches.
                 scope.launch {
                     delay(2000)
-                    performFullLowStockCheck()
+                    performFullLowStockCheck(isStartup = false)
                 }
             }.let { registration ->
                 // Return a job that removes the listener when cancelled
@@ -267,7 +270,7 @@ class AppNotificationManager @Inject constructor(
         }
     }
 
-    private suspend fun performFullLowStockCheck() {
+    private suspend fun performFullLowStockCheck(isStartup: Boolean) {
         try {
             val allVariants = productVariantRepository.getAllVariants().filter { !it.archived }
             val allWarehouses = warehouseRepository.getWarehousesOnce()
@@ -276,6 +279,8 @@ class AppNotificationManager @Inject constructor(
 
             // Bulk fetch all entries for these variants to avoid N+1 queries
             val allEntriesMap = stockEntryRepository.getEntriesForVariants(variantIds)
+
+            val lowStockMessages = mutableListOf<String>()
 
             for (variant in allVariants) {
                 val variantEntries = allEntriesMap[variant.id] ?: emptyList()
@@ -290,17 +295,38 @@ class AppNotificationManager @Inject constructor(
                     if (qty <= threshold) {
                         if (!notifiedLowStockKeys.contains(key)) {
                             val product = productsMap[variant.productId]
-                            NotificationHelper.showNotification(
-                                context,
-                                "مخزون منخفض: ${product?.name ?: ""}",
-                                "السعة: ${variant.capacity}A | الكمية المتبقية: $qty (الحد: $threshold) في ${warehouse.name}"
-                            )
+                            val message = "${product?.name ?: ""} (${variant.capacity}A): $qty قطعة في ${warehouse.name}"
+
+                            if (isStartup) {
+                                lowStockMessages.add(message)
+                            } else {
+                                NotificationHelper.showNotification(
+                                    context,
+                                    "مخزون منخفض: ${product?.name ?: ""}",
+                                    "السعة: ${variant.capacity}A | الكمية المتبقية: $qty (الحد: $threshold) في ${warehouse.name}"
+                                )
+                            }
                             notifiedLowStockKeys.add(key)
                         }
                     } else {
                         notifiedLowStockKeys.remove(key)
                     }
                 }
+            }
+
+            if (isStartup && lowStockMessages.isNotEmpty()) {
+                val summary = if (lowStockMessages.size > 3) {
+                    "${lowStockMessages.take(3).joinToString("\n")}\n... و ${lowStockMessages.size - 3} أصناف أخرى"
+                } else {
+                    lowStockMessages.joinToString("\n")
+                }
+
+                NotificationHelper.showNotification(
+                    context,
+                    "تنبيه المخزون المنخفض (${lowStockMessages.size} أصناف)",
+                    summary,
+                    playSound = false
+                )
             }
         } catch (e: Exception) {
             Log.e("AppNotificationManager", "Error in full low stock check", e)
