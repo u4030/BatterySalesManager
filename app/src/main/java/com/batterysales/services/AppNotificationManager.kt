@@ -246,8 +246,12 @@ class AppNotificationManager @Inject constructor(
             val threshold = variant.minQuantities[warehouseId] ?: variant.minQuantity
             if (threshold <= 0) return
 
-            val whSummary = stockEntryRepository.getVariantSummary(variantId, warehouseId)
-            val qty = whSummary.first
+            val qty = if (variant.currentStock != null) {
+                variant.currentStock[warehouseId] ?: 0
+            } else {
+                val whSummary = stockEntryRepository.getVariantSummary(variantId, warehouseId)
+                whSummary.first
+            }
 
             val key = "$variantId:$warehouseId"
             if (qty <= threshold) {
@@ -283,7 +287,7 @@ class AppNotificationManager @Inject constructor(
                     val threshold = variant.minQuantities[warehouse.id] ?: variant.minQuantity
                     if (threshold <= 0) continue
 
-                    val qty = variant.currentStock[warehouse.id] ?: 0
+                    val qty = variant.currentStock?.get(warehouse.id) ?: 0
 
                     val key = "${variant.id}:${warehouse.id}"
                     if (qty <= threshold) {
