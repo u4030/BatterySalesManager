@@ -151,7 +151,7 @@ class InvoiceRepository @Inject constructor(
         val variantSnap = transaction.get(variantRef)
         val variant = variantSnap.toObject(com.batterysales.data.models.ProductVariant::class.java)
         if (variant != null) {
-            val newStockMap = variant.currentStock.toMutableMap()
+            val newStockMap = (variant.currentStock ?: emptyMap()).toMutableMap()
             val currentQty = newStockMap[warehouseId] ?: 0
             newStockMap[warehouseId] = currentQty + quantityChange
             transaction.update(variantRef, "currentStock", newStockMap)
