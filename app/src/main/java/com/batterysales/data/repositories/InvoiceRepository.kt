@@ -150,8 +150,9 @@ class InvoiceRepository @Inject constructor(
         val variantRef = firestore.collection(com.batterysales.data.models.ProductVariant.COLLECTION_NAME).document(variantId)
         val variantSnap = transaction.get(variantRef)
         val variant = variantSnap.toObject(com.batterysales.data.models.ProductVariant::class.java)
-        if (variant != null) {
-            val newStockMap = (variant.currentStock ?: emptyMap()).toMutableMap()
+        // Only update if variant exists AND currentStock is already initialized (non-null)
+        if (variant != null && variant.currentStock != null) {
+            val newStockMap = variant.currentStock.toMutableMap()
             val currentQty = newStockMap[warehouseId] ?: 0
             newStockMap[warehouseId] = currentQty + quantityChange
             transaction.update(variantRef, "currentStock", newStockMap)
@@ -174,10 +175,11 @@ class InvoiceRepository @Inject constructor(
 
             // 2. Create Stock Entry
             val stockRef = firestore.collection(com.batterysales.data.models.StockEntry.COLLECTION_NAME).document()
-            transaction.set(stockRef, stockEntry.copy(id = stockRef.id, invoiceId = finalInvoice.id))
+            val finalStockEntry = stockEntry.copy(id = stockRef.id, invoiceId = finalInvoice.id)
+            transaction.set(stockRef, finalStockEntry)
 
             // 2.1 Update denormalized stock in ProductVariant
-            updateVariantStock(transaction, stockEntry.productVariantId, stockEntry.warehouseId, stockEntry.quantity)
+            updateVariantStock(transaction, finalStockEntry.productVariantId, finalStockEntry.warehouseId, finalStockEntry.quantity - finalStockEntry.returnedQuantity)
 
             // 3. Create Payment (if any)
             if (payment != null) {

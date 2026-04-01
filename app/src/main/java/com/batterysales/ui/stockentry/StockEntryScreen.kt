@@ -311,16 +311,38 @@ fun StockEntryContent(
             GrandTotalsSection(uiState = uiState)
         }
 
+        if (uiState.errorMessage != null) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Error, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(text = uiState.errorMessage!!, color = MaterialTheme.colorScheme.onErrorContainer, style = MaterialTheme.typography.bodyMedium)
+                    Spacer(modifier = Modifier.weight(1f))
+                    IconButton(onClick = viewModel::onDismissError) {
+                        Icon(Icons.Default.Close, contentDescription = null, tint = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.size(16.dp))
+                    }
+                }
+            }
+        }
+
         Button(
             onClick = viewModel::onSaveClicked,
             modifier = Modifier.fillMaxWidth().height(56.dp),
             shape = RoundedCornerShape(16.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
-            enabled = uiState.stockItems.isNotEmpty() && uiState.selectedWarehouse != null && (uiState.isAdmin || !uiState.isEditMode)
+            enabled = !uiState.isSubmitting
         ) { 
-            Icon(Icons.Default.Save, contentDescription = null)
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(if (uiState.isEditMode) "تحديث القيد" else "حفظ إدخال المخزون", fontWeight = FontWeight.Bold) 
+            if (uiState.isSubmitting) {
+                CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+            } else {
+                Icon(Icons.Default.Save, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(if (uiState.isEditMode) "تحديث القيد" else "حفظ إدخال المخزون", fontWeight = FontWeight.Bold)
+            }
         }
     }
 }

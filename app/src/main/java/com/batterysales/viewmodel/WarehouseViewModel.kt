@@ -62,13 +62,14 @@ class WarehouseViewModel @Inject constructor(
         val stockMap = mutableMapOf<Pair<String, String>, Int>()
 
         // 1. First, identify which variants need historical calculation
-        val variantsNeedingCalculation = activeVariantsMap.values.filter { it.currentStock == null }
+        val allVariantsMap = allVariants.associateBy { it.id }
+        val variantsNeedingCalculation = allVariantsMap.values.filter { it.currentStock == null }
 
         if (variantsNeedingCalculation.isNotEmpty()) {
             val approvedEntries = allStockEntries.filter { it.status == "approved" }
             for (entry in approvedEntries) {
-                if (activeVariantsMap.containsKey(entry.productVariantId)) {
-                    val variant = activeVariantsMap[entry.productVariantId]!!
+                if (allVariantsMap.containsKey(entry.productVariantId)) {
+                    val variant = allVariantsMap[entry.productVariantId]!!
                     if (variant.currentStock == null) {
                         // If user is a seller, filter by their warehouse
                         if (user?.role == com.batterysales.data.models.User.ROLE_SELLER) {
@@ -82,7 +83,7 @@ class WarehouseViewModel @Inject constructor(
         }
 
         // 2. Then, add data from variants that already have denormalized stock
-        for (variant in activeVariantsMap.values) {
+        for (variant in allVariantsMap.values) {
             variant.currentStock?.forEach { (warehouseId, quantity) ->
                 // If user is a seller, filter by their warehouse
                 if (user?.role == com.batterysales.data.models.User.ROLE_SELLER) {
@@ -96,7 +97,7 @@ class WarehouseViewModel @Inject constructor(
         val stockList = stockMap.mapNotNull { (key, quantity) ->
             val variantId = key.first
             val warehouseId = key.second
-            val variant = activeVariantsMap[variantId]
+            val variant = activeVariantsMap[variantId] ?: allVariantsMap[variantId]
             val warehouse = allWarehouses.find { it.id == warehouseId }
             if (variant != null && warehouse != null) {
                 val product = productMap[variant.productId]

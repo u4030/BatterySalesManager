@@ -67,6 +67,7 @@ class StockEntryViewModel @Inject constructor(
     private val stockEntryRepository: StockEntryRepository,
     private val supplierRepository: SupplierRepository,
     private val userRepository: UserRepository,
+    private val networkHelper: com.batterysales.utils.NetworkHelper,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -263,18 +264,35 @@ class StockEntryViewModel @Inject constructor(
     fun onSaveClicked() {
         if (uiState.value.isSubmitting) return
 
-        viewModelScope.launch {
-            val state = uiState.value
-            if ((state.isEditMode && state.quantity.isBlank()) || (!state.isEditMode && state.stockItems.isEmpty()) || state.selectedWarehouse == null) {
-                _uiState.update { it.copy(errorMessage = "الرجاء اختيار مستودع وإضافة أصناف") }
-                return@launch
+        val state = uiState.value
+        // Validation
+        if (state.selectedWarehouse == null) {
+            _uiState.update { it.copy(errorMessage = "الرجاء اختيار مستودع") }
+            return
+        }
+        if (state.isEditMode) {
+            if (state.quantity.isBlank() || (state.quantity.toIntOrNull() ?: 0) <= 0) {
+                _uiState.update { it.copy(errorMessage = "الرجاء إدخال كمية صحيحة") }
+                return
             }
+        } else {
+            if (state.stockItems.isEmpty()) {
+                _uiState.update { it.copy(errorMessage = "الرجاء إضافة أصناف للقائمة") }
+                return
+            }
+        }
 
+        viewModelScope.launch {
             _uiState.update { it.copy(isSubmitting = true) }
 
             try {
                 if (state.selectedWarehouse?.isActive == false) {
                     _uiState.update { it.copy(errorMessage = "عذراً، هذا المستودع متوقف حالياً ولا يمكن إجراء عمليات عليه.", isSubmitting = false) }
+                    return@launch
+                }
+
+                if (!networkHelper.isNetworkConnected()) {
+                    _uiState.update { it.copy(errorMessage = "لا يوجد اتصال بالإنترنت. يرجى المحاولة لاحقاً.", isSubmitting = false) }
                     return@launch
                 }
 

@@ -46,7 +46,8 @@ class SalesViewModel @Inject constructor(
     private val paymentRepository: PaymentRepository,
     private val userRepository: UserRepository,
     private val accountingRepository: AccountingRepository,
-    private val oldBatteryRepository: OldBatteryRepository
+    private val oldBatteryRepository: OldBatteryRepository,
+    private val networkHelper: com.batterysales.utils.NetworkHelper
 ) : ViewModel() {
 
     private val _selectedProduct = MutableStateFlow<Product?>(null)
@@ -60,6 +61,7 @@ class SalesViewModel @Inject constructor(
     private val _paymentMethod = MutableStateFlow("cash")
     private val _errorMessage = MutableStateFlow<String?>(null)
     private val _isLoading = MutableStateFlow(false)
+    private val _isSubmitting = MutableStateFlow(false)
     private val _isFinished = MutableStateFlow(false)
 
     private var allStockEntries: List<StockEntry> = emptyList()
@@ -87,6 +89,7 @@ class SalesViewModel @Inject constructor(
         _paymentMethod,
         _errorMessage,
         _isLoading,
+        _isSubmitting,
         _isFinished,
         productVariantRepository.getAllVariantsFlow(),
         _selectedProduct.flatMapLatest { product ->
@@ -110,18 +113,31 @@ class SalesViewModel @Inject constructor(
         val paymentMethod = args[12] as String
         val errorMessage = args[13] as String?
         val isLoading = args[14] as Boolean
-        val isFinished = args[15] as Boolean
-        val allVariants = args[16] as List<ProductVariant>
-        val variants = args[17] as List<ProductVariant>
+        val isSubmitting = args[15] as Boolean
+        val isFinished = args[16] as Boolean
+        val allVariants = args[17] as List<ProductVariant>
+        val variants = args[18] as List<ProductVariant>
 
         allStockEntries = stockEntries
         currentUser = user
 
         val approvedEntries = stockEntries.filter { it.status == "approved" }
+        val entriesByVariant = approvedEntries.groupBy { it.productVariantId }
         val stockMap = mutableMapOf<Pair<String, String>, Int>()
+
         allVariants.forEach { variant ->
-            variant.currentStock?.forEach { (warehouseId, qty) ->
-                stockMap[Pair(variant.id, warehouseId)] = qty
+            if (variant.currentStock != null) {
+                // Use denormalized stock
+                variant.currentStock.forEach { (warehouseId, qty) ->
+                    stockMap[Pair(variant.id, warehouseId)] = qty
+                }
+            } else {
+                // Fallback to calculation from entries
+                val variantEntries = entriesByVariant[variant.id] ?: emptyList()
+                val warehouseGroups = variantEntries.groupBy { it.warehouseId }
+                warehouseGroups.forEach { (warehouseId, entries) ->
+                    stockMap[Pair(variant.id, warehouseId)] = entries.sumOf { it.quantity - it.returnedQuantity }
+                }
             }
         }
 
@@ -163,6 +179,7 @@ class SalesViewModel @Inject constructor(
             isWarehouseFixed = isSeller,
             userRole = user?.role ?: "",
             isLoading = isLoading,
+            isSubmitting = isSubmitting,
             errorMessage = errorMessage,
             isFinished = isFinished
         )
@@ -210,26 +227,51 @@ class SalesViewModel @Inject constructor(
     fun createSale(customerName: String, customerPhone: String, paidAmount: Double) {
         if (uiState.value.isSubmitting) return
 
+        val state = uiState.value
+        val product = state.selectedProduct
+        val variant = state.selectedVariant
+        val warehouse = state.selectedWarehouse
+        val qty = state.quantity.toIntOrNull() ?: 0
+        val price = state.sellingPrice.toDoubleOrNull() ?: 0.0
+
+        // Explicit Field Validation
+        if (product == null || variant == null || warehouse == null) {
+            _errorMessage.value = "الرجاء اختيار المنتج والصنف والمستودع"
+            return
+        }
+        if (customerName.isBlank()) {
+            _errorMessage.value = "الرجاء إدخال اسم العميل"
+            return
+        }
+        if (qty <= 0) {
+            _errorMessage.value = "الرجاء إدخال كمية صحيحة"
+            return
+        }
+        if (price <= 0) {
+            _errorMessage.value = "الرجاء إدخال سعر البيع"
+            return
+        }
+
+        val available = state.stockLevels[Pair(variant.id, warehouse.id)] ?: 0
+        if (qty > available) {
+            _errorMessage.value = "المخزون غير كافٍ. المتاح: $available، المطلوب: $qty"
+            return
+        }
+
         viewModelScope.launch {
-            val state = uiState.value
-            val product = state.selectedProduct ?: return@launch
-            val variant = state.selectedVariant ?: return@launch
-            val warehouse = state.selectedWarehouse ?: return@launch
-            val qty = state.quantity.toIntOrNull() ?: 0
-            val price = state.sellingPrice.toDoubleOrNull() ?: 0.0
-
-            val available = state.stockLevels[Pair(variant.id, warehouse.id)] ?: 0
-            if (qty <= 0 || qty > available) {
-                _errorMessage.value = "Insufficient stock. Available: $available, Requested: $qty"
-                return@launch
-            }
-
             _isLoading.value = true
             _isSubmitting.value = true
 
             try {
                 if (!warehouse.isActive) {
                     _errorMessage.value = "عذراً، هذا المستودع متوقف حالياً ولا يمكن إجراء عمليات عليه."
+                    _isLoading.value = false
+                    _isSubmitting.value = false
+                    return@launch
+                }
+
+                if (!networkHelper.isNetworkConnected()) {
+                     _errorMessage.value = "لا يوجد اتصال بالإنترنت. يرجى المحاولة لاحقاً."
                     _isLoading.value = false
                     _isSubmitting.value = false
                     return@launch

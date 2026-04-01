@@ -359,9 +359,9 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
                         modifier = Modifier.fillMaxWidth().height(56.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = accentColor),
                         shape = RoundedCornerShape(16.dp),
-                        enabled = uiState.selectedVariant != null && uiState.selectedWarehouse != null && !uiState.isLoading
+                        enabled = !uiState.isSubmitting
                     ) {
-                        if (uiState.isLoading) {
+                        if (uiState.isSubmitting) {
                             CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
                         } else {
                             Text("إنشاء عملية بيع", fontWeight = FontWeight.Bold, fontSize = 16.sp)
