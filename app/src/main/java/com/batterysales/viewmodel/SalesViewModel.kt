@@ -30,6 +30,7 @@ data class SalesUiState(
     val isWarehouseFixed: Boolean = false,
     val userRole: String = "",
     val isLoading: Boolean = false,
+    val isSubmitting: Boolean = false,
     val errorMessage: String? = null,
     val isFinished: Boolean = false
 )
@@ -207,6 +208,8 @@ class SalesViewModel @Inject constructor(
     }
 
     fun createSale(customerName: String, customerPhone: String, paidAmount: Double) {
+        if (uiState.value.isSubmitting) return
+
         viewModelScope.launch {
             val state = uiState.value
             val product = state.selectedProduct ?: return@launch
@@ -222,10 +225,13 @@ class SalesViewModel @Inject constructor(
             }
 
             _isLoading.value = true
+            _isSubmitting.value = true
+
             try {
                 if (!warehouse.isActive) {
                     _errorMessage.value = "عذراً، هذا المستودع متوقف حالياً ولا يمكن إجراء عمليات عليه."
                     _isLoading.value = false
+                    _isSubmitting.value = false
                     return@launch
                 }
 
@@ -325,10 +331,12 @@ class SalesViewModel @Inject constructor(
                 )
 
                 _isFinished.value = true
+                _isSubmitting.value = false
             } catch (e: Exception) {
                 Log.e("SalesViewModel", "Error creating sale", e)
                 _errorMessage.value = "Failed to create sale: ${e.message}"
                 _isLoading.value = false
+                _isSubmitting.value = false
             }
         }
     }

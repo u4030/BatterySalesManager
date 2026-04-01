@@ -35,6 +35,7 @@ data class StockEntryUiState(
     val isEditMode: Boolean = false,
     val isLoading: Boolean = true,
     val errorMessage: String? = null,
+    val isSubmitting: Boolean = false,
     val isFinished: Boolean = false
 ) {
     val isAdmin: Boolean get() = userRole == "admin"
@@ -260,15 +261,20 @@ class StockEntryViewModel @Inject constructor(
     }
 
     fun onSaveClicked() {
+        if (uiState.value.isSubmitting) return
+
         viewModelScope.launch {
             val state = uiState.value
             if ((state.isEditMode && state.quantity.isBlank()) || (!state.isEditMode && state.stockItems.isEmpty()) || state.selectedWarehouse == null) {
                 _uiState.update { it.copy(errorMessage = "الرجاء اختيار مستودع وإضافة أصناف") }
                 return@launch
             }
+
+            _uiState.update { it.copy(isSubmitting = true) }
+
             try {
                 if (state.selectedWarehouse?.isActive == false) {
-                    _uiState.update { it.copy(errorMessage = "عذراً، هذا المستودع متوقف حالياً ولا يمكن إجراء عمليات عليه.") }
+                    _uiState.update { it.copy(errorMessage = "عذراً، هذا المستودع متوقف حالياً ولا يمكن إجراء عمليات عليه.", isSubmitting = false) }
                     return@launch
                 }
 
@@ -342,10 +348,10 @@ class StockEntryViewModel @Inject constructor(
                         }
                     }
                 }
-                _uiState.update { it.copy(isFinished = true) }
+                _uiState.update { it.copy(isFinished = true, isSubmitting = false) }
             } catch (e: Exception) {
                 Log.e("StockEntryViewModel", "Error saving stock data", e)
-                _uiState.update { it.copy(errorMessage = "فشل حفظ البيانات: ${e.message}") }
+                _uiState.update { it.copy(errorMessage = "فشل حفظ البيانات: ${e.message}", isSubmitting = false) }
             }
         }
     }
