@@ -257,7 +257,7 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                             if (isLoading) offset++
 
                             scope.launch {
-                                listState.animateScrollToItem(it + offset)
+                                listState.animateScrollToItem(index + offset)
                             }
                         }
                     },
