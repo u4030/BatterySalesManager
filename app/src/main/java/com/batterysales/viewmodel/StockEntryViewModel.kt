@@ -94,7 +94,7 @@ class StockEntryViewModel @Inject constructor(
                     supplierRepository.getSuppliers(),
                     _selectedSupplier
                 ) { products, warehouses, suppliers, selectedSupplier ->
-                    val activeProducts = products.filter { !it.archived }
+                    val activeProducts = products.filter { !it.archived }.sortedBy { it.name }
 
                     val filteredBySupplier = if (selectedSupplier != null) {
                         activeProducts.filter { it.supplierId == selectedSupplier.id || it.supplierId.isBlank() }
@@ -151,6 +151,7 @@ class StockEntryViewModel @Inject constructor(
                 selectedVariant = variant,
                 selectedWarehouse = warehouse,
                 selectedSupplier = supplier,
+                invoiceNumber = entry.invoiceNumber,
                 quantity = entry.quantity.toString(),
                 returnedQuantity = entry.returnedQuantity.toString(),
                 costValue = entry.costPrice.toString(),
@@ -182,14 +183,14 @@ class StockEntryViewModel @Inject constructor(
                     selectedProduct = product,
                     selectedVariant = null,
                     variants = emptyList(),
-                    isLoading = true,
-                    quantity = "",
-                    costValue = ""
+                    isLoading = false,
+                    quantity = if (it.isEditMode) it.quantity else "",
+                    costValue = if (it.isEditMode) it.costValue else ""
                 )
             }
             try {
-                val variants = productVariantRepository.getVariantsForProduct(product.id).filter { !it.archived }
-                _uiState.update { it.copy(variants = variants, isLoading = false) }
+                val variants = productVariantRepository.getVariantsForProduct(product.id).filter { !it.archived }.sortedBy { it.capacity }
+                _uiState.update { it.copy(variants = variants) }
             } catch (e: Exception) {
                 Log.e("StockEntryViewModel", "Error fetching variants", e)
                 _uiState.update { it.copy(errorMessage = "فشل تحميل السعات", isLoading = false) }
@@ -201,14 +202,15 @@ class StockEntryViewModel @Inject constructor(
         _uiState.update { it.copy(selectedVariant = variant, minQuantity = variant.minQuantity.toString()) }
     }
     fun onWarehouseSelected(warehouse: Warehouse) { _uiState.update { it.copy(selectedWarehouse = warehouse) } }
-    fun onSupplierSelected(supplier: Supplier) {
+    fun onSupplierSelected(supplier: Supplier?) {
         _selectedSupplier.value = supplier
         _uiState.update {
             it.copy(
-                supplierName = supplier.name,
-                selectedProduct = null,
-                selectedVariant = null,
-                variants = emptyList()
+                selectedSupplier = supplier,
+                supplierName = supplier?.name ?: "",
+                selectedProduct = if (it.isEditMode) it.selectedProduct else null,
+                selectedVariant = if (it.isEditMode) it.selectedVariant else null,
+                variants = if (it.isEditMode) it.variants else emptyList()
             )
         }
     }
@@ -326,6 +328,7 @@ class StockEntryViewModel @Inject constructor(
                         costPerAmpere = updatedItem.costPerAmpere,
                         totalAmperes = updatedItem.totalAmperes,
                         totalCost = updatedItem.totalCost,
+                        timestamp = originalEntry.timestamp,
                         supplier = state.supplierName,
                         supplierId = state.selectedSupplier?.id ?: "",
                         invoiceNumber = state.invoiceNumber

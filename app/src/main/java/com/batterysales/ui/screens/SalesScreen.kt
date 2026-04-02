@@ -36,6 +36,7 @@ import com.batterysales.ui.components.HeaderIconButton
 @Composable
 fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltViewModel()) {
     val uiState by viewModel.uiState.collectAsState()
+    val keyboardController = com.batterysales.ui.components.LocalCustomKeyboardController.current
     var customerName by remember { mutableStateOf("") }
     var customerPhone by remember { mutableStateOf("") }
     var paidAmount by remember { mutableStateOf("") }
@@ -81,7 +82,10 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
             // Gradient Header
             SharedHeader(
                 title = "فاتورة مبيعات جديدة",
-                onBackClick = { navController.popBackStack() },
+                onBackClick = { 
+                    keyboardController.hideKeyboard()
+                    navController.popBackStack() 
+                },
                 actions = {
                     HeaderIconButton(
                         icon = Icons.Default.PhotoCamera,
@@ -350,6 +354,7 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
                 item {
                     Button(
                         onClick = {
+                            keyboardController.hideKeyboard()
                             viewModel.createSale(
                                 customerName = customerName,
                                 customerPhone = customerPhone,

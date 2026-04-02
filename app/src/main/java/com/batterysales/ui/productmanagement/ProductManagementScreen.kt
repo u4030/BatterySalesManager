@@ -45,6 +45,7 @@ fun ProductManagementScreen(
     printQueueViewModel: PrintQueueViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val keyboardController = com.batterysales.ui.components.LocalCustomKeyboardController.current
     val printQueue by printQueueViewModel.queue.collectAsState()
 
     var showAddProductDialog by remember { mutableStateOf(false) }
@@ -154,7 +155,10 @@ fun ProductManagementScreen(
             item {
                 SharedHeader(
                     title = "إدارة المنتجات",
-                    onBackClick = { navController.popBackStack() },
+                    onBackClick = { 
+                        keyboardController.hideKeyboard()
+                        navController.popBackStack() 
+                    },
                     actions = {
                         BadgedBox(
                             badge = {

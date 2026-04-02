@@ -118,7 +118,7 @@ class ReportsViewModel @Inject constructor(
                 else (v.currentStock?.get(userWhId) ?: 0) > 0
             }
             .map { v -> pMap[v.productId]?.name ?: "" }
-            .sortedBy { it } // Match Firestore name sort
+            .sortedByDescending { it } // Match descending sort
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val warehouses: StateFlow<List<Warehouse>> = warehouseRepository.getWarehouses()

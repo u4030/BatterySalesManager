@@ -79,7 +79,7 @@ class StockTransferViewModel @Inject constructor(
 
                 _uiState.update {
                     it.copy(
-                        products = products.filter { p -> !p.archived },
+                        products = products.filter { p -> !p.archived }.sortedBy { it.name },
                         warehouses = warehouses.filter { w -> w.isActive },
                         sourceWarehouse = if (user?.role == "seller") warehouses.find { w -> w.id == user.warehouseId } else it.sourceWarehouse,
                         isSourceWarehouseFixed = user?.role == "seller",
@@ -95,7 +95,7 @@ class StockTransferViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(selectedProduct = product, selectedVariant = null, variants = emptyList(), isLoading = true, quantity = "") }
             productVariantRepository.getVariantsForProductFlow(product.id)
-                .map { variants -> variants.filter { !it.archived } }
+                .map { variants -> variants.filter { !it.archived }.sortedBy { it.capacity } }
                 .onEach { variants ->
                     _uiState.update { it.copy(variants = variants, isLoading = false) }
                 }

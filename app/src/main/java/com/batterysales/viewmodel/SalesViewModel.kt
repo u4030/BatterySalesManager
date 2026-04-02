@@ -158,8 +158,10 @@ class SalesViewModel @Inject constructor(
 
             val availableProductIds = allVariants.filter { availableVariantIds.contains(it.id) }.map { it.productId }.toSet()
             products.filter { !it.archived && availableProductIds.contains(it.id) }
+                .sortedBy{ it.name }
         } else {
             products.filter { !it.archived }
+                .sortedBy { it.name }
         }
 
         SalesUiState(

@@ -58,7 +58,7 @@ fun CustomAppKeyboard(
 ) {
     if (!isVisible) return
 
-    var language by remember { mutableStateOf(initialLanguage) }
+    var language by remember(initialLanguage) { mutableStateOf(initialLanguage) }
 
     Dialog(
         onDismissRequest = onDone,

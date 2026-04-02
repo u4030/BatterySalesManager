@@ -42,7 +42,10 @@ fun AppDialog(
     val screenHeight = configuration.screenHeightDp.dp
 
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            keyboardController.hideKeyboard()
+            onDismiss()
+        },
         properties = DialogProperties(
             usePlatformDefaultWidth = false,
             decorFitsSystemWindows = false
@@ -80,7 +83,10 @@ fun AppDialog(
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.weight(1f)
                         )
-                        IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+                        IconButton(onClick = {
+                            keyboardController.hideKeyboard()
+                            onDismiss()
+                        }, modifier = Modifier.size(32.dp)) {
                             Icon(Icons.Default.Close, contentDescription = "Close")
                         }
                     }
@@ -241,10 +247,11 @@ fun SidebarAlphabetNavigation(
 
         Spacer(modifier = Modifier.height(8.dp))
 
+        val scrollState = rememberScrollState()
         Column(
             modifier = Modifier
-                .heightIn(max = 650.dp) // اختيارياً: تحديد أقصى ارتفاع للقائمة لضمان عدم خروجها عن الشاشة
-                .verticalScroll(rememberScrollState()),
+                .heightIn(max = 650.dp)
+                .verticalScroll(scrollState),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
@@ -253,7 +260,7 @@ fun SidebarAlphabetNavigation(
                     text = letter.toString(),
                     style = MaterialTheme.typography.labelSmall,
                     modifier = Modifier
-                        .clickable { onLetterSelected(letter) }
+                        .clickable { onLetterSelected(letter.uppercaseChar()) }
                         .padding(vertical = 2.dp),
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                     fontWeight = FontWeight.Bold

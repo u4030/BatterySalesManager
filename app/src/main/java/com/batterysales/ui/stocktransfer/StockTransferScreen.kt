@@ -33,6 +33,7 @@ fun StockTransferScreen(
     viewModel: StockTransferViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val keyboardController = com.batterysales.ui.components.LocalCustomKeyboardController.current
     var showScanner by remember { mutableStateOf(false) }
 
     LaunchedEffect(uiState.isFinished) {
@@ -136,7 +137,10 @@ fun StockTransferScreen(
             // Header Section
             SharedHeader(
                 title = "ترحيل مخزون",
-                onBackClick = { navController.popBackStack() },
+                onBackClick = { 
+                    keyboardController.hideKeyboard()
+                    navController.popBackStack() 
+                },
                 actions = {
                     HeaderIconButton(
                         icon = Icons.Default.PhotoCamera,
@@ -284,7 +288,10 @@ fun StockTransferScreen(
 
                 item {
                     Button(
-                        onClick = viewModel::onTransferStock,
+                        onClick = {
+                            keyboardController.hideKeyboard()
+                            viewModel.onTransferStock()
+                        },
                         modifier = Modifier.fillMaxWidth().height(56.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = accentColor),
                         shape = RoundedCornerShape(16.dp),

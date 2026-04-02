@@ -44,6 +44,7 @@ fun BankScreen(
     navController: NavHostController,
     viewModel: BankViewModel = hiltViewModel()
 ) {
+    val keyboardController = com.batterysales.ui.components.LocalCustomKeyboardController.current
     val pagingItems = viewModel.transactions.collectAsLazyPagingItems()
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -161,7 +162,10 @@ fun BankScreen(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 HeaderIconButton(
                                     icon = Icons.AutoMirrored.Filled.ArrowBack,
-                                    onClick = { navController.popBackStack() },
+                                    onClick = { 
+                                        keyboardController.hideKeyboard()
+                                        navController.popBackStack() 
+                                    },
                                     contentDescription = "Back"
                                 )
                                 Spacer(modifier = Modifier.width(12.dp))
@@ -523,7 +527,7 @@ fun BankTransactionItemCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
-    val dateFormatter = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault())
+    val dateFormatter = SimpleDateFormat("yyyy/MM/dd hh:mm a", Locale.getDefault())
     val isDeposit = transaction.type == BankTransactionType.DEPOSIT
     val amountColor = if (isDeposit) Color(0xFF10B981) else Color(0xFFEF4444)
 

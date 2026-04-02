@@ -38,6 +38,7 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel = hiltViewModel()) {
+    val keyboardController = com.batterysales.ui.components.LocalCustomKeyboardController.current
     val warehouses by viewModel.warehouses.collectAsState()
     val stockLevels by viewModel.stockLevels.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
@@ -79,7 +80,10 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
                 item {
                     SharedHeader(
                         title = if (selectedTab == 0) "مخزون المستودعات" else "إدارة المستودعات",
-                        onBackClick = { navController.popBackStack() },
+                        onBackClick = { 
+                            keyboardController.hideKeyboard()
+                            navController.popBackStack() 
+                        },
                         actions = {
                             if (selectedTab == 1) {
                                 HeaderIconButton(
@@ -179,7 +183,7 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
                                     ) {
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text(
-                                                text = "${stockItem.product.name} - ${stockItem.variant.capacity}A",
+                                                text = "\u200F${stockItem.product.name} - \u200E${stockItem.variant.capacity} A",
                                                 style = MaterialTheme.typography.bodyLarge,
                                                 fontWeight = FontWeight.Bold,
                                                 color = MaterialTheme.colorScheme.onSurface
@@ -257,18 +261,18 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
         if (selectedTab == 0 && stockLevels.isNotEmpty()) {
             com.batterysales.ui.components.SidebarAlphabetNavigation(
                 onLetterSelected = { letter ->
-                    var targetIndex = 2
+                    var targetIndex = 2 // SharedHeader + SearchBar/Tabs
                     val groups = stockLevels.groupBy { it.warehouse.name }
                     for ((_, items) in groups) {
                         val matchingItemIndex = items.indexOfFirst { it.product.name.startsWith(letter, ignoreCase = true) }
                         if (matchingItemIndex != -1) {
-                            targetIndex += matchingItemIndex + 1
+                            val finalIndex = targetIndex + matchingItemIndex + 1 // +1 for the Warehouse Header
                             scope.launch {
-                                listState.animateScrollToItem(targetIndex)
+                                listState.animateScrollToItem(finalIndex)
                             }
                             return@SidebarAlphabetNavigation
                         }
-                        targetIndex += items.size + 1
+                        targetIndex += items.size + 1 // items + Warehouse Header
                     }
                 },
                 modifier = Modifier.align(Alignment.CenterEnd).padding(end = 4.dp, top = 150.dp, bottom = 40.dp)

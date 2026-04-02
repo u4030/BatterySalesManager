@@ -44,6 +44,7 @@ fun OldBatteryLedgerScreen(
     navController: NavHostController,
     viewModel: OldBatteryViewModel = hiltViewModel()
 ) {
+    val keyboardController = com.batterysales.ui.components.LocalCustomKeyboardController.current
     val pagingItems = viewModel.transactions.collectAsLazyPagingItems()
     val summary by viewModel.summary.collectAsState()
     val warehouses by viewModel.warehouses.collectAsState()
@@ -104,7 +105,10 @@ fun OldBatteryLedgerScreen(
             item {
                 SharedHeader(
                     title = "سجل السكراب",
-                    onBackClick = { navController.popBackStack() },
+                    onBackClick = { 
+                        keyboardController.hideKeyboard()
+                        navController.popBackStack() 
+                    },
                     actions = {
                         HeaderIconButton(
                             icon = Icons.Default.CalendarMonth,
@@ -129,7 +133,7 @@ fun OldBatteryLedgerScreen(
                                     }
                                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                         Text("إجمالي الأمبيرات", color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelSmall)
-                                        Text("${String.format("%.1f", summary.second)} A", color = accentColor, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+                                        Text("\u200E${String.format("%.1f", summary.second)} A", color = accentColor, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
                                     }
                                 }
                                 
@@ -364,7 +368,7 @@ fun OldBatteryTransactionCard(
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
                 Column {
                     Text(
-                        text = "${transaction.quantity} حبة | ${transaction.totalAmperes}A",
+                        text = "\u200F${transaction.quantity} حبة | \u200E${transaction.totalAmperes} A",
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
                         style = MaterialTheme.typography.bodyLarge
@@ -484,12 +488,14 @@ fun AddEditOldBatteryDialog(
                 com.batterysales.ui.components.CustomKeyboardTextField(
                     value = qty,
                     onValueChange = { qty = it },
-                    label = "الكمية"
+                    label = "الكمية",
+                    keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
                 )
                 com.batterysales.ui.components.CustomKeyboardTextField(
                     value = amps,
                     onValueChange = { amps = it },
-                    label = "إجمالي الأمبيرات"
+                    label = "إجمالي الأمبيرات",
+                    keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
                 )
                 com.batterysales.ui.components.CustomKeyboardTextField(
                     value = notes,
@@ -552,22 +558,26 @@ fun SellOldBatteryDialog(
                 com.batterysales.ui.components.CustomKeyboardTextField(
                     value = qty,
                     onValueChange = { qty = it },
-                    label = "الكمية المباعة"
+                    label = "الكمية المباعة",
+                    keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
                 )
                 com.batterysales.ui.components.CustomKeyboardTextField(
                     value = amps,
                     onValueChange = { amps = it },
-                    label = "إجمالي الأمبيرات"
+                    label = "إجمالي الأمبيرات",
+                    keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
                 )
                 com.batterysales.ui.components.CustomKeyboardTextField(
                     value = pricePerAmp,
                     onValueChange = { pricePerAmp = it },
-                    label = "سعر الأمبير الواحد"
+                    label = "سعر الأمبير الواحد",
+                    keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
                 )
                 com.batterysales.ui.components.CustomKeyboardTextField(
                     value = price,
                     onValueChange = { price = it },
-                    label = "سعر البيع الإجمالي"
+                    label = "سعر البيع الإجمالي",
+                    keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
                 )
                 Spacer(modifier = Modifier.height(com.batterysales.ui.components.LocalCustomKeyboardController.current.keyboardHeight.value))
             }
