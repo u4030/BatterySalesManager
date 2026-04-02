@@ -57,7 +57,14 @@ class WarehouseViewModel @Inject constructor(
         stockEntryRepository.getAllStockEntriesFlow(),
         currentUser,
         _searchQuery
-    ) { products, allVariants, allWarehouses, allStockEntries, user, query ->
+    ) { args ->
+        val products = args[0] as List<Product>
+        val allVariants = args[1] as List<ProductVariant>
+        val allWarehouses = args[2] as List<Warehouse>
+        val allStockEntries = args[3] as List<com.batterysales.data.models.StockEntry>
+        val user = args[4] as com.batterysales.data.models.User?
+        val query = args[5] as String
+
         _isLoading.value = true
         val activeProducts = products.filter { !it.archived }
         val productMap = activeProducts.associateBy { it.id }
