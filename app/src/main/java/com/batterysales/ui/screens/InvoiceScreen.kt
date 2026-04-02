@@ -194,12 +194,17 @@ fun InvoiceScreen(
                         FilterChip(
                             selected = uiState.selectedTab == 0,
                             onClick = { viewModel.onTabSelected(0) },
-                            label = { Text("كافة الفواتير") }
+                            label = { Text("فواتير اليوم") }
                         )
                         FilterChip(
                             selected = uiState.selectedTab == 1,
                             onClick = { viewModel.onTabSelected(1) },
                             label = { Text("الذمم فقط") }
+                        )
+                        FilterChip(
+                            selected = uiState.selectedTab == 2,
+                            onClick = { viewModel.onTabSelected(2) },
+                            label = { Text("كافة الفواتير") }
                         )
                     }
 

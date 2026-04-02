@@ -30,7 +30,7 @@ data class InvoiceUiState(
     val invoiceToDelete: Invoice? = null,
     val deletionWarningMessage: String = "",
     val selectedWarehouseId: String = "",
-    val selectedTab: Int = 0, // 0: All, 1: Pending
+    val selectedTab: Int = 0, // 0: Today, 1: Pending, 2: All
     val totalDebt: Double = 0.0,
     val startDate: Long? = null,
     val endDate: Long? = null,
@@ -54,20 +54,29 @@ class InvoiceViewModel @Inject constructor(
     val uiState: StateFlow<InvoiceUiState> = _uiState.asStateFlow()
 
     private val filterState = MutableStateFlow(InvoiceFilters())
+    private val refreshTrigger = MutableStateFlow(0)
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    val invoices: Flow<PagingData<Invoice>> = filterState.flatMapLatest { filters ->
-        Pager(PagingConfig(pageSize = 20)) {
-            InvoicePagingSource(
-                repository = invoiceRepository,
-                warehouseId = if (filters.warehouseId == "all") null else filters.warehouseId,
-                status = if (filters.selectedTab == 1) "pending" else null,
-                startDate = filters.startDate,
-                endDate = filters.endDate,
-                searchQuery = filters.searchQuery.ifBlank { null }
-            )
-        }.flow.cachedIn(viewModelScope)
-    }
+    val invoices: Flow<PagingData<Invoice>> = combine(filterState, refreshTrigger) { f, _ -> f }
+        .flatMapLatest { filters ->
+            val now = Calendar.getInstance()
+            now.set(Calendar.HOUR_OF_DAY, 0)
+            now.set(Calendar.MINUTE, 0)
+            now.set(Calendar.SECOND, 0)
+            now.set(Calendar.MILLISECOND, 0)
+            val startOfToday = now.timeInMillis
+
+            Pager(PagingConfig(pageSize = 25)) { // Slightly larger page size for smoother scrolling
+                InvoicePagingSource(
+                    repository = invoiceRepository,
+                    warehouseId = if (filters.warehouseId == "all" || filters.warehouseId.isBlank()) null else filters.warehouseId,
+                    status = if (filters.selectedTab == 1) "pending" else null,
+                    startDate = if (filters.selectedTab == 0 && filters.startDate == null) startOfToday else filters.startDate,
+                    endDate = if (filters.selectedTab == 0 && filters.endDate == null) startOfToday else filters.endDate,
+                    searchQuery = filters.searchQuery.ifBlank { null }
+                )
+            }.flow.cachedIn(viewModelScope)
+        }
 
     init {
         checkRoleAndLoadWarehouses()
@@ -114,7 +123,7 @@ class InvoiceViewModel @Inject constructor(
     fun loadInvoices(reset: Boolean = false) {
         if (reset) {
             // Trigger a refresh
-            filterState.value = filterState.value.copy()
+            refreshTrigger.value += 1
             _uiState.update { it.copy(isLoading = true) }
         }
         calculateTotalDebt()
