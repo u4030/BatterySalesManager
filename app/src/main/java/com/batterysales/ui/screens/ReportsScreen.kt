@@ -100,6 +100,7 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
     Scaffold(
         containerColor = bgColor
     ) { padding ->
+        Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
             state = listState,
             modifier = Modifier
@@ -222,6 +223,27 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                                     CircularProgressIndicator(modifier = Modifier.size(32.dp), color = accentColor)
                                 }
                             }
+
+        if (selectedTab == 0 && pagingItems.itemCount > 0) {
+            com.batterysales.ui.components.SidebarAlphabetNavigation(
+                onLetterSelected = { letter ->
+                    val index = (0 until pagingItems.itemCount).find { i ->
+                        val item = pagingItems[i]
+                        val name = item?.product?.name ?: ""
+                        name.startsWith(letter, ignoreCase = true) ||
+                        (letter.isLowerCase() && name.startsWith(letter, ignoreCase = true)) ||
+                        (letter.isUpperCase() && name.startsWith(letter, ignoreCase = true))
+                    }
+                    index?.let {
+                        viewModel.viewModelScope.launch {
+                            listState.animateScrollToItem(it + 3) // +3 for header items
+                        }
+                    }
+                },
+                modifier = Modifier.align(Alignment.CenterEnd).padding(end = 4.dp, top = 100.dp, bottom = 40.dp)
+            )
+        }
+        }
                         }
                     }
                     1 -> {

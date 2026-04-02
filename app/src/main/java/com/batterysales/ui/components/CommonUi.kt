@@ -198,6 +198,64 @@ fun DateRangeInfo(
     }
 }
 
+@Composable
+fun SidebarAlphabetNavigation(
+    onLetterSelected: (Char) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var isArabic by remember { mutableStateOf(true) }
+    val arabicLetters = "أبتثجحخدذرزسشصضطظعغفقكلمنهوي".toList()
+    val englishLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".toList()
+    val currentLetters = if (isArabic) arabicLetters else englishLetters
+
+    Column(
+        modifier = modifier
+            .width(32.dp)
+            .fillMaxHeight()
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f))
+            .padding(vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Surface(
+            onClick = { isArabic = !isArabic },
+            shape = CircleShape,
+            color = Color(0xFFFB8C00).copy(alpha = 0.1f),
+            modifier = Modifier.size(24.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Text(
+                    if (isArabic) "EN" else "AR",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFFFB8C00)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Column(
+            modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            currentLetters.forEach { letter ->
+                Text(
+                    text = letter.toString(),
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier
+                        .clickable { onLetterSelected(letter) }
+                        .padding(vertical = 2.dp),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppDateRangePickerDialog(

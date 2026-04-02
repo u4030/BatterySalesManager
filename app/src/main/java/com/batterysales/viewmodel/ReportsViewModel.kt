@@ -126,13 +126,12 @@ class ReportsViewModel @Inject constructor(
         productsMap,
         _isSeller,
         refreshTrigger
-    ) { barcode, warehouseList, pMap, seller, _ ->
-        Pair(barcode, warehouseList) to (pMap to seller)
-    }.flatMapLatest { (pair1, pair2) ->
-        val (barcode, warehouseList) = pair1
-        val (pMap, seller) = pair2
+    ) { query, warehouseList, pMap, seller, _ ->
+        Triple(query, warehouseList, pMap) to seller
+    }.flatMapLatest { (triple, seller) ->
+        val (query, warehouseList, pMap) = triple
         Pager(PagingConfig(pageSize = 25)) {
-            InventoryPagingSource(firestore, stockEntryRepository, pMap, warehouseList, barcode, seller)
+            InventoryPagingSource(firestore, stockEntryRepository, pMap, warehouseList, query, seller)
         }.flow.cachedIn(viewModelScope)
     }
 

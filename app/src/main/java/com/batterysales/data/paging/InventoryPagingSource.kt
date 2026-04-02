@@ -20,7 +20,7 @@ class InventoryPagingSource(
     private val stockEntryRepository: StockEntryRepository,
     private val productsMap: Map<String, Product>,
     private val warehouseList: List<Warehouse>,
-    private val barcode: String?,
+    private val searchQuery: String?,
     private val isSeller: Boolean = false,
     private val viewModel: ReportsViewModel? = null
 ) : PagingSource<DocumentSnapshot, InventoryReportItem>() {
@@ -34,9 +34,32 @@ class InventoryPagingSource(
             var lastDoc: DocumentSnapshot? = null
 
             var rawFetchedSize = 0
-            if (barcode != null) {
-                var query = firestore.collection(ProductVariant.COLLECTION_NAME)
-                    .whereEqualTo("barcode", barcode)
+            if (searchQuery != null && searchQuery.isNotBlank()) {
+                // If it looks like a barcode (mostly numeric and length >= 6), try direct barcode lookup first
+                val isProbablyBarcode = searchQuery.all { it.isDigit() } && searchQuery.length >= 6
+
+                if (isProbablyBarcode) {
+                    val barcodeSnap = firestore.collection(ProductVariant.COLLECTION_NAME)
+                        .whereEqualTo("barcode", searchQuery)
+                        .get().await()
+
+                    val foundVariants = barcodeSnap.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }.filter { !it.archived }
+                    variants.addAll(foundVariants)
+
+                    val productIds = variants.map { it.productId }.distinct()
+                    productIds.forEach { pid ->
+                        productsMap[pid]?.let { products.add(it) } ?: run {
+                            val doc = firestore.collection(Product.COLLECTION_NAME).document(pid).get().await()
+                            doc.toObject(Product::class.java)?.copy(id = doc.id)?.let { products.add(it) }
+                        }
+                    }
+                }
+
+                // Also search by name if not enough or always (Combined search)
+                var query = firestore.collection(Product.COLLECTION_NAME)
+                    .orderBy("name")
+                    .whereGreaterThanOrEqualTo("name", searchQuery)
+                    .whereLessThanOrEqualTo("name", searchQuery + "\uf8ff")
 
                 if (params.key != null) {
                     query = query.startAfter(params.key!!)
@@ -44,17 +67,24 @@ class InventoryPagingSource(
 
                 val snapshot = query.limit(params.loadSize.toLong()).get().await()
                 rawFetchedSize = snapshot.size()
-                variants.addAll(snapshot.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }.filter { !it.archived })
+                val fetchedProducts = snapshot.documents.mapNotNull { it.toObject(Product::class.java)?.copy(id = it.id) }
+                    .filter { !it.archived }
+
+                products.addAll(fetchedProducts)
                 lastDoc = snapshot.documents.lastOrNull()
 
-                // Fetch products for these variants
-                val productIds = variants.map { it.productId }.distinct()
-                productIds.forEach { pid ->
-                    productsMap[pid]?.let { products.add(it) } ?: run {
-                        val doc = firestore.collection(Product.COLLECTION_NAME).document(pid).get().await()
-                        doc.toObject(Product::class.java)?.copy(id = doc.id)?.let { products.add(it) }
-                    }
+                for (product in fetchedProducts) {
+                    val vSnap = firestore.collection(ProductVariant.COLLECTION_NAME)
+                        .whereEqualTo("productId", product.id)
+                        .get().await()
+                    variants.addAll(vSnap.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }.filter { !it.archived })
                 }
+
+                // Deduplicate variants
+                val uniqueVariants = variants.distinctBy { it.id }.sortedBy { it.capacity }
+                variants.clear()
+                variants.addAll(uniqueVariants)
+
             } else {
                 var query = firestore.collection(Product.COLLECTION_NAME)
                     .orderBy("name")

@@ -170,16 +170,26 @@ class InvoiceRepository @Inject constructor(
         val finalInvoice = invoice.copy(id = invoiceRef.id, createdAt = Date(), updatedAt = Date())
 
         firestore.runTransaction { transaction ->
-            // 1. Create Invoice
+            // 1. All Reads must happen before all writes
+            val variantRef = firestore.collection(com.batterysales.data.models.ProductVariant.COLLECTION_NAME).document(stockEntry.productVariantId)
+            val variant = transaction.get(variantRef).toObject(com.batterysales.data.models.ProductVariant::class.java)
+
+            // 2. All Writes
+            // 2.1 Create Invoice
             transaction.set(invoiceRef, finalInvoice)
 
-            // 2. Create Stock Entry
+            // 2.2 Create Stock Entry
             val stockRef = firestore.collection(com.batterysales.data.models.StockEntry.COLLECTION_NAME).document()
             val finalStockEntry = stockEntry.copy(id = stockRef.id, invoiceId = finalInvoice.id)
             transaction.set(stockRef, finalStockEntry)
 
-            // 2.1 Update denormalized stock in ProductVariant
-            updateVariantStock(transaction, finalStockEntry.productVariantId, finalStockEntry.warehouseId, finalStockEntry.quantity - finalStockEntry.returnedQuantity)
+            // 2.3 Update denormalized stock in ProductVariant
+            if (variant != null && variant.currentStock != null) {
+                val newStockMap = variant.currentStock.toMutableMap()
+                val currentQty = newStockMap[finalStockEntry.warehouseId] ?: 0
+                newStockMap[finalStockEntry.warehouseId] = currentQty + (finalStockEntry.quantity - finalStockEntry.returnedQuantity)
+                transaction.update(variantRef, "currentStock", newStockMap)
+            }
 
             // 3. Create Payment (if any)
             if (payment != null) {

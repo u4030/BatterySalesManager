@@ -37,6 +37,7 @@ import com.batterysales.ui.components.HeaderIconButton
 fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel = hiltViewModel()) {
     val warehouses by viewModel.warehouses.collectAsState()
     val stockLevels by viewModel.stockLevels.collectAsState()
+    val searchQuery by viewModel.searchQuery.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val currentUser by viewModel.currentUser.collectAsState()
     val isAdmin = currentUser?.role == "admin"
@@ -59,11 +60,15 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
         colors = listOf(Color(0xFFE53935), Color(0xFFFB8C00))
     )
 
+    val listState = rememberLazyListState()
+
     Scaffold(
         containerColor = bgColor
     ) { padding ->
+        Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
-            modifier = Modifier.padding(padding).fillMaxSize().imePadding(),
+            state = listState,
+            modifier = Modifier.fillMaxSize().padding(padding).imePadding(),
             contentPadding = PaddingValues(bottom = 16.dp)
         ) {
             // Gradient Header
@@ -90,6 +95,15 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
 
             item {
                 Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                    if (selectedTab == 0) {
+                        com.batterysales.ui.components.CustomKeyboardTextField(
+                            value = searchQuery,
+                            onValueChange = viewModel::onSearchQueryChanged,
+                            label = "بحث باسم المنتج في المستودع...",
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+                        )
+                    }
+
                     TabRow(
                         selectedTabIndex = selectedTab,
                         containerColor = Color.Transparent,
@@ -234,6 +248,28 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
             item {
                 Spacer(modifier = Modifier.height(16.dp))
             }
+        }
+
+        if (selectedTab == 0 && stockLevels.isNotEmpty()) {
+            com.batterysales.ui.components.SidebarAlphabetNavigation(
+                onLetterSelected = { letter ->
+                    var targetIndex = 2
+                    val groups = stockLevels.groupBy { it.warehouse.name }
+                    for ((_, items) in groups) {
+                        val matchingItemIndex = items.indexOfFirst { it.product.name.startsWith(letter, ignoreCase = true) }
+                        if (matchingItemIndex != -1) {
+                            targetIndex += matchingItemIndex + 1
+                            viewModel.viewModelScope.launch {
+                                listState.animateScrollToItem(targetIndex)
+                            }
+                            return@SidebarAlphabetNavigation
+                        }
+                        targetIndex += items.size + 1
+                    }
+                },
+                modifier = Modifier.align(Alignment.CenterEnd).padding(end = 4.dp, top = 100.dp, bottom = 40.dp)
+            )
+        }
         }
     }
 

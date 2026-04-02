@@ -33,6 +33,9 @@ class WarehouseViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery = _searchQuery.asStateFlow()
+
     val currentUser = userRepository.getCurrentUserFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
@@ -52,8 +55,9 @@ class WarehouseViewModel @Inject constructor(
         productVariantRepository.getAllVariantsFlow(),
         warehouseRepository.getWarehouses(),
         stockEntryRepository.getAllStockEntriesFlow(),
-        currentUser
-    ) { products, allVariants, allWarehouses, allStockEntries, user ->
+        currentUser,
+        _searchQuery
+    ) { products, allVariants, allWarehouses, allStockEntries, user, query ->
         _isLoading.value = true
         val activeProducts = products.filter { !it.archived }
         val productMap = activeProducts.associateBy { it.id }
@@ -102,6 +106,9 @@ class WarehouseViewModel @Inject constructor(
             if (variant != null && warehouse != null) {
                 val product = productMap[variant.productId]
                 if (product != null && quantity > 0) {
+                    if (query.isNotBlank() && !product.name.contains(query, ignoreCase = true)) {
+                        return@mapNotNull null
+                    }
                     WarehouseStockItem(product, variant, warehouse, quantity)
                 } else {
                     null
@@ -151,5 +158,9 @@ class WarehouseViewModel @Inject constructor(
         viewModelScope.launch {
             warehouseRepository.deleteWarehouse(warehouseId)
         }
+    }
+
+    fun onSearchQueryChanged(query: String) {
+        _searchQuery.value = query
     }
 }
