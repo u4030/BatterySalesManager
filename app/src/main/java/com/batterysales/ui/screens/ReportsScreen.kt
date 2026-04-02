@@ -68,6 +68,7 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
     val barcodeFilter by viewModel.barcodeFilter.collectAsState()
     var showScanner by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
     val selectedTab by viewModel.selectedTab.collectAsState()
 
 
@@ -243,22 +244,19 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                 }
             }
 
-            if (selectedTab == 0 && pagingItems.itemCount > 0) {
+            val allItemNames by viewModel.allInventoryItemNames.collectAsState()
+            if (selectedTab == 0 && allItemNames.isNotEmpty()) {
                 com.batterysales.ui.components.SidebarAlphabetNavigation(
                     onLetterSelected = { letter ->
-                        val index = (0 until pagingItems.itemCount).find { i ->
-                            val item = pagingItems[i]
-                            val name = item?.product?.name ?: ""
-                            name.startsWith(letter, ignoreCase = true)
-                        }
-                        index?.let {
+                        val index = allItemNames.indexOfFirst { it.startsWith(letter, ignoreCase = true) }
+                        if (index != -1) {
                             var offset = 2 // Header + Tabs
                             offset += 1 // SearchBar
                             if (pagingItems.loadState.refresh is androidx.paging.LoadState.Loading) offset++
                             if (pagingItems.itemCount > 0) offset++ // GrandTotalCard
                             if (isLoading) offset++
 
-                            viewModel.viewModelScope.launch {
+                            scope.launch {
                                 listState.animateScrollToItem(it + offset)
                             }
                         }

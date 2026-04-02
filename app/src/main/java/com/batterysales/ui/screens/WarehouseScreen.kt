@@ -61,6 +61,7 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
     )
 
     val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
 
     Scaffold(
         containerColor = bgColor
@@ -259,7 +260,7 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
                         val matchingItemIndex = items.indexOfFirst { it.product.name.startsWith(letter, ignoreCase = true) }
                         if (matchingItemIndex != -1) {
                             targetIndex += matchingItemIndex + 1
-                            viewModel.viewModelScope.launch {
+                            scope.launch {
                                 listState.animateScrollToItem(targetIndex)
                             }
                             return@SidebarAlphabetNavigation

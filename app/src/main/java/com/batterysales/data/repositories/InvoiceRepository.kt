@@ -128,35 +128,41 @@ class InvoiceRepository @Inject constructor(
             .get()
             .await()
 
-        firestore.runTransaction { transaction ->
-            // 1. Delete associated payments
-            payments.documents.forEach { transaction.delete(it.reference) }
+        val entries = stockEntries.documents.mapNotNull { it.toObject(com.batterysales.data.models.StockEntry::class.java)?.copy(id = it.id) }
+        val approvedEntries = entries.filter { it.status == "approved" }
+        val variantIds = approvedEntries.map { it.productVariantId }.distinct()
 
-            // 2. Delete stock entries
-            stockEntries.documents.forEach { doc ->
-                val entry = doc.toObject(com.batterysales.data.models.StockEntry::class.java)
-                if (entry != null && entry.status == "approved") {
-                    updateVariantStock(transaction, entry.productVariantId, entry.warehouseId, -(entry.quantity))
-                }
-                transaction.delete(doc.reference)
+        firestore.runTransaction { transaction ->
+            // 1. All Reads
+            val variantSnapshots = variantIds.associateWith { vid ->
+                transaction.get(firestore.collection(com.batterysales.data.models.ProductVariant.COLLECTION_NAME).document(vid))
             }
 
-            // 3. Delete the invoice itself
+            // 2. All Writes
+            // 2.1 Update variants
+            val variantUpdates = mutableMapOf<String, MutableMap<String, Int>>()
+            approvedEntries.forEach { entry ->
+                val variant = variantSnapshots[entry.productVariantId]?.toObject(com.batterysales.data.models.ProductVariant::class.java)
+                if (variant != null && variant.currentStock != null) {
+                    val stockMap = variantUpdates.getOrPut(entry.productVariantId) { variant.currentStock.toMutableMap() }
+                    val current = stockMap[entry.warehouseId] ?: 0
+                    stockMap[entry.warehouseId] = current - (entry.quantity)
+                }
+            }
+
+            variantUpdates.forEach { (vid, newMap) ->
+                transaction.update(firestore.collection(com.batterysales.data.models.ProductVariant.COLLECTION_NAME).document(vid), "currentStock", newMap)
+            }
+
+            // 2.2 Delete associated payments
+            payments.documents.forEach { transaction.delete(it.reference) }
+
+            // 2.3 Delete stock entries
+            stockEntries.documents.forEach { transaction.delete(it.reference) }
+
+            // 2.4 Delete the invoice itself
             transaction.delete(firestore.collection(Invoice.COLLECTION_NAME).document(invoiceId))
         }.await()
-    }
-
-    private fun updateVariantStock(transaction: com.google.firebase.firestore.Transaction, variantId: String, warehouseId: String, quantityChange: Int) {
-        val variantRef = firestore.collection(com.batterysales.data.models.ProductVariant.COLLECTION_NAME).document(variantId)
-        val variantSnap = transaction.get(variantRef)
-        val variant = variantSnap.toObject(com.batterysales.data.models.ProductVariant::class.java)
-        // Only update if variant exists AND currentStock is already initialized (non-null)
-        if (variant != null && variant.currentStock != null) {
-            val newStockMap = variant.currentStock.toMutableMap()
-            val currentQty = newStockMap[warehouseId] ?: 0
-            newStockMap[warehouseId] = currentQty + quantityChange
-            transaction.update(variantRef, "currentStock", newStockMap)
-        }
     }
 
     suspend fun createFullSale(

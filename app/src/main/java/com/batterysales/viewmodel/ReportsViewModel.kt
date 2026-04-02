@@ -102,6 +102,25 @@ class ReportsViewModel @Inject constructor(
 
     private val refreshTrigger = MutableStateFlow(0)
 
+    // For Sidebar Navigation: Track all items in order to find indices
+    val allInventoryItemNames: StateFlow<List<String>> = combine(
+        productRepository.getProducts(),
+        productVariantRepository.getAllVariantsFlow(),
+        _isSeller,
+        userRepository.getCurrentUserFlow()
+    ) { products, variants, seller, user ->
+        val pMap = products.associateBy { it.id }
+        val userWhId = user?.warehouseId
+
+        variants.filter { !it.archived }
+            .filter { v ->
+                if (!seller || userWhId == null) true
+                else (v.currentStock?.get(userWhId) ?: 0) > 0
+            }
+            .map { v -> pMap[v.productId]?.name ?: "" }
+            .sortedBy { it } // Match Firestore name sort
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     val warehouses: StateFlow<List<Warehouse>> = warehouseRepository.getWarehouses()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
