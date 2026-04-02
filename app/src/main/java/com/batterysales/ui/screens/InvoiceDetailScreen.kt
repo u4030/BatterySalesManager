@@ -128,7 +128,7 @@ fun InvoiceDetailScreen(
                         shape = RoundedCornerShape(24.dp),
                         colors = CardDefaults.cardColors(containerColor = cardBgColor)
                     ) {
-                        val dateFormatter = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault())
+                        val dateFormatter = SimpleDateFormat("yyyy/MM/dd hh:mm a", Locale.getDefault())
                         Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             InfoRowItem("اسم العميل", invoice.customerName, Icons.Default.Person)
                             InfoRowItem("تاريخ الفاتورة", dateFormatter.format(invoice.invoiceDate), Icons.Default.CalendarToday)

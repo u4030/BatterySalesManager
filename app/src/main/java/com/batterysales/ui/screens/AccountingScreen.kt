@@ -471,7 +471,7 @@ fun TransactionItemCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
-    val dateFormatter = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault())
+    val dateFormatter = SimpleDateFormat("yyyy/MM/dd hh:mm a", Locale.getDefault())
     val isIncome = transaction.type == TransactionType.INCOME || transaction.type == TransactionType.PAYMENT
     val amountColor = if (isIncome) Color(0xFF10B981) else Color(0xFFEF4444)
 
