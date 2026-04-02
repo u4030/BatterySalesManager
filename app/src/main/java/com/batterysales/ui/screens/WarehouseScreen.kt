@@ -65,190 +65,190 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
     Scaffold(
         containerColor = bgColor
     ) { padding ->
-        Box(modifier = Modifier.fillMaxSize()) {
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxSize().padding(padding).imePadding(),
-            contentPadding = PaddingValues(bottom = 16.dp)
-        ) {
-            // Gradient Header
-            item {
-                SharedHeader(
-                    title = if (selectedTab == 0) "مخزون المستودعات" else "إدارة المستودعات",
-                    onBackClick = { navController.popBackStack() },
-                    actions = {
-                        if (selectedTab == 1) {
+        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize().imePadding(),
+                contentPadding = PaddingValues(bottom = 16.dp)
+            ) {
+                // Gradient Header
+                item {
+                    SharedHeader(
+                        title = if (selectedTab == 0) "مخزون المستودعات" else "إدارة المستودعات",
+                        onBackClick = { navController.popBackStack() },
+                        actions = {
+                            if (selectedTab == 1) {
+                                HeaderIconButton(
+                                    icon = Icons.Default.AddBusiness,
+                                    onClick = { showAddWarehouseDialog = true },
+                                    contentDescription = "Add Warehouse"
+                                )
+                            }
                             HeaderIconButton(
-                                icon = Icons.Default.AddBusiness,
-                                onClick = { showAddWarehouseDialog = true },
-                                contentDescription = "Add Warehouse"
+                                icon = Icons.Default.Refresh,
+                                onClick = { /* Refresh handled by flow */ },
+                                contentDescription = "Refresh"
                             )
                         }
-                        HeaderIconButton(
-                            icon = Icons.Default.Refresh,
-                            onClick = { /* Refresh handled by flow */ },
-                            contentDescription = "Refresh"
-                        )
-                    }
-                )
-            }
+                    )
+                }
 
-            item {
-                Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                    if (selectedTab == 0) {
-                        com.batterysales.ui.components.CustomKeyboardTextField(
-                            value = searchQuery,
-                            onValueChange = viewModel::onSearchQueryChanged,
-                            label = "بحث باسم المنتج في المستودع...",
-                            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
-                        )
-                    }
-
-                    TabRow(
-                        selectedTabIndex = selectedTab,
-                        containerColor = Color.Transparent,
-                        contentColor = accentColor,
-                        indicator = { tabPositions ->
-                            TabRowDefaults.SecondaryIndicator(
-                                modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
-                                color = accentColor
+                item {
+                    Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                        if (selectedTab == 0) {
+                            com.batterysales.ui.components.CustomKeyboardTextField(
+                                value = searchQuery,
+                                onValueChange = viewModel::onSearchQueryChanged,
+                                label = "بحث باسم المنتج في المستودع...",
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
                             )
-                        },
-                        divider = {}
-                    ) {
-                        Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }) {
-                            Text("المخزون", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleSmall, color = if(selectedTab == 0) accentColor else MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        if (isAdmin) {
-                            Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) {
-                                Text("الإدارة", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleSmall, color = if(selectedTab == 1) accentColor else MaterialTheme.colorScheme.onSurfaceVariant)
+
+                        TabRow(
+                            selectedTabIndex = selectedTab,
+                            containerColor = Color.Transparent,
+                            contentColor = accentColor,
+                            indicator = { tabPositions ->
+                                TabRowDefaults.SecondaryIndicator(
+                                    modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
+                                    color = accentColor
+                                )
+                            },
+                            divider = {}
+                        ) {
+                            Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }) {
+                                Text("المخزون", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleSmall, color = if(selectedTab == 0) accentColor else MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            if (isAdmin) {
+                                Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) {
+                                    Text("الإدارة", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleSmall, color = if(selectedTab == 1) accentColor else MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
                             }
                         }
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
-                }
-            }
-
-            if (selectedTab == 0) {
-            if (isLoading && stockLevels.isEmpty()) {
-                item {
-                    Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = accentColor)
+                        Spacer(modifier = Modifier.height(16.dp))
                     }
                 }
-            } else {
-                // Group items by warehouse
-                stockLevels.groupBy { it.warehouse.name }.forEach { (warehouseName, items) ->
-                    // Warehouse Header
-                    item {
-                        Text(
-                            text = warehouseName,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onBackground,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
-                        )
-                    }
 
-                    // Stock Items in this warehouse
-                    items(items) { stockItem ->
-                        val threshold = stockItem.variant.minQuantities[stockItem.warehouse.id] ?: stockItem.variant.minQuantity
-                        val isLowStock = threshold > 0 && stockItem.quantity <= threshold
-                        val lowStockColor = Color(0xFFEF4444)
+                if (selectedTab == 0) {
+                    if (isLoading && stockLevels.isEmpty()) {
+                        item {
+                            Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(color = accentColor)
+                            }
+                        }
+                    } else {
+                        // Group items by warehouse
+                        stockLevels.groupBy { it.warehouse.name }.forEach { (warehouseName, items) ->
+                            // Warehouse Header
+                            item {
+                                Text(
+                                    text = warehouseName,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                                )
+                            }
 
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 6.dp),
-                            shape = RoundedCornerShape(20.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (isLowStock) lowStockColor.copy(alpha = 0.05f) else cardBgColor
-                            ),
-                            border = if (isLowStock) androidx.compose.foundation.BorderStroke(1.dp, lowStockColor.copy(alpha = 0.2f)) else null
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .padding(20.dp)
-                                    .fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = "${stockItem.product.name} - ${stockItem.variant.capacity}A",
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    if (stockItem.variant.specification.isNotEmpty()) {
-                                        Text(
-                                            text = stockItem.variant.specification,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                    
-                                    if (threshold > 0) {
-                                        Spacer(modifier = Modifier.height(8.dp))
-                                        Surface(
-                                            color = if (isLowStock) lowStockColor.copy(alpha = 0.1f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-                                            shape = RoundedCornerShape(8.dp)
-                                        ) {
+                            // Stock Items in this warehouse
+                            items(items) { stockItem ->
+                                val threshold = stockItem.variant.minQuantities[stockItem.warehouse.id] ?: stockItem.variant.minQuantity
+                                val isLowStock = threshold > 0 && stockItem.quantity <= threshold
+                                val lowStockColor = Color(0xFFEF4444)
+
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                                    shape = RoundedCornerShape(20.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (isLowStock) lowStockColor.copy(alpha = 0.05f) else cardBgColor
+                                    ),
+                                    border = if (isLowStock) androidx.compose.foundation.BorderStroke(1.dp, lowStockColor.copy(alpha = 0.2f)) else null
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .padding(20.dp)
+                                            .fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
                                             Text(
-                                                text = "تنبيه الحد الأدنى: $threshold",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                                color = if (isLowStock) lowStockColor else MaterialTheme.colorScheme.primary
+                                                text = "${stockItem.product.name} - ${stockItem.variant.capacity}A",
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurface
                                             )
+                                            if (stockItem.variant.specification.isNotEmpty()) {
+                                                Text(
+                                                    text = stockItem.variant.specification,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+
+                                            if (threshold > 0) {
+                                                Spacer(modifier = Modifier.height(8.dp))
+                                                Surface(
+                                                    color = if (isLowStock) lowStockColor.copy(alpha = 0.1f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                                                    shape = RoundedCornerShape(8.dp)
+                                                ) {
+                                                    Text(
+                                                        text = "تنبيه الحد الأدنى: $threshold",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                                        color = if (isLowStock) lowStockColor else MaterialTheme.colorScheme.primary
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        Column(horizontalAlignment = Alignment.End) {
+                                            Text(
+                                                text = stockItem.quantity.toString(),
+                                                style = MaterialTheme.typography.headlineMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isLowStock) lowStockColor else MaterialTheme.colorScheme.onSurface
+                                            )
+                                            if (isLowStock) {
+                                                Text(
+                                                    text = "مخزون منخفض",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = lowStockColor,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
                                         }
                                     }
                                 }
-                                
-                                Column(horizontalAlignment = Alignment.End) {
-                                    Text(
-                                        text = stockItem.quantity.toString(),
-                                        style = MaterialTheme.typography.headlineMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (isLowStock) lowStockColor else MaterialTheme.colorScheme.onSurface
-                                    )
-                                    if (isLowStock) {
-                                        Text(
-                                            text = "مخزون منخفض",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = lowStockColor,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                }
+                            }
+                        }
+                    }
+                } else {
+                    // Manage Warehouses Tab
+                    items(warehouses) { warehouse ->
+                        WarehouseManagementCard(
+                            warehouse = warehouse,
+                            onToggleStatus = { viewModel.toggleWarehouseStatus(warehouse) },
+                            onToggleMain = { viewModel.toggleMainWarehouse(warehouse) },
+                            onDelete = { warehouseToDelete = warehouse }
+                        )
+                    }
+
+                    if (warehouses.isEmpty() && !isLoading) {
+                        item {
+                            Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                                Text("لا توجد مستودعات حالياً", color = Color.Gray)
                             }
                         }
                     }
                 }
-            }
-            } else {
-                // Manage Warehouses Tab
-                items(warehouses) { warehouse ->
-                    WarehouseManagementCard(
-                        warehouse = warehouse,
-                        onToggleStatus = { viewModel.toggleWarehouseStatus(warehouse) },
-                        onToggleMain = { viewModel.toggleMainWarehouse(warehouse) },
-                        onDelete = { warehouseToDelete = warehouse }
-                    )
-                }
-                
-                if (warehouses.isEmpty() && !isLoading) {
-                    item {
-                        Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
-                            Text("لا توجد مستودعات حالياً", color = Color.Gray)
-                        }
-                    }
+
+                item {
+                    Spacer(modifier = Modifier.height(16.dp))
                 }
             }
-            
-            item {
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-        }
 
         if (selectedTab == 0 && stockLevels.isNotEmpty()) {
             com.batterysales.ui.components.SidebarAlphabetNavigation(

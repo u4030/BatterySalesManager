@@ -177,7 +177,16 @@ class StockEntryViewModel @Inject constructor(
 
     fun onProductSelected(product: Product) {
         viewModelScope.launch {
-            _uiState.update { it.copy(selectedProduct = product, selectedVariant = null, variants = emptyList(), isLoading = true) }
+            _uiState.update {
+                it.copy(
+                    selectedProduct = product,
+                    selectedVariant = null,
+                    variants = emptyList(),
+                    isLoading = true,
+                    quantity = "",
+                    costValue = ""
+                )
+            }
             try {
                 val variants = productVariantRepository.getVariantsForProduct(product.id).filter { !it.archived }
                 _uiState.update { it.copy(variants = variants, isLoading = false) }
