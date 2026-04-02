@@ -41,6 +41,7 @@ import androidx.compose.ui.graphics.Color
 import com.batterysales.ui.components.TabItem
 import com.batterysales.ui.components.CustomKeyboardTextField
 import com.batterysales.ui.components.KeyboardLanguage
+import kotlinx.coroutines.launch
 
 @Composable
 fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hiltViewModel()) {
@@ -68,6 +69,7 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
     val barcodeFilter by viewModel.barcodeFilter.collectAsState()
     var showScanner by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
     val selectedTab by viewModel.selectedTab.collectAsState()
 
 
@@ -100,146 +102,168 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
     Scaffold(
         containerColor = bgColor
     ) { padding ->
-        LazyColumn(
-            state = listState,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .imePadding(),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            contentPadding = PaddingValues(bottom = 32.dp)
-        ) {
-            // Gradient Header
-            item {
-                SharedHeader(
-                    title = "التقارير والإحصائيات",
-                    onBackClick = { navController.popBackStack() },
-                    actions = {
-                        HeaderIconButton(
-                            icon = Icons.Default.Refresh,
-                            onClick = { viewModel.refreshAll() },
-                            contentDescription = "Refresh"
-                        )
-                    }
-                )
-
-                Column(modifier = Modifier.padding(16.dp)) {
-                    // Styled Tabs
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
-                            .padding(4.dp)
-                            .horizontalScroll(rememberScrollState())
-                    ) {
-                        TabItem(
-                            title = "المخزون",
-                            isSelected = selectedTab == 0,
-                            modifier = Modifier.padding(horizontal = 4.dp),
-                            onClick = { viewModel.onTabSelected(0) }
-                        )
-                        TabItem(
-                            title = "السكراب",
-                            isSelected = selectedTab == 1,
-                            modifier = Modifier.padding(horizontal = 4.dp),
-                            onClick = { viewModel.onTabSelected(1) }
-                        )
-                        if (!isSeller) {
-                            TabItem(
-                                title = "الموردين",
-                                isSelected = selectedTab == 2,
-                                modifier = Modifier.padding(horizontal = 4.dp),
-                                onClick = { viewModel.onTabSelected(2) }
+        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .imePadding(),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                contentPadding = PaddingValues(bottom = 32.dp)
+            ) {
+                // Gradient Header
+                item {
+                    SharedHeader(
+                        title = "التقارير والإحصائيات",
+                        onBackClick = { navController.popBackStack() },
+                        actions = {
+                            HeaderIconButton(
+                                icon = Icons.Default.Refresh,
+                                onClick = { viewModel.refreshAll() },
+                                contentDescription = "Refresh"
                             )
+                        }
+                    )
+
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        // Styled Tabs
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
+                                .padding(4.dp)
+                                .horizontalScroll(rememberScrollState())
+                        ) {
+                            TabItem(
+                                title = "المخزون",
+                                isSelected = selectedTab == 0,
+                                modifier = Modifier.padding(horizontal = 4.dp),
+                                onClick = { viewModel.onTabSelected(0) }
+                            )
+                            TabItem(
+                                title = "السكراب",
+                                isSelected = selectedTab == 1,
+                                modifier = Modifier.padding(horizontal = 4.dp),
+                                onClick = { viewModel.onTabSelected(1) }
+                            )
+                            if (!isSeller) {
+                                TabItem(
+                                    title = "الموردين",
+                                    isSelected = selectedTab == 2,
+                                    modifier = Modifier.padding(horizontal = 4.dp),
+                                    onClick = { viewModel.onTabSelected(2) }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (isLoading && selectedTab != 0) {
+                    item {
+                        Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = accentColor)
+                        }
+                    }
+                } else {
+                    when (selectedTab) {
+                        0 -> {
+                            item {
+                                SearchBarRedesigned(
+                                    barcodeFilter = barcodeFilter,
+                                    onValueChange = { viewModel.onBarcodeScanned(it.ifEmpty { null }) },
+                                    onScan = { showScanner = true }
+                                )
+                            }
+
+                            if (pagingItems.loadState.refresh is androidx.paging.LoadState.Loading) {
+                                item {
+                                    Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                                        CircularProgressIndicator(color = accentColor)
+                                    }
+                                }
+                            }
+
+                            if (pagingItems.itemCount > 0) {
+                                item {
+                                    GrandTotalCard(totalQuantity = grandTotalQuantity, isSeller = isSeller)
+                                }
+                            }
+
+                            if (isLoading) {
+                                item {
+                                    Box(modifier = Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
+                                        CircularProgressIndicator(color = accentColor)
+                                    }
+                                }
+                            }
+
+                            items(pagingItems.itemCount) { index ->
+                                val reportItem = pagingItems[index]
+                                reportItem?.let {
+                                    Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                                        ReportItemCard(
+                                            item = it,
+                                            warehouses = warehouses,
+                                            isSeller = isSeller,
+                                            onClick = {
+                                                val capacityStr = it.variant.capacity.toString()
+                                                val productName = it.product.name
+                                                val spec = it.variant.specification.ifEmpty { "no_spec" }
+                                                navController.navigate(
+                                                    "product_ledger/${it.variant.id}/$productName/$capacityStr/$spec"
+                                                )
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+
+                            if (pagingItems.loadState.append is androidx.paging.LoadState.Loading) {
+                                item {
+                                    Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                                        CircularProgressIndicator(modifier = Modifier.size(32.dp), color = accentColor)
+                                    }
+                                }
+                            }
+                        }
+                        1 -> {
+                            item {
+                                OldBatteryReportSectionRedesigned(
+                                    warehouses = warehouses,
+                                    oldBatterySummary = oldBatterySummary,
+                                    oldBatteryWarehouseSummary = oldBatteryWarehouseSummary,
+                                    onNavigate = { navController.navigate("old_battery_ledger") }
+                                )
+                            }
+                        }
+                        2 -> {
+                            if (!isSeller) {
+                                supplierReportSectionRedesigned(this, viewModel, supplierItems)
+                            }
                         }
                     }
                 }
             }
 
-            if (isLoading && selectedTab != 0) {
-                item {
-                    Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = accentColor)
-                    }
-                }
-            } else {
-                when (selectedTab) {
-                    0 -> {
-                        item {
-                            SearchBarRedesigned(
-                                barcodeFilter = barcodeFilter,
-                                onValueChange = { viewModel.onBarcodeScanned(it.ifEmpty { null }) },
-                                onScan = { showScanner = true }
-                            )
-                        }
+            val allItemNames by viewModel.allInventoryItemNames.collectAsState()
+            if (selectedTab == 0 && allItemNames.isNotEmpty()) {
+                com.batterysales.ui.components.SidebarAlphabetNavigation(
+                    onLetterSelected = { letter ->
+                        val index = allItemNames.indexOfFirst { it.startsWith(letter, ignoreCase = true) }
+                        if (index != -1) {
+                            var offset = 2 // Header + Tabs
+                            offset += 1 // SearchBar
+                            if (pagingItems.loadState.refresh is androidx.paging.LoadState.Loading) offset++
+                            if (pagingItems.itemCount > 0) offset++ // GrandTotalCard
+                            if (isLoading) offset++
 
-                        if (pagingItems.loadState.refresh is androidx.paging.LoadState.Loading) {
-                            item {
-                                Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
-                                    CircularProgressIndicator(color = accentColor)
-                                }
+                            scope.launch {
+                                listState.animateScrollToItem(index + offset)
                             }
                         }
-
-                        if (pagingItems.itemCount > 0) {
-                            item {
-                                GrandTotalCard(totalQuantity = grandTotalQuantity, isSeller = isSeller)
-                            }
-                        }
-                        
-                        if (isLoading) {
-                            item {
-                                Box(modifier = Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
-                                    CircularProgressIndicator(color = accentColor)
-                                }
-                            }
-                        }
-
-                        items(pagingItems.itemCount) { index ->
-                            val reportItem = pagingItems[index]
-                            reportItem?.let {
-                                Box(modifier = Modifier.padding(horizontal = 16.dp)) {
-                                    ReportItemCard(
-                                        item = it,
-                                        warehouses = warehouses,
-                                        isSeller = isSeller,
-                                        onClick = {
-                                            val capacityStr = it.variant.capacity.toString()
-                                            val productName = it.product.name
-                                            val spec = it.variant.specification.ifEmpty { "no_spec" }
-                                            navController.navigate(
-                                                "product_ledger/${it.variant.id}/$productName/$capacityStr/$spec"
-                                            )
-                                        }
-                                    )
-                                }
-                            }
-                        }
-
-                        if (pagingItems.loadState.append is androidx.paging.LoadState.Loading) {
-                            item {
-                                Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                                    CircularProgressIndicator(modifier = Modifier.size(32.dp), color = accentColor)
-                                }
-                            }
-                        }
-                    }
-                    1 -> {
-                        item {
-                            OldBatteryReportSectionRedesigned(
-                                warehouses = warehouses,
-                                oldBatterySummary = oldBatterySummary,
-                                oldBatteryWarehouseSummary = oldBatteryWarehouseSummary,
-                                onNavigate = { navController.navigate("old_battery_ledger") }
-                            )
-                        }
-                    }
-                    2 -> {
-                        if (!isSeller) {
-                            supplierReportSectionRedesigned(this, viewModel, supplierItems)
-                        }
-                    }
-                }
+                    },
+                    modifier = Modifier.align(Alignment.CenterEnd).padding(end = 4.dp, top = 150.dp, bottom = 10.dp)
+                )
             }
         }
     }

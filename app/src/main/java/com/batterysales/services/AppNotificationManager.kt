@@ -294,7 +294,7 @@ class AppNotificationManager @Inject constructor(
                         if (!notifiedLowStockKeys.contains(key)) {
                             val product = productsMap[variant.productId]
                             val message = "${product?.name ?: ""} (${variant.capacity}A): $qty قطعة في ${warehouse.name}"
-
+                            
                             if (isStartup) {
                                 lowStockMessages.add(message)
                             } else {
@@ -318,7 +318,7 @@ class AppNotificationManager @Inject constructor(
                 } else {
                     lowStockMessages.joinToString("\n")
                 }
-
+                
                 NotificationHelper.showNotification(
                     context,
                     "تنبيه المخزون المنخفض (${lowStockMessages.size} أصناف)",

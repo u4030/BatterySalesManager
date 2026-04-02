@@ -102,6 +102,25 @@ class ReportsViewModel @Inject constructor(
 
     private val refreshTrigger = MutableStateFlow(0)
 
+    // For Sidebar Navigation: Track all items in order to find indices
+    val allInventoryItemNames: StateFlow<List<String>> = combine(
+        productRepository.getProducts(),
+        productVariantRepository.getAllVariantsFlow(),
+        _isSeller,
+        userRepository.getCurrentUserFlow()
+    ) { products, variants, seller, user ->
+        val pMap = products.associateBy { it.id }
+        val userWhId = user?.warehouseId
+        
+        variants.filter { !it.archived }
+            .filter { v ->
+                if (!seller || userWhId == null) true
+                else (v.currentStock?.get(userWhId) ?: 0) > 0
+            }
+            .map { v -> pMap[v.productId]?.name ?: "" }
+            .sortedBy { it } // Match Firestore name sort
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     val warehouses: StateFlow<List<Warehouse>> = warehouseRepository.getWarehouses()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -126,13 +145,12 @@ class ReportsViewModel @Inject constructor(
         productsMap,
         _isSeller,
         refreshTrigger
-    ) { barcode, warehouseList, pMap, seller, _ ->
-        Pair(barcode, warehouseList) to (pMap to seller)
-    }.flatMapLatest { (pair1, pair2) ->
-        val (barcode, warehouseList) = pair1
-        val (pMap, seller) = pair2
+    ) { query, warehouseList, pMap, seller, _ ->
+        Triple(query, warehouseList, pMap) to seller
+    }.flatMapLatest { (triple, seller) ->
+        val (query, warehouseList, pMap) = triple
         Pager(PagingConfig(pageSize = 25)) {
-            InventoryPagingSource(firestore, stockEntryRepository, pMap, warehouseList, barcode, seller)
+            InventoryPagingSource(firestore, stockEntryRepository, pMap, warehouseList, query, seller)
         }.flow.cachedIn(viewModelScope)
     }
 

@@ -19,41 +19,62 @@ class StockEntryRepository @Inject constructor(
 
     suspend fun addStockEntry(stockEntry: StockEntry) {
         firestore.runTransaction { transaction ->
+            // 1. Reads
+            val variantRef = firestore.collection(com.batterysales.data.models.ProductVariant.COLLECTION_NAME).document(stockEntry.productVariantId)
+            val variant = transaction.get(variantRef).toObject(com.batterysales.data.models.ProductVariant::class.java)
+
+            // 2. Writes
             val docRef = firestore.collection(StockEntry.COLLECTION_NAME).document()
             val finalEntry = stockEntry.copy(id = docRef.id)
             transaction.set(docRef, finalEntry)
 
-            if (finalEntry.status == "approved") {
-                updateVariantStock(transaction, finalEntry.productVariantId, finalEntry.warehouseId, finalEntry.quantity)
+            if (finalEntry.status == "approved" && variant != null && variant.currentStock != null) {
+                val newStockMap = variant.currentStock.toMutableMap()
+                newStockMap[finalEntry.warehouseId] = (newStockMap[finalEntry.warehouseId] ?: 0) + (finalEntry.quantity - finalEntry.returnedQuantity)
+                transaction.update(variantRef, "currentStock", newStockMap)
             }
         }.await()
     }
 
     suspend fun addStockEntries(stockEntries: List<StockEntry>) {
         firestore.runTransaction { transaction ->
+            // 1. All Reads must happen before all writes
+            val variantIds = stockEntries.map { it.productVariantId }.distinct()
+            val variantRefs = variantIds.associateWith { firestore.collection(com.batterysales.data.models.ProductVariant.COLLECTION_NAME).document(it) }
+            val variantsMap = variantRefs.mapValues { (_, ref) -> 
+                transaction.get(ref).toObject(com.batterysales.data.models.ProductVariant::class.java)
+            }
+
+            // Keep track of stock updates locally for this transaction
+            val stockUpdates = mutableMapOf<String, MutableMap<String, Int>>() // variantId -> (warehouseId -> change)
+
+            // 2. All Writes
             stockEntries.forEach { entry ->
                 val docRef = firestore.collection(StockEntry.COLLECTION_NAME).document()
                 val finalEntry = entry.copy(id = docRef.id)
                 transaction.set(docRef, finalEntry)
 
                 if (finalEntry.status == "approved") {
-                    updateVariantStock(transaction, finalEntry.productVariantId, finalEntry.warehouseId, finalEntry.quantity)
+                    val warehouseUpdates = stockUpdates.getOrPut(entry.productVariantId) { mutableMapOf() }
+                    warehouseUpdates[entry.warehouseId] = (warehouseUpdates[entry.warehouseId] ?: 0) + (entry.quantity - entry.returnedQuantity)
                 }
+            }
+
+            // Apply stock updates to variants
+            stockUpdates.forEach { (variantId, updates) ->
+                val variant = variantsMap[variantId] ?: return@forEach
+                if (variant.currentStock == null) return@forEach // Only update if initialized
+
+                val variantRef = variantRefs[variantId] ?: return@forEach
+                val newStockMap = variant.currentStock.toMutableMap()
+                updates.forEach { (warehouseId, change) ->
+                    newStockMap[warehouseId] = (newStockMap[warehouseId] ?: 0) + change
+                }
+                transaction.update(variantRef, "currentStock", newStockMap)
             }
         }.await()
     }
 
-    private fun updateVariantStock(transaction: com.google.firebase.firestore.Transaction, variantId: String, warehouseId: String, quantityChange: Int) {
-        val variantRef = firestore.collection(com.batterysales.data.models.ProductVariant.COLLECTION_NAME).document(variantId)
-        val variantSnap = transaction.get(variantRef)
-        val variant = variantSnap.toObject(com.batterysales.data.models.ProductVariant::class.java)
-        if (variant != null) {
-            val newStockMap = (variant.currentStock ?: emptyMap()).toMutableMap()
-            val currentQty = newStockMap[warehouseId] ?: 0
-            newStockMap[warehouseId] = currentQty + quantityChange
-            transaction.update(variantRef, "currentStock", newStockMap)
-        }
-    }
 
     fun getAllStockEntriesFlow(limit: Long = 5000): Flow<List<StockEntry>> = callbackFlow {
         val listenerRegistration = firestore.collection(StockEntry.COLLECTION_NAME)
@@ -126,7 +147,11 @@ class StockEntryRepository @Inject constructor(
         createdByUserName: String = ""
     ) {
         firestore.runTransaction { transaction ->
-            // Create a negative stock entry for the source warehouse
+            // 1. Reads
+            val variantRef = firestore.collection(com.batterysales.data.models.ProductVariant.COLLECTION_NAME).document(productVariantId)
+            val variant = transaction.get(variantRef).toObject(com.batterysales.data.models.ProductVariant::class.java)
+
+            // 2. Writes
             val sourceDocRef = firestore.collection(StockEntry.COLLECTION_NAME).document()
             val sourceStockEntry = StockEntry(
                 id = sourceDocRef.id,
@@ -142,7 +167,6 @@ class StockEntryRepository @Inject constructor(
             )
             transaction.set(sourceDocRef, sourceStockEntry)
 
-            // Create a positive stock entry for the destination warehouse
             val destinationDocRef = firestore.collection(StockEntry.COLLECTION_NAME).document()
             val destinationStockEntry = StockEntry(
                 id = destinationDocRef.id,
@@ -158,9 +182,11 @@ class StockEntryRepository @Inject constructor(
             )
             transaction.set(destinationDocRef, destinationStockEntry)
 
-            if (status == "approved") {
-                updateVariantStock(transaction, productVariantId, sourceWarehouseId, -quantity)
-                updateVariantStock(transaction, productVariantId, destinationWarehouseId, quantity)
+            if (status == "approved" && variant != null && variant.currentStock != null) {
+                val newStockMap = variant.currentStock.toMutableMap()
+                newStockMap[sourceWarehouseId] = (newStockMap[sourceWarehouseId] ?: 0) - quantity
+                newStockMap[destinationWarehouseId] = (newStockMap[destinationWarehouseId] ?: 0) + quantity
+                transaction.update(variantRef, "currentStock", newStockMap)
             }
         }.await()
     }
@@ -219,34 +245,67 @@ class StockEntryRepository @Inject constructor(
 
     suspend fun updateStockEntry(entry: StockEntry) {
         firestore.runTransaction { transaction ->
+            // 1. Reads
             val docRef = firestore.collection(StockEntry.COLLECTION_NAME).document(entry.id)
-            val oldEntrySnap = transaction.get(docRef)
-            val oldEntry = oldEntrySnap.toObject(StockEntry::class.java)
+            val oldEntry = transaction.get(docRef).toObject(StockEntry::class.java)
 
+            val variantIds = mutableSetOf<String>()
+            oldEntry?.let { variantIds.add(it.productVariantId) }
+            variantIds.add(entry.productVariantId)
+
+            val variantSnapshots = variantIds.associateWith { id ->
+                transaction.get(firestore.collection(com.batterysales.data.models.ProductVariant.COLLECTION_NAME).document(id))
+            }
+
+            // 2. Writes
             transaction.set(docRef, entry)
 
+            val updatedVariantsStock = mutableMapOf<String, MutableMap<String, Int>>()
+
             if (oldEntry != null && oldEntry.status == "approved") {
-                // Reverse old stock
-                updateVariantStock(transaction, oldEntry.productVariantId, oldEntry.warehouseId, -(oldEntry.quantity))
+                val variant = variantSnapshots[oldEntry.productVariantId]?.toObject(com.batterysales.data.models.ProductVariant::class.java)
+                if (variant != null && variant.currentStock != null) {
+                    val stockMap = updatedVariantsStock.getOrPut(oldEntry.productVariantId) { variant.currentStock.toMutableMap() }
+                    val current = stockMap[oldEntry.warehouseId] ?: 0
+                    stockMap[oldEntry.warehouseId] = current - (oldEntry.quantity - oldEntry.returnedQuantity)
+                }
             }
 
             if (entry.status == "approved") {
-                // Apply new stock
-                updateVariantStock(transaction, entry.productVariantId, entry.warehouseId, entry.quantity)
+                // Determine source for stock map (either from initial read or previous update in this transaction)
+                val initialVariant = variantSnapshots[entry.productVariantId]?.toObject(com.batterysales.data.models.ProductVariant::class.java)
+                if (initialVariant != null && initialVariant.currentStock != null) {
+                    val stockMap = updatedVariantsStock.getOrPut(entry.productVariantId) { initialVariant.currentStock.toMutableMap() }
+                    val current = stockMap[entry.warehouseId] ?: 0
+                    stockMap[entry.warehouseId] = current + (entry.quantity - entry.returnedQuantity)
+                }
+            }
+
+            // Apply all accumulated updates
+            updatedVariantsStock.forEach { (vid, newMap) ->
+                transaction.update(firestore.collection(com.batterysales.data.models.ProductVariant.COLLECTION_NAME).document(vid), "currentStock", newMap)
             }
         }.await()
     }
 
     suspend fun deleteStockEntry(entryId: String) {
         firestore.runTransaction { transaction ->
+            // 1. Reads
             val docRef = firestore.collection(StockEntry.COLLECTION_NAME).document(entryId)
-            val oldEntrySnap = transaction.get(docRef)
-            val oldEntry = oldEntrySnap.toObject(StockEntry::class.java)
+            val oldEntry = transaction.get(docRef).toObject(StockEntry::class.java)
+
+            val variantRef = oldEntry?.let { firestore.collection(com.batterysales.data.models.ProductVariant.COLLECTION_NAME).document(it.productVariantId) }
+            val variant = variantRef?.let { transaction.get(it).toObject(com.batterysales.data.models.ProductVariant::class.java) }
+
+            // 2. Writes
+            val updatesNeeded = oldEntry != null && oldEntry.status == "approved" && variant != null && variantRef != null && variant.currentStock != null
 
             transaction.delete(docRef)
 
-            if (oldEntry != null && oldEntry.status == "approved") {
-                updateVariantStock(transaction, oldEntry.productVariantId, oldEntry.warehouseId, -(oldEntry.quantity))
+            if (updatesNeeded) {
+                val newStockMap = variant!!.currentStock!!.toMutableMap()
+                newStockMap[oldEntry!!.warehouseId] = (newStockMap[oldEntry.warehouseId] ?: 0) - (oldEntry.quantity - oldEntry.returnedQuantity)
+                transaction.update(variantRef!!, "currentStock", newStockMap)
             }
         }.await()
     }
@@ -278,13 +337,24 @@ class StockEntryRepository @Inject constructor(
 
     suspend fun approveEntry(entryId: String) {
         firestore.runTransaction { transaction ->
+            // 1. Reads
             val docRef = firestore.collection(StockEntry.COLLECTION_NAME).document(entryId)
-            val entrySnap = transaction.get(docRef)
-            val entry = entrySnap.toObject(StockEntry::class.java)
+            val entry = transaction.get(docRef).toObject(StockEntry::class.java)
 
+            val variantRef = entry?.let { firestore.collection(com.batterysales.data.models.ProductVariant.COLLECTION_NAME).document(it.productVariantId) }
+            val variant = variantRef?.let { transaction.get(it).toObject(com.batterysales.data.models.ProductVariant::class.java) }
+
+            // 2. Writes
             if (entry != null && entry.status != "approved") {
+                val shouldUpdateStock = variant != null && variantRef != null && variant.currentStock != null
+                
                 transaction.update(docRef, "status", "approved")
-                updateVariantStock(transaction, entry.productVariantId, entry.warehouseId, entry.quantity)
+                
+                if (shouldUpdateStock) {
+                    val newStockMap = variant!!.currentStock!!.toMutableMap()
+                    newStockMap[entry.warehouseId] = (newStockMap[entry.warehouseId] ?: 0) + (entry.quantity - entry.returnedQuantity)
+                    transaction.update(variantRef!!, "currentStock", newStockMap)
+                }
             }
         }.await()
     }
@@ -306,24 +376,24 @@ class StockEntryRepository @Inject constructor(
 
     suspend fun getEntriesForVariants(variantIds: List<String>, warehouseId: String? = null): Map<String, List<StockEntry>> {
         if (variantIds.isEmpty()) return emptyMap()
-
+        
         // Firestore 'in' limit is 30
         val chunks = variantIds.chunked(30)
         val allEntries = mutableListOf<StockEntry>()
-
+        
         chunks.forEach { chunk ->
             var query = firestore.collection(StockEntry.COLLECTION_NAME)
                 .whereIn("productVariantId", chunk)
                 .whereEqualTo("status", "approved")
-
+            
             if (warehouseId != null) {
                 query = query.whereEqualTo("warehouseId", warehouseId)
             }
-
+            
             val snap = query.get().await()
             allEntries.addAll(snap.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) })
         }
-
+        
         return allEntries.groupBy { it.productVariantId }
     }
 
@@ -335,7 +405,7 @@ class StockEntryRepository @Inject constructor(
         val purchaseEntries = entries.filter { it.quantity > 0 }
         val sumTotalCost = purchaseEntries.sumOf { it.totalCost }
         val netPurchasedQty = purchaseEntries.sumOf { it.quantity - it.returnedQuantity }
-
+        
         val averageCost = if (netPurchasedQty > 0) sumTotalCost / netPurchasedQty else 0.0
         return Triple(currentQty, averageCost, currentQty * averageCost)
     }
@@ -366,4 +436,27 @@ class StockEntryRepository @Inject constructor(
         return snapshot.getDouble(AggregateField.sum("totalCost")) ?: 0.0
     }
 
+    /**
+     * Recalculates the current stock for a specific variant from all historical stock entries
+     * and updates the ProductVariant's currentStock map.
+     */
+    suspend fun syncVariantStock(variantId: String) {
+        val entries = firestore.collection(StockEntry.COLLECTION_NAME)
+            .whereEqualTo("productVariantId", variantId)
+            .whereEqualTo("status", "approved")
+            .get()
+            .await()
+            .documents.mapNotNull { it.toObject(StockEntry::class.java) }
+
+        val stockMap = mutableMapOf<String, Int>()
+        entries.forEach { entry ->
+            val current = stockMap[entry.warehouseId] ?: 0
+            stockMap[entry.warehouseId] = current + (entry.quantity - entry.returnedQuantity)
+        }
+
+        firestore.collection(com.batterysales.data.models.ProductVariant.COLLECTION_NAME)
+            .document(variantId)
+            .update("currentStock", stockMap)
+            .await()
+    }
 }

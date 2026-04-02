@@ -35,6 +35,7 @@ data class StockEntryUiState(
     val isEditMode: Boolean = false,
     val isLoading: Boolean = true,
     val errorMessage: String? = null,
+    val isSubmitting: Boolean = false,
     val isFinished: Boolean = false
 ) {
     val isAdmin: Boolean get() = userRole == "admin"
@@ -66,6 +67,7 @@ class StockEntryViewModel @Inject constructor(
     private val stockEntryRepository: StockEntryRepository,
     private val supplierRepository: SupplierRepository,
     private val userRepository: UserRepository,
+    private val networkHelper: com.batterysales.utils.NetworkHelper,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -175,7 +177,16 @@ class StockEntryViewModel @Inject constructor(
 
     fun onProductSelected(product: Product) {
         viewModelScope.launch {
-            _uiState.update { it.copy(selectedProduct = product, selectedVariant = null, variants = emptyList(), isLoading = true) }
+            _uiState.update {
+                it.copy(
+                    selectedProduct = product,
+                    selectedVariant = null,
+                    variants = emptyList(),
+                    isLoading = true,
+                    quantity = "",
+                    costValue = ""
+                )
+            }
             try {
                 val variants = productVariantRepository.getVariantsForProduct(product.id).filter { !it.archived }
                 _uiState.update { it.copy(variants = variants, isLoading = false) }
@@ -260,15 +271,37 @@ class StockEntryViewModel @Inject constructor(
     }
 
     fun onSaveClicked() {
-        viewModelScope.launch {
-            val state = uiState.value
-            if ((state.isEditMode && state.quantity.isBlank()) || (!state.isEditMode && state.stockItems.isEmpty()) || state.selectedWarehouse == null) {
-                _uiState.update { it.copy(errorMessage = "الرجاء اختيار مستودع وإضافة أصناف") }
-                return@launch
+        if (uiState.value.isSubmitting) return
+
+        val state = uiState.value
+        // Validation
+        if (state.selectedWarehouse == null) {
+            _uiState.update { it.copy(errorMessage = "الرجاء اختيار مستودع") }
+            return
+        }
+        if (state.isEditMode) {
+            if (state.quantity.isBlank() || (state.quantity.toIntOrNull() ?: 0) <= 0) {
+                _uiState.update { it.copy(errorMessage = "الرجاء إدخال كمية صحيحة") }
+                return
             }
+        } else {
+            if (state.stockItems.isEmpty()) {
+                _uiState.update { it.copy(errorMessage = "الرجاء إضافة أصناف للقائمة") }
+                return
+            }
+        }
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSubmitting = true) }
+
             try {
                 if (state.selectedWarehouse?.isActive == false) {
-                    _uiState.update { it.copy(errorMessage = "عذراً، هذا المستودع متوقف حالياً ولا يمكن إجراء عمليات عليه.") }
+                    _uiState.update { it.copy(errorMessage = "عذراً، هذا المستودع متوقف حالياً ولا يمكن إجراء عمليات عليه.", isSubmitting = false) }
+                    return@launch
+                }
+
+                if (!networkHelper.isNetworkConnected()) {
+                    _uiState.update { it.copy(errorMessage = "لا يوجد اتصال بالإنترنت. يرجى المحاولة لاحقاً.", isSubmitting = false) }
                     return@launch
                 }
 
@@ -342,10 +375,10 @@ class StockEntryViewModel @Inject constructor(
                         }
                     }
                 }
-                _uiState.update { it.copy(isFinished = true) }
+                _uiState.update { it.copy(isFinished = true, isSubmitting = false) }
             } catch (e: Exception) {
                 Log.e("StockEntryViewModel", "Error saving stock data", e)
-                _uiState.update { it.copy(errorMessage = "فشل حفظ البيانات: ${e.message}") }
+                _uiState.update { it.copy(errorMessage = "فشل حفظ البيانات: ${e.message}", isSubmitting = false) }
             }
         }
     }

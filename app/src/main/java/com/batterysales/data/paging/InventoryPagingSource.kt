@@ -20,12 +20,16 @@ class InventoryPagingSource(
     private val stockEntryRepository: StockEntryRepository,
     private val productsMap: Map<String, Product>,
     private val warehouseList: List<Warehouse>,
-    private val barcode: String?,
+    private val searchQuery: String?,
     private val isSeller: Boolean = false,
     private val viewModel: ReportsViewModel? = null
 ) : PagingSource<DocumentSnapshot, InventoryReportItem>() {
 
     override fun getRefreshKey(state: PagingState<DocumentSnapshot, InventoryReportItem>): DocumentSnapshot? = null
+
+    private fun getProduct(productId: String, list: List<Product>, map: Map<String, Product>): Product? {
+        return list.find { it.id == productId } ?: map[productId]
+    }
 
     override suspend fun load(params: LoadParams<DocumentSnapshot>): LoadResult<DocumentSnapshot, InventoryReportItem> {
         return try {
@@ -34,9 +38,31 @@ class InventoryPagingSource(
             var lastDoc: DocumentSnapshot? = null
 
             var rawFetchedSize = 0
-            if (barcode != null) {
-                var query = firestore.collection(ProductVariant.COLLECTION_NAME)
-                    .whereEqualTo("barcode", barcode)
+            coroutineScope {
+            if (searchQuery != null && searchQuery.isNotBlank()) {
+                // If this is the FIRST page, try barcode lookup
+                if (params.key == null) {
+                    val barcodeSnap = firestore.collection(ProductVariant.COLLECTION_NAME)
+                        .whereEqualTo("barcode", searchQuery)
+                        .get().await()
+
+                    val foundVariants = barcodeSnap.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }.filter { !it.archived }
+                    variants.addAll(foundVariants)
+
+                    val barcodeProductIds = variants.map { it.productId }.distinct()
+                    barcodeProductIds.forEach { pid ->
+                        productsMap[pid]?.let { products.add(it) } ?: run {
+                            val doc = firestore.collection(Product.COLLECTION_NAME).document(pid).get().await()
+                            doc.toObject(Product::class.java)?.copy(id = doc.id)?.let { products.add(it) }
+                        }
+                    }
+                }
+
+                // Also search by name (Combined search)
+                var query = firestore.collection(Product.COLLECTION_NAME)
+                    .orderBy("name")
+                    .whereGreaterThanOrEqualTo("name", searchQuery)
+                    .whereLessThanOrEqualTo("name", searchQuery + "\uf8ff")
 
                 if (params.key != null) {
                     query = query.startAfter(params.key!!)
@@ -44,17 +70,44 @@ class InventoryPagingSource(
 
                 val snapshot = query.limit(params.loadSize.toLong()).get().await()
                 rawFetchedSize = snapshot.size()
-                variants.addAll(snapshot.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }.filter { !it.archived })
-                lastDoc = snapshot.documents.lastOrNull()
+                val fetchedProducts = snapshot.documents.mapNotNull { it.toObject(Product::class.java)?.copy(id = it.id) }
+                    .filter { !it.archived }
 
-                // Fetch products for these variants
-                val productIds = variants.map { it.productId }.distinct()
-                productIds.forEach { pid ->
-                    productsMap[pid]?.let { products.add(it) } ?: run {
-                        val doc = firestore.collection(Product.COLLECTION_NAME).document(pid).get().await()
-                        doc.toObject(Product::class.java)?.copy(id = doc.id)?.let { products.add(it) }
+                // Add name-matched products, avoiding duplicates from barcode search
+                fetchedProducts.forEach { fp ->
+                    if (products.none { it.id == fp.id }) {
+                        products.add(fp)
                     }
                 }
+                lastDoc = snapshot.documents.lastOrNull()
+
+                // Fetch variants for name-matched products in bulk
+                if (fetchedProducts.isNotEmpty()) {
+                    val productIds = fetchedProducts.map { it.id }
+                    val variantJobs = productIds.chunked(30).map { ids ->
+                        async {
+                            firestore.collection(ProductVariant.COLLECTION_NAME)
+                                .whereIn("productId", ids)
+                                .get()
+                                .await()
+                        }
+                    }
+                    val snapshots = variantJobs.awaitAll()
+                    snapshots.forEach { snap ->
+                        val pVariants = snap.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }.filter { !it.archived }
+                        pVariants.forEach { pv ->
+                            if (variants.none { it.id == pv.id }) {
+                                variants.add(pv)
+                            }
+                        }
+                    }
+                }
+                
+                // Final sort for the result page
+                val sortedVariants = variants.sortedWith(compareBy({ getProduct(it.productId, products, productsMap)?.name ?: "" }, { it.capacity }))
+                variants.clear()
+                variants.addAll(sortedVariants)
+
             } else {
                 var query = firestore.collection(Product.COLLECTION_NAME)
                     .orderBy("name")
@@ -71,29 +124,39 @@ class InventoryPagingSource(
                 products.addAll(fetchedProducts)
                 lastDoc = snapshot.documents.lastOrNull()
 
-                // For each product, fetch its variants
-                for (product in fetchedProducts) {
-                    val vSnap = firestore.collection(ProductVariant.COLLECTION_NAME)
-                        .whereEqualTo("productId", product.id)
-                        .get()
-                        .await()
-
-                    val pVariants = vSnap.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }
-                        .filter { !it.archived }
-                        .sortedBy { it.capacity }
-
-                    variants.addAll(pVariants)
+                // Fetch variants for all products in bulk
+                if (fetchedProducts.isNotEmpty()) {
+                    val productIds = fetchedProducts.map { it.id }
+                    val variantJobs = productIds.chunked(30).map { ids ->
+                        async {
+                            firestore.collection(ProductVariant.COLLECTION_NAME)
+                                .whereIn("productId", ids)
+                                .get()
+                                .await()
+                        }
+                    }
+                    val snapshots = variantJobs.awaitAll()
+                    val allFetchedVariants = snapshots.flatMap { snap ->
+                        snap.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }
+                    }.filter { !it.archived }
+                    
+                    variants.addAll(allFetchedVariants)
                 }
+                
+                // Final sort for the result page
+                val sortedVariants = variants.sortedWith(compareBy({ getProduct(it.productId, products, productsMap)?.name ?: "" }, { it.capacity }))
+                variants.clear()
+                variants.addAll(sortedVariants)
+            }
             }
 
             val data = coroutineScope {
                 val variantIds = variants.map { it.id }
                 val allEntriesMap = stockEntryRepository.getEntriesForVariants(variantIds)
-                val pLookup = products.associateBy { it.id }
 
                 variants.map { variant ->
                     async {
-                        val finalProduct = pLookup[variant.productId] ?: productsMap[variant.productId] ?: Product(name = "Unknown")
+                        val finalProduct = getProduct(variant.productId, products, productsMap) ?: Product(name = "Unknown")
                         val warehouseIds = warehouseList.map { it.id }.toSet()
                         val entries = allEntriesMap[variant.id] ?: emptyList()
 

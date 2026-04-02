@@ -147,43 +147,43 @@ fun InvoiceScreen(
 
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (uiState.isAdmin && uiState.warehouses.isNotEmpty()) {
-                            val selectedIndex = uiState.warehouses.indexOfFirst { it.id == uiState.selectedWarehouseId }.coerceAtLeast(0)
+                        val selectedIndex = uiState.warehouses.indexOfFirst { it.id == uiState.selectedWarehouseId }.coerceAtLeast(0)
 
-                            ScrollableTabRow(
-                                selectedTabIndex = selectedIndex,
-                                containerColor = Black.copy(alpha = 0.7f),
-                                contentColor = Color.White,
-                                edgePadding = 16.dp,
-                                divider = {},
-                                indicator = { tabPositions ->
-                                    if (tabPositions.isNotEmpty()) {
-                                        Box(
-                                            Modifier
-                                                .tabIndicatorOffset(tabPositions[selectedIndex])
-                                                .height(4.dp)
-                                                .padding(horizontal = 16.dp)
-                                                .background(Color.White, RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
-                                        )
-                                    }
-                                },
-                                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
-                            ) {
-                                uiState.warehouses.forEach { warehouse ->
-                                    Tab(
-                                        selected = uiState.selectedWarehouseId == warehouse.id,
-                                        onClick = { viewModel.onWarehouseSelected(warehouse.id) },
-                                        text = {
-                                            Text(
-                                                warehouse.name,
-                                                style = MaterialTheme.typography.titleSmall,
-                                                fontWeight = if (uiState.selectedWarehouseId == warehouse.id) FontWeight.Bold else FontWeight.Medium
-                                            )
-                                        },
-                                        selectedContentColor = Color.White,
-                                        unselectedContentColor = Color.White.copy(alpha = 0.6f)
+                        ScrollableTabRow(
+                            selectedTabIndex = selectedIndex,
+                            containerColor = Black.copy(alpha = 0.7f),
+                            contentColor = Color.White,
+                            edgePadding = 16.dp,
+                            divider = {},
+                            indicator = { tabPositions ->
+                                if (tabPositions.isNotEmpty()) {
+                                    Box(
+                                        Modifier
+                                            .tabIndicatorOffset(tabPositions[selectedIndex])
+                                            .height(4.dp)
+                                            .padding(horizontal = 16.dp)
+                                            .background(Color.White, RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
                                     )
                                 }
+                            },
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                        ) {
+                            uiState.warehouses.forEach { warehouse ->
+                                Tab(
+                                    selected = uiState.selectedWarehouseId == warehouse.id,
+                                    onClick = { viewModel.onWarehouseSelected(warehouse.id) },
+                                    text = {
+                                        Text(
+                                            warehouse.name,
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = if (uiState.selectedWarehouseId == warehouse.id) FontWeight.Bold else FontWeight.Medium
+                                        )
+                                    },
+                                    selectedContentColor = Color.White,
+                                    unselectedContentColor = Color.White.copy(alpha = 0.6f)
+                                )
                             }
+                        }
                     }
 
                     // Secondary filters as Chips
@@ -194,12 +194,17 @@ fun InvoiceScreen(
                         FilterChip(
                             selected = uiState.selectedTab == 0,
                             onClick = { viewModel.onTabSelected(0) },
-                            label = { Text("كافة الفواتير") }
+                            label = { Text("فواتير اليوم") }
                         )
                         FilterChip(
                             selected = uiState.selectedTab == 1,
                             onClick = { viewModel.onTabSelected(1) },
                             label = { Text("الذمم فقط") }
+                        )
+                        FilterChip(
+                            selected = uiState.selectedTab == 2,
+                            onClick = { viewModel.onTabSelected(2) },
+                            label = { Text("كافة الفواتير") }
                         )
                     }
 
@@ -341,8 +346,8 @@ fun InvoiceItemCard(invoice: Invoice, onClick: () -> Unit, onDeleteClick: () -> 
                 ) {
                     StatusBadge(status = invoice.status)
                     Text(
-                    text = "${String.format("%,.3f", invoice.totalAmount)} JD",
-                    style = MaterialTheme.typography.titleLarge,
+                        text = "${String.format("%,.3f", invoice.totalAmount)} JD",
+                        style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -355,7 +360,7 @@ fun InvoiceItemCard(invoice: Invoice, onClick: () -> Unit, onDeleteClick: () -> 
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
                         text = invoice.invoiceNumber,
-                    style = MaterialTheme.typography.bodyLarge,
+                        style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -365,16 +370,16 @@ fun InvoiceItemCard(invoice: Invoice, onClick: () -> Unit, onDeleteClick: () -> 
 
                 Text(
                     text = invoice.customerName.ifEmpty { "عميل نقدي" },
-                style = MaterialTheme.typography.bodyLarge,
+                    style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
                     modifier = Modifier.align(Alignment.End)
                 )
 
                 if (invoice.remainingAmount > 0) {
                     Text(
-                    text = "المتبقي: ${String.format("%,.3f", invoice.remainingAmount)} JD",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold,
+                        text = "المتبقي: ${String.format("%,.3f", invoice.remainingAmount)} JD",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
                         color = Color(0xFFEF5350),
                         modifier = Modifier.align(Alignment.End)
                     )
@@ -412,7 +417,7 @@ fun InvoiceItemCard(invoice: Invoice, onClick: () -> Unit, onDeleteClick: () -> 
                             )
                         }
                     }
-                    
+
                     Text(
                         text = dateFormatter.format(invoice.invoiceDate),
                         style = MaterialTheme.typography.bodySmall,
