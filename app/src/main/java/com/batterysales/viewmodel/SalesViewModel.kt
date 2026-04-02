@@ -239,18 +239,19 @@ class SalesViewModel @Inject constructor(
             _errorMessage.value = "الرجاء اختيار المنتج والصنف والمستودع"
             return
         }
-        if (customerName.isBlank()) {
-            _errorMessage.value = "الرجاء إدخال اسم العميل"
-            return
-        }
+//        if (customerName.isBlank()) {
+//            _errorMessage.value = "الرجاء إدخال اسم العميل"
+//            return
+//        }
+
         if (qty <= 0) {
             _errorMessage.value = "الرجاء إدخال كمية صحيحة"
             return
         }
-        if (price <= 0) {
-            _errorMessage.value = "الرجاء إدخال سعر البيع"
-            return
-        }
+//        if (price <= 0) {
+//            _errorMessage.value = "الرجاء إدخال سعر البيع"
+//            return
+//        }
 
         val available = state.stockLevels[Pair(variant.id, warehouse.id)] ?: 0
         if (qty > available) {
