@@ -48,6 +48,7 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hiltViewModel()) {
+    val billViewModel: com.batterysales.viewmodel.BillViewModel = hiltViewModel()
     val keyboardController = com.batterysales.ui.components.LocalCustomKeyboardController.current
     val pagingItems = viewModel.inventoryReport.collectAsLazyPagingItems()
     val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
@@ -75,6 +76,7 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val selectedTab by viewModel.selectedTab.collectAsState()
+    val allItemNames by viewModel.allInventoryItemNames.collectAsState()
 
 
     val bgColor = MaterialTheme.colorScheme.background
@@ -245,7 +247,6 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                         }
                         2 -> {
                             if (!isSeller) {
-                                val billViewModel: com.batterysales.viewmodel.BillViewModel = hiltViewModel()
                                 supplierReportSectionRedesigned(this, viewModel, supplierItems, billViewModel)
                             }
                         }
@@ -253,7 +254,6 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                 }
             }
 
-            val allItemNames by viewModel.allInventoryItemNames.collectAsState()
             if (selectedTab == 0 && allItemNames.isNotEmpty()) {
                 com.batterysales.ui.components.SidebarAlphabetNavigation(
                     onLetterSelected = { letter ->
