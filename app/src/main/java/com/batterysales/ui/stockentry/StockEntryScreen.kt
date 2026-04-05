@@ -122,6 +122,7 @@ fun StockEntryContent(
     uiState: StockEntryUiState,
     viewModel: StockEntryViewModel
 ) {
+    val keyboardController = com.batterysales.ui.components.LocalCustomKeyboardController.current
     var showAddWarehouseDialog by remember { mutableStateOf(false) }
     var showAddSupplierDialog by remember { mutableStateOf(false) }
 
