@@ -94,7 +94,7 @@ class StockEntryViewModel @Inject constructor(
                     supplierRepository.getSuppliers(),
                     _selectedSupplier
                 ) { products, warehouses, suppliers, selectedSupplier ->
-                    val activeProducts = products.filter { !it.archived }.sortedByDescending { it.name }
+                    val activeProducts = products.filter { !it.archived }.sortedBy { it.name }
 
                     val filteredBySupplier = if (selectedSupplier != null) {
                         activeProducts.filter { it.supplierId == selectedSupplier.id || it.supplierId.isBlank() }
