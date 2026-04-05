@@ -245,7 +245,8 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                         }
                         2 -> {
                             if (!isSeller) {
-                                supplierReportSectionRedesigned(this, viewModel, supplierItems)
+                                val billViewModel: com.batterysales.viewmodel.BillViewModel = hiltViewModel()
+                                supplierReportSectionRedesigned(this, viewModel, supplierItems, billViewModel)
                             }
                         }
                     }
@@ -553,9 +554,9 @@ fun OldBatteryReportSectionRedesigned(
 private fun supplierReportSectionRedesigned(
     scope: androidx.compose.foundation.lazy.LazyListScope,
     viewModel: ReportsViewModel,
-    supplierItems: List<com.batterysales.viewmodel.SupplierReportItem>
+    supplierItems: List<com.batterysales.viewmodel.SupplierReportItem>,
+    billViewModel: com.batterysales.viewmodel.BillViewModel
 ) {
-    val billViewModel: com.batterysales.viewmodel.BillViewModel = hiltViewModel()
     scope.item {
         SupplierReportControls(viewModel)
     }
@@ -590,7 +591,7 @@ private fun supplierReportSectionRedesigned(
 
     scope.items(supplierItems) { item ->
         Box(modifier = Modifier.padding(horizontal = 16.dp)) {
-            val dateFormatter = remember { SimpleDateFormat("yyyy/MM/dd", Locale.getDefault()) }
+            val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
             SupplierCardRedesigned(item, onPayPO = { po ->
                 billViewModel.addBill(
                     description = "تسديد نقدي لطلبية شراء بتاريخ ${dateFormatter.format(po.entry.timestamp)}",
