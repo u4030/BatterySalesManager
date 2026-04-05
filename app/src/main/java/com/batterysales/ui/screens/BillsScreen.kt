@@ -521,7 +521,7 @@ fun AddBillDialog(
                     selected = selectedType == type,
                     onClick = {
                         selectedType = type
-                        if (type != BillType.CASH) payImmediately = false
+                        if (type != BillType.CASH && type != BillType.VISA && type != BillType.E_WALLET) payImmediately = false
                     },
                     label = {
                         Text(
@@ -530,7 +530,8 @@ fun AddBillDialog(
                                 BillType.BILL -> "كمبيالة"
                                 BillType.TRANSFER -> "تحويل"
                                 BillType.CASH -> "نقدي"
-                                BillType.OTHER -> "أخرى"
+                                BillType.VISA -> "فيزا"
+                                BillType.E_WALLET -> "محفظة"
                             }
                         )
                     }
@@ -678,7 +679,8 @@ fun EditBillDialog(
                                 BillType.BILL -> "كمبيالة"
                                 BillType.TRANSFER -> "تحويل"
                                 BillType.CASH -> "نقدي"
-                                BillType.OTHER -> "أخرى"
+                                BillType.VISA -> "فيزا"
+                                BillType.E_WALLET -> "محفظة"
                             }
                         )
                     }
