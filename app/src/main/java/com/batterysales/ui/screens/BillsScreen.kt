@@ -538,7 +538,7 @@ fun AddBillDialog(
             }
         }
 
-        if (selectedType == BillType.CASH) {
+        if (selectedType == BillType.CASH || selectedType == BillType.VISA || selectedType == BillType.E_WALLET) {
             Row(
                 modifier = Modifier.fillMaxWidth().clickable { payImmediately = !payImmediately },
                 verticalAlignment = Alignment.CenterVertically,

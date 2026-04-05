@@ -47,5 +47,6 @@ enum class BillType {
     BILL,      // كمبيالة
     TRANSFER,  // تحويل
     CASH,      // نقدي
-    OTHER      // أخرى
+    VISA,      // فيزا
+    E_WALLET   // محفظة
 }

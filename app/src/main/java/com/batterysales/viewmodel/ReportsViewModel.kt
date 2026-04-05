@@ -346,7 +346,8 @@ class ReportsViewModel @Inject constructor(
                                         BillType.BILL -> "كمبيالة"
                                         BillType.TRANSFER -> "تحويل"
                                         BillType.CASH -> "نقدي"
-                                        BillType.OTHER -> "أخرى"
+                                        BillType.VISA -> "فيزا"
+                                        BillType.E_WALLET -> "محفظة"
                                     }
                                     "$typeStr: ${bill.referenceNumber}"
                                 }.distinct()

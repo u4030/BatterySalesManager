@@ -179,14 +179,27 @@ class BillViewModel @Inject constructor(
                     val supplier = _suppliers.value.find { it.id == supplierId }
                     val supplierName = supplier?.name ?: ""
 
+                    val paymentMethod = when (billType) {
+                        BillType.VISA -> "visa"
+                        BillType.E_WALLET -> "e-wallet"
+                        else -> "cash"
+                    }
+
+                    val typeLabel = when (billType) {
+                        BillType.VISA -> "فيزا"
+                        BillType.E_WALLET -> "محفظة"
+                        else -> "نقدي"
+                    }
+
                     // Add Treasury Transaction (EXPENSE)
                     val transaction = Transaction(
                         type = com.batterysales.data.models.TransactionType.EXPENSE,
                         amount = amount,
-                        description = "دفع نقدي مباشر: $description (المورد: $supplierName)",
+                        description = "دفع $typeLabel مباشر: $description (المورد: $supplierName)",
                         relatedId = billId,
                         referenceNumber = referenceNumber,
-                        warehouseId = finalWarehouseId
+                        warehouseId = finalWarehouseId,
+                        paymentMethod = paymentMethod
                     )
                     accountingRepository.addTransaction(transaction)
                 }
@@ -228,13 +241,26 @@ class BillViewModel @Inject constructor(
                     bankRepository.addTransaction(bankTransaction)
                 } else {
                     // Record ONLY in treasury (Accounting) for other types
+                    val paymentMethod = when (bill.billType) {
+                        BillType.VISA -> "visa"
+                        BillType.E_WALLET -> "e-wallet"
+                        else -> "cash"
+                    }
+
+                    val typeLabel = when (bill.billType) {
+                        BillType.VISA -> "فيزا"
+                        BillType.E_WALLET -> "محفظة"
+                        else -> "كمبيالة"
+                    }
+
                     val transaction = Transaction(
                         type = com.batterysales.data.models.TransactionType.EXPENSE,
                         amount = amount,
-                        description = "تسديد ${if (amount >= (bill.amount - bill.paidAmount)) "كلي" else "جزئي"} لكمبيالة: ${bill.description} (المورد: $supplierName)",
+                        description = "تسديد ${if (amount >= (bill.amount - bill.paidAmount)) "كلي" else "جزئي"} ل$typeLabel: ${bill.description} (المورد: $supplierName)",
                         relatedId = billId,
                         referenceNumber = bill.referenceNumber,
-                        warehouseId = bill.warehouseId
+                        warehouseId = bill.warehouseId,
+                        paymentMethod = paymentMethod
                     )
                     accountingRepository.addTransaction(transaction)
                 }

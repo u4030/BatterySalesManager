@@ -592,12 +592,23 @@ private fun supplierReportSectionRedesigned(
     scope.items(supplierItems) { item ->
         Box(modifier = Modifier.padding(horizontal = 16.dp)) {
             val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
-            SupplierCardRedesigned(item, onPayPO = { po ->
+            SupplierCardRedesigned(item, onPayPO = { po, method ->
+                val bType = when(method) {
+                    "visa" -> BillType.VISA
+                    "e-wallet" -> BillType.E_WALLET
+                    else -> BillType.CASH
+                }
+                val methodLabel = when(method) {
+                    "visa" -> "فيزا"
+                    "e-wallet" -> "محفظة"
+                    else -> "نقدي"
+                }
+
                 billViewModel.addBill(
-                    description = "تسديد نقدي لطلبية شراء بتاريخ ${dateFormatter.format(po.entry.timestamp)}",
+                    description = "تسديد $methodLabel لطلبية شراء بتاريخ ${dateFormatter.format(po.entry.timestamp)}",
                     amount = po.remainingBalance,
                     dueDate = Date(),
-                    billType = BillType.CASH,
+                    billType = bType,
                     supplierId = item.supplier.id,
                     relatedEntryId = po.entry.orderId.ifEmpty { po.entry.id },
                     warehouseId = po.entry.warehouseId,
@@ -663,7 +674,7 @@ fun SupplierReportControls(viewModel: ReportsViewModel) {
 @Composable
 fun SupplierCardRedesigned(
     item: com.batterysales.viewmodel.SupplierReportItem,
-    onPayPO: (com.batterysales.viewmodel.PurchaseOrderItem) -> Unit = {}
+    onPayPO: (com.batterysales.viewmodel.PurchaseOrderItem, String) -> Unit = { _, _ -> }
 ) {
     var expanded by remember { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -764,15 +775,37 @@ fun SupplierCardRedesigned(
                             }
 
                             if (po.remainingBalance > 0.001) {
-                                Button(
-                                    onClick = { onPayPO(po) },
-                                    modifier = Modifier.fillMaxWidth().height(40.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
-                                    shape = RoundedCornerShape(8.dp)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Icon(Icons.Default.Payments, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("دفع نقدي للمتبقي", style = MaterialTheme.typography.labelMedium)
+                                    Button(
+                                        onClick = { onPayPO(po, "cash") },
+                                        modifier = Modifier.weight(1f).height(40.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 4.dp)
+                                    ) {
+                                        Text("نقدي", style = MaterialTheme.typography.labelSmall)
+                                    }
+                                    Button(
+                                        onClick = { onPayPO(po, "e-wallet") },
+                                        modifier = Modifier.weight(1f).height(40.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B82F6)),
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 4.dp)
+                                    ) {
+                                        Text("محفظة", style = MaterialTheme.typography.labelSmall)
+                                    }
+                                    Button(
+                                        onClick = { onPayPO(po, "visa") },
+                                        modifier = Modifier.weight(1f).height(40.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFB8C00)),
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 4.dp)
+                                    ) {
+                                        Text("فيزا", style = MaterialTheme.typography.labelSmall)
+                                    }
                                 }
                             }
 
