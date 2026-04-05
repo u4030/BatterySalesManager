@@ -169,8 +169,11 @@ fun StockEntryContent(
                     Dropdown(
                         label = "المورد",
                         selectedValue = uiState.selectedSupplier?.name ?: uiState.supplierName,
-                        options = uiState.suppliers.map { it.name },
-                        onOptionSelected = { index -> viewModel.onSupplierSelected(uiState.suppliers[index]) },
+                        options = listOf("فارغ") + uiState.suppliers.map { it.name },
+                        onOptionSelected = { index ->
+                            if (index == 0) viewModel.onSupplierSelected(null)
+                            else viewModel.onSupplierSelected(uiState.suppliers[index - 1])
+                        },
                         enabled = true,
                         modifier = Modifier.weight(1f)
                     )

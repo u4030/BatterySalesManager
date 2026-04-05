@@ -95,7 +95,7 @@ class SalesViewModel @Inject constructor(
         _selectedProduct.flatMapLatest { product ->
             if (product == null) flowOf(emptyList())
             else productVariantRepository.getVariantsForProductFlow(product.id)
-                .map { variants -> variants.filter { !it.archived }.sortedBy { it.capacity } }
+                .map { variants -> variants.filter { !it.archived }.sortedByDescending { it.capacity } }
         }
     ) { args ->
         val products = args[0] as List<Product>
@@ -158,8 +158,10 @@ class SalesViewModel @Inject constructor(
 
             val availableProductIds = allVariants.filter { availableVariantIds.contains(it.id) }.map { it.productId }.toSet()
             products.filter { !it.archived && availableProductIds.contains(it.id) }
+                .sortedByDescending { it.name }
         } else {
             products.filter { !it.archived }
+                .sortedByDescending { it.name }
         }
 
         SalesUiState(

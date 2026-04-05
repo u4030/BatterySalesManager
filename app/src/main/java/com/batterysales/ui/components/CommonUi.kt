@@ -243,7 +243,7 @@ fun SidebarAlphabetNavigation(
 
         Column(
             modifier = Modifier
-                .heightIn(max = 650.dp) // اختيارياً: تحديد أقصى ارتفاع للقائمة لضمان عدم خروجها عن الشاشة
+                .heightIn(max = 650.dp)
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -253,7 +253,7 @@ fun SidebarAlphabetNavigation(
                     text = letter.toString(),
                     style = MaterialTheme.typography.labelSmall,
                     modifier = Modifier
-                        .clickable { onLetterSelected(letter) }
+                        .clickable { onLetterSelected(letter.uppercaseChar()) }
                         .padding(vertical = 2.dp),
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                     fontWeight = FontWeight.Bold
