@@ -45,6 +45,7 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hiltViewModel()) {
+    val keyboardController = com.batterysales.ui.components.LocalCustomKeyboardController.current
     val pagingItems = viewModel.inventoryReport.collectAsLazyPagingItems()
     val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
 
@@ -115,7 +116,10 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                 item {
                     SharedHeader(
                         title = "التقارير والإحصائيات",
-                        onBackClick = { navController.popBackStack() },
+                        onBackClick = {
+                            keyboardController.hideKeyboard()
+                            navController.popBackStack()
+                        },
                         actions = {
                             HeaderIconButton(
                                 icon = Icons.Default.Refresh,
@@ -251,7 +255,7 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                     onLetterSelected = { letter ->
                         val index = allItemNames.indexOfFirst { it.startsWith(letter, ignoreCase = true) }
                         if (index != -1) {
-                            var offset = 2 // Header + Tabs
+                            var offset = 2 // SharedHeader + Tabs
                             offset += 1 // SearchBar
                             if (pagingItems.loadState.refresh is androidx.paging.LoadState.Loading) offset++
                             if (pagingItems.itemCount > 0) offset++ // GrandTotalCard

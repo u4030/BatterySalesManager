@@ -183,14 +183,14 @@ class StockEntryViewModel @Inject constructor(
                     selectedProduct = product,
                     selectedVariant = null,
                     variants = emptyList(),
-                    isLoading = true,
+                    isLoading = false,
                     quantity = if (it.isEditMode) it.quantity else "",
                     costValue = if (it.isEditMode) it.costValue else ""
                 )
             }
             try {
                 val variants = productVariantRepository.getVariantsForProduct(product.id).filter { !it.archived }.sortedByDescending { it.capacity }
-                _uiState.update { it.copy(variants = variants, isLoading = false) }
+                _uiState.update { it.copy(variants = variants) }
             } catch (e: Exception) {
                 Log.e("StockEntryViewModel", "Error fetching variants", e)
                 _uiState.update { it.copy(errorMessage = "فشل تحميل السعات", isLoading = false) }

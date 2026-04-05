@@ -104,13 +104,13 @@ class InventoryPagingSource(
                 }
                 
                 // Final sort for the result page
-                val sortedVariants = variants.sortedWith(compareBy({ getProduct(it.productId, products, productsMap)?.name ?: "" }, { it.capacity }))
+                val sortedVariants = variants.sortedWith(compareByDescending<ProductVariant> { getProduct(it.productId, products, productsMap)?.name ?: "" }.thenByDescending { it.capacity })
                 variants.clear()
                 variants.addAll(sortedVariants)
 
             } else {
                 var query = firestore.collection(Product.COLLECTION_NAME)
-                    .orderBy("name")
+                    .orderBy("name", com.google.firebase.firestore.Query.Direction.DESCENDING)
 
                 if (params.key != null) {
                     query = query.startAfter(params.key!!)
@@ -144,7 +144,7 @@ class InventoryPagingSource(
                 }
                 
                 // Final sort for the result page
-                val sortedVariants = variants.sortedWith(compareBy({ getProduct(it.productId, products, productsMap)?.name ?: "" }, { it.capacity }))
+                val sortedVariants = variants.sortedWith(compareByDescending<ProductVariant> { getProduct(it.productId, products, productsMap)?.name ?: "" }.thenByDescending { it.capacity })
                 variants.clear()
                 variants.addAll(sortedVariants)
             }

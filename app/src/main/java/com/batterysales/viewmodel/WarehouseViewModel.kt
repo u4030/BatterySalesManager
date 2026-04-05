@@ -125,7 +125,7 @@ class WarehouseViewModel @Inject constructor(
             }
         }
         _isLoading.value = false
-        stockList.sortedWith(compareBy({ it.warehouse.name }, { it.product.name }))
+        stockList.sortedWith(compareByDescending<WarehouseStockItem> { it.warehouse.name }.thenByDescending { it.product.name }.thenByDescending { it.variant.capacity })
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun toggleWarehouseStatus(warehouse: Warehouse) {

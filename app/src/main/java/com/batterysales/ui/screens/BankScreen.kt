@@ -44,6 +44,7 @@ fun BankScreen(
     navController: NavHostController,
     viewModel: BankViewModel = hiltViewModel()
 ) {
+    val keyboardController = com.batterysales.ui.components.LocalCustomKeyboardController.current
     val pagingItems = viewModel.transactions.collectAsLazyPagingItems()
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -161,7 +162,10 @@ fun BankScreen(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 HeaderIconButton(
                                     icon = Icons.AutoMirrored.Filled.ArrowBack,
-                                    onClick = { navController.popBackStack() },
+                                    onClick = {
+                                        keyboardController.hideKeyboard()
+                                        navController.popBackStack()
+                                    },
                                     contentDescription = "Back"
                                 )
                                 Spacer(modifier = Modifier.width(12.dp))

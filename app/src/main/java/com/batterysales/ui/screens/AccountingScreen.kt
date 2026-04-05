@@ -46,6 +46,7 @@ fun AccountingScreen(
     navController: NavHostController,
     viewModel: AccountingViewModel = hiltViewModel()
 ) {
+    val keyboardController = com.batterysales.ui.components.LocalCustomKeyboardController.current
     val pagingItems = viewModel.transactions.collectAsLazyPagingItems()
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -165,7 +166,10 @@ fun AccountingScreen(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 HeaderIconButton(
                                     icon = Icons.AutoMirrored.Filled.ArrowBack,
-                                    onClick = { navController.popBackStack() },
+                                    onClick = {
+                                        keyboardController.hideKeyboard()
+                                        navController.popBackStack()
+                                    },
                                     contentDescription = "Back"
                                 )
                                 Spacer(modifier = Modifier.width(12.dp))
@@ -591,7 +595,8 @@ fun EditTransactionDialog(
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = amount,
             onValueChange = { amount = it },
-            label = "المبلغ"
+            label = "المبلغ",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
         )
     }
 }
@@ -636,7 +641,8 @@ fun AddTransactionDialog(
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = amount,
             onValueChange = { amount = it },
-            label = "المبلغ"
+            label = "المبلغ",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
         )
 
         Text("طريقة الدفع:", style = MaterialTheme.typography.labelMedium)

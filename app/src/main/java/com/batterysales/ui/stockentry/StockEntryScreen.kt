@@ -39,6 +39,7 @@ fun StockEntryScreen(
     viewModel: StockEntryViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val keyboardController = com.batterysales.ui.components.LocalCustomKeyboardController.current
     var showScanner by remember { mutableStateOf(false) }
 
     // Navigate back when the operation is finished
@@ -89,7 +90,10 @@ fun StockEntryScreen(
                 item {
                     SharedHeader(
                         title = if (uiState.isEditMode) "تعديل قيد المخزون" else "إدخال مخزون جديد",
-                        onBackClick = { navController.popBackStack() },
+                    onBackClick = {
+                        keyboardController.hideKeyboard()
+                        navController.popBackStack()
+                    },
                         actions = {
                             HeaderIconButton(
                                 icon = Icons.Default.PhotoCamera,
@@ -219,7 +223,7 @@ fun StockEntryContent(
                             p.name + if (p.specification.isNotEmpty()) " (${p.specification})" else ""
                         },
                         onOptionSelected = { index -> viewModel.onProductSelected(uiState.products[index]) },
-                        enabled = !uiState.isEditMode,
+                        enabled = true,
                         modifier = Modifier.weight(1f).widthIn(min = 150.dp)
                     )
                     Dropdown(
@@ -231,7 +235,7 @@ fun StockEntryContent(
                             "${v.capacity}A" + if (v.specification.isNotEmpty()) " (${v.specification})" else ""
                         },
                         onOptionSelected = { index -> viewModel.onVariantSelected(uiState.variants[index]) },
-                        enabled = !uiState.isEditMode && uiState.selectedProduct != null,
+                        enabled = uiState.selectedProduct != null,
                         modifier = Modifier.weight(1f).widthIn(min = 150.dp)
                     )
                 }
@@ -333,7 +337,10 @@ fun StockEntryContent(
         }
 
         Button(
-            onClick = viewModel::onSaveClicked,
+            onClick = {
+                keyboardController.hideKeyboard()
+                viewModel.onSaveClicked()
+            },
             modifier = Modifier.fillMaxWidth().height(56.dp),
             shape = RoundedCornerShape(16.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
