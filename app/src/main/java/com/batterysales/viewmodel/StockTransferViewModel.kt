@@ -95,7 +95,7 @@ class StockTransferViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(selectedProduct = product, selectedVariant = null, variants = emptyList(), isLoading = true, quantity = "") }
             productVariantRepository.getVariantsForProductFlow(product.id)
-                .map { variants -> variants.filter { !it.archived }.sortedByDescending { it.capacity } }
+                .map { variants -> variants.filter { !it.archived }.sortedBy { it.capacity } }
                 .onEach { variants ->
                     _uiState.update { it.copy(variants = variants, isLoading = false) }
                 }

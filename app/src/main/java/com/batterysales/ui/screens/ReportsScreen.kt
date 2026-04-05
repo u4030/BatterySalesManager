@@ -255,10 +255,16 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                     onLetterSelected = { letter ->
                         val index = allItemNames.indexOfFirst { it.trim().startsWith(letter.toString(), ignoreCase = true) }
                         if (index != -1) {
-                            var offset = 2 // SharedHeader + Tabs
+                            // Note: LazyColumn items in order:
+                            // 0: SharedHeader + Tabs (one item)
+                            // 1: SearchBar
+                            // 2: GrandTotalCard (if itemCount > 0)
+                            // 3: Loading indicator (if any, but usually temporary)
+                            // 4+: pagingItems
+
+                            var offset = 1 // SharedHeader + Tabs
                             offset += 1 // SearchBar
                             if (pagingItems.itemCount > 0) offset++ // GrandTotalCard
-                            // Note: We don't increment for 'isLoading' or 'refresh' loading states because they don't occupy fixed items
 
                             scope.launch {
                                 listState.animateScrollToItem(index + offset)

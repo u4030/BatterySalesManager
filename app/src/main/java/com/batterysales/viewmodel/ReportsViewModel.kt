@@ -118,7 +118,7 @@ class ReportsViewModel @Inject constructor(
                 if (!seller || userWhId == null) true
                 else (v.currentStock?.get(userWhId) ?: 0) > 0
             }
-            .sortedWith(compareBy<ProductVariant> { pMap[it.productId]?.name ?: "" }.thenByDescending { it.capacity })
+            .sortedWith(compareBy<ProductVariant> { pMap[it.productId]?.name ?: "" }.thenBy { it.capacity })
             .map { v -> pMap[v.productId]?.name ?: "" }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 

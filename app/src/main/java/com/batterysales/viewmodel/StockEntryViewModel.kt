@@ -189,7 +189,7 @@ class StockEntryViewModel @Inject constructor(
                 )
             }
             try {
-                val variants = productVariantRepository.getVariantsForProduct(product.id).filter { !it.archived }.sortedByDescending { it.capacity }
+                val variants = productVariantRepository.getVariantsForProduct(product.id).filter { !it.archived }.sortedBy { it.capacity }
                 _uiState.update { it.copy(variants = variants) }
             } catch (e: Exception) {
                 Log.e("StockEntryViewModel", "Error fetching variants", e)

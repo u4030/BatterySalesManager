@@ -104,7 +104,7 @@ class InventoryPagingSource(
                 }
                 
                 // Final sort for the result page
-                val sortedVariants = variants.sortedWith(compareBy<ProductVariant> { getProduct(it.productId, products, productsMap)?.name ?: "" }.thenByDescending { it.capacity })
+                val sortedVariants = variants.sortedWith(compareBy<ProductVariant> { getProduct(it.productId, products, productsMap)?.name ?: "" }.thenBy { it.capacity })
                 variants.clear()
                 variants.addAll(sortedVariants)
 
@@ -144,7 +144,7 @@ class InventoryPagingSource(
                 }
                 
                 // Final sort for the result page
-                val sortedVariants = variants.sortedWith(compareBy<ProductVariant> { getProduct(it.productId, products, productsMap)?.name ?: "" }.thenByDescending { it.capacity })
+                val sortedVariants = variants.sortedWith(compareBy<ProductVariant> { getProduct(it.productId, products, productsMap)?.name ?: "" }.thenBy { it.capacity })
                 variants.clear()
                 variants.addAll(sortedVariants)
             }
