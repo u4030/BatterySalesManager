@@ -46,5 +46,6 @@ enum class BillType {
     CHECK,     // شيك
     BILL,      // كمبيالة
     TRANSFER,  // تحويل
+    CASH,      // نقدي
     OTHER      // أخرى
 }

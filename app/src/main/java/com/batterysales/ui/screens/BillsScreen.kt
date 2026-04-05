@@ -232,8 +232,8 @@ fun BillsScreen(
             pendingPurchases = pendingPurchases,
             warehouses = warehouses,
             onDismiss = { showAddBillDialog = false },
-            onAdd = { desc, amount, date, type, ref, supplierId, relatedEntryId, warehouseId ->
-                viewModel.addBill(desc, amount, date, type, ref, supplierId, relatedEntryId, warehouseId)
+            onAdd = { desc, amount, date, type, ref, supplierId, relatedEntryId, warehouseId, payImmediately ->
+                viewModel.addBill(desc, amount, date, type, ref, supplierId, relatedEntryId, warehouseId, payImmediately)
                 showAddBillDialog = false
             }
         )
@@ -415,7 +415,7 @@ fun AddBillDialog(
     pendingPurchases: List<com.batterysales.data.models.StockEntry>,
     warehouses: List<com.batterysales.data.models.Warehouse>,
     onDismiss: () -> Unit,
-    onAdd: (String, Double, Date, BillType, String, String, String?, String?) -> Unit
+    onAdd: (String, Double, Date, BillType, String, String, String?, String?, Boolean) -> Unit
 ) {
     var description by remember { mutableStateOf("") }
     var selectedSupplier by remember { mutableStateOf<com.batterysales.data.models.Supplier?>(null) }
@@ -424,6 +424,7 @@ fun AddBillDialog(
     var amount by remember { mutableStateOf("") }
     var refNum by remember { mutableStateOf("") }
     var selectedType by remember { mutableStateOf(BillType.CHECK) }
+    var payImmediately by remember { mutableStateOf(false) }
     var showDatePicker by remember { mutableStateOf(false) }
     // إنشاء الحالة الخاصة بمنتقي التاريخ هنا
     val datePickerState = rememberDatePickerState(initialSelectedDateMillis = System.currentTimeMillis())
@@ -439,7 +440,7 @@ fun AddBillDialog(
         confirmButton = {
             Button(onClick = {
                 val amt = amount.toDoubleOrNull() ?: 0.0
-                if (description.isNotEmpty() && amt > 0) onAdd(description, amt, selectedDate, selectedType, refNum, selectedSupplier?.id ?: "", selectedPurchase?.id, selectedWarehouseId)
+                if (description.isNotEmpty() && amt > 0) onAdd(description, amt, selectedDate, selectedType, refNum, selectedSupplier?.id ?: "", selectedPurchase?.id, selectedWarehouseId, payImmediately)
             }) { Text("إضافة") }
         },
         dismissButton = {
@@ -518,18 +519,33 @@ fun AddBillDialog(
             BillType.entries.forEach { type ->
                 FilterChip(
                     selected = selectedType == type,
-                    onClick = { selectedType = type },
+                    onClick = {
+                        selectedType = type
+                        if (type != BillType.CASH) payImmediately = false
+                    },
                     label = {
                         Text(
                             when (type) {
                                 BillType.CHECK -> "شيك"
                                 BillType.BILL -> "كمبيالة"
                                 BillType.TRANSFER -> "تحويل"
+                                BillType.CASH -> "نقدي"
                                 BillType.OTHER -> "أخرى"
                             }
                         )
                     }
                 )
+            }
+        }
+
+        if (selectedType == BillType.CASH) {
+            Row(
+                modifier = Modifier.fillMaxWidth().clickable { payImmediately = !payImmediately },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Checkbox(checked = payImmediately, onCheckedChange = { payImmediately = it })
+                Text("دفع مباشر من الخزينة", style = MaterialTheme.typography.bodyMedium)
             }
         }
 
@@ -661,6 +677,7 @@ fun EditBillDialog(
                                 BillType.CHECK -> "شيك"
                                 BillType.BILL -> "كمبيالة"
                                 BillType.TRANSFER -> "تحويل"
+                                BillType.CASH -> "نقدي"
                                 BillType.OTHER -> "أخرى"
                             }
                         )

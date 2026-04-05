@@ -37,6 +37,7 @@ object Constants {
         const val CHECK = "CHECK"
         const val BILL = "BILL"
         const val TRANSFER = "TRANSFER"
+        const val CASH = "CASH"
         const val OTHER = "OTHER"
     }
 

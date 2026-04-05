@@ -45,10 +45,12 @@ class BillRepository @Inject constructor(
         awaitClose { listenerRegistration.remove() }
     }
 
-    suspend fun addBill(bill: Bill) {
-        val docRef = firestore.collection(Bill.COLLECTION_NAME).document()
+    suspend fun addBill(bill: Bill): String {
+        val docRef = if (bill.id.isNotEmpty()) firestore.collection(Bill.COLLECTION_NAME).document(bill.id)
+                    else firestore.collection(Bill.COLLECTION_NAME).document()
         val finalBill = bill.copy(id = docRef.id, createdAt = Date(), updatedAt = Date())
         docRef.set(finalBill).await()
+        return docRef.id
     }
 
     suspend fun updateBillStatus(billId: String, status: BillStatus, paidDate: Date? = null) {

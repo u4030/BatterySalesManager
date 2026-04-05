@@ -148,7 +148,8 @@ class BillViewModel @Inject constructor(
         referenceNumber: String = "", 
         supplierId: String = "", 
         relatedEntryId: String? = null,
-        warehouseId: String? = null
+        warehouseId: String? = null,
+        payImmediately: Boolean = false
     ) {
         viewModelScope.launch {
             _isLoading.value = true
@@ -167,9 +168,29 @@ class BillViewModel @Inject constructor(
                     referenceNumber = referenceNumber,
                     supplierId = supplierId,
                     relatedEntryId = relatedEntryId,
-                    warehouseId = finalWarehouseId
+                    warehouseId = finalWarehouseId,
+                    status = if (payImmediately) BillStatus.PAID else BillStatus.UNPAID,
+                    paidAmount = if (payImmediately) amount else 0.0,
+                    paidDate = if (payImmediately) Date() else null
                 )
-                repository.addBill(bill)
+                val billId = repository.addBill(bill)
+
+                if (payImmediately) {
+                    val supplier = _suppliers.value.find { it.id == supplierId }
+                    val supplierName = supplier?.name ?: ""
+
+                    // Add Treasury Transaction (EXPENSE)
+                    val transaction = Transaction(
+                        type = com.batterysales.data.models.TransactionType.EXPENSE,
+                        amount = amount,
+                        description = "دفع نقدي مباشر: $description (المورد: $supplierName)",
+                        relatedId = billId,
+                        referenceNumber = referenceNumber,
+                        warehouseId = finalWarehouseId
+                    )
+                    accountingRepository.addTransaction(transaction)
+                }
+
                 loadBills(reset = true)
             } catch (e: Exception) {
                 Log.e("BillViewModel", "Error adding bill", e)

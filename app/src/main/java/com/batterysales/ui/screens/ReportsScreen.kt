@@ -31,6 +31,9 @@ import com.batterysales.viewmodel.InventoryReportItem
 import com.batterysales.viewmodel.ReportsViewModel
 import com.batterysales.ui.components.SharedHeader
 import com.batterysales.ui.components.HeaderIconButton
+import com.batterysales.data.models.BillType
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -552,6 +555,7 @@ private fun supplierReportSectionRedesigned(
     viewModel: ReportsViewModel,
     supplierItems: List<com.batterysales.viewmodel.SupplierReportItem>
 ) {
+    val billViewModel: com.batterysales.viewmodel.BillViewModel = hiltViewModel()
     scope.item {
         SupplierReportControls(viewModel)
     }
@@ -586,7 +590,19 @@ private fun supplierReportSectionRedesigned(
 
     scope.items(supplierItems) { item ->
         Box(modifier = Modifier.padding(horizontal = 16.dp)) {
-            SupplierCardRedesigned(item)
+            val dateFormatter = remember { SimpleDateFormat("yyyy/MM/dd", Locale.getDefault()) }
+            SupplierCardRedesigned(item, onPayPO = { po ->
+                billViewModel.addBill(
+                    description = "تسديد نقدي لطلبية شراء بتاريخ ${dateFormatter.format(po.entry.timestamp)}",
+                    amount = po.remainingBalance,
+                    dueDate = Date(),
+                    billType = BillType.CASH,
+                    supplierId = item.supplier.id,
+                    relatedEntryId = po.entry.orderId.ifEmpty { po.entry.id },
+                    warehouseId = po.entry.warehouseId,
+                    payImmediately = true
+                )
+            })
         }
     }
 }
@@ -644,7 +660,10 @@ fun SupplierReportControls(viewModel: ReportsViewModel) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun SupplierCardRedesigned(item: com.batterysales.viewmodel.SupplierReportItem) {
+fun SupplierCardRedesigned(
+    item: com.batterysales.viewmodel.SupplierReportItem,
+    onPayPO: (com.batterysales.viewmodel.PurchaseOrderItem) -> Unit = {}
+) {
     var expanded by remember { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
 
@@ -741,6 +760,19 @@ fun SupplierCardRedesigned(item: com.batterysales.viewmodel.SupplierReportItem) 
                                     fontWeight = FontWeight.Bold,
                                     color = if (po.remainingBalance > 0) Color(0xFFEF4444) else Color(0xFF10B981)
                                 )
+                            }
+
+                            if (po.remainingBalance > 0.001) {
+                                Button(
+                                    onClick = { onPayPO(po) },
+                                    modifier = Modifier.fillMaxWidth().height(40.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Icon(Icons.Default.Payments, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("دفع نقدي للمتبقي", style = MaterialTheme.typography.labelMedium)
+                                }
                             }
 
                             if (po.referenceNumbers.isNotEmpty()) {

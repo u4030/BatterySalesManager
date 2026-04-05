@@ -345,6 +345,7 @@ class ReportsViewModel @Inject constructor(
                                         BillType.CHECK -> "شيك"
                                         BillType.BILL -> "كمبيالة"
                                         BillType.TRANSFER -> "تحويل"
+                                        BillType.CASH -> "نقدي"
                                         BillType.OTHER -> "أخرى"
                                     }
                                     "$typeStr: ${bill.referenceNumber}"
