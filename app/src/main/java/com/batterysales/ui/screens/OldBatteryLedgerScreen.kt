@@ -129,7 +129,7 @@ fun OldBatteryLedgerScreen(
                                     }
                                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                         Text("إجمالي الأمبيرات", color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelSmall)
-                                        Text("${String.format("%.1f", summary.second)} A", color = accentColor, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+                                        Text("\u200E${String.format("%.1f", summary.second)} A", color = accentColor, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
                                     }
                                 }
                                 
@@ -364,7 +364,7 @@ fun OldBatteryTransactionCard(
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
                 Column {
                     Text(
-                        text = "${transaction.quantity} حبة | ${transaction.totalAmperes}A",
+                        text = "\u200F${transaction.quantity} حبة | \u200E${transaction.totalAmperes} A",
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
                         style = MaterialTheme.typography.bodyLarge

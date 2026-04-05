@@ -373,13 +373,13 @@ fun ReportItemCard(
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "${item.product.name}${if (item.product.specification.isNotEmpty()) " (${item.product.specification})" else ""}",
+                        text = "\u200F${item.product.name}${if (item.product.specification.isNotEmpty()) " (${item.product.specification})" else ""}",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "${item.variant.capacity} أمبير" + if (item.variant.specification.isNotEmpty()) " | ${item.variant.specification}" else "",
+                        text = "\u200E${item.variant.capacity} A" + if (item.variant.specification.isNotEmpty()) " | ${item.variant.specification}" else "",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -518,7 +518,7 @@ fun OldBatteryReportSectionRedesigned(
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("الأمبيرات", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("${String.format("%.1f", currentSummary.second)} A", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Color(0xFFFB8C00))
+                        Text("\u200E${String.format("%.1f", currentSummary.second)} A", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Color(0xFFFB8C00))
                     }
                 }
 
