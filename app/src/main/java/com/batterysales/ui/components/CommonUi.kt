@@ -214,8 +214,9 @@ fun SidebarAlphabetNavigation(
     modifier: Modifier = Modifier
 ) {
     var isArabic by remember { mutableStateOf(true) }
-    val arabicLetters = "ابتثجحخدذرزسشصضطظعغفقكلمنهوي".toList()
-    val englishLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".toList()
+    // Sort letters descending to match the app's descending sort order (Y->A and Z->A)
+    val arabicLetters = "ابتثجحخدذرزسشصضطظعغفقكلمنهوي".toList().reversed()
+    val englishLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".toList().reversed()
     val currentLetters = if (isArabic) arabicLetters else englishLetters
 
     Column(

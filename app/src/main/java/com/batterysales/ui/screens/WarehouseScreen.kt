@@ -264,7 +264,7 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
                     var targetIndex = 2 // SharedHeader + SearchBar/Tabs
                     val groups = stockLevels.groupBy { it.warehouse.name }
                     for ((_, items) in groups) {
-                        val matchingItemIndex = items.indexOfFirst { it.product.name.startsWith(letter, ignoreCase = true) }
+                        val matchingItemIndex = items.indexOfFirst { it.product.name.trim().startsWith(letter.toString(), ignoreCase = true) }
                         if (matchingItemIndex != -1) {
                             val finalIndex = targetIndex + matchingItemIndex + 1 // +1 for the Warehouse Header
                             scope.launch {

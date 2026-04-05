@@ -109,16 +109,17 @@ class ReportsViewModel @Inject constructor(
         _isSeller,
         userRepository.getCurrentUserFlow()
     ) { products, variants, seller, user ->
-        val pMap = products.associateBy { it.id }
+        val pMap = products.filter { !it.archived }.associateBy { it.id }
         val userWhId = user?.warehouseId
         
         variants.filter { !it.archived }
+            .filter { v -> pMap.containsKey(v.productId) } // Ensure product is not archived
             .filter { v ->
                 if (!seller || userWhId == null) true
                 else (v.currentStock?.get(userWhId) ?: 0) > 0
             }
+            .sortedWith(compareByDescending<ProductVariant> { pMap[it.productId]?.name ?: "" }.thenByDescending { it.capacity })
             .map { v -> pMap[v.productId]?.name ?: "" }
-            .sortedByDescending { it } // Match descending sort
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val warehouses: StateFlow<List<Warehouse>> = warehouseRepository.getWarehouses()

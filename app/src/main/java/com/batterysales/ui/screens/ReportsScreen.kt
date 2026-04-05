@@ -253,13 +253,12 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
             if (selectedTab == 0 && allItemNames.isNotEmpty()) {
                 com.batterysales.ui.components.SidebarAlphabetNavigation(
                     onLetterSelected = { letter ->
-                        val index = allItemNames.indexOfFirst { it.startsWith(letter, ignoreCase = true) }
+                        val index = allItemNames.indexOfFirst { it.trim().startsWith(letter.toString(), ignoreCase = true) }
                         if (index != -1) {
                             var offset = 2 // SharedHeader + Tabs
                             offset += 1 // SearchBar
-                            if (pagingItems.loadState.refresh is androidx.paging.LoadState.Loading) offset++
                             if (pagingItems.itemCount > 0) offset++ // GrandTotalCard
-                            if (isLoading) offset++
+                            // Note: We don't increment for 'isLoading' or 'refresh' loading states because they don't occupy fixed items
 
                             scope.launch {
                                 listState.animateScrollToItem(index + offset)
