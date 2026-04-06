@@ -166,6 +166,8 @@ class ReportsViewModel @Inject constructor(
         _inventoryEndDate,
         refreshTrigger
     ) { args ->
+        args
+    }.flowOn(kotlinx.coroutines.Dispatchers.Default).flatMapLatest { args ->
         val query = args[0] as String?
         val warehouseList = args[1] as List<Warehouse>
         val pMap = args[2] as Map<String, Product>
@@ -176,7 +178,7 @@ class ReportsViewModel @Inject constructor(
         Pager(PagingConfig(pageSize = 25)) {
             InventoryPagingSource(firestore, stockEntryRepository, pMap, warehouseList, query, seller, start, end)
         }.flow.cachedIn(viewModelScope)
-    }.flatMapLatest { it }
+    }
 
     init {
         userRepository.getCurrentUserFlow()
