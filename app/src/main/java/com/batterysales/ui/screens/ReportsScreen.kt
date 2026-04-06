@@ -70,7 +70,9 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
     val warehouses by viewModel.filteredWarehouses.collectAsState()
     val oldBatterySummary by viewModel.oldBatterySummary.collectAsState()
     val oldBatteryWarehouseSummary by viewModel.oldBatteryWarehouseSummary.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
+    val isInventoryLoading by viewModel.isInventoryLoading.collectAsState()
+    val isSupplierLoading by viewModel.isSupplierLoading.collectAsState()
+    val isScrapLoading by viewModel.isScrapLoading.collectAsState()
     val barcodeFilter by viewModel.barcodeFilter.collectAsState()
     var showScanner by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
@@ -167,7 +169,14 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                     }
                 }
 
-                if (isLoading && selectedTab != 0) {
+                val currentTabLoading = when(selectedTab) {
+                    0 -> pagingItems.loadState.refresh is androidx.paging.LoadState.Loading || isInventoryLoading
+                    1 -> isScrapLoading
+                    2 -> isSupplierLoading
+                    else -> false
+                }
+
+                if (currentTabLoading && (selectedTab != 0 || pagingItems.itemCount == 0)) {
                     item {
                         Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator(color = accentColor)
@@ -177,32 +186,12 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                     when (selectedTab) {
                         0 -> {
                             item {
-                                SearchBarRedesigned(
-                                    barcodeFilter = barcodeFilter,
-                                    onValueChange = { viewModel.onBarcodeScanned(it.ifEmpty { null }) },
-                                    onScan = { showScanner = true }
-                                )
-                            }
-
-                            if (pagingItems.loadState.refresh is androidx.paging.LoadState.Loading) {
-                                item {
-                                    Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
-                                        CircularProgressIndicator(color = accentColor)
-                                    }
-                                }
+                                InventoryReportControls(viewModel)
                             }
 
                             if (pagingItems.itemCount > 0) {
                                 item {
                                     GrandTotalCard(totalQuantity = grandTotalQuantity, isSeller = isSeller)
-                                }
-                            }
-
-                            if (isLoading) {
-                                item {
-                                    Box(modifier = Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
-                                        CircularProgressIndicator(color = accentColor)
-                                    }
                                 }
                             }
 
@@ -283,36 +272,90 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
 }
 
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SearchBarRedesigned(
-    barcodeFilter: String?,
-    onValueChange: (String) -> Unit,
-    onScan: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Box(modifier = Modifier.weight(1f)) {
-            CustomKeyboardTextField(
-                value = barcodeFilter ?: "",
-                onValueChange = onValueChange,
-                modifier = Modifier.fillMaxWidth(),
-                label = "تصفية حسب الباركود..."
-            )
+fun InventoryReportControls(viewModel: ReportsViewModel) {
+    val barcodeFilter by viewModel.barcodeFilter.collectAsState()
+    val startDate by viewModel.inventoryStartDate.collectAsState()
+    val endDate by viewModel.inventoryEndDate.collectAsState()
+    var showDatePicker by remember { mutableStateOf(false) }
+    var showScanner by remember { mutableStateOf(false) }
+    val dateRangePickerState = rememberDateRangePickerState()
+    val dateFormatter = java.text.SimpleDateFormat("yyyy/MM/dd", java.util.Locale.getDefault())
+
+    if (showScanner) {
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { showScanner = false },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+                BarcodeScanner(onBarcodeScanned = { barcode ->
+                    viewModel.onBarcodeScanned(barcode)
+                    showScanner = false
+                })
+                IconButton(
+                    onClick = { showScanner = false },
+                    modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = "إغلاق", tint = Color.White)
+                }
+            }
+        }
+    }
+
+    Column(modifier = Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Box(modifier = Modifier.weight(1f)) {
+                CustomKeyboardTextField(
+                    value = barcodeFilter ?: "",
+                    onValueChange = { viewModel.onBarcodeScanned(it.ifEmpty { null }) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = "تصفية حسب الباركود..."
+                )
+            }
+
+            IconButton(
+                onClick = { showScanner = true },
+                modifier = Modifier
+                    .size(56.dp)
+                    .background(Color(0xFFFB8C00), RoundedCornerShape(12.dp))
+            ) {
+                Icon(Icons.Default.PhotoCamera, contentDescription = "مسح الباركود", tint = Color.White)
+            }
         }
 
-        IconButton(
-            onClick = onScan,
-            modifier = Modifier
-                .size(56.dp)
-                .background(Color(0xFFFB8C00), RoundedCornerShape(12.dp))
+        Card(
+            onClick = { showDatePicker = true },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
         ) {
-            Icon(Icons.Default.PhotoCamera, contentDescription = "مسح الباركود", tint = Color.White)
+            Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.DateRange, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(modifier = Modifier.width(16.dp))
+                Column {
+                    Text("المواد التي طرأ عليها تعديل خلال فترة:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    val startStr = startDate?.let { dateFormatter.format(java.util.Date(it)) } ?: "البداية"
+                    val endStr = endDate?.let { dateFormatter.format(java.util.Date(it)) } ?: "النهاية"
+                    Text("$startStr - $endStr", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                }
+            }
         }
+    }
+
+    if (showDatePicker) {
+        com.batterysales.ui.components.AppDateRangePickerDialog(
+            state = dateRangePickerState,
+            onDismiss = { showDatePicker = false },
+            onConfirm = {
+                viewModel.onInventoryDateRangeSelected(dateRangePickerState.selectedStartDateMillis, dateRangePickerState.selectedEndDateMillis)
+                showDatePicker = false
+            }
+        )
     }
 }
 

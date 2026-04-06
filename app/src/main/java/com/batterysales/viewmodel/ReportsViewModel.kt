@@ -64,8 +64,19 @@ class ReportsViewModel @Inject constructor(
     private val firestore: FirebaseFirestore
 ) : ViewModel() {
 
-    private val _isLoading = MutableStateFlow(false)
-    val isLoading = _isLoading.asStateFlow()
+    private val _isInventoryLoading = MutableStateFlow(false)
+    val isInventoryLoading = _isInventoryLoading.asStateFlow()
+
+    private val _isSupplierLoading = MutableStateFlow(false)
+    val isSupplierLoading = _isSupplierLoading.asStateFlow()
+
+    private val _isScrapLoading = MutableStateFlow(false)
+    val isScrapLoading = _isScrapLoading.asStateFlow()
+
+    // Aggregate loading state
+    val isLoading = combine(_isInventoryLoading, _isSupplierLoading, _isScrapLoading) { i, s, sc ->
+        i || s || sc
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     private val _barcodeFilter = MutableStateFlow<String?>(null)
     val barcodeFilter = _barcodeFilter.asStateFlow()
@@ -75,6 +86,12 @@ class ReportsViewModel @Inject constructor(
 
     private val _endDate = MutableStateFlow<Long?>(null)
     val endDate = _endDate.asStateFlow()
+
+    private val _inventoryStartDate = MutableStateFlow<Long?>(null)
+    val inventoryStartDate = _inventoryStartDate.asStateFlow()
+
+    private val _inventoryEndDate = MutableStateFlow<Long?>(null)
+    val inventoryEndDate = _inventoryEndDate.asStateFlow()
 
     private val _isSeller = MutableStateFlow(false)
     val isSeller = _isSeller.asStateFlow()
@@ -145,15 +162,21 @@ class ReportsViewModel @Inject constructor(
         filteredWarehouses,
         productsMap,
         _isSeller,
+        _inventoryStartDate,
+        _inventoryEndDate,
         refreshTrigger
-    ) { query, warehouseList, pMap, seller, _ ->
-        Triple(query, warehouseList, pMap) to seller
-    }.flatMapLatest { (triple, seller) ->
-        val (query, warehouseList, pMap) = triple
+    ) { args ->
+        val query = args[0] as String?
+        val warehouseList = args[1] as List<Warehouse>
+        val pMap = args[2] as Map<String, Product>
+        val seller = args[3] as Boolean
+        val start = args[4] as Long?
+        val end = args[5] as Long?
+
         Pager(PagingConfig(pageSize = 25)) {
-            InventoryPagingSource(firestore, stockEntryRepository, pMap, warehouseList, query, seller)
+            InventoryPagingSource(firestore, stockEntryRepository, pMap, warehouseList, query, seller, start, end)
         }.flow.cachedIn(viewModelScope)
-    }
+    }.flatMapLatest { it }
 
     init {
         userRepository.getCurrentUserFlow()
@@ -196,6 +219,12 @@ class ReportsViewModel @Inject constructor(
         loadInventoryReport(reset = true)
     }
 
+    fun onInventoryDateRangeSelected(start: Long?, end: Long?) {
+        _inventoryStartDate.value = start
+        _inventoryEndDate.value = end
+        loadInventoryReport(reset = true)
+    }
+
     fun onDateRangeSelected(start: Long?, end: Long?) {
         _startDate.value = start
         _endDate.value = end
@@ -214,6 +243,7 @@ class ReportsViewModel @Inject constructor(
             
             // Calculate Global Grand Total once
             viewModelScope.launch {
+                _isInventoryLoading.value = true
                 try {
                     val user = userRepository.getCurrentUser()
                     val seller = user?.role == "seller"
@@ -239,6 +269,8 @@ class ReportsViewModel @Inject constructor(
                     // But we can approximate or let the paging source handle individual sums for the current view.
                 } catch (e: Exception) {
                     Log.e("ReportsViewModel", "Error calculating grand total", e)
+                } finally {
+                    _isInventoryLoading.value = false
                 }
             }
         }
@@ -246,6 +278,7 @@ class ReportsViewModel @Inject constructor(
 
     fun loadScrapReport() {
         viewModelScope.launch {
+            _isScrapLoading.value = true
             val user = userRepository.getCurrentUser()
             val seller = user?.role == "seller"
             val targetWarehouseId = if (seller) user?.warehouseId else null
@@ -265,6 +298,7 @@ class ReportsViewModel @Inject constructor(
                 }
                 _oldBatteryWarehouseSummary.value = whSummaries
             }
+            _isScrapLoading.value = false
         }
     }
 
@@ -273,7 +307,7 @@ class ReportsViewModel @Inject constructor(
         supplierJob?.cancel()
         supplierJob = viewModelScope.launch {
             try {
-                _isLoading.value = true
+                _isSupplierLoading.value = true
                 val query = _supplierSearchQuery.value
                 val allSuppliers = supplierRepository.getSuppliersOnce()
                 val suppliers = if (query.isBlank()) allSuppliers 
@@ -373,7 +407,7 @@ class ReportsViewModel @Inject constructor(
             } catch (e: Exception) {
                 Log.e("ReportsViewModel", "Error loading supplier report", e)
             } finally {
-                _isLoading.value = false
+                _isSupplierLoading.value = false
             }
         }
     }
