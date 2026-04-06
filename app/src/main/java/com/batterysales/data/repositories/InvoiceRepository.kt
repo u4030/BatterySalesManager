@@ -74,7 +74,8 @@ class InvoiceRepository @Inject constructor(
         endDate: Long? = null,
         searchQuery: String? = null,
         lastDocument: DocumentSnapshot? = null,
-        limit: Long = 20
+        limit: Long = 20,
+        useUpdatedAt: Boolean = false
     ): Pair<List<Invoice>, DocumentSnapshot?> {
         var query: Query = firestore.collection(Invoice.COLLECTION_NAME)
 
@@ -88,9 +89,14 @@ class InvoiceRepository @Inject constructor(
 
         val isSearching = !searchQuery.isNullOrBlank()
 
+        val dateField = if (useUpdatedAt) "updatedAt" else "invoiceDate"
+
         if (startDate != null && endDate != null && !isSearching) {
-            query = query.whereGreaterThanOrEqualTo("invoiceDate", Date(startDate))
-                .whereLessThanOrEqualTo("invoiceDate", Date(endDate + 86400000))
+            val start = Date(startDate)
+            val end = Date(endDate + 86400000)
+
+            query = query.whereGreaterThanOrEqualTo(dateField, start)
+                .whereLessThanOrEqualTo(dateField, end)
         }
 
         if (isSearching) {
@@ -103,7 +109,7 @@ class InvoiceRepository @Inject constructor(
                 .whereLessThanOrEqualTo(searchField, searchQuery + "\uf8ff")
                 .orderBy(searchField, Query.Direction.DESCENDING)
         } else {
-            query = query.orderBy("invoiceDate", Query.Direction.DESCENDING)
+            query = query.orderBy(dateField, Query.Direction.DESCENDING)
         }
 
         if (lastDocument != null) {

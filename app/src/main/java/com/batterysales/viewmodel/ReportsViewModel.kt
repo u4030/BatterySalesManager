@@ -191,7 +191,25 @@ class ReportsViewModel @Inject constructor(
             .limit(1)
             .addSnapshotListener { snapshot, e ->
                 if (e == null && snapshot != null && !snapshot.metadata.hasPendingWrites()) {
-                    Log.d("ReportsViewModel", "Stock changed detected via lightweight listener, refreshing")
+                    Log.d("ReportsViewModel", "Stock changed detected, refreshing")
+                    refreshTrigger.value += 1
+                }
+            }
+
+        // Also listen for Product updates to refresh names/specs
+        firestore.collection(Product.COLLECTION_NAME)
+            .addSnapshotListener { snapshot, e ->
+                if (e == null && snapshot != null && !snapshot.metadata.hasPendingWrites()) {
+                    Log.d("ReportsViewModel", "Product updated, refreshing")
+                    refreshTrigger.value += 1
+                }
+            }
+
+        // Also listen for Variant updates
+        firestore.collection(ProductVariant.COLLECTION_NAME)
+            .addSnapshotListener { snapshot, e ->
+                if (e == null && snapshot != null && !snapshot.metadata.hasPendingWrites()) {
+                    Log.d("ReportsViewModel", "Variant updated, refreshing")
                     refreshTrigger.value += 1
                 }
             }

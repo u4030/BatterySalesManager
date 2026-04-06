@@ -74,7 +74,8 @@ class InvoiceViewModel @Inject constructor(
                     status = if (filters.selectedTab == 1) "pending" else null,
                     startDate = if (filters.selectedTab == 0 && filters.startDate == null) startOfToday else filters.startDate,
                     endDate = if (filters.selectedTab == 0 && filters.endDate == null) startOfToday else filters.endDate,
-                    searchQuery = filters.searchQuery.ifBlank { null }
+                    searchQuery = filters.searchQuery.ifBlank { null },
+                    useUpdatedAt = filters.selectedTab == 0 // Use updatedAt for 'Today's Invoices' tab to capture recently paid ones
                 )
             }.flow.cachedIn(viewModelScope)
         }

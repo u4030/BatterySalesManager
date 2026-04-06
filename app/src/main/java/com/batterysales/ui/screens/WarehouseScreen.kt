@@ -183,7 +183,7 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
                                     ) {
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text(
-                                                text = "\u200F${stockItem.product.name} - \u200E${stockItem.variant.capacity} A",
+                                                text = "\u200F${stockItem.product.name}${if(stockItem.product.specification.isNotEmpty()) " (${stockItem.product.specification})" else ""} - \u200E${stockItem.variant.capacity} A",
                                                 style = MaterialTheme.typography.bodyLarge,
                                                 fontWeight = FontWeight.Bold,
                                                 color = MaterialTheme.colorScheme.onSurface

@@ -189,7 +189,7 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                                 InventoryReportControls(viewModel)
                             }
 
-                            if (pagingItems.itemCount > 0) {
+                            if (pagingItems.itemCount > 0 && !currentTabLoading) {
                                 item {
                                     GrandTotalCard(totalQuantity = grandTotalQuantity, isSeller = isSeller)
                                 }
