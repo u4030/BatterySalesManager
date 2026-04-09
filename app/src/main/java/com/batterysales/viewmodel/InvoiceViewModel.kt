@@ -60,6 +60,10 @@ class InvoiceViewModel @Inject constructor(
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val invoices: Flow<PagingData<Invoice>> = combine(filterState, refreshTrigger) { f, _ -> f }
         .flatMapLatest { filters ->
+            if (filters.warehouseId.isBlank() && !_uiState.value.isAdmin) {
+                return@flatMapLatest flowOf(PagingData.empty())
+            }
+
             val now = Calendar.getInstance()
             now.set(Calendar.HOUR_OF_DAY, 0)
             now.set(Calendar.MINUTE, 0)
@@ -67,15 +71,15 @@ class InvoiceViewModel @Inject constructor(
             now.set(Calendar.MILLISECOND, 0)
             val startOfToday = now.timeInMillis
 
-            Pager(PagingConfig(pageSize = 25)) { // Slightly larger page size for smoother scrolling
+            Pager(PagingConfig(pageSize = 25)) {
                 InvoicePagingSource(
                     repository = invoiceRepository,
                     warehouseId = if (filters.warehouseId == "all" || filters.warehouseId.isBlank()) null else filters.warehouseId,
                     status = if (filters.selectedTab == 1) "pending" else null,
-                    startDate = if (filters.selectedTab == 0 && filters.startDate == null) startOfToday else filters.startDate,
-                    endDate = if (filters.selectedTab == 0 && filters.endDate == null) startOfToday else filters.endDate,
+                    startDate = if (filters.selectedTab == 0) startOfToday else filters.startDate,
+                    endDate = if (filters.selectedTab == 0) startOfToday else filters.endDate,
                     searchQuery = filters.searchQuery.ifBlank { null },
-                    useUpdatedAt = filters.selectedTab == 0 // Use updatedAt for 'Today's Invoices' tab to capture recently paid ones
+                    useUpdatedAt = false
                 )
             }.flow.cachedIn(viewModelScope)
         }
@@ -98,22 +102,16 @@ class InvoiceViewModel @Inject constructor(
 
             warehouseRepository.getWarehouses().take(1).collect { allWh ->
                 val activeWh = allWh.filter { it.isActive }
-                val displayWarehouses = if (isAdmin) {
-                    listOf(Warehouse(id = "all", name = "كافة المستودعات")) + allWh
-                } else {
-                    activeWh
-                }
+                val displayWarehouses = (if (isAdmin) allWh else activeWh).sortedBy { it.name }
 
                 _uiState.update { state ->
-                    val finalWhId = if (state.selectedWarehouseId.isBlank()) {
-                        if (isAdmin) "all" else user?.warehouseId ?: ""
+                    val finalWhId = if (state.selectedWarehouseId.isBlank() || state.selectedWarehouseId == "all") {
+                        if (isAdmin) (displayWarehouses.firstOrNull()?.id ?: "") else user?.warehouseId ?: ""
                     } else {
                         state.selectedWarehouseId
                     }
 
-                    if (state.selectedWarehouseId.isBlank()) {
-                        filterState.update { it.copy(warehouseId = finalWhId) }
-                    }
+                    filterState.update { it.copy(warehouseId = finalWhId) }
 
                     state.copy(
                         warehouses = displayWarehouses,
@@ -149,14 +147,16 @@ class InvoiceViewModel @Inject constructor(
     }
 
     fun onWarehouseSelected(warehouseId: String) {
+        if (_uiState.value.selectedWarehouseId == warehouseId) return
         _uiState.update { it.copy(selectedWarehouseId = warehouseId) }
         filterState.update { it.copy(warehouseId = warehouseId) }
         loadInvoices(reset = true)
     }
 
     fun onTabSelected(tabIndex: Int) {
-        _uiState.update { it.copy(selectedTab = tabIndex) }
-        filterState.update { it.copy(selectedTab = tabIndex) }
+        if (_uiState.value.selectedTab == tabIndex) return
+        _uiState.update { it.copy(selectedTab = tabIndex, startDate = null, endDate = null) }
+        filterState.update { it.copy(selectedTab = tabIndex, startDate = null, endDate = null) }
         loadInvoices(reset = true)
     }
 
