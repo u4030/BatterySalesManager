@@ -192,16 +192,16 @@ class ReportsViewModel @Inject constructor(
             .orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING)
             .limit(1)
             .addSnapshotListener { snapshot, e ->
-                if (e == null && snapshot != null && !snapshot.metadata.hasPendingWrites()) {
+                if (e == null && snapshot != null) {
                     Log.d("ReportsViewModel", "Stock changed detected, refreshing")
                     refreshTrigger.value += 1
                 }
             }
 
-        // Also listen for Product updates to refresh names/specs
+        // Also listen for Product updates to refresh names/specs immediately
         firestore.collection(Product.COLLECTION_NAME)
             .addSnapshotListener { snapshot, e ->
-                if (e == null && snapshot != null && !snapshot.metadata.hasPendingWrites()) {
+                if (e == null && snapshot != null) {
                     Log.d("ReportsViewModel", "Product updated, refreshing")
                     refreshTrigger.value += 1
                 }
@@ -210,7 +210,7 @@ class ReportsViewModel @Inject constructor(
         // Also listen for Variant updates
         firestore.collection(ProductVariant.COLLECTION_NAME)
             .addSnapshotListener { snapshot, e ->
-                if (e == null && snapshot != null && !snapshot.metadata.hasPendingWrites()) {
+                if (e == null && snapshot != null) {
                     Log.d("ReportsViewModel", "Variant updated, refreshing")
                     refreshTrigger.value += 1
                 }

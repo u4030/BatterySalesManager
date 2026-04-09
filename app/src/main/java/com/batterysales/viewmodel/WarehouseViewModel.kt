@@ -74,36 +74,24 @@ class WarehouseViewModel @Inject constructor(
         val activeVariantsMap = activeVariants.associateBy { it.id }
 
         val stockMap = mutableMapOf<Pair<String, String>, Int>()
-        
-        // 1. First, identify which ACTIVE variants need historical calculation
-        val variantsNeedingCalculation = activeVariants.filter { it.currentStock == null }
-        
-        if (variantsNeedingCalculation.isNotEmpty()) {
-            val approvedEntries = allStockEntries.filter { it.status == "approved" }
-            for (entry in approvedEntries) {
-                if (activeVariantsMap.containsKey(entry.productVariantId)) {
-                    val variant = activeVariantsMap[entry.productVariantId]!!
-                    if (variant.currentStock == null) {
-                        // If user is a seller, filter by their warehouse
-                        if (user?.role == com.batterysales.data.models.User.ROLE_SELLER) {
-                            if (entry.warehouseId != user.warehouseId) continue
-                        }
-                        val key = Pair(entry.productVariantId, entry.warehouseId)
-                        stockMap[key] = (stockMap[key] ?: 0) + (entry.quantity - entry.returnedQuantity)
-                    }
-                }
-            }
-        }
+        val approvedEntries = allStockEntries.filter { it.status == "approved" }
 
-        // 2. Then, add data from ACTIVE variants that already have denormalized stock
+        // Process all active variants in one pass to avoid leftovers or duplicates
         for (variant in activeVariants) {
-            variant.currentStock?.forEach { (warehouseId, quantity) ->
-                // If user is a seller, filter by their warehouse
-                if (user?.role == com.batterysales.data.models.User.ROLE_SELLER) {
-                    if (warehouseId != user.warehouseId) return@forEach
+            if (variant.currentStock != null) {
+                // Use denormalized stock
+                variant.currentStock.forEach { (warehouseId, quantity) ->
+                    if (user?.role == com.batterysales.data.models.User.ROLE_SELLER && warehouseId != user.warehouseId) return@forEach
+                    stockMap[Pair(variant.id, warehouseId)] = quantity
                 }
-                val key = Pair(variant.id, warehouseId)
-                stockMap[key] = quantity
+            } else {
+                // Fallback to historical calculation for this specific variant
+                val variantEntries = approvedEntries.filter { it.productVariantId == variant.id }
+                val whGroups = variantEntries.groupBy { it.warehouseId }
+                whGroups.forEach { (whId, entries) ->
+                    if (user?.role == com.batterysales.data.models.User.ROLE_SELLER && whId != user.warehouseId) return@forEach
+                    stockMap[Pair(variant.id, whId)] = entries.sumOf { it.quantity - it.returnedQuantity }
+                }
             }
         }
 

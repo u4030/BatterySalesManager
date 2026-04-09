@@ -97,27 +97,31 @@ class InvoiceViewModel @Inject constructor(
             val isAdmin = user?.role == "admin"
 
             warehouseRepository.getWarehouses().take(1).collect { allWh ->
-                val warehouses = if (isAdmin) allWh else allWh.filter { it.isActive }
+                val activeWh = allWh.filter { it.isActive }
+                val displayWarehouses = if (isAdmin) {
+                    listOf(Warehouse(id = "all", name = "كافة المستودعات")) + allWh
+                } else {
+                    activeWh
+                }
 
-                val oldWhId = _uiState.value.selectedWarehouseId
                 _uiState.update { state ->
-                    val initialWarehouseId = if (isAdmin) {
-                        state.selectedWarehouseId.ifBlank { allWh.firstOrNull()?.id ?: "" }
+                    val finalWhId = if (state.selectedWarehouseId.isBlank()) {
+                        if (isAdmin) "all" else user?.warehouseId ?: ""
                     } else {
-                        user?.warehouseId ?: ""
+                        state.selectedWarehouseId
+                    }
+
+                    if (state.selectedWarehouseId.isBlank()) {
+                        filterState.update { it.copy(warehouseId = finalWhId) }
                     }
 
                     state.copy(
-                        warehouses = warehouses,
+                        warehouses = displayWarehouses,
                         isAdmin = isAdmin,
-                        selectedWarehouseId = initialWarehouseId
+                        selectedWarehouseId = finalWhId
                     )
                 }
-
-                val newWhId = _uiState.value.selectedWarehouseId
-                if (newWhId.isNotBlank() && oldWhId.isBlank()) {
-                    loadInvoices(reset = true)
-                }
+                loadInvoices(reset = true)
             }
         }.launchIn(viewModelScope)
     }

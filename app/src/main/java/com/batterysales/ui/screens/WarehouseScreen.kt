@@ -45,7 +45,8 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
     DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-                // Trigger refresh if needed, though most flows are already reactive
+                // No explicit refresh needed as Firestore flows are reactive,
+                // but this ensures the screen is ready when returning.
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
