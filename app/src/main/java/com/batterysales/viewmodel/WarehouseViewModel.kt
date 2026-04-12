@@ -58,6 +58,8 @@ class WarehouseViewModel @Inject constructor(
         currentUser,
         _searchQuery
     ) { args ->
+        args
+    }.flowOn(kotlinx.coroutines.Dispatchers.Default).map { args ->
         val products = args[0] as List<Product>
         val allVariants = args[1] as List<ProductVariant>
         val allWarehouses = args[2] as List<Warehouse>
@@ -68,47 +70,35 @@ class WarehouseViewModel @Inject constructor(
         _isLoading.value = true
         val activeProducts = products.filter { !it.archived }
         val productMap = activeProducts.associateBy { it.id }
-        val activeVariantsMap = allVariants.filter { !it.archived }.associateBy { it.id }
+        val activeVariants = allVariants.filter { !it.archived }
+        val activeVariantsMap = activeVariants.associateBy { it.id }
 
         val stockMap = mutableMapOf<Pair<String, String>, Int>()
-        
-        // 1. First, identify which variants need historical calculation
-        val allVariantsMap = allVariants.associateBy { it.id }
-        val variantsNeedingCalculation = allVariantsMap.values.filter { it.currentStock == null }
-        
-        if (variantsNeedingCalculation.isNotEmpty()) {
-            val approvedEntries = allStockEntries.filter { it.status == "approved" }
-            for (entry in approvedEntries) {
-                if (allVariantsMap.containsKey(entry.productVariantId)) {
-                    val variant = allVariantsMap[entry.productVariantId]!!
-                    if (variant.currentStock == null) {
-                        // If user is a seller, filter by their warehouse
-                        if (user?.role == com.batterysales.data.models.User.ROLE_SELLER) {
-                            if (entry.warehouseId != user.warehouseId) continue
-                        }
-                        val key = Pair(entry.productVariantId, entry.warehouseId)
-                        stockMap[key] = (stockMap[key] ?: 0) + (entry.quantity - entry.returnedQuantity)
-                    }
-                }
-            }
-        }
+        val approvedEntries = allStockEntries.filter { it.status == "approved" }
 
-        // 2. Then, add data from variants that already have denormalized stock
-        for (variant in allVariantsMap.values) {
-            variant.currentStock?.forEach { (warehouseId, quantity) ->
-                // If user is a seller, filter by their warehouse
-                if (user?.role == com.batterysales.data.models.User.ROLE_SELLER) {
-                    if (warehouseId != user.warehouseId) return@forEach
+        // Process all active variants in one pass to avoid leftovers or duplicates
+        for (variant in activeVariants) {
+            if (variant.currentStock != null) {
+                // Use denormalized stock
+                variant.currentStock.forEach { (warehouseId, quantity) ->
+                    if (user?.role == com.batterysales.data.models.User.ROLE_SELLER && warehouseId != user.warehouseId) return@forEach
+                    stockMap[Pair(variant.id, warehouseId)] = quantity
                 }
-                val key = Pair(variant.id, warehouseId)
-                stockMap[key] = quantity
+            } else {
+                // Fallback to historical calculation for this specific variant
+                val variantEntries = approvedEntries.filter { it.productVariantId == variant.id }
+                val whGroups = variantEntries.groupBy { it.warehouseId }
+                whGroups.forEach { (whId, entries) ->
+                    if (user?.role == com.batterysales.data.models.User.ROLE_SELLER && whId != user.warehouseId) return@forEach
+                    stockMap[Pair(variant.id, whId)] = entries.sumOf { it.quantity - it.returnedQuantity }
+                }
             }
         }
 
         val stockList = stockMap.mapNotNull { (key, quantity) ->
             val variantId = key.first
             val warehouseId = key.second
-            val variant = activeVariantsMap[variantId] ?: allVariantsMap[variantId]
+            val variant = activeVariantsMap[variantId]
             val warehouse = allWarehouses.find { it.id == warehouseId }
             if (variant != null && warehouse != null) {
                 val product = productMap[variant.productId]
@@ -125,7 +115,7 @@ class WarehouseViewModel @Inject constructor(
             }
         }
         _isLoading.value = false
-        stockList.sortedWith(compareByDescending<WarehouseStockItem> { it.warehouse.name }.thenByDescending { it.product.name }.thenByDescending { it.variant.capacity })
+        stockList.sortedWith(compareByDescending<WarehouseStockItem> { it.warehouse.name }.thenBy { it.product.name }.thenBy { it.variant.capacity })
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun toggleWarehouseStatus(warehouse: Warehouse) {

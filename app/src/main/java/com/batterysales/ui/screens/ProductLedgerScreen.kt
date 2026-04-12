@@ -190,7 +190,7 @@ fun ProductLedgerScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+                            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
                             .padding(4.dp)
                             .horizontalScroll(rememberScrollState())
                     ) {
@@ -293,7 +293,7 @@ fun LedgerItemCard(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = entry.timestamp.toFormattedString("yyyy-MM-dd HH:mm"),
+                        text = entry.timestamp.toFormattedString("yyyy-MM-dd hh:mm a"),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

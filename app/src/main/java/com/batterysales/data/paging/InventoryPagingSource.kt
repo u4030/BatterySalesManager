@@ -22,7 +22,8 @@ class InventoryPagingSource(
     private val warehouseList: List<Warehouse>,
     private val searchQuery: String?,
     private val isSeller: Boolean = false,
-    private val viewModel: ReportsViewModel? = null
+    private val startDate: Long? = null,
+    private val endDate: Long? = null
 ) : PagingSource<DocumentSnapshot, InventoryReportItem>() {
 
     override fun getRefreshKey(state: PagingState<DocumentSnapshot, InventoryReportItem>): DocumentSnapshot? = null
@@ -104,13 +105,13 @@ class InventoryPagingSource(
                 }
                 
                 // Final sort for the result page
-                val sortedVariants = variants.sortedWith(compareByDescending<ProductVariant> { getProduct(it.productId, products, productsMap)?.name ?: "" }.thenByDescending { it.capacity })
+                val sortedVariants = variants.sortedWith(compareBy<ProductVariant> { getProduct(it.productId, products, productsMap)?.name ?: "" }.thenBy { it.capacity })
                 variants.clear()
                 variants.addAll(sortedVariants)
 
             } else {
                 var query = firestore.collection(Product.COLLECTION_NAME)
-                    .orderBy("name", com.google.firebase.firestore.Query.Direction.DESCENDING)
+                    .orderBy("name", com.google.firebase.firestore.Query.Direction.ASCENDING)
 
                 if (params.key != null) {
                     query = query.startAfter(params.key!!)
@@ -144,7 +145,7 @@ class InventoryPagingSource(
                 }
                 
                 // Final sort for the result page
-                val sortedVariants = variants.sortedWith(compareByDescending<ProductVariant> { getProduct(it.productId, products, productsMap)?.name ?: "" }.thenByDescending { it.capacity })
+                val sortedVariants = variants.sortedWith(compareBy<ProductVariant> { getProduct(it.productId, products, productsMap)?.name ?: "" }.thenBy { it.capacity })
                 variants.clear()
                 variants.addAll(sortedVariants)
             }
@@ -154,7 +155,16 @@ class InventoryPagingSource(
                 val variantIds = variants.map { it.id }
                 val allEntriesMap = stockEntryRepository.getEntriesForVariants(variantIds)
 
-                variants.map { variant ->
+                variants.mapNotNull { variant ->
+                    val entries = allEntriesMap[variant.id] ?: emptyList()
+                    
+                    // Filter by date if applicable
+                    if (startDate != null && endDate != null) {
+                        val adjustedEnd = endDate + 86400000
+                        val hasActivity = entries.any { it.timestamp.time in startDate..adjustedEnd }
+                        if (!hasActivity) return@mapNotNull null
+                    }
+
                     async {
                         val finalProduct = getProduct(variant.productId, products, productsMap) ?: Product(name = "Unknown")
                         val warehouseIds = warehouseList.map { it.id }.toSet()

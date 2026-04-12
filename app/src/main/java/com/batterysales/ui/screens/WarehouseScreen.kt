@@ -18,6 +18,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -40,6 +41,20 @@ import kotlinx.coroutines.launch
 fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel = hiltViewModel()) {
     val keyboardController = com.batterysales.ui.components.LocalCustomKeyboardController.current
     val warehouses by viewModel.warehouses.collectAsState()
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                // No explicit refresh needed as Firestore flows are reactive, 
+                // but this ensures the screen is ready when returning.
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
     val stockLevels by viewModel.stockLevels.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -183,7 +198,7 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
                                     ) {
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text(
-                                                text = "\u200F${stockItem.product.name} - \u200E${stockItem.variant.capacity} A",
+                                                text = "\u200F${stockItem.product.name}${if(stockItem.product.specification.isNotEmpty()) " (${stockItem.product.specification})" else ""} - \u200E${stockItem.variant.capacity} A",
                                                 style = MaterialTheme.typography.bodyLarge,
                                                 fontWeight = FontWeight.Bold,
                                                 color = MaterialTheme.colorScheme.onSurface
@@ -264,7 +279,7 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
                     var targetIndex = 2 // SharedHeader + SearchBar/Tabs
                     val groups = stockLevels.groupBy { it.warehouse.name }
                     for ((_, items) in groups) {
-                        val matchingItemIndex = items.indexOfFirst { it.product.name.startsWith(letter, ignoreCase = true) }
+                        val matchingItemIndex = items.indexOfFirst { it.product.name.trim().startsWith(letter.toString(), ignoreCase = true) }
                         if (matchingItemIndex != -1) {
                             val finalIndex = targetIndex + matchingItemIndex + 1 // +1 for the Warehouse Header
                             scope.launch {

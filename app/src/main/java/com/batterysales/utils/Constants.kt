@@ -37,7 +37,9 @@ object Constants {
         const val CHECK = "CHECK"
         const val BILL = "BILL"
         const val TRANSFER = "TRANSFER"
-        const val OTHER = "OTHER"
+        const val CASH = "CASH"
+        const val VISA = "VISA"
+        const val E_WALLET = "E_WALLET"
     }
 
     // Expense Categories

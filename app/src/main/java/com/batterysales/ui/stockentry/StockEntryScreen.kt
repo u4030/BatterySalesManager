@@ -90,10 +90,10 @@ fun StockEntryScreen(
                 item {
                     SharedHeader(
                         title = if (uiState.isEditMode) "تعديل قيد المخزون" else "إدخال مخزون جديد",
-                        onBackClick = {
-                            keyboardController.hideKeyboard()
-                            navController.popBackStack()
-                        },
+                    onBackClick = { 
+                        keyboardController.hideKeyboard()
+                        navController.popBackStack() 
+                    },
                         actions = {
                             HeaderIconButton(
                                 icon = Icons.Default.PhotoCamera,
@@ -152,7 +152,7 @@ fun StockEntryContent(
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("المستودع والمورد", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-
+                
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Dropdown(
                         label = "المستودع",
@@ -175,7 +175,7 @@ fun StockEntryContent(
                         label = "المورد",
                         selectedValue = uiState.selectedSupplier?.name ?: uiState.supplierName,
                         options = listOf("فارغ") + uiState.suppliers.map { it.name },
-                        onOptionSelected = { index ->
+                        onOptionSelected = { index -> 
                             if (index == 0) viewModel.onSupplierSelected(null)
                             else viewModel.onSupplierSelected(uiState.suppliers[index - 1])
                         },
@@ -208,7 +208,7 @@ fun StockEntryContent(
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("تفاصيل المنتج", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-
+                
                 FlowRow(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -230,10 +230,10 @@ fun StockEntryContent(
                     Dropdown(
                         label = "السعة",
                         selectedValue = uiState.selectedVariant?.let { v ->
-                            "${v.capacity}A" + if (v.specification.isNotEmpty()) " (${v.specification})" else ""
+                            "\u200E${v.capacity}A" + if (v.specification.isNotEmpty()) " (${v.specification})" else ""
                         } ?: "",
                         options = uiState.variants.map { v ->
-                            "${v.capacity}A" + if (v.specification.isNotEmpty()) " (${v.specification})" else ""
+                            "\u200E${v.capacity}A" + if (v.specification.isNotEmpty()) " (${v.specification})" else ""
                         },
                         onOptionSelected = { index -> viewModel.onVariantSelected(uiState.variants[index]) },
                         enabled = uiState.selectedProduct != null,
@@ -275,10 +275,10 @@ fun StockEntryContent(
                 shape = RoundedCornerShape(12.dp),
                 enabled = uiState.selectedVariant != null,
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFB8C00))
-            ) {
+            ) { 
                 Icon(Icons.Default.Add, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("إضافة إلى القائمة")
+                Text("إضافة إلى القائمة") 
             }
         }
 
@@ -295,8 +295,8 @@ fun StockEntryContent(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            "${item.productName} - ${item.productVariant.capacity}A" +
-                                    if(item.productVariant.specification.isNotEmpty()) " (${item.productVariant.specification})" else "",
+                            "${item.productName} - ${item.productVariant.capacity}A" + 
+                            if(item.productVariant.specification.isNotEmpty()) " (${item.productVariant.specification})" else "",
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Bold
                         )
@@ -346,13 +346,13 @@ fun StockEntryContent(
             shape = RoundedCornerShape(16.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
             enabled = !uiState.isSubmitting
-        ) {
+        ) { 
             if (uiState.isSubmitting) {
                 CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
             } else {
                 Icon(Icons.Default.Save, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(if (uiState.isEditMode) "تحديث القيد" else "حفظ إدخال المخزون", fontWeight = FontWeight.Bold)
+                Text(if (uiState.isEditMode) "تحديث القيد" else "حفظ إدخال المخزون", fontWeight = FontWeight.Bold) 
             }
         }
     }
@@ -395,7 +395,7 @@ fun CostCalculationSection(uiState: StockEntryUiState, viewModel: StockEntryView
     ) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("حساب التكلفة والكمية", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-
+            
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { viewModel.onCostInputModeChanged(CostInputMode.BY_AMPERE) }) {
                     RadioButton(selected = uiState.costInputMode == CostInputMode.BY_AMPERE, onClick = { viewModel.onCostInputModeChanged(CostInputMode.BY_AMPERE) })
@@ -536,14 +536,14 @@ fun Dropdown(
 fun AddWarehouseDialog(onDismiss: () -> Unit, onAddWarehouse: (String) -> Unit) {
     var name by remember { mutableStateOf("") }
     com.batterysales.ui.components.AppDialog(
-        onDismiss = onDismiss,
+        onDismiss = onDismiss, 
         title = "إضافة مستودع جديد",
-        confirmButton = { Button(onClick = { if (name.isNotBlank()) { onAddWarehouse(name); onDismiss() } }) { Text("إضافة") } },
+        confirmButton = { Button(onClick = { if (name.isNotBlank()) { onAddWarehouse(name); onDismiss() } }) { Text("إضافة") } }, 
         dismissButton = { Button(onClick = onDismiss) { Text("إلغاء") } }
     ) {
         com.batterysales.ui.components.CustomKeyboardTextField(
-            value = name,
-            onValueChange = { name = it },
+            value = name, 
+            onValueChange = { name = it }, 
             label = "اسم المستودع"
         )
     }
@@ -567,13 +567,13 @@ fun AddSupplierDialog(onDismiss: () -> Unit, onAddSupplier: (String, Double) -> 
         dismissButton = { Button(onClick = onDismiss) { Text("إلغاء") } }
     ) {
         com.batterysales.ui.components.CustomKeyboardTextField(
-            value = name,
-            onValueChange = { name = it },
+            value = name, 
+            onValueChange = { name = it }, 
             label = "اسم المورد"
         )
         com.batterysales.ui.components.CustomKeyboardTextField(
-            value = target,
-            onValueChange = { target = it },
+            value = target, 
+            onValueChange = { target = it }, 
             label = "الهدف السنوي (Target)"
         )
     }

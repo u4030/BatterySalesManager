@@ -64,8 +64,19 @@ class ReportsViewModel @Inject constructor(
     private val firestore: FirebaseFirestore
 ) : ViewModel() {
 
-    private val _isLoading = MutableStateFlow(false)
-    val isLoading = _isLoading.asStateFlow()
+    private val _isInventoryLoading = MutableStateFlow(false)
+    val isInventoryLoading = _isInventoryLoading.asStateFlow()
+
+    private val _isSupplierLoading = MutableStateFlow(false)
+    val isSupplierLoading = _isSupplierLoading.asStateFlow()
+
+    private val _isScrapLoading = MutableStateFlow(false)
+    val isScrapLoading = _isScrapLoading.asStateFlow()
+
+    // Aggregate loading state
+    val isLoading = combine(_isInventoryLoading, _isSupplierLoading, _isScrapLoading) { i, s, sc ->
+        i || s || sc
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     private val _barcodeFilter = MutableStateFlow<String?>(null)
     val barcodeFilter = _barcodeFilter.asStateFlow()
@@ -75,6 +86,12 @@ class ReportsViewModel @Inject constructor(
 
     private val _endDate = MutableStateFlow<Long?>(null)
     val endDate = _endDate.asStateFlow()
+
+    private val _inventoryStartDate = MutableStateFlow<Long?>(null)
+    val inventoryStartDate = _inventoryStartDate.asStateFlow()
+
+    private val _inventoryEndDate = MutableStateFlow<Long?>(null)
+    val inventoryEndDate = _inventoryEndDate.asStateFlow()
 
     private val _isSeller = MutableStateFlow(false)
     val isSeller = _isSeller.asStateFlow()
@@ -109,16 +126,17 @@ class ReportsViewModel @Inject constructor(
         _isSeller,
         userRepository.getCurrentUserFlow()
     ) { products, variants, seller, user ->
-        val pMap = products.associateBy { it.id }
+        val pMap = products.filter { !it.archived }.associateBy { it.id }
         val userWhId = user?.warehouseId
         
         variants.filter { !it.archived }
+            .filter { v -> pMap.containsKey(v.productId) } // Ensure product is not archived
             .filter { v ->
                 if (!seller || userWhId == null) true
                 else (v.currentStock?.get(userWhId) ?: 0) > 0
             }
+            .sortedWith(compareBy<ProductVariant> { pMap[it.productId]?.name ?: "" }.thenBy { it.capacity })
             .map { v -> pMap[v.productId]?.name ?: "" }
-            .sortedByDescending { it } // Match descending sort
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val warehouses: StateFlow<List<Warehouse>> = warehouseRepository.getWarehouses()
@@ -144,13 +162,21 @@ class ReportsViewModel @Inject constructor(
         filteredWarehouses,
         productsMap,
         _isSeller,
+        _inventoryStartDate,
+        _inventoryEndDate,
         refreshTrigger
-    ) { query, warehouseList, pMap, seller, _ ->
-        Triple(query, warehouseList, pMap) to seller
-    }.flatMapLatest { (triple, seller) ->
-        val (query, warehouseList, pMap) = triple
+    ) { args ->
+        args
+    }.flowOn(kotlinx.coroutines.Dispatchers.Default).flatMapLatest { args ->
+        val query = args[0] as String?
+        val warehouseList = args[1] as List<Warehouse>
+        val pMap = args[2] as Map<String, Product>
+        val seller = args[3] as Boolean
+        val start = args[4] as Long?
+        val end = args[5] as Long?
+        
         Pager(PagingConfig(pageSize = 25)) {
-            InventoryPagingSource(firestore, stockEntryRepository, pMap, warehouseList, query, seller)
+            InventoryPagingSource(firestore, stockEntryRepository, pMap, warehouseList, query, seller, start, end)
         }.flow.cachedIn(viewModelScope)
     }
 
@@ -166,8 +192,26 @@ class ReportsViewModel @Inject constructor(
             .orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING)
             .limit(1)
             .addSnapshotListener { snapshot, e ->
-                if (e == null && snapshot != null && !snapshot.metadata.hasPendingWrites()) {
-                    Log.d("ReportsViewModel", "Stock changed detected via lightweight listener, refreshing")
+                if (e == null && snapshot != null) {
+                    Log.d("ReportsViewModel", "Stock changed detected, refreshing")
+                    refreshTrigger.value += 1
+                }
+            }
+
+        // Also listen for Product updates to refresh names/specs immediately
+        firestore.collection(Product.COLLECTION_NAME)
+            .addSnapshotListener { snapshot, e ->
+                if (e == null && snapshot != null) {
+                    Log.d("ReportsViewModel", "Product updated, refreshing")
+                    refreshTrigger.value += 1
+                }
+            }
+
+        // Also listen for Variant updates
+        firestore.collection(ProductVariant.COLLECTION_NAME)
+            .addSnapshotListener { snapshot, e ->
+                if (e == null && snapshot != null) {
+                    Log.d("ReportsViewModel", "Variant updated, refreshing")
                     refreshTrigger.value += 1
                 }
             }
@@ -195,6 +239,12 @@ class ReportsViewModel @Inject constructor(
         loadInventoryReport(reset = true)
     }
 
+    fun onInventoryDateRangeSelected(start: Long?, end: Long?) {
+        _inventoryStartDate.value = start
+        _inventoryEndDate.value = end
+        loadInventoryReport(reset = true)
+    }
+
     fun onDateRangeSelected(start: Long?, end: Long?) {
         _startDate.value = start
         _endDate.value = end
@@ -213,6 +263,7 @@ class ReportsViewModel @Inject constructor(
             
             // Calculate Global Grand Total once
             viewModelScope.launch {
+                _isInventoryLoading.value = true
                 try {
                     val user = userRepository.getCurrentUser()
                     val seller = user?.role == "seller"
@@ -238,6 +289,8 @@ class ReportsViewModel @Inject constructor(
                     // But we can approximate or let the paging source handle individual sums for the current view.
                 } catch (e: Exception) {
                     Log.e("ReportsViewModel", "Error calculating grand total", e)
+                } finally {
+                    _isInventoryLoading.value = false
                 }
             }
         }
@@ -245,6 +298,7 @@ class ReportsViewModel @Inject constructor(
 
     fun loadScrapReport() {
         viewModelScope.launch {
+            _isScrapLoading.value = true
             val user = userRepository.getCurrentUser()
             val seller = user?.role == "seller"
             val targetWarehouseId = if (seller) user?.warehouseId else null
@@ -264,6 +318,7 @@ class ReportsViewModel @Inject constructor(
                 }
                 _oldBatteryWarehouseSummary.value = whSummaries
             }
+            _isScrapLoading.value = false
         }
     }
 
@@ -272,7 +327,7 @@ class ReportsViewModel @Inject constructor(
         supplierJob?.cancel()
         supplierJob = viewModelScope.launch {
             try {
-                _isLoading.value = true
+                _isSupplierLoading.value = true
                 val query = _supplierSearchQuery.value
                 val allSuppliers = supplierRepository.getSuppliersOnce()
                 val suppliers = if (query.isBlank()) allSuppliers 
@@ -344,7 +399,9 @@ class ReportsViewModel @Inject constructor(
                                         BillType.CHECK -> "شيك"
                                         BillType.BILL -> "كمبيالة"
                                         BillType.TRANSFER -> "تحويل"
-                                        BillType.OTHER -> "أخرى"
+                                        BillType.CASH -> "نقدي"
+                                        BillType.VISA -> "فيزا"
+                                        BillType.E_WALLET -> "محفظة"
                                     }
                                     "$typeStr: ${bill.referenceNumber}"
                                 }.distinct()
@@ -370,7 +427,7 @@ class ReportsViewModel @Inject constructor(
             } catch (e: Exception) {
                 Log.e("ReportsViewModel", "Error loading supplier report", e)
             } finally {
-                _isLoading.value = false
+                _isSupplierLoading.value = false
             }
         }
     }
