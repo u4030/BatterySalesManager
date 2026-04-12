@@ -5,9 +5,9 @@ import androidx.lifecycle.viewModelScope
 import com.batterysales.data.models.*
 import com.batterysales.data.repositories.*
 import android.util.Log
-import com.batterysales.data.repositories.OldBatteryRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.Date
@@ -50,6 +50,7 @@ class SalesViewModel @Inject constructor(
     private val networkHelper: com.batterysales.utils.NetworkHelper
 ) : ViewModel() {
 
+    // ====================== State Flows ======================
     private val _selectedProduct = MutableStateFlow<Product?>(null)
     private val _selectedVariant = MutableStateFlow<ProductVariant?>(null)
     private val _selectedWarehouse = MutableStateFlow<Warehouse?>(null)
@@ -63,6 +64,9 @@ class SalesViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(false)
     private val _isSubmitting = MutableStateFlow(false)
     private val _isFinished = MutableStateFlow(false)
+
+    // 🔥 Trigger لإجبار إعادة حساب المخزون بعد مسح الباركود
+    private val _refreshTrigger = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
 
     private var allStockEntries: List<StockEntry> = emptyList()
     private var currentUser: User? = null
@@ -96,7 +100,8 @@ class SalesViewModel @Inject constructor(
             if (product == null) flowOf(emptyList())
             else productVariantRepository.getVariantsForProductFlow(product.id)
                 .map { variants -> variants.filter { !it.archived }.sortedBy { it.capacity } }
-        }
+        },
+        _refreshTrigger.onStart { emit(Unit) }
     ) { args ->
         val products = args[0] as List<Product>
         val warehouses = args[1] as List<Warehouse>
@@ -122,46 +127,62 @@ class SalesViewModel @Inject constructor(
         currentUser = user
 
         val approvedEntries = stockEntries.filter { it.status == "approved" }
-        val entriesByVariant = approvedEntries.groupBy { it.productVariantId }
         val stockMap = mutableMapOf<Pair<String, String>, Int>()
 
+        // 1. حساب المخزون من currentStock (الأولوية الأولى)
         allVariants.forEach { variant ->
+            variant.currentStock?.forEach { (warehouseId, qty) ->
+                stockMap[Pair(variant.id, warehouseId)] = qty
+            }
+        }
+
+        // 2. التأكد من الصنف المحدد حالياً (مهم جداً بعد مسح الباركود)
+        selectedVariant?.let { variant ->
             if (variant.currentStock != null) {
-                // Use denormalized stock
-                variant.currentStock.forEach { (warehouseId, qty) ->
-                    stockMap[Pair(variant.id, warehouseId)] = qty
+                variant.currentStock.forEach { (whId, qty) ->
+                    stockMap[Pair(variant.id, whId)] = qty
                 }
             } else {
-                // Fallback to calculation from entries
-                val variantEntries = entriesByVariant[variant.id] ?: emptyList()
-                val warehouseGroups = variantEntries.groupBy { it.warehouseId }
-                warehouseGroups.forEach { (warehouseId, entries) ->
-                    stockMap[Pair(variant.id, warehouseId)] = entries.sumOf { it.quantity - it.returnedQuantity }
+                // Fallback للحالات القديمة
+                val variantEntries = approvedEntries.filter { it.productVariantId == variant.id }
+                variantEntries.groupBy { it.warehouseId }.forEach { (whId, group) ->
+                    stockMap[Pair(variant.id, whId)] = group.sumOf { it.getNetQuantity() }
                 }
             }
         }
 
+        // 3. تحديث إضافي للصنف النشط من allVariants
+        val activeSelectedVariant = allVariants.find { it.id == selectedVariant?.id } ?: selectedVariant
+        activeSelectedVariant?.let { variant ->
+            if (variant.currentStock == null || variant.currentStock.isEmpty()) {
+                val variantEntries = approvedEntries.filter { it.productVariantId == variant.id }
+                variantEntries.groupBy { it.warehouseId }.forEach { (whId, group) ->
+                    stockMap[Pair(variant.id, whId)] = group.sumOf { it.getNetQuantity() }
+                }
+            }
+        }
+
+        val activeSelectedProduct = products.find { it.id == selectedProduct?.id } ?: selectedProduct
+
         val isSeller = user?.role == User.ROLE_SELLER
-        val autoSelectedWarehouse = if (isSeller && selectedWarehouse == null) {
+        val autoSelectedWarehouse = if (isSeller) {
             warehouses.find { it.id == user?.warehouseId }
         } else {
             selectedWarehouse
         }
 
         val filteredProducts = if (isSeller && user?.warehouseId != null) {
-            // Filter products that have any approved stock entry in this warehouse with quantity > 0
-            val availableVariantIds = approvedEntries
-                .filter { it.warehouseId == user.warehouseId }
-                .groupBy { it.productVariantId }
-                .filter { (_, entries) -> entries.sumOf { it.quantity - it.returnedQuantity } > 0 }
-                .keys
+            val availableVariantIds = allVariants.filter { v ->
+                (v.currentStock?.get(user.warehouseId) ?: 0) > 0
+            }.map { it.id }.toSet()
 
-            val availableProductIds = allVariants.filter { availableVariantIds.contains(it.id) }.map { it.productId }.toSet()
-            products.filter { !it.archived && availableProductIds.contains(it.id) }
-                .sortedBy{ it.name }
-        } else {
-            products.filter { !it.archived }
+            val availableProductIds = allVariants.filter { availableVariantIds.contains(it.id) }
+                .map { it.productId }.toSet()
+
+            products.filter { !it.archived && (availableProductIds.contains(it.id) || it.id == selectedProduct?.id) }
                 .sortedBy { it.name }
+        } else {
+            products.filter { !it.archived }.sortedBy { it.name }
         }
 
         SalesUiState(
@@ -169,8 +190,8 @@ class SalesViewModel @Inject constructor(
             variants = variants,
             warehouses = warehouses.filter { it.isActive },
             stockLevels = stockMap,
-            selectedProduct = selectedProduct,
-            selectedVariant = selectedVariant,
+            selectedProduct = activeSelectedProduct,
+            selectedVariant = activeSelectedVariant,
             selectedWarehouse = autoSelectedWarehouse,
             quantity = quantity,
             sellingPrice = sellingPrice,
@@ -185,12 +206,18 @@ class SalesViewModel @Inject constructor(
             errorMessage = errorMessage,
             isFinished = isFinished
         )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SalesUiState(isLoading = true))
+    }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SalesUiState(isLoading = true))
+
+    // ====================== Event Functions ======================
 
     fun onProductSelected(product: Product) {
         _selectedProduct.value = product
-        _selectedVariant.value = null
-        _sellingPrice.value = ""
+        if (_selectedVariant.value?.productId != product.id) {
+            _selectedVariant.value = null
+            _sellingPrice.value = ""
+        }
     }
 
     fun onVariantSelected(variant: ProductVariant) {
@@ -226,6 +253,45 @@ class SalesViewModel @Inject constructor(
         _paymentMethod.value = method
     }
 
+    fun onDismissError() {
+        _errorMessage.value = null
+    }
+
+    fun findProductByBarcode(barcode: String) {
+        viewModelScope.launch {
+            try {
+                _isLoading.value = true
+                _errorMessage.value = null
+
+                val variant = productVariantRepository.getVariantByBarcode(barcode)
+                if (variant == null) {
+                    _errorMessage.value = "لم يتم العثور على منتج بهذا الباركود: $barcode"
+                    return@launch
+                }
+
+                val product = productRepository.getProduct(variant.productId)
+                if (product == null) {
+                    _errorMessage.value = "المنتج المرتبط بهذا الباركود غير موجود"
+                    return@launch
+                }
+
+                // تحديث الاختيارات
+                _selectedProduct.value = product
+                _selectedVariant.value = variant
+                _sellingPrice.value = if (variant.sellingPrice > 0.0) variant.sellingPrice.toString() else ""
+
+                // 🔥 إجبار إعادة حساب المخزون
+                _refreshTrigger.emit(Unit)
+
+            } catch (e: Exception) {
+                Log.e("SalesViewModel", "Barcode error", e)
+                _errorMessage.value = "خطأ أثناء البحث عن الباركود"
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
     fun createSale(customerName: String, customerPhone: String, paidAmount: Double) {
         if (uiState.value.isSubmitting) return
 
@@ -236,28 +302,19 @@ class SalesViewModel @Inject constructor(
         val qty = state.quantity.toIntOrNull() ?: 0
         val price = state.sellingPrice.toDoubleOrNull() ?: 0.0
 
-        // Explicit Field Validation
         if (product == null || variant == null || warehouse == null) {
             _errorMessage.value = "الرجاء اختيار المنتج والصنف والمستودع"
             return
         }
-//        if (customerName.isBlank()) {
-//            _errorMessage.value = "الرجاء إدخال اسم العميل"
-//            return
-//        }
 
         if (qty <= 0) {
             _errorMessage.value = "الرجاء إدخال كمية صحيحة"
             return
         }
-//        if (price <= 0) {
-//            _errorMessage.value = "الرجاء إدخال سعر البيع"
-//            return
-//        }
 
         val available = state.stockLevels[Pair(variant.id, warehouse.id)] ?: 0
         if (qty > available) {
-            _errorMessage.value = "المخزون غير كافٍ. المتاح: $available، المطلوب: $qty"
+            _errorMessage.value = "المخزون غير كافٍ في مستودع ${warehouse.name}. المتاح: $available، المطلوب: $qty"
             return
         }
 
@@ -274,7 +331,7 @@ class SalesViewModel @Inject constructor(
                 }
 
                 if (!networkHelper.isNetworkConnected()) {
-                     _errorMessage.value = "لا يوجد اتصال بالإنترنت. يرجى المحاولة لاحقاً."
+                    _errorMessage.value = "لا يوجد اتصال بالإنترنت. يرجى المحاولة لاحقاً."
                     _isLoading.value = false
                     _isSubmitting.value = false
                     return@launch
@@ -377,30 +434,12 @@ class SalesViewModel @Inject constructor(
 
                 _isFinished.value = true
                 _isSubmitting.value = false
+
             } catch (e: Exception) {
                 Log.e("SalesViewModel", "Error creating sale", e)
                 _errorMessage.value = "Failed to create sale: ${e.message}"
                 _isLoading.value = false
                 _isSubmitting.value = false
-            }
-        }
-    }
-
-    fun onDismissError() {
-        _errorMessage.value = null
-    }
-
-    fun findProductByBarcode(barcode: String) {
-        viewModelScope.launch {
-            val variant = productVariantRepository.getVariantByBarcode(barcode)
-            if (variant != null) {
-                val product = productRepository.getProduct(variant.productId)
-                if (product != null) {
-                    onProductSelected(product)
-                    onVariantSelected(variant)
-                }
-            } else {
-                _errorMessage.value = "لم يتم العثور على منتج بهذا الباركود"
             }
         }
     }

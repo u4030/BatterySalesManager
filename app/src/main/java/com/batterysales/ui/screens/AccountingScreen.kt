@@ -424,14 +424,24 @@ fun AccountingScreen(
     }
 
     if (transactionToEdit != null) {
-        EditTransactionDialog(
-            transaction = transactionToEdit!!,
-            onDismiss = { transactionToEdit = null },
-            onConfirm = { updated ->
-                viewModel.updateTransaction(updated)
-                transactionToEdit = null
-            }
-        )
+        val isLinkedToBill = transactionToEdit?.relatedId?.isNotEmpty() == true
+        if (isLinkedToBill) {
+            AlertDialog(
+                onDismissRequest = { transactionToEdit = null },
+                title = { Text("تنبيه") },
+                text = { Text("هذه العملية مرتبطة بكمبيالة أو شيك. لتعديلها، يرجى الانتقال إلى شاشة الكمبيالات.") },
+                confirmButton = { Button(onClick = { transactionToEdit = null }) { Text("فهمت") } }
+            )
+        } else {
+            EditTransactionDialog(
+                transaction = transactionToEdit!!,
+                onDismiss = { transactionToEdit = null },
+                onConfirm = { updated ->
+                    viewModel.updateTransaction(updated)
+                    transactionToEdit = null
+                }
+            )
+        }
     }
 
     if (showDateRangePicker) {
@@ -449,21 +459,35 @@ fun AccountingScreen(
     }
 
     if (showDeleteConfirm != null) {
+        val isLinkedToBill = showDeleteConfirm?.relatedId?.isNotEmpty() == true
+        
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = null },
-            title = { Text("حذف العملية") },
-            text = { Text("هل أنت متأكد من حذف هذه العملية المالية؟ لا يمكن التراجع عن هذا الإجراء.") },
+            title = { Text(if (isLinkedToBill) "تنبيه" else "حذف العملية") },
+            text = { 
+                if (isLinkedToBill) {
+                    Text("هذه العملية مرتبطة بكمبيالة أو شيك. لحذفها أو تعديلها، يرجى الانتقال إلى شاشة الكمبيالات والحذف من هناك لضمان دقة البيانات.")
+                } else {
+                    Text("هل أنت متأكد من حذف هذه العملية المالية؟ لا يمكن التراجع عن هذا الإجراء.")
+                }
+            },
             confirmButton = {
-                Button(
-                    onClick = {
-                        viewModel.deleteTransaction(showDeleteConfirm!!.id)
-                        showDeleteConfirm = null
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) { Text("حذف") }
+                if (!isLinkedToBill) {
+                    Button(
+                        onClick = {
+                            viewModel.deleteTransaction(showDeleteConfirm!!.id)
+                            showDeleteConfirm = null
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    ) { Text("حذف") }
+                } else {
+                    Button(onClick = { showDeleteConfirm = null }) { Text("فهمت") }
+                }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = null }) { Text("إلغاء") }
+                if (!isLinkedToBill) {
+                    TextButton(onClick = { showDeleteConfirm = null }) { Text("إلغاء") }
+                }
             }
         )
     }

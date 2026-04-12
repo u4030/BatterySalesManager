@@ -22,7 +22,8 @@ class InventoryPagingSource(
     private val warehouseList: List<Warehouse>,
     private val searchQuery: String?,
     private val isSeller: Boolean = false,
-    private val viewModel: ReportsViewModel? = null
+    private val startDate: Long? = null,
+    private val endDate: Long? = null
 ) : PagingSource<DocumentSnapshot, InventoryReportItem>() {
 
     override fun getRefreshKey(state: PagingState<DocumentSnapshot, InventoryReportItem>): DocumentSnapshot? = null
@@ -40,20 +41,41 @@ class InventoryPagingSource(
             var rawFetchedSize = 0
             coroutineScope {
             if (searchQuery != null && searchQuery.isNotBlank()) {
-                // If this is the FIRST page, try barcode lookup
+                // If this is the FIRST page, try barcode and invoice lookup
                 if (params.key == null) {
+                    // 1. Barcode lookup
                     val barcodeSnap = firestore.collection(ProductVariant.COLLECTION_NAME)
                         .whereEqualTo("barcode", searchQuery)
                         .get().await()
 
-                    val foundVariants = barcodeSnap.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }.filter { !it.archived }
-                    variants.addAll(foundVariants)
+                    val foundBarcodeVariants = barcodeSnap.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }.filter { !it.archived }
+                    variants.addAll(foundBarcodeVariants)
 
-                    val barcodeProductIds = variants.map { it.productId }.distinct()
-                    barcodeProductIds.forEach { pid ->
-                        productsMap[pid]?.let { products.add(it) } ?: run {
-                            val doc = firestore.collection(Product.COLLECTION_NAME).document(pid).get().await()
-                            doc.toObject(Product::class.java)?.copy(id = doc.id)?.let { products.add(it) }
+                    // 2. Invoice/Reference Number lookup in StockEntry
+                    val entrySnap = firestore.collection(StockEntry.COLLECTION_NAME)
+                        .whereEqualTo("invoiceNumber", searchQuery)
+                        .get().await()
+                    
+                    val invoiceVariantIds = entrySnap.documents.mapNotNull { it.getString("productVariantId") }.distinct()
+                        .filter { vid -> variants.none { it.id == vid } }
+                    
+                    if (invoiceVariantIds.isNotEmpty()) {
+                        val invoiceVariants = invoiceVariantIds.chunked(30).flatMap { ids ->
+                            firestore.collection(ProductVariant.COLLECTION_NAME)
+                                .whereIn(com.google.firebase.firestore.FieldPath.documentId(), ids)
+                                .get().await().documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }
+                        }.filter { !it.archived }
+                        variants.addAll(invoiceVariants)
+                    }
+
+                    // Fetch missing products for all found variants
+                    val allProductIds = variants.map { it.productId }.distinct()
+                    allProductIds.forEach { pid ->
+                        if (products.none { it.id == pid }) {
+                            productsMap[pid]?.let { products.add(it) } ?: run {
+                                val doc = firestore.collection(Product.COLLECTION_NAME).document(pid).get().await()
+                                doc.toObject(Product::class.java)?.copy(id = doc.id)?.let { products.add(it) }
+                            }
                         }
                     }
                 }
@@ -104,13 +126,13 @@ class InventoryPagingSource(
                 }
                 
                 // Final sort for the result page
-                val sortedVariants = variants.sortedWith(compareByDescending<ProductVariant> { getProduct(it.productId, products, productsMap)?.name ?: "" }.thenByDescending { it.capacity })
+                val sortedVariants = variants.sortedWith(compareBy<ProductVariant> { getProduct(it.productId, products, productsMap)?.name ?: "" }.thenBy { it.capacity })
                 variants.clear()
                 variants.addAll(sortedVariants)
 
             } else {
                 var query = firestore.collection(Product.COLLECTION_NAME)
-                    .orderBy("name", com.google.firebase.firestore.Query.Direction.DESCENDING)
+                    .orderBy("name", com.google.firebase.firestore.Query.Direction.ASCENDING)
 
                 if (params.key != null) {
                     query = query.startAfter(params.key!!)
@@ -144,7 +166,7 @@ class InventoryPagingSource(
                 }
                 
                 // Final sort for the result page
-                val sortedVariants = variants.sortedWith(compareByDescending<ProductVariant> { getProduct(it.productId, products, productsMap)?.name ?: "" }.thenByDescending { it.capacity })
+                val sortedVariants = variants.sortedWith(compareBy<ProductVariant> { getProduct(it.productId, products, productsMap)?.name ?: "" }.thenBy { it.capacity })
                 variants.clear()
                 variants.addAll(sortedVariants)
             }
@@ -154,7 +176,17 @@ class InventoryPagingSource(
                 val variantIds = variants.map { it.id }
                 val allEntriesMap = stockEntryRepository.getEntriesForVariants(variantIds)
 
-                variants.map { variant ->
+                variants.mapNotNull { variant ->
+                    val entries = allEntriesMap[variant.id] ?: emptyList()
+                    
+                    // Filter by date if applicable
+                    if (startDate != null && endDate != null) {
+                        val start = com.batterysales.utils.DateUtils.getStartOfDay(startDate)
+                        val end = com.batterysales.utils.DateUtils.getEndOfDay(endDate)
+                        val hasActivity = entries.any { it.timestamp.time in start..end }
+                        if (!hasActivity) return@mapNotNull null
+                    }
+
                     async {
                         val finalProduct = getProduct(variant.productId, products, productsMap) ?: Product(name = "Unknown")
                         val warehouseIds = warehouseList.map { it.id }.toSet()

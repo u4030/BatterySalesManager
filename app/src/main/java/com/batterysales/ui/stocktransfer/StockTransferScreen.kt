@@ -203,10 +203,10 @@ fun StockTransferScreen(
                             Dropdown(
                                 label = "الصنف (السعة)",
                                 selectedValue = uiState.selectedVariant?.let { v ->
-                                    "${v.capacity} أمبير" + if (v.specification.isNotEmpty()) " (${v.specification})" else ""
+                                    "\u200E${v.capacity} A" + if (v.specification.isNotEmpty()) " (${v.specification})" else ""
                                 } ?: "",
                                 options = uiState.variants.map { v ->
-                                    "${v.capacity} أمبير" + if (v.specification.isNotEmpty()) " (${v.specification})" else ""
+                                    "\u200E${v.capacity} A" + if (v.specification.isNotEmpty()) " (${v.specification})" else ""
                                 },
                                 onOptionSelected = { index -> viewModel.onVariantSelected(uiState.variants[index]) },
                                 enabled = uiState.selectedProduct != null

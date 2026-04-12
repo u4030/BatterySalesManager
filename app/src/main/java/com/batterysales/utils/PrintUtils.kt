@@ -300,7 +300,7 @@ object PrintUtils {
                     <tbody>
         """.trimIndent())
 
-        item.purchaseOrders.forEach { po ->
+         (item.regularOrders + item.obligatedOrders).forEach { po ->
             htmlContent.append("""
                 <tr>
                     <td>${dateFormatter.format(po.entry.timestamp)}</td>

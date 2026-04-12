@@ -60,21 +60,22 @@ class InvoiceViewModel @Inject constructor(
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val invoices: Flow<PagingData<Invoice>> = combine(filterState, refreshTrigger) { f, _ -> f }
         .flatMapLatest { filters ->
-            val now = Calendar.getInstance()
-            now.set(Calendar.HOUR_OF_DAY, 0)
-            now.set(Calendar.MINUTE, 0)
-            now.set(Calendar.SECOND, 0)
-            now.set(Calendar.MILLISECOND, 0)
-            val startOfToday = now.timeInMillis
+            if (filters.warehouseId.isBlank() && !_uiState.value.isAdmin) {
+                return@flatMapLatest flowOf(PagingData.empty())
+            }
 
-            Pager(PagingConfig(pageSize = 25)) { // Slightly larger page size for smoother scrolling
+            val startOfToday = com.batterysales.utils.DateUtils.getStartOfDay(System.currentTimeMillis())
+            val endOfToday = com.batterysales.utils.DateUtils.getEndOfDay(System.currentTimeMillis())
+
+            Pager(PagingConfig(pageSize = 25)) { 
                 InvoicePagingSource(
                     repository = invoiceRepository,
                     warehouseId = if (filters.warehouseId == "all" || filters.warehouseId.isBlank()) null else filters.warehouseId,
                     status = if (filters.selectedTab == 1) "pending" else null,
-                    startDate = if (filters.selectedTab == 0 && filters.startDate == null) startOfToday else filters.startDate,
-                    endDate = if (filters.selectedTab == 0 && filters.endDate == null) startOfToday else filters.endDate,
-                    searchQuery = filters.searchQuery.ifBlank { null }
+                    startDate = if (filters.selectedTab == 0) startOfToday else filters.startDate,
+                    endDate = if (filters.selectedTab == 0) endOfToday else filters.endDate,
+                    searchQuery = filters.searchQuery.ifBlank { null },
+                    useUpdatedAt = false
                 )
             }.flow.cachedIn(viewModelScope)
         }
@@ -96,27 +97,25 @@ class InvoiceViewModel @Inject constructor(
             val isAdmin = user?.role == "admin"
 
             warehouseRepository.getWarehouses().take(1).collect { allWh ->
-                val warehouses = if (isAdmin) allWh else allWh.filter { it.isActive }
+                val activeWh = allWh.filter { it.isActive }
+                val displayWarehouses = (if (isAdmin) allWh else activeWh).sortedBy { it.name }
 
-                val oldWhId = _uiState.value.selectedWarehouseId
                 _uiState.update { state ->
-                    val initialWarehouseId = if (isAdmin) {
-                        state.selectedWarehouseId.ifBlank { allWh.firstOrNull()?.id ?: "" }
+                    val finalWhId = if (state.selectedWarehouseId.isBlank() || state.selectedWarehouseId == "all") {
+                        if (isAdmin) (displayWarehouses.firstOrNull()?.id ?: "") else user?.warehouseId ?: ""
                     } else {
-                        user?.warehouseId ?: ""
+                        state.selectedWarehouseId
                     }
+                    
+                    filterState.update { it.copy(warehouseId = finalWhId) }
 
                     state.copy(
-                        warehouses = warehouses,
+                        warehouses = displayWarehouses,
                         isAdmin = isAdmin,
-                        selectedWarehouseId = initialWarehouseId
+                        selectedWarehouseId = finalWhId
                     )
                 }
-
-                val newWhId = _uiState.value.selectedWarehouseId
-                if (newWhId.isNotBlank() && oldWhId.isBlank()) {
-                    loadInvoices(reset = true)
-                }
+                loadInvoices(reset = true)
             }
         }.launchIn(viewModelScope)
     }
@@ -144,14 +143,16 @@ class InvoiceViewModel @Inject constructor(
     }
 
     fun onWarehouseSelected(warehouseId: String) {
+        if (_uiState.value.selectedWarehouseId == warehouseId) return
         _uiState.update { it.copy(selectedWarehouseId = warehouseId) }
         filterState.update { it.copy(warehouseId = warehouseId) }
         loadInvoices(reset = true)
     }
 
     fun onTabSelected(tabIndex: Int) {
-        _uiState.update { it.copy(selectedTab = tabIndex) }
-        filterState.update { it.copy(selectedTab = tabIndex) }
+        if (_uiState.value.selectedTab == tabIndex) return
+        _uiState.update { it.copy(selectedTab = tabIndex, startDate = null, endDate = null) }
+        filterState.update { it.copy(selectedTab = tabIndex, startDate = null, endDate = null) }
         loadInvoices(reset = true)
     }
 

@@ -42,7 +42,7 @@ class AccountingRepository @Inject constructor(
             baseQuery = baseQuery.whereEqualTo("paymentMethod", paymentMethod)
         }
         if (endDate != null) {
-            baseQuery = baseQuery.whereLessThanOrEqualTo("createdAt", java.util.Date(endDate + 86400000))
+            baseQuery = baseQuery.whereLessThanOrEqualTo("createdAt", java.util.Date(com.batterysales.utils.DateUtils.getEndOfDay(endDate)))
         }
 
         // Sum INCOME & PAYMENT
@@ -74,8 +74,8 @@ class AccountingRepository @Inject constructor(
             baseQuery = baseQuery.whereEqualTo("paymentMethod", paymentMethod)
         }
         if (startDate != null && endDate != null) {
-            baseQuery = baseQuery.whereGreaterThanOrEqualTo("createdAt", java.util.Date(startDate))
-                .whereLessThanOrEqualTo("createdAt", java.util.Date(endDate + 86400000))
+            baseQuery = baseQuery.whereGreaterThanOrEqualTo("createdAt", java.util.Date(com.batterysales.utils.DateUtils.getStartOfDay(startDate)))
+                .whereLessThanOrEqualTo("createdAt", java.util.Date(com.batterysales.utils.DateUtils.getEndOfDay(endDate)))
         }
 
         val snapshot = baseQuery.aggregate(AggregateField.sum("amount")).get(AggregateSource.SERVER).await()
@@ -104,8 +104,8 @@ class AccountingRepository @Inject constructor(
         }
 
         if (startDate != null && endDate != null) {
-            query = query.whereGreaterThanOrEqualTo("createdAt", java.util.Date(startDate))
-                .whereLessThanOrEqualTo("createdAt", java.util.Date(endDate + 86400000))
+            query = query.whereGreaterThanOrEqualTo("createdAt", java.util.Date(com.batterysales.utils.DateUtils.getStartOfDay(startDate)))
+                .whereLessThanOrEqualTo("createdAt", java.util.Date(com.batterysales.utils.DateUtils.getEndOfDay(endDate)))
         }
 
         query = query.orderBy("createdAt", Query.Direction.DESCENDING)

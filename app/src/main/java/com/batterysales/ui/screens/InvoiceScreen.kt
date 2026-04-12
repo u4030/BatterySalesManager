@@ -258,6 +258,19 @@ fun InvoiceScreen(
                         CircularProgressIndicator(color = accentColor)
                     }
                 }
+            } else if (pagingItems.loadState.refresh is androidx.paging.LoadState.Error) {
+                val error = (pagingItems.loadState.refresh as androidx.paging.LoadState.Error).error
+                item {
+                    Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("خطأ في تحميل البيانات", color = Color.Red)
+                            Text(error.localizedMessage ?: "خطأ غير معروف", style = MaterialTheme.typography.bodySmall)
+                            Button(onClick = { pagingItems.retry() }) {
+                                Text("إعادة المحاولة")
+                            }
+                        }
+                    }
+                }
             } else if (pagingItems.itemCount == 0) {
                 item {
                     Box(modifier = Modifier.fillMaxWidth().height(300.dp), contentAlignment = Alignment.Center) {

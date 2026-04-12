@@ -396,8 +396,11 @@ class StockEntryViewModel @Inject constructor(
 
         val costPerItem = if (state.costInputMode == CostInputMode.BY_ITEM) cost else if (variant.capacity > 0) cost * variant.capacity else 0.0
         val costPerAmpere = if (state.costInputMode == CostInputMode.BY_AMPERE) cost else if (variant.capacity > 0) cost / variant.capacity else 0.0
-        val totalAmperes = netQuantity * variant.capacity
-        val totalCost = netQuantity * costPerItem
+        
+        // totalCost should represent the GROSS value of the purchase for accounting purposes
+        // Inventory levels are handled separately via quantity and returnedQuantity
+        val totalAmperes = originalQuantity * variant.capacity
+        val totalCost = originalQuantity * costPerItem
 
         return StockEntryItem(
             id = if(state.isEditMode) state.stockItems.first().id else UUID.randomUUID().toString(),

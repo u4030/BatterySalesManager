@@ -74,7 +74,8 @@ class InvoiceRepository @Inject constructor(
         endDate: Long? = null,
         searchQuery: String? = null,
         lastDocument: DocumentSnapshot? = null,
-        limit: Long = 20
+        limit: Long = 20,
+        useUpdatedAt: Boolean = false
     ): Pair<List<Invoice>, DocumentSnapshot?> {
         var query: Query = firestore.collection(Invoice.COLLECTION_NAME)
 
@@ -88,22 +89,34 @@ class InvoiceRepository @Inject constructor(
 
         val isSearching = !searchQuery.isNullOrBlank()
 
+        val dateField = if (useUpdatedAt) "updatedAt" else "invoiceDate"
+
         if (startDate != null && endDate != null && !isSearching) {
-            query = query.whereGreaterThanOrEqualTo("invoiceDate", Date(startDate))
-                .whereLessThanOrEqualTo("invoiceDate", Date(endDate + 86400000))
+            val start = Date(com.batterysales.utils.DateUtils.getStartOfDay(startDate))
+            val end = Date(com.batterysales.utils.DateUtils.getEndOfDay(endDate))
+
+            query = query.whereGreaterThanOrEqualTo(dateField, start)
+                .whereLessThanOrEqualTo(dateField, end)
         }
 
         if (isSearching) {
-            // Determine if we should search by invoiceNumber or customerPhone
+            // Determine if we should search by invoiceNumber, customerPhone or customerName
             val isNumeric = searchQuery.all { it.isDigit() }
-            val searchField = if (isNumeric && searchQuery.length >= 3) "customerPhone" else "invoiceNumber"
+            val searchField = when {
+                isNumeric && searchQuery.length >= 3 -> "customerPhone"
+                // If it contains letters, it might be customerName or invoiceNumber
+                // invoiceNumber is usually like "INV-..." or numeric-ish. 
+                // Let's check for customerName if it contains Arabic or is just text.
+                searchQuery.any { it in '\u0600'..'\u06FF' } -> "customerName"
+                else -> "invoiceNumber"
+            }
 
             // Prefix search
             query = query.whereGreaterThanOrEqualTo(searchField, searchQuery)
                 .whereLessThanOrEqualTo(searchField, searchQuery + "\uf8ff")
                 .orderBy(searchField, Query.Direction.DESCENDING)
         } else {
-            query = query.orderBy("invoiceDate", Query.Direction.DESCENDING)
+            query = query.orderBy(dateField, Query.Direction.DESCENDING)
         }
 
         if (lastDocument != null) {

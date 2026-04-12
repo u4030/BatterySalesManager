@@ -12,7 +12,8 @@ class InvoicePagingSource(
     private val status: String?,
     private val startDate: Long?,
     private val endDate: Long?,
-    private val searchQuery: String?
+    private val searchQuery: String?,
+    private val useUpdatedAt: Boolean = false
 ) : PagingSource<DocumentSnapshot, Invoice>() {
 
     override fun getRefreshKey(state: PagingState<DocumentSnapshot, Invoice>): DocumentSnapshot? = null
@@ -26,7 +27,8 @@ class InvoicePagingSource(
                 endDate = endDate,
                 searchQuery = searchQuery,
                 lastDocument = params.key,
-                limit = params.loadSize.toLong()
+                limit = params.loadSize.toLong(),
+                useUpdatedAt = useUpdatedAt
             )
             
             LoadResult.Page(

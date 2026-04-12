@@ -45,10 +45,12 @@ class BillRepository @Inject constructor(
         awaitClose { listenerRegistration.remove() }
     }
 
-    suspend fun addBill(bill: Bill) {
-        val docRef = firestore.collection(Bill.COLLECTION_NAME).document()
+    suspend fun addBill(bill: Bill): String {
+        val docRef = if (bill.id.isNotEmpty()) firestore.collection(Bill.COLLECTION_NAME).document(bill.id)
+                    else firestore.collection(Bill.COLLECTION_NAME).document()
         val finalBill = bill.copy(id = docRef.id, createdAt = Date(), updatedAt = Date())
         docRef.set(finalBill).await()
+        return docRef.id
     }
 
     suspend fun updateBillStatus(billId: String, status: BillStatus, paidDate: Date? = null) {
@@ -104,7 +106,7 @@ class BillRepository @Inject constructor(
         limit: Long = 20
     ): Pair<List<Bill>, DocumentSnapshot?> {
         var query = firestore.collection(Bill.COLLECTION_NAME)
-            .orderBy("dueDate", Query.Direction.ASCENDING)
+            .orderBy("dueDate", Query.Direction.DESCENDING)
 
         if (lastDocument != null) {
             query = query.startAfter(lastDocument)
@@ -122,8 +124,8 @@ class BillRepository @Inject constructor(
             .whereEqualTo("supplierId", supplierId)
 
         resetDate?.let { query = query.whereGreaterThan("createdAt", it) }
-        startDate?.let { query = query.whereGreaterThanOrEqualTo("dueDate", java.util.Date(it)) }
-        endDate?.let { query = query.whereLessThanOrEqualTo("dueDate", java.util.Date(it + 86400000)) }
+        startDate?.let { query = query.whereGreaterThanOrEqualTo("dueDate", java.util.Date(com.batterysales.utils.DateUtils.getStartOfDay(it))) }
+        endDate?.let { query = query.whereLessThanOrEqualTo("dueDate", java.util.Date(com.batterysales.utils.DateUtils.getEndOfDay(it))) }
 
         val snapshot = query.aggregate(AggregateField.sum("paidAmount")).get(AggregateSource.SERVER).await()
         return snapshot.getDouble(AggregateField.sum("paidAmount")) ?: 0.0
