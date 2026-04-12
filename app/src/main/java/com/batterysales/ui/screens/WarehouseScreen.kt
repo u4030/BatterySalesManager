@@ -46,7 +46,6 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
     DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-                // No explicit refresh needed
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -61,7 +60,7 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
     val isAdmin = currentUser?.role == "admin"
 
     var selectedTab by remember { mutableIntStateOf(0) } // 0: Stock, 1: Manage
-    var selectedWarehouseTabIndex by remember { mutableIntStateOf(0) } // Tabs for each warehouse
+    var selectedWarehouseTabIndex by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(isAdmin) {
         if (!isAdmin) {
@@ -82,130 +81,123 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
     Scaffold(
         containerColor = bgColor
     ) { padding ->
-        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize().imePadding(),
-                contentPadding = PaddingValues(bottom = 16.dp)
-            ) {
-                // Gradient Header
-                item {
-                    SharedHeader(
-                        title = if (selectedTab == 0) "مخزون المستودعات" else "إدارة المستودعات",
-                        onBackClick = { 
-                            keyboardController.hideKeyboard()
-                            navController.popBackStack() 
-                        },
-                        actions = {
-                            if (selectedTab == 1) {
-                                HeaderIconButton(
-                                    icon = Icons.Default.AddBusiness,
-                                    onClick = { showAddWarehouseDialog = true },
-                                    contentDescription = "Add Warehouse"
-                                )
-                            }
-                            HeaderIconButton(
-                                icon = Icons.Default.Refresh,
-                                onClick = { /* Refresh handled by flow */ },
-                                contentDescription = "Refresh"
-                            )
-                        }
+        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            SharedHeader(
+                title = if (selectedTab == 0) "مخزون المستودعات" else "إدارة المستودعات",
+                onBackClick = {
+                    keyboardController.hideKeyboard()
+                    navController.popBackStack()
+                },
+                actions = {
+                    if (selectedTab == 1) {
+                        HeaderIconButton(
+                            icon = Icons.Default.AddBusiness,
+                            onClick = { showAddWarehouseDialog = true },
+                            contentDescription = "Add Warehouse"
+                        )
+                    }
+                    HeaderIconButton(
+                        icon = Icons.Default.Refresh,
+                        onClick = { /* Flow handled */ },
+                        contentDescription = "Refresh"
+                    )
+                }
+            )
+
+            Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                if (selectedTab == 0) {
+                    com.batterysales.ui.components.CustomKeyboardTextField(
+                        value = searchQuery,
+                        onValueChange = viewModel::onSearchQueryChanged,
+                        label = "بحث باسم المنتج في المستودع...",
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
                     )
                 }
 
-                item {
-                    Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                        if (selectedTab == 0) {
-                            com.batterysales.ui.components.CustomKeyboardTextField(
-                                value = searchQuery,
-                                onValueChange = viewModel::onSearchQueryChanged,
-                                label = "بحث باسم المنتج في المستودع...",
-                                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
-                            )
+                TabRow(
+                    selectedTabIndex = selectedTab,
+                    containerColor = Color.Transparent,
+                    contentColor = accentColor,
+                    indicator = { tabPositions ->
+                        TabRowDefaults.SecondaryIndicator(
+                            modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
+                            color = accentColor
+                        )
+                    },
+                    divider = {}
+                ) {
+                    Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }) {
+                        Text("المخزون", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleSmall, color = if(selectedTab == 0) accentColor else MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    if (isAdmin) {
+                        Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) {
+                            Text("الإدارة", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleSmall, color = if(selectedTab == 1) accentColor else MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-
-                        TabRow(
-                            selectedTabIndex = selectedTab,
-                            containerColor = Color.Transparent,
-                            contentColor = accentColor,
-                            indicator = { tabPositions ->
-                                TabRowDefaults.SecondaryIndicator(
-                                    modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
-                                    color = accentColor
-                                )
-                            },
-                            divider = {}
-                        ) {
-                            Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }) {
-                                Text("المخزون", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleSmall, color = if(selectedTab == 0) accentColor else MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            if (isAdmin) {
-                                Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) {
-                                    Text("الإدارة", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleSmall, color = if(selectedTab == 1) accentColor else MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(16.dp))
                     }
                 }
 
-                if (selectedTab == 0) {
-                    item {
-                        if (warehouses.isNotEmpty()) {
-                            ScrollableTabRow(
-                                selectedTabIndex = selectedWarehouseTabIndex,
-                                containerColor = Color.Transparent,
-                                contentColor = accentColor,
-                                edgePadding = 16.dp,
-                                indicator = { tabPositions ->
-                                    TabRowDefaults.SecondaryIndicator(
-                                        modifier = Modifier.tabIndicatorOffset(tabPositions[selectedWarehouseTabIndex]),
-                                        color = accentColor
-                                    )
-                                },
-                                divider = {}
+                if (selectedTab == 0 && warehouses.isNotEmpty()) {
+                    ScrollableTabRow(
+                        selectedTabIndex = selectedWarehouseTabIndex,
+                        containerColor = Color.Transparent,
+                        contentColor = accentColor,
+                        edgePadding = 0.dp,
+                        indicator = { tabPositions ->
+                            TabRowDefaults.SecondaryIndicator(
+                                modifier = Modifier.tabIndicatorOffset(tabPositions[selectedWarehouseTabIndex]),
+                                color = accentColor
+                            )
+                        },
+                        divider = {}
+                    ) {
+                        warehouses.forEachIndexed { index, warehouse ->
+                            Tab(
+                                selected = selectedWarehouseTabIndex == index,
+                                onClick = { selectedWarehouseTabIndex = index }
                             ) {
-                                warehouses.forEachIndexed { index, warehouse ->
-                                    Tab(
-                                        selected = selectedWarehouseTabIndex == index,
-                                        onClick = { selectedWarehouseTabIndex = index }
-                                    ) {
-                                        Text(
-                                            warehouse.name,
-                                            modifier = Modifier.padding(12.dp),
-                                            style = MaterialTheme.typography.titleSmall,
-                                            color = if(selectedWarehouseTabIndex == index) accentColor else MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
+                                Text(
+                                    warehouse.name,
+                                    modifier = Modifier.padding(12.dp),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = if(selectedWarehouseTabIndex == index) accentColor else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         }
                     }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+            }
 
-                    if (isLoading && stockLevels.isEmpty()) {
-                        item {
-                            Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
-                                CircularProgressIndicator(color = accentColor)
-                            }
-                        }
-                    } else {
-                        val currentWarehouse = warehouses.getOrNull(selectedWarehouseTabIndex)
-                        val filteredStock = if (currentWarehouse != null) {
-                            stockLevels.filter { it.warehouse.id == currentWarehouse.id }
-                        } else {
-                            stockLevels
-                        }
-
-                        if (filteredStock.isEmpty() && !isLoading) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize().imePadding(),
+                    contentPadding = PaddingValues(bottom = 16.dp)
+                ) {
+                    if (selectedTab == 0) {
+                        if (isLoading && stockLevels.isEmpty()) {
                             item {
                                 Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
-                                    Text("لا توجد منتجات في هذا المستودع", color = Color.Gray)
+                                    CircularProgressIndicator(color = accentColor)
                                 }
                             }
-                        }
+                        } else {
+                            val currentWarehouse = warehouses.getOrNull(selectedWarehouseTabIndex)
+                            val filteredStock = if (currentWarehouse != null) {
+                                stockLevels.filter { it.warehouse.id == currentWarehouse.id }
+                            } else {
+                                stockLevels
+                            }
 
-                        // Stock Items in this warehouse
-                        items(filteredStock) { stockItem ->
+                            if (filteredStock.isEmpty() && !isLoading) {
+                                item {
+                                    Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                                        Text("لا توجد منتجات في هذا المستودع", color = Color.Gray)
+                                    }
+                                }
+                            }
+
+                            items(filteredStock) { stockItem ->
                                 val threshold = stockItem.variant.minQuantities[stockItem.warehouse.id] ?: stockItem.variant.minQuantity
                                 val isLowStock = threshold > 0 && stockItem.quantity <= threshold
                                 val lowStockColor = Color(0xFFEF4444)
@@ -221,9 +213,7 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
                                     border = if (isLowStock) androidx.compose.foundation.BorderStroke(1.dp, lowStockColor.copy(alpha = 0.2f)) else null
                                 ) {
                                     Row(
-                                        modifier = Modifier
-                                            .padding(20.dp)
-                                            .fillMaxWidth(),
+                                        modifier = Modifier.padding(20.dp).fillMaxWidth(),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
@@ -235,11 +225,7 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
                                                 color = MaterialTheme.colorScheme.onSurface
                                             )
                                             if (stockItem.variant.specification.isNotEmpty()) {
-                                                Text(
-                                                    text = stockItem.variant.specification,
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
+                                                Text(text = stockItem.variant.specification, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                             }
 
                                             if (threshold > 0) {
@@ -266,63 +252,53 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
                                                 color = if (isLowStock) lowStockColor else MaterialTheme.colorScheme.onSurface
                                             )
                                             if (isLowStock) {
-                                                Text(
-                                                    text = "مخزون منخفض",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = lowStockColor,
-                                                    fontWeight = FontWeight.Bold
-                                                )
+                                                Text(text = "مخزون منخفض", style = MaterialTheme.typography.labelSmall, color = lowStockColor, fontWeight = FontWeight.Bold)
                                             }
                                         }
                                     }
                                 }
+                            }
                         }
-                    }
-                } else {
-                    // Manage Warehouses Tab
-                    items(warehouses) { warehouse ->
-                        WarehouseManagementCard(
-                            warehouse = warehouse,
-                            onToggleStatus = { viewModel.toggleWarehouseStatus(warehouse) },
-                            onToggleMain = { viewModel.toggleMainWarehouse(warehouse) },
-                            onDelete = { warehouseToDelete = warehouse }
-                        )
-                    }
-
-                    if (warehouses.isEmpty() && !isLoading) {
-                        item {
-                            Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
-                                Text("لا توجد مستودعات حالياً", color = Color.Gray)
+                    } else {
+                        items(warehouses) { warehouse ->
+                            WarehouseManagementCard(
+                                warehouse = warehouse,
+                                onToggleStatus = { viewModel.toggleWarehouseStatus(warehouse) },
+                                onToggleMain = { viewModel.toggleMainWarehouse(warehouse) },
+                                onDelete = { warehouseToDelete = warehouse }
+                            )
+                        }
+                        if (warehouses.isEmpty() && !isLoading) {
+                            item {
+                                Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                                    Text("لا توجد مستودعات حالياً", color = Color.Gray)
+                                }
                             }
                         }
                     }
+                    item { Spacer(modifier = Modifier.height(16.dp)) }
                 }
 
-                item {
-                    Spacer(modifier = Modifier.height(16.dp))
-                }
-            }
-
-            if (selectedTab == 0 && stockLevels.isNotEmpty()) {
-                com.batterysales.ui.components.SidebarAlphabetNavigation(
-                    onLetterSelected = { letter ->
-                        val currentWarehouse = warehouses.getOrNull(selectedWarehouseTabIndex)
-                        val filteredStock = if (currentWarehouse != null) {
-                            stockLevels.filter { it.warehouse.id == currentWarehouse.id }
-                        } else {
-                            stockLevels
-                        }
-
-                        val index = filteredStock.indexOfFirst { it.product.name.trim().startsWith(letter.toString(), ignoreCase = true) }
-                        if (index != -1) {
-                            val headerOffset = 3 // Header + SearchBar + WarehouseTabs
-                            scope.launch {
-                                listState.animateScrollToItem(index + headerOffset)
+                if (selectedTab == 0 && stockLevels.isNotEmpty()) {
+                    com.batterysales.ui.components.SidebarAlphabetNavigation(
+                        onLetterSelected = { letter ->
+                            val currentWarehouse = warehouses.getOrNull(selectedWarehouseTabIndex)
+                            val filteredStock = if (currentWarehouse != null) {
+                                stockLevels.filter { it.warehouse.id == currentWarehouse.id }
+                            } else {
+                                stockLevels
                             }
-                        }
-                    },
-                    modifier = Modifier.align(Alignment.CenterEnd).padding(end = 4.dp, top = 150.dp, bottom = 40.dp)
-                )
+
+                            val index = filteredStock.indexOfFirst { it.product.name.trim().startsWith(letter.toString(), ignoreCase = true) }
+                            if (index != -1) {
+                                scope.launch {
+                                    listState.animateScrollToItem(index)
+                                }
+                            }
+                        },
+                        modifier = Modifier.align(Alignment.CenterEnd).padding(end = 4.dp, top = 50.dp, bottom = 40.dp)
+                    )
+                }
             }
         }
     }
@@ -378,22 +354,11 @@ fun WarehouseManagementCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = warehouse.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+                Text(text = warehouse.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                 if (warehouse.location.isNotEmpty()) {
-                    Text(
-                        text = warehouse.location,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Text(text = warehouse.location, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                
                 Spacer(modifier = Modifier.height(8.dp))
-                
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Surface(
                         color = if (warehouse.isActive) Color(0xFF10B981).copy(alpha = 0.1f) else Color(0xFFEF4444).copy(alpha = 0.1f),
@@ -421,34 +386,14 @@ fun WarehouseManagementCard(
                     }
                 }
             }
-            
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                IconButton(
-                    onClick = onToggleMain,
-                    modifier = Modifier.size(40.dp).background(if (warehouse.isMain) Color(0xFF3B82F6).copy(alpha = 0.1f) else Color.Transparent, CircleShape)
-                ) {
-                    Icon(
-                        imageVector = if (warehouse.isMain) Icons.Default.Star else Icons.Default.StarOutline,
-                        contentDescription = "Main",
-                        tint = if (warehouse.isMain) Color(0xFF3B82F6) else Color.Gray
-                    )
+                IconButton(onClick = onToggleMain, modifier = Modifier.size(40.dp).background(if (warehouse.isMain) Color(0xFF3B82F6).copy(alpha = 0.1f) else Color.Transparent, CircleShape)) {
+                    Icon(imageVector = if (warehouse.isMain) Icons.Default.Star else Icons.Default.StarOutline, contentDescription = "Main", tint = if (warehouse.isMain) Color(0xFF3B82F6) else Color.Gray)
                 }
-
-                IconButton(
-                    onClick = onToggleStatus,
-                    modifier = Modifier.size(40.dp).background(if (warehouse.isActive) Color(0xFFEF4444).copy(alpha = 0.1f) else Color(0xFF10B981).copy(alpha = 0.1f), CircleShape)
-                ) {
-                    Icon(
-                        imageVector = if (warehouse.isActive) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = "Toggle Status",
-                        tint = if (warehouse.isActive) Color(0xFFEF4444) else Color(0xFF10B981)
-                    )
+                IconButton(onClick = onToggleStatus, modifier = Modifier.size(40.dp).background(if (warehouse.isActive) Color(0xFFEF4444).copy(alpha = 0.1f) else Color(0xFF10B981).copy(alpha = 0.1f), CircleShape)) {
+                    Icon(imageVector = if (warehouse.isActive) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = "Toggle Status", tint = if (warehouse.isActive) Color(0xFFEF4444) else Color(0xFF10B981))
                 }
-                
-                IconButton(
-                    onClick = onDelete,
-                    modifier = Modifier.size(40.dp).background(Color(0xFF3B1F1F), CircleShape)
-                ) {
+                IconButton(onClick = onDelete, modifier = Modifier.size(40.dp).background(Color(0xFF3B1F1F), CircleShape)) {
                     Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color(0xFFEF4444))
                 }
             }

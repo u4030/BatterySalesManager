@@ -146,7 +146,7 @@ class SalesViewModel @Inject constructor(
         }
 
         val isSeller = user?.role == User.ROLE_SELLER
-        val autoSelectedWarehouse = if (isSeller && selectedWarehouse == null) {
+        val autoSelectedWarehouse = if (isSeller) {
             warehouses.find { it.id == user?.warehouseId }
         } else {
             selectedWarehouse
@@ -193,8 +193,11 @@ class SalesViewModel @Inject constructor(
 
     fun onProductSelected(product: Product) {
         _selectedProduct.value = product
-        _selectedVariant.value = null
-        _sellingPrice.value = ""
+        // Reset variant and price when product changes, unless it's the SAME product (barcode scan might re-trigger)
+        if (_selectedVariant.value?.productId != product.id) {
+            _selectedVariant.value = null
+            _sellingPrice.value = ""
+        }
     }
 
     fun onVariantSelected(variant: ProductVariant) {

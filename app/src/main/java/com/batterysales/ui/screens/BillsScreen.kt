@@ -399,12 +399,14 @@ fun PaymentDialog(
             TextButton(onClick = onDismiss) { Text("إلغاء") }
         }
     ) {
-        Text("المبلغ المتبقي: JD ${String.format("%.3f", bill.amount - bill.paidAmount)}")
+        Text("المبلغ المتبقي: JD ${String.format("%.3f", bill.amount - bill.paidAmount)}", fontWeight = FontWeight.Bold)
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = amount,
             onValueChange = { amount = it },
-            label = "مبلغ الدفع"
+            label = "مبلغ الدفع",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
         )
+        Text("سيتم اقتطاع المبلغ من خزينة المستودع الرئيسي.", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
     }
 }
 
@@ -494,19 +496,22 @@ fun AddBillDialog(
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = amount,
             onValueChange = { amount = it },
-            label = "المبلغ"
+            label = "المبلغ",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
         )
 
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = refNum,
             onValueChange = { refNum = it },
-            label = "رقم السند / الشيك"
+            label = "رقم السند / الشيك",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
         )
 
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = description,
             onValueChange = { description = it },
-            label = "الوصف"
+            label = "الوصف",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.ARABIC
         )
 
         Text("نوع الالتزام:", fontSize = 14.sp, fontWeight = FontWeight.Medium)
@@ -640,17 +645,20 @@ fun EditBillDialog(
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = description,
             onValueChange = { description = it },
-            label = "الوصف"
+            label = "الوصف",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.ARABIC
         )
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = amount,
             onValueChange = { amount = it },
-            label = "المبلغ الإجمالي"
+            label = "المبلغ الإجمالي",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
         )
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = refNum,
             onValueChange = { refNum = it },
-            label = "رقم السند / الشيك"
+            label = "رقم السند / الشيك",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
         )
 
         com.batterysales.ui.stockentry.Dropdown(

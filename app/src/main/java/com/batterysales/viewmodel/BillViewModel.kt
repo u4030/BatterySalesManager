@@ -260,13 +260,16 @@ class BillViewModel @Inject constructor(
                         else -> "كمبيالة"
                     }
 
+                    val mainWh = warehouseRepository.getWarehousesOnce().find { it.isMain && it.isActive }
+                    val targetWarehouseId = mainWh?.id ?: (bill.warehouseId ?: userRepository.getCurrentUser()?.warehouseId)
+
                     val transaction = Transaction(
                         type = com.batterysales.data.models.TransactionType.EXPENSE,
                         amount = amount,
                         description = "تسديد ${if (amount >= (bill.amount - bill.paidAmount)) "كلي" else "جزئي"} ل$typeLabel: ${bill.description} (المورد: $supplierName)",
                         relatedId = billId,
                         referenceNumber = bill.referenceNumber,
-                        warehouseId = bill.warehouseId ?: userRepository.getCurrentUser()?.warehouseId,
+                        warehouseId = targetWarehouseId,
                         paymentMethod = paymentMethod
                     )
                     accountingRepository.addTransaction(transaction)

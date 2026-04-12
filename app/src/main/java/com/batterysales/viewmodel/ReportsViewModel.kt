@@ -425,7 +425,7 @@ class ReportsViewModel @Inject constructor(
                         
                         val purchaseOrders = groupedEntries.map { (key, group) ->
                             val representative = group.first()
-                            val totalOrderCost = if (representative.grandTotalCost > 0) representative.grandTotalCost else group.sumOf { it.totalCost }
+                            val totalOrderCost = group.sumOf { it.totalCost }
 
                             val linkedBills = supplierBills.filter { bill ->
                                 bill.relatedEntryId == key || group.any { entry -> entry.id == bill.relatedEntryId }

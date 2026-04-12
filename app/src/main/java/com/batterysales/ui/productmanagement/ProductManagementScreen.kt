@@ -19,6 +19,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.graphics.Color
@@ -471,15 +472,20 @@ fun VariantItemRow(variant: ProductVariant, onEdit: () -> Unit, onDelete: () -> 
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 if (variant.barcode.isNotEmpty()) {
-                    Text(
-                        text = "*${variant.barcode}*",
-                        style = TextStyle(
-                            fontSize = 32.sp,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            textAlign = TextAlign.End
-                        ),
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
+                    val barcodeBitmap = remember(variant.barcode) {
+                        com.batterysales.utils.BarcodeUtils.generateBarcodeBitmap(variant.barcode)
+                    }
+                    if (barcodeBitmap != null) {
+                        androidx.compose.foundation.Image(
+                            bitmap = barcodeBitmap.asImageBitmap(),
+                            contentDescription = "Barcode",
+                            modifier = Modifier
+                                .padding(top = 8.dp)
+                                .height(40.dp)
+                                .fillMaxWidth(0.6f),
+                            contentScale = androidx.compose.ui.layout.ContentScale.FillBounds
+                        )
+                    }
                 }
             }
 

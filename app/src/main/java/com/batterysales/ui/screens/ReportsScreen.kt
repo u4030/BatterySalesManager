@@ -300,6 +300,8 @@ fun InventoryReportControls(viewModel: ReportsViewModel) {
         }
     }
 
+    var searchInput by remember { mutableStateOf(barcodeFilter ?: "") }
+
     Column(modifier = Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -307,11 +309,21 @@ fun InventoryReportControls(viewModel: ReportsViewModel) {
         ) {
             Box(modifier = Modifier.weight(1f)) {
                 CustomKeyboardTextField(
-                    value = barcodeFilter ?: "",
-                    onValueChange = { viewModel.onBarcodeScanned(it.ifEmpty { null }) },
+                    value = searchInput,
+                    onValueChange = { searchInput = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = "تصفية حسب الباركود أو رقم الفاتورة..."
+                    label = "تصفية حسب الباركود أو رقم الفاتورة...",
+                    onSearch = { viewModel.onBarcodeScanned(searchInput.ifEmpty { null }) }
                 )
+            }
+
+            IconButton(
+                onClick = { viewModel.onBarcodeScanned(searchInput.ifEmpty { null }) },
+                modifier = Modifier
+                    .size(56.dp)
+                    .background(Color(0xFFFB8C00), RoundedCornerShape(12.dp))
+            ) {
+                Icon(Icons.Default.Search, contentDescription = "بحث", tint = Color.White)
             }
 
             IconButton(
@@ -894,22 +906,6 @@ fun SupplierCardRedesigned(
                                     )
                                 }
 
-                                if (po.remainingBalance > 0.001) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        Button(
-                                            onClick = { onPayPO(po, "cash") },
-                                            modifier = Modifier.fillMaxWidth().height(40.dp),
-                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
-                                            shape = RoundedCornerShape(8.dp),
-                                            contentPadding = PaddingValues(horizontal = 4.dp)
-                                        ) {
-                                            Text("تسديد نقدي", style = MaterialTheme.typography.labelSmall)
-                                        }
-                                    }
-                                }
 
                                 if (po.referenceNumbers.isNotEmpty()) {
                                     HorizontalDivider(modifier = Modifier.alpha(0.1f))
