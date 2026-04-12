@@ -19,6 +19,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.clickable
+import com.batterysales.data.models.StockEntry
+import com.batterysales.ui.components.AppDialog
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -67,6 +70,7 @@ fun ProductLedgerScreen(
     val userRole by viewModel.userRole.collectAsState()
     val isAdmin = userRole == "admin"
     var showDeleteConfirmation by remember { mutableStateOf<String?>(null) }
+    var showReturnDialog by remember { mutableStateOf<com.batterysales.data.models.StockEntry?>(null) }
     var showScanner by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -115,6 +119,17 @@ fun ProductLedgerScreen(
                 }
             }
         }
+    }
+
+    if (showReturnDialog != null) {
+        ReturnMaterialDialog(
+            entry = showReturnDialog!!,
+            onDismiss = { showReturnDialog = null },
+            onConfirm = { qty, mode, notes ->
+                viewModel.processReturn(showReturnDialog!!, qty, mode, notes)
+                showReturnDialog = null
+            }
+        )
     }
 
     if (showDeleteConfirmation != null) {
@@ -232,6 +247,11 @@ fun ProductLedgerScreen(
                                     if (it.entry.supplier != "Sale") {
                                         showDeleteConfirmation = entryId
                                     }
+                                },
+                                onReturn = { entry ->
+                                    if (entry.supplier != "Sale" && entry.quantity > 0) {
+                                        showReturnDialog = entry
+                                    }
                                 }
                             )
                         }
@@ -259,7 +279,8 @@ fun LedgerItemCard(
     variantCapacity: String,
     variantSpecification: String,
     onEdit: (String) -> Unit,
-    onDelete: (String) -> Unit
+    onDelete: (String) -> Unit,
+    onReturn: (StockEntry) -> Unit = {}
 ) {
     val entry = item.entry
     var menuExpanded by remember { mutableStateOf(false) }
@@ -333,6 +354,13 @@ fun LedgerItemCard(
                                     text = { Text("تعديل", color = MaterialTheme.colorScheme.onSurface) },
                                     onClick = {
                                         onEdit(entry.id)
+                                        menuExpanded = false
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("إرجاع مواد", color = accentColor) },
+                                    onClick = {
+                                        onReturn(entry)
                                         menuExpanded = false
                                     }
                                 )
@@ -420,4 +448,58 @@ fun formatPrice(price: Double): String {
 fun Date.toFormattedString(format: String): String {
     val sdf = SimpleDateFormat(format, Locale.getDefault())
     return sdf.format(this)
+}
+
+@Composable
+fun ReturnMaterialDialog(
+    entry: StockEntry,
+    onDismiss: () -> Unit,
+    onConfirm: (Int, String, String) -> Unit
+) {
+    var returnQty by remember { mutableStateOf("") }
+    var returnMode by remember { mutableStateOf("supplier_balance") } // "supplier_balance" or "treasury_cash"
+    var notes by remember { mutableStateOf("") }
+    val availableToReturn = entry.quantity - entry.returnedQuantity
+
+    AppDialog(
+        onDismiss = onDismiss,
+        title = "إرجاع مواد للمورد",
+        confirmButton = {
+            Button(onClick = {
+                val qty = returnQty.toIntOrNull() ?: 0
+                if (qty > 0 && qty <= availableToReturn) {
+                    onConfirm(qty, returnMode, notes)
+                }
+            }) { Text("تأكيد الإرجاع") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
+    ) {
+        Text("الكمية المتاحة للإرجاع: $availableToReturn", fontWeight = FontWeight.Bold)
+
+        CustomKeyboardTextField(
+            value = returnQty,
+            onValueChange = { returnQty = it },
+            label = "الكمية المراد إرجاعها",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
+        )
+
+        Text("طريقة التسوية المالية:", style = MaterialTheme.typography.labelMedium)
+        Column {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { returnMode = "supplier_balance" }) {
+                RadioButton(selected = returnMode == "supplier_balance", onClick = { returnMode = "supplier_balance" })
+                Text("خصم من رصيد المورد (ذمم)")
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { returnMode = "treasury_cash" }) {
+                RadioButton(selected = returnMode == "treasury_cash", onClick = { returnMode = "treasury_cash" })
+                Text("استلام نقدي (خزينة المستودع الرئيسي)")
+            }
+        }
+
+        CustomKeyboardTextField(
+            value = notes,
+            onValueChange = { notes = it },
+            label = "ملاحظات",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.ARABIC
+        )
+    }
 }

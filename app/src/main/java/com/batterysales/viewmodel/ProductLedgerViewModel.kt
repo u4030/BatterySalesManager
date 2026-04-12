@@ -20,6 +20,7 @@ import com.batterysales.data.repositories.WarehouseRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import java.util.Date
 import javax.inject.Inject
 
@@ -170,6 +171,91 @@ class ProductLedgerViewModel @Inject constructor(
                 loadData(reset = true)
             } catch (e: Exception) {
                 Log.e("ProductLedgerViewModel", "Error deleting stock entry", e)
+            }
+        }
+    }
+
+    fun processReturn(
+        entry: StockEntry,
+        returnQty: Int,
+        returnMode: String, // "supplier_balance" or "treasury_cash"
+        notes: String
+    ) {
+        viewModelScope.launch {
+            try {
+                _isLoading.value = true
+
+                // 1. Update Stock Entry with returned quantity
+                val updatedEntry = entry.copy(
+                    returnedQuantity = entry.returnedQuantity + returnQty,
+                    returnDate = Date()
+                )
+                stockEntryRepository.updateStockEntry(updatedEntry)
+
+                // 2. Handle Financials
+                val returnAmount = returnQty * entry.costPrice
+                if (returnAmount > 0) {
+                    if (returnMode == "supplier_balance") {
+                        // Create a "Reversal" payment to reduce supplier debt
+                        // This is effectively a credit note.
+                        // We'll use a Bill with a negative amount or a specialized Transaction.
+                        // Since we don't have a direct "CreditNote" model, let's use a Bill with PAID status
+                        // and a linked transaction that reflects the return.
+
+                        // Actually, a simpler way is to just add a Transaction of type INCOME to the treasury
+                        // but marked as "Supplier Return".
+                        // Wait, if it's "supplier_balance", it means we don't take cash, we just reduce what we owe him.
+                        // Our Supplier Report calculates: totalDebit (entries) - totalCredit (bills).
+                        // Increasing totalCredit or decreasing totalDebit works.
+                        // Let's create a "Bill" of type CASH, marked as PAID, with description "Material Return".
+
+                        val bill = com.batterysales.data.models.Bill(
+                            description = "إرجاع مواد لـ: $productName - $notes",
+                            amount = returnAmount,
+                            dueDate = Date(),
+                            billType = com.batterysales.data.models.BillType.CASH,
+                            supplierId = entry.supplierId,
+                            relatedEntryId = entry.id,
+                            warehouseId = entry.warehouseId,
+                            status = com.batterysales.data.models.BillStatus.PAID,
+                            paidAmount = returnAmount,
+                            paidDate = Date(),
+                            referenceNumber = "RETURN-${entry.id.takeLast(4)}"
+                        )
+                        // This will increase totalCredit in Supplier Report, thus reducing balance.
+                        // We do NOT want this to affect Treasury Cash if it's "supplier_balance".
+                        // But BillRepository.addBill doesn't automatically add a transaction.
+                        // BillViewModel does.
+                        // So we'll just use the repository directly.
+                        com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                            .collection(com.batterysales.data.models.Bill.COLLECTION_NAME)
+                            .add(bill).await()
+
+                    } else if (returnMode == "treasury_cash") {
+                        // Pay from Main Warehouse Treasury
+                        val allWh = allWarehouses
+                        val mainWh = allWh.find { it.isMain && it.isActive }
+                        if (mainWh != null) {
+                            val transaction = com.batterysales.data.models.Transaction(
+                                type = com.batterysales.data.models.TransactionType.INCOME, // Money coming BACK to us
+                                amount = returnAmount,
+                                description = "إرجاع نقدي من مورد: $productName - $notes",
+                                warehouseId = mainWh.id,
+                                paymentMethod = "cash",
+                                relatedId = entry.id
+                            )
+                            com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                                .collection(com.batterysales.data.models.Transaction.COLLECTION_NAME)
+                                .add(transaction).await()
+                        }
+                    }
+                }
+
+                refreshTrigger.value += 1
+            } catch (e: Exception) {
+                Log.e("ProductLedgerViewModel", "Error processing return", e)
+            } finally {
+                _isLoading.value = false
             }
         }
     }

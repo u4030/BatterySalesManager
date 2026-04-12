@@ -46,8 +46,7 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
     DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-                // No explicit refresh needed as Firestore flows are reactive, 
-                // but this ensures the screen is ready when returning.
+                // No explicit refresh needed
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -62,6 +61,7 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
     val isAdmin = currentUser?.role == "admin"
 
     var selectedTab by remember { mutableIntStateOf(0) } // 0: Stock, 1: Manage
+    var selectedWarehouseTabIndex by remember { mutableIntStateOf(0) } // Tabs for each warehouse
 
     LaunchedEffect(isAdmin) {
         if (!isAdmin) {
@@ -75,9 +75,6 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
     val bgColor = MaterialTheme.colorScheme.background
     val cardBgColor = MaterialTheme.colorScheme.surface
     val accentColor = Color(0xFFFB8C00)
-    val headerGradient = Brush.verticalGradient(
-        colors = listOf(Color(0xFFE53935), Color(0xFFFB8C00))
-    )
 
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -153,6 +150,38 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
                 }
 
                 if (selectedTab == 0) {
+                    item {
+                        if (warehouses.isNotEmpty()) {
+                            ScrollableTabRow(
+                                selectedTabIndex = selectedWarehouseTabIndex,
+                                containerColor = Color.Transparent,
+                                contentColor = accentColor,
+                                edgePadding = 16.dp,
+                                indicator = { tabPositions ->
+                                    TabRowDefaults.SecondaryIndicator(
+                                        modifier = Modifier.tabIndicatorOffset(tabPositions[selectedWarehouseTabIndex]),
+                                        color = accentColor
+                                    )
+                                },
+                                divider = {}
+                            ) {
+                                warehouses.forEachIndexed { index, warehouse ->
+                                    Tab(
+                                        selected = selectedWarehouseTabIndex == index,
+                                        onClick = { selectedWarehouseTabIndex = index }
+                                    ) {
+                                        Text(
+                                            warehouse.name,
+                                            modifier = Modifier.padding(12.dp),
+                                            style = MaterialTheme.typography.titleSmall,
+                                            color = if(selectedWarehouseTabIndex == index) accentColor else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     if (isLoading && stockLevels.isEmpty()) {
                         item {
                             Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
@@ -160,21 +189,23 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
                             }
                         }
                     } else {
-                        // Group items by warehouse
-                        stockLevels.groupBy { it.warehouse.name }.forEach { (warehouseName, items) ->
-                            // Warehouse Header
-                            item {
-                                Text(
-                                    text = warehouseName,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onBackground,
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
-                                )
-                            }
+                        val currentWarehouse = warehouses.getOrNull(selectedWarehouseTabIndex)
+                        val filteredStock = if (currentWarehouse != null) {
+                            stockLevels.filter { it.warehouse.id == currentWarehouse.id }
+                        } else {
+                            stockLevels
+                        }
 
-                            // Stock Items in this warehouse
-                            items(items) { stockItem ->
+                        if (filteredStock.isEmpty() && !isLoading) {
+                            item {
+                                Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                                    Text("لا توجد منتجات في هذا المستودع", color = Color.Gray)
+                                }
+                            }
+                        }
+
+                        // Stock Items in this warehouse
+                        items(filteredStock) { stockItem ->
                                 val threshold = stockItem.variant.minQuantities[stockItem.warehouse.id] ?: stockItem.variant.minQuantity
                                 val isLowStock = threshold > 0 && stockItem.quantity <= threshold
                                 val lowStockColor = Color(0xFFEF4444)
@@ -245,7 +276,6 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
                                         }
                                     }
                                 }
-                            }
                         }
                     }
                 } else {
@@ -273,26 +303,27 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
                 }
             }
 
-        if (selectedTab == 0 && stockLevels.isNotEmpty()) {
-            com.batterysales.ui.components.SidebarAlphabetNavigation(
-                onLetterSelected = { letter ->
-                    var targetIndex = 2 // SharedHeader + SearchBar/Tabs
-                    val groups = stockLevels.groupBy { it.warehouse.name }
-                    for ((_, items) in groups) {
-                        val matchingItemIndex = items.indexOfFirst { it.product.name.trim().startsWith(letter.toString(), ignoreCase = true) }
-                        if (matchingItemIndex != -1) {
-                            val finalIndex = targetIndex + matchingItemIndex + 1 // +1 for the Warehouse Header
-                            scope.launch {
-                                listState.animateScrollToItem(finalIndex)
-                            }
-                            return@SidebarAlphabetNavigation
+            if (selectedTab == 0 && stockLevels.isNotEmpty()) {
+                com.batterysales.ui.components.SidebarAlphabetNavigation(
+                    onLetterSelected = { letter ->
+                        val currentWarehouse = warehouses.getOrNull(selectedWarehouseTabIndex)
+                        val filteredStock = if (currentWarehouse != null) {
+                            stockLevels.filter { it.warehouse.id == currentWarehouse.id }
+                        } else {
+                            stockLevels
                         }
-                        targetIndex += items.size + 1 // items + Warehouse Header
-                    }
-                },
-                modifier = Modifier.align(Alignment.CenterEnd).padding(end = 4.dp, top = 150.dp, bottom = 40.dp)
-            )
-        }
+
+                        val index = filteredStock.indexOfFirst { it.product.name.trim().startsWith(letter.toString(), ignoreCase = true) }
+                        if (index != -1) {
+                            val headerOffset = 3 // Header + SearchBar + WarehouseTabs
+                            scope.launch {
+                                listState.animateScrollToItem(index + headerOffset)
+                            }
+                        }
+                    },
+                    modifier = Modifier.align(Alignment.CenterEnd).padding(end = 4.dp, top = 150.dp, bottom = 40.dp)
+                )
+            }
         }
     }
 

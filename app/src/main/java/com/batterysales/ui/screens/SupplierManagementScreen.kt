@@ -35,7 +35,8 @@ fun SupplierManagementScreen(
     navController: NavController,
     viewModel: SupplierViewModel = hiltViewModel()
 ) {
-    val suppliers by viewModel.suppliers.collectAsState()
+    val suppliers by viewModel.suppliers.collectAsState(emptyList())
+    val searchQuery by viewModel.searchQuery.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val error by viewModel.error.collectAsState()
 
@@ -84,6 +85,15 @@ fun SupplierManagementScreen(
                         )
                     }
                 )
+
+                Column(modifier = Modifier.padding(16.dp)) {
+                    CustomKeyboardTextField(
+                        value = searchQuery,
+                        onValueChange = viewModel::onSearchQueryChanged,
+                        label = "بحث باسم المورد...",
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
 
             if (isLoading && suppliers.isEmpty()) {

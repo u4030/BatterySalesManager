@@ -126,16 +126,20 @@ class SalesViewModel @Inject constructor(
         val stockMap = mutableMapOf<Pair<String, String>, Int>()
 
         allVariants.forEach { variant ->
+            // Use denormalized stock if available, but for all warehouses
             if (variant.currentStock != null) {
-                // Use denormalized stock
                 variant.currentStock.forEach { (warehouseId, qty) ->
                     stockMap[Pair(variant.id, warehouseId)] = qty
                 }
-            } else {
-                // Fallback to calculation from entries
-                val variantEntries = entriesByVariant[variant.id] ?: emptyList()
-                val warehouseGroups = variantEntries.groupBy { it.warehouseId }
-                warehouseGroups.forEach { (warehouseId, entries) ->
+            }
+
+            // Fallback OR ensure all warehouses are covered by entries
+            val variantEntries = entriesByVariant[variant.id] ?: emptyList()
+            val warehouseGroups = variantEntries.groupBy { it.warehouseId }
+            warehouseGroups.forEach { (warehouseId, entries) ->
+                // Only override if not present in stockMap or if we want to trust entries more
+                // Usually variant.currentStock is the source of truth if it exists
+                if (variant.currentStock == null || !variant.currentStock.containsKey(warehouseId)) {
                     stockMap[Pair(variant.id, warehouseId)] = entries.sumOf { it.quantity - it.returnedQuantity }
                 }
             }

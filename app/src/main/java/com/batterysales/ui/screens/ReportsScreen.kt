@@ -248,16 +248,13 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                     onLetterSelected = { letter ->
                         val index = allItemNames.indexOfFirst { it.trim().startsWith(letter.toString(), ignoreCase = true) }
                         if (index != -1) {
-                            // Note: LazyColumn items in order:
-                            // 0: SharedHeader + Tabs (one item)
-                            // 1: SearchBar
-                            // 2: GrandTotalCard (if itemCount > 0)
-                            // 3: Loading indicator (if any, but usually temporary)
-                            // 4+: pagingItems
-                            
-                            var offset = 1 // SharedHeader + Tabs
-                            offset += 1 // SearchBar
-                            if (pagingItems.itemCount > 0) offset++ // GrandTotalCard
+                            var offset = 0
+                            // 1. SharedHeader + Tabs
+                            offset += 1
+                            // 2. InventoryReportControls (SearchBar + DatePicker)
+                            offset += 1
+                            // 3. GrandTotalCard (only if displayed)
+                            if (pagingItems.itemCount > 0) offset += 1
                             
                             scope.launch {
                                 listState.animateScrollToItem(index + offset)
@@ -313,7 +310,7 @@ fun InventoryReportControls(viewModel: ReportsViewModel) {
                     value = barcodeFilter ?: "",
                     onValueChange = { viewModel.onBarcodeScanned(it.ifEmpty { null }) },
                     modifier = Modifier.fillMaxWidth(),
-                    label = "تصفية حسب الباركود..."
+                    label = "تصفية حسب الباركود أو رقم الفاتورة..."
                 )
             }
 
@@ -632,32 +629,87 @@ private fun supplierReportSectionRedesigned(
         }
     }
 
-    scope.items(supplierItems) { item ->
-        Box(modifier = Modifier.padding(horizontal = 16.dp)) {
-            val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
-            SupplierCardRedesigned(item, onPayPO = { po, method ->
-                val bType = when(method) {
-                    "visa" -> BillType.VISA
-                    "e-wallet" -> BillType.E_WALLET
-                    else -> BillType.CASH
-                }
-                val methodLabel = when(method) {
-                    "visa" -> "فيزا"
-                    "e-wallet" -> "محفظة"
-                    else -> "نقدي"
-                }
+    // Group 1: Suppliers with Balance > 0
+    val suppliersWithBalance = supplierItems.filter { it.balance > 0.001 }
+    if (suppliersWithBalance.isNotEmpty()) {
+        scope.item {
+            Text(
+                "موردين بانتظار تسديد ذمم:",
+                modifier = Modifier.padding(16.dp),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFFEF4444)
+            )
+        }
+        scope.items(suppliersWithBalance) { item ->
+            Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
+                SupplierCardRedesigned(item, onPayPO = { po, method ->
+                    val bType = when(method) {
+                        "visa" -> BillType.VISA
+                        "e-wallet" -> BillType.E_WALLET
+                        else -> BillType.CASH
+                    }
+                    val methodLabel = when(method) {
+                        "visa" -> "فيزا"
+                        "e-wallet" -> "محفظة"
+                        else -> "نقدي"
+                    }
 
-                billViewModel.addBill(
-                    description = "تسديد $methodLabel لطلبية شراء بتاريخ ${dateFormatter.format(po.entry.timestamp)}",
-                    amount = po.remainingBalance,
-                    dueDate = Date(),
-                    billType = bType,
-                    supplierId = item.supplier.id,
-                    relatedEntryId = po.entry.orderId.ifEmpty { po.entry.id },
-                    warehouseId = po.entry.warehouseId,
-                    payImmediately = true
-                )
-            })
+                    billViewModel.addBill(
+                        description = "تسديد $methodLabel لطلبية شراء بتاريخ ${dateFormatter.format(po.entry.timestamp)}",
+                        amount = po.remainingBalance,
+                        dueDate = Date(),
+                        billType = bType,
+                        supplierId = item.supplier.id,
+                        relatedEntryId = po.entry.orderId.ifEmpty { po.entry.id },
+                        warehouseId = po.entry.warehouseId,
+                        payImmediately = true
+                    )
+                })
+            }
+        }
+    }
+
+    // Group 2: Settled Suppliers
+    val settledSuppliers = supplierItems.filter { it.balance <= 0.001 }
+    if (settledSuppliers.isNotEmpty()) {
+        scope.item {
+            Text(
+                "موردين مسددين:",
+                modifier = Modifier.padding(16.dp),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF10B981)
+            )
+        }
+        scope.items(settledSuppliers) { item ->
+            Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
+                SupplierCardRedesigned(item, onPayPO = { po, method ->
+                    val bType = when(method) {
+                        "visa" -> BillType.VISA
+                        "e-wallet" -> BillType.E_WALLET
+                        else -> BillType.CASH
+                    }
+                    val methodLabel = when(method) {
+                        "visa" -> "فيزا"
+                        "e-wallet" -> "محفظة"
+                        else -> "نقدي"
+                    }
+
+                    billViewModel.addBill(
+                        description = "تسديد $methodLabel لطلبية شراء بتاريخ ${dateFormatter.format(po.entry.timestamp)}",
+                        amount = po.remainingBalance,
+                        dueDate = Date(),
+                        billType = bType,
+                        supplierId = item.supplier.id,
+                        relatedEntryId = po.entry.orderId.ifEmpty { po.entry.id },
+                        warehouseId = po.entry.warehouseId,
+                        payImmediately = true
+                    )
+                })
+            }
         }
     }
 }
@@ -764,118 +816,125 @@ fun SupplierCardRedesigned(
                 InfoBadge(label = "المتبقي", value = "JD ${String.format("%.3f", item.balance)}", color = if (item.balance > 0) Color(0xFFEF4444) else Color(0xFF10B981))
             }
 
-            if (expanded && item.purchaseOrders.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(20.dp))
-                HorizontalDivider(modifier = Modifier.alpha(0.05f))
-                Spacer(modifier = Modifier.height(16.dp))
-                Text("تفاصيل طلبيات الشراء:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(12.dp))
+            if (expanded) {
+                if (item.pendingBills.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(20.dp))
+                    HorizontalDivider(modifier = Modifier.alpha(0.05f))
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("التزامات مالية غير مسددة (شيكات/كمبيالات):", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color(0xFFEF4444))
+                    Spacer(modifier = Modifier.height(12.dp))
 
-                val dateFormatter = java.text.SimpleDateFormat("yyyy/MM/dd hh:mm a", java.util.Locale.getDefault())
-                item.purchaseOrders.forEach { po ->
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 12.dp),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.03f))
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = dateFormatter.format(po.entry.timestamp),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                if (po.entry.invoiceNumber.isNotEmpty()) {
-                                    Surface(
-                                        color = Color(0xFFFB8C00).copy(alpha = 0.1f),
-                                        shape = RoundedCornerShape(8.dp)
-                                    ) {
-                                        Text(
-                                            text = "فاتورة: ${po.entry.invoiceNumber}",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = Color(0xFFFB8C00),
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                        )
-                                    }
+                    item.pendingBills.forEach { bill ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFFEF4444).copy(alpha = 0.05f))
+                        ) {
+                            Row(modifier = Modifier.padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(bill.description, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                    Text("تاريخ الاستحقاق: ${java.text.SimpleDateFormat("yyyy/MM/dd").format(bill.dueDate)}", style = MaterialTheme.typography.labelSmall)
                                 }
-                            }
-
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("إجمالي الطلبية:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text("JD ${String.format("%.3f", po.entry.totalCost)}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.ExtraBold)
-                            }
-
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("المتبقي:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text(
-                                    text = "JD ${String.format("%.3f", po.remainingBalance)}",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (po.remainingBalance > 0) Color(0xFFEF4444) else Color(0xFF10B981)
-                                )
-                            }
-
-                            if (po.remainingBalance > 0.001) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Button(
-                                        onClick = { onPayPO(po, "cash") },
-                                        modifier = Modifier.weight(1f).height(40.dp),
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
-                                        shape = RoundedCornerShape(8.dp),
-                                        contentPadding = PaddingValues(horizontal = 4.dp)
-                                    ) {
-                                        Text("نقدي", style = MaterialTheme.typography.labelSmall)
-                                    }
-                                    Button(
-                                        onClick = { onPayPO(po, "e-wallet") },
-                                        modifier = Modifier.weight(1f).height(40.dp),
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B82F6)),
-                                        shape = RoundedCornerShape(8.dp),
-                                        contentPadding = PaddingValues(horizontal = 4.dp)
-                                    ) {
-                                        Text("محفظة", style = MaterialTheme.typography.labelSmall)
-                                    }
-                                    Button(
-                                        onClick = { onPayPO(po, "visa") },
-                                        modifier = Modifier.weight(1f).height(40.dp),
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFB8C00)),
-                                        shape = RoundedCornerShape(8.dp),
-                                        contentPadding = PaddingValues(horizontal = 4.dp)
-                                    ) {
-                                        Text("فيزا", style = MaterialTheme.typography.labelSmall)
-                                    }
-                                }
-                            }
-
-                            if (po.referenceNumbers.isNotEmpty()) {
-                                HorizontalDivider(modifier = Modifier.alpha(0.1f))
-                                Row(verticalAlignment = Alignment.Top) {
-                                    Icon(
-                                        Icons.Default.Payments,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp).padding(top = 2.dp),
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = po.referenceNumbers.joinToString(", "),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        fontWeight = FontWeight.Bold,
-                                        lineHeight = 16.sp,
-                                        fontSize = 13.sp,
-                                    )
-                                }
+                                Text("JD ${String.format("%.3f", bill.amount - bill.paidAmount)}", color = Color(0xFFEF4444), fontWeight = FontWeight.ExtraBold)
                             }
                         }
                     }
                 }
-            }
+
+                if (item.purchaseOrders.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(20.dp))
+                    HorizontalDivider(modifier = Modifier.alpha(0.05f))
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("تفاصيل طلبيات الشراء:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    val dateFormatter = java.text.SimpleDateFormat("yyyy/MM/dd hh:mm a", java.util.Locale.getDefault())
+                    item.purchaseOrders.forEach { po ->
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 12.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.03f))
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = dateFormatter.format(po.entry.timestamp),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    if (po.entry.invoiceNumber.isNotEmpty()) {
+                                        Surface(
+                                            color = Color(0xFFFB8C00).copy(alpha = 0.1f),
+                                            shape = RoundedCornerShape(8.dp)
+                                        ) {
+                                            Text(
+                                                text = "فاتورة: ${po.entry.invoiceNumber}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = Color(0xFFFB8C00),
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text("إجمالي الطلبية:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text("JD ${String.format("%.3f", po.entry.totalCost)}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.ExtraBold)
+                                }
+
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text("المتبقي:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(
+                                        text = "JD ${String.format("%.3f", po.remainingBalance)}",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (po.remainingBalance > 0) Color(0xFFEF4444) else Color(0xFF10B981)
+                                    )
+                                }
+
+                                if (po.remainingBalance > 0.001) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Button(
+                                            onClick = { onPayPO(po, "cash") },
+                                            modifier = Modifier.fillMaxWidth().height(40.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                                            shape = RoundedCornerShape(8.dp),
+                                            contentPadding = PaddingValues(horizontal = 4.dp)
+                                        ) {
+                                            Text("تسديد نقدي", style = MaterialTheme.typography.labelSmall)
+                                        }
+                                    }
+                                }
+
+                                if (po.referenceNumbers.isNotEmpty()) {
+                                    HorizontalDivider(modifier = Modifier.alpha(0.1f))
+                                    Row(verticalAlignment = Alignment.Top) {
+                                        Icon(
+                                            Icons.Default.Payments,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp).padding(top = 2.dp),
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = po.referenceNumbers.joinToString(", "),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            fontWeight = FontWeight.Bold,
+                                            lineHeight = 16.sp,
+                                            fontSize = 13.sp,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        }
+                }
 
             if (item.supplier.yearlyTarget > 0) {
                 Spacer(modifier = Modifier.height(20.dp))
@@ -894,4 +953,5 @@ fun SupplierCardRedesigned(
             }
         }
     }
+}
 }
