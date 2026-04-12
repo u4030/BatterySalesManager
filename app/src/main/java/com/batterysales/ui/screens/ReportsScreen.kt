@@ -272,6 +272,7 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun InventoryReportControls(viewModel: ReportsViewModel) {
+    val keyboardController = com.batterysales.ui.components.LocalCustomKeyboardController.current
     val barcodeFilter by viewModel.barcodeFilter.collectAsState()
     val startDate by viewModel.inventoryStartDate.collectAsState()
     val endDate by viewModel.inventoryEndDate.collectAsState()
@@ -300,7 +301,14 @@ fun InventoryReportControls(viewModel: ReportsViewModel) {
         }
     }
 
-    var searchInput by remember { mutableStateOf(barcodeFilter ?: "") }
+    var searchInput by remember { mutableStateOf("") }
+
+    // Sync local input with VM state when VM state changes externally (e.g. scanner)
+    LaunchedEffect(barcodeFilter) {
+        if (barcodeFilter != searchInput) {
+            searchInput = barcodeFilter ?: ""
+        }
+    }
 
     Column(modifier = Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(
@@ -313,12 +321,18 @@ fun InventoryReportControls(viewModel: ReportsViewModel) {
                     onValueChange = { searchInput = it },
                     modifier = Modifier.fillMaxWidth(),
                     label = "تصفية حسب الباركود أو رقم الفاتورة...",
-                    onSearch = { viewModel.onBarcodeScanned(searchInput.ifEmpty { null }) }
+                    onSearch = {
+                        keyboardController.hideKeyboard()
+                        viewModel.onBarcodeScanned(searchInput.ifEmpty { null })
+                    }
                 )
             }
 
             IconButton(
-                onClick = { viewModel.onBarcodeScanned(searchInput.ifEmpty { null }) },
+                onClick = {
+                    keyboardController.hideKeyboard()
+                    viewModel.onBarcodeScanned(searchInput.ifEmpty { null })
+                },
                 modifier = Modifier
                     .size(56.dp)
                     .background(Color(0xFFFB8C00), RoundedCornerShape(12.dp))
@@ -829,14 +843,17 @@ fun SupplierCardRedesigned(
             }
 
             if (expanded) {
-                if (item.pendingBills.isNotEmpty()) {
+                // Section for linked/unpaid obligations
+                val unpaidChecksAndBills = item.pendingBills.filter { it.billType == BillType.CHECK || it.billType == BillType.BILL }
+
+                if (unpaidChecksAndBills.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(20.dp))
                     HorizontalDivider(modifier = Modifier.alpha(0.05f))
                     Spacer(modifier = Modifier.height(16.dp))
                     Text("التزامات مالية غير مسددة (شيكات/كمبيالات):", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color(0xFFEF4444))
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    item.pendingBills.forEach { bill ->
+                    unpaidChecksAndBills.forEach { bill ->
                         Card(
                             modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                             shape = RoundedCornerShape(12.dp),

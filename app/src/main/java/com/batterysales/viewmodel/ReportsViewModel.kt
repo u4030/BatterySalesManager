@@ -432,11 +432,20 @@ class ReportsViewModel @Inject constructor(
                             }
                             val linkedPaid = linkedBills.sumOf { it.paidAmount }
 
+                            val matchingBillsByRef = supplierBills.filter { bill ->
+                                bill.referenceNumber.isNotEmpty() && (bill.referenceNumber == representative.invoiceNumber || bill.referenceNumber == representative.id)
+                            }
+
+                            val allLinkedBills = (linkedBills + matchingBillsByRef).distinctBy { it.id }
+                            val totalLinkedPaid = allLinkedBills.sumOf { it.paidAmount }
+
+                            val finalTotalCost = if (representative.grandTotalCost > 0) representative.grandTotalCost else totalOrderCost
+
                             PurchaseOrderItem(
-                                entry = representative.copy(totalCost = totalOrderCost),
-                                linkedPaidAmount = linkedPaid,
-                                remainingBalance = totalOrderCost - linkedPaid,
-                                referenceNumbers = linkedBills.filter { bill ->
+                                entry = representative.copy(totalCost = finalTotalCost),
+                                linkedPaidAmount = totalLinkedPaid,
+                                remainingBalance = finalTotalCost - totalLinkedPaid,
+                                referenceNumbers = allLinkedBills.filter { bill ->
                                     bill.referenceNumber.isNotEmpty() && bill.status == BillStatus.PAID
                                 }.map { bill ->
                                     val typeStr = when (bill.billType) {

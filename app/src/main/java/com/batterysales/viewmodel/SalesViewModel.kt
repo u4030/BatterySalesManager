@@ -264,7 +264,7 @@ class SalesViewModel @Inject constructor(
 
         val available = state.stockLevels[Pair(variant.id, warehouse.id)] ?: 0
         if (qty > available) {
-            _errorMessage.value = "المخزون غير كافٍ. المتاح: $available، المطلوب: $qty"
+            _errorMessage.value = "المخزون غير كافٍ في مستودع ${warehouse.name}. المتاح: $available، المطلوب: $qty"
             return
         }
 
@@ -403,8 +403,10 @@ class SalesViewModel @Inject constructor(
             if (variant != null) {
                 val product = productRepository.getProduct(variant.productId)
                 if (product != null) {
-                    onProductSelected(product)
-                    onVariantSelected(variant)
+                    // Update state carefully to ensure warehouse isn't lost
+                    _selectedProduct.value = product
+                    _selectedVariant.value = variant
+                    _sellingPrice.value = if (variant.sellingPrice > 0.0) variant.sellingPrice.toString() else ""
                 }
             } else {
                 _errorMessage.value = "لم يتم العثور على منتج بهذا الباركود"

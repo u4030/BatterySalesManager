@@ -21,12 +21,12 @@ import javax.inject.Inject
 @HiltViewModel
 class BillViewModel @Inject constructor(
     private val repository: BillRepository,
+    val userRepository: com.batterysales.data.repositories.UserRepository, // Public for UI collectState
     private val supplierRepository: SupplierRepository,
     private val stockEntryRepository: StockEntryRepository,
     private val accountingRepository: AccountingRepository,
     private val bankRepository: BankRepository,
-    private val warehouseRepository: com.batterysales.data.repositories.WarehouseRepository,
-    private val userRepository: com.batterysales.data.repositories.UserRepository
+    private val warehouseRepository: com.batterysales.data.repositories.WarehouseRepository
 ) : ViewModel() {
 
     private val _searchQuery = MutableStateFlow("")

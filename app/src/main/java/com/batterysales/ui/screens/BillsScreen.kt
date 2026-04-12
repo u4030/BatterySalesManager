@@ -227,10 +227,12 @@ fun BillsScreen(
     }
 
     if (showAddBillDialog) {
+        val user by viewModel.userRepository.getCurrentUserFlow().collectAsState(initial = null)
         AddBillDialog(
             suppliers = suppliers,
             pendingPurchases = pendingPurchases,
             warehouses = warehouses,
+            currentUser = user,
             onDismiss = { showAddBillDialog = false },
             onAdd = { desc, amount, date, type, ref, supplierId, relatedEntryId, warehouseId, payImmediately ->
                 viewModel.addBill(desc, amount, date, type, ref, supplierId, relatedEntryId, warehouseId, payImmediately)
@@ -416,6 +418,7 @@ fun AddBillDialog(
     suppliers: List<com.batterysales.data.models.Supplier>,
     pendingPurchases: List<com.batterysales.data.models.StockEntry>,
     warehouses: List<com.batterysales.data.models.Warehouse>,
+    currentUser: com.batterysales.data.models.User?,
     onDismiss: () -> Unit,
     onAdd: (String, Double, Date, BillType, String, String, String?, String?, Boolean) -> Unit
 ) {
@@ -428,6 +431,7 @@ fun AddBillDialog(
     var selectedType by remember { mutableStateOf(BillType.CHECK) }
     var payImmediately by remember { mutableStateOf(false) }
     var showDatePicker by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
     // إنشاء الحالة الخاصة بمنتقي التاريخ هنا
     val datePickerState = rememberDatePickerState(initialSelectedDateMillis = System.currentTimeMillis())
 
@@ -442,13 +446,36 @@ fun AddBillDialog(
         confirmButton = {
             Button(onClick = {
                 val amt = amount.toDoubleOrNull() ?: 0.0
-                if (description.isNotEmpty() && amt > 0) onAdd(description, amt, selectedDate, selectedType, refNum, selectedSupplier?.id ?: "", selectedPurchase?.id, selectedWarehouseId, payImmediately)
+                if (description.isBlank()) {
+                    errorMessage = "الرجاء إدخال الوصف"
+                    return@Button
+                }
+                if (amt <= 0) {
+                    errorMessage = "الرجاء إدخال مبلغ صحيح"
+                    return@Button
+                }
+                onAdd(description, amt, selectedDate, selectedType, refNum, selectedSupplier?.id ?: "", selectedPurchase?.id, selectedWarehouseId, payImmediately)
             }) { Text("إضافة") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("إلغاء") }
         }
     ) {
+        if (errorMessage != null) {
+            Text(errorMessage!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+
+        if (currentUser?.role == "admin" && warehouses.isNotEmpty()) {
+            com.batterysales.ui.stockentry.Dropdown(
+                label = "المستودع المسؤول عن الالتزام",
+                selectedValue = warehouses.find { it.id == selectedWarehouseId }?.name ?: "اختر المستودع",
+                options = warehouses.map { it.name },
+                onOptionSelected = { index -> selectedWarehouseId = warehouses[index].id },
+                enabled = true
+            )
+        }
+
         com.batterysales.ui.stockentry.Dropdown(
             label = "المورد (اختياري)",
             selectedValue = selectedSupplier?.name ?: "بدون مورد",

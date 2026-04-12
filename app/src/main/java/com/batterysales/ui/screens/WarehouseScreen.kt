@@ -104,76 +104,78 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
                 }
             )
 
-            Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                if (selectedTab == 0) {
-                    com.batterysales.ui.components.CustomKeyboardTextField(
-                        value = searchQuery,
-                        onValueChange = viewModel::onSearchQueryChanged,
-                        label = "بحث باسم المنتج في المستودع...",
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
-                    )
-                }
-
-                TabRow(
-                    selectedTabIndex = selectedTab,
-                    containerColor = Color.Transparent,
-                    contentColor = accentColor,
-                    indicator = { tabPositions ->
-                        TabRowDefaults.SecondaryIndicator(
-                            modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
-                            color = accentColor
-                        )
-                    },
-                    divider = {}
-                ) {
-                    Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }) {
-                        Text("المخزون", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleSmall, color = if(selectedTab == 0) accentColor else MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    if (isAdmin) {
-                        Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) {
-                            Text("الإدارة", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleSmall, color = if(selectedTab == 1) accentColor else MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
-
-                if (selectedTab == 0 && warehouses.isNotEmpty()) {
-                    ScrollableTabRow(
-                        selectedTabIndex = selectedWarehouseTabIndex,
-                        containerColor = Color.Transparent,
-                        contentColor = accentColor,
-                        edgePadding = 0.dp,
-                        indicator = { tabPositions ->
-                            TabRowDefaults.SecondaryIndicator(
-                                modifier = Modifier.tabIndicatorOffset(tabPositions[selectedWarehouseTabIndex]),
-                                color = accentColor
-                            )
-                        },
-                        divider = {}
-                    ) {
-                        warehouses.forEachIndexed { index, warehouse ->
-                            Tab(
-                                selected = selectedWarehouseTabIndex == index,
-                                onClick = { selectedWarehouseTabIndex = index }
-                            ) {
-                                Text(
-                                    warehouse.name,
-                                    modifier = Modifier.padding(12.dp),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    color = if(selectedWarehouseTabIndex == index) accentColor else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-            }
-
             Box(modifier = Modifier.fillMaxSize()) {
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize().imePadding(),
                     contentPadding = PaddingValues(bottom = 16.dp)
                 ) {
+                    item {
+                        Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                            if (selectedTab == 0) {
+                                com.batterysales.ui.components.CustomKeyboardTextField(
+                                    value = searchQuery,
+                                    onValueChange = viewModel::onSearchQueryChanged,
+                                    label = "بحث باسم المنتج في المستودع...",
+                                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+                                )
+                            }
+
+                            TabRow(
+                                selectedTabIndex = selectedTab,
+                                containerColor = Color.Transparent,
+                                contentColor = accentColor,
+                                indicator = { tabPositions ->
+                                    TabRowDefaults.SecondaryIndicator(
+                                        modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
+                                        color = accentColor
+                                    )
+                                },
+                                divider = {}
+                            ) {
+                                Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }) {
+                                    Text("المخزون", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleSmall, color = if(selectedTab == 0) accentColor else MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                if (isAdmin) {
+                                    Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) {
+                                        Text("الإدارة", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleSmall, color = if(selectedTab == 1) accentColor else MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
+
+                            if (selectedTab == 0 && warehouses.isNotEmpty()) {
+                                ScrollableTabRow(
+                                    selectedTabIndex = selectedWarehouseTabIndex,
+                                    containerColor = Color.Transparent,
+                                    contentColor = accentColor,
+                                    edgePadding = 0.dp,
+                                    indicator = { tabPositions ->
+                                        TabRowDefaults.SecondaryIndicator(
+                                            modifier = Modifier.tabIndicatorOffset(tabPositions[selectedWarehouseTabIndex]),
+                                            color = accentColor
+                                        )
+                                    },
+                                    divider = {}
+                                ) {
+                                    warehouses.forEachIndexed { index, warehouse ->
+                                        Tab(
+                                            selected = selectedWarehouseTabIndex == index,
+                                            onClick = { selectedWarehouseTabIndex = index }
+                                        ) {
+                                            Text(
+                                                warehouse.name,
+                                                modifier = Modifier.padding(12.dp),
+                                                style = MaterialTheme.typography.titleSmall,
+                                                color = if(selectedWarehouseTabIndex == index) accentColor else MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(16.dp))
+                        }
+                    }
+
                     if (selectedTab == 0) {
                         if (isLoading && stockLevels.isEmpty()) {
                             item {
