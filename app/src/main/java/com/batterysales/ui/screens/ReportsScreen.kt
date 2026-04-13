@@ -843,111 +843,32 @@ fun SupplierCardRedesigned(
             }
 
             if (expanded) {
-                // Section for linked/unpaid obligations
-                val unpaidChecksAndBills = item.pendingBills.filter { it.billType == BillType.CHECK || it.billType == BillType.BILL }
+                val dateFormatter = java.text.SimpleDateFormat("yyyy/MM/dd hh:mm a", java.util.Locale.getDefault())
 
-                if (unpaidChecksAndBills.isNotEmpty()) {
+                if (item.regularOrders.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(20.dp))
                     HorizontalDivider(modifier = Modifier.alpha(0.05f))
                     Spacer(modifier = Modifier.height(16.dp))
-                    Text("التزامات مالية غير مسددة (شيكات/كمبيالات):", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color(0xFFEF4444))
+                    Text("طلبيات شراء (نقدية/رصيد):", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    unpaidChecksAndBills.forEach { bill ->
-                        Card(
-                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFFEF4444).copy(alpha = 0.05f))
-                        ) {
-                            Row(modifier = Modifier.padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(bill.description, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
-                                    Text("تاريخ الاستحقاق: ${java.text.SimpleDateFormat("yyyy/MM/dd").format(bill.dueDate)}", style = MaterialTheme.typography.labelSmall)
-                                }
-                                Text("JD ${String.format("%.3f", bill.amount - bill.paidAmount)}", color = Color(0xFFEF4444), fontWeight = FontWeight.ExtraBold)
-                            }
-                        }
+                    item.regularOrders.forEach { po ->
+                        PurchaseOrderCard(po, dateFormatter)
                     }
                 }
 
-                if (item.purchaseOrders.isNotEmpty()) {
+                if (item.obligatedOrders.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(20.dp))
                     HorizontalDivider(modifier = Modifier.alpha(0.05f))
                     Spacer(modifier = Modifier.height(16.dp))
-                    Text("تفاصيل طلبيات الشراء:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                    Text("طلبيات شراء (شيكات/كمبيالات):", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color(0xFFEF4444))
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    val dateFormatter = java.text.SimpleDateFormat("yyyy/MM/dd hh:mm a", java.util.Locale.getDefault())
-                    item.purchaseOrders.forEach { po ->
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 12.dp),
-                            shape = RoundedCornerShape(16.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.03f))
-                        ) {
-                            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = dateFormatter.format(po.entry.timestamp),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    if (po.entry.invoiceNumber.isNotEmpty()) {
-                                        Surface(
-                                            color = Color(0xFFFB8C00).copy(alpha = 0.1f),
-                                            shape = RoundedCornerShape(8.dp)
-                                        ) {
-                                            Text(
-                                                text = "فاتورة: ${po.entry.invoiceNumber}",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = Color(0xFFFB8C00),
-                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                            )
-                                        }
-                                    }
-                                }
-
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text("إجمالي الطلبية:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Text("JD ${String.format("%.3f", po.entry.totalCost)}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.ExtraBold)
-                                }
-
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text("المتبقي:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Text(
-                                        text = "JD ${String.format("%.3f", po.remainingBalance)}",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (po.remainingBalance > 0) Color(0xFFEF4444) else Color(0xFF10B981)
-                                    )
-                                }
-
-
-                                if (po.referenceNumbers.isNotEmpty()) {
-                                    HorizontalDivider(modifier = Modifier.alpha(0.1f))
-                                    Row(verticalAlignment = Alignment.Top) {
-                                        Icon(
-                                            Icons.Default.Payments,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(16.dp).padding(top = 2.dp),
-                                            tint = MaterialTheme.colorScheme.primary
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(
-                                            text = po.referenceNumbers.joinToString(", "),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.primary,
-                                            fontWeight = FontWeight.Bold,
-                                            lineHeight = 16.sp,
-                                            fontSize = 13.sp,
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                        }
+                    item.obligatedOrders.forEach { po ->
+                        PurchaseOrderCard(po, dateFormatter)
+                    }
                 }
+            }
 
             if (item.supplier.yearlyTarget > 0) {
                 Spacer(modifier = Modifier.height(20.dp))
@@ -967,4 +888,77 @@ fun SupplierCardRedesigned(
         }
     }
 }
+
+@Composable
+fun PurchaseOrderCard(
+    po: com.batterysales.viewmodel.PurchaseOrderItem,
+    dateFormatter: java.text.SimpleDateFormat
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 12.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.03f))
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = dateFormatter.format(po.entry.timestamp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                if (po.entry.invoiceNumber.isNotEmpty()) {
+                    Surface(
+                        color = Color(0xFFFB8C00).copy(alpha = 0.1f),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            text = "فاتورة: ${po.entry.invoiceNumber}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFFFB8C00),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+            }
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("إجمالي الطلبية:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("JD ${String.format("%.3f", po.entry.totalCost)}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.ExtraBold)
+            }
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("المتبقي:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    text = "JD ${String.format("%.3f", po.remainingBalance)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = if (po.remainingBalance > 0) Color(0xFFEF4444) else Color(0xFF10B981)
+                )
+            }
+
+
+            if (po.referenceNumbers.isNotEmpty()) {
+                HorizontalDivider(modifier = Modifier.alpha(0.1f))
+                Row(verticalAlignment = Alignment.Top) {
+                    Icon(
+                        Icons.Default.Payments,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp).padding(top = 2.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = po.referenceNumbers.joinToString(", "),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                        lineHeight = 16.sp,
+                        fontSize = 13.sp,
+                    )
+                }
+            }
+        }
+    }
 }

@@ -41,8 +41,8 @@ data class SupplierReportItem(
     val totalCredit: Double, // Payments
     val balance: Double, // Debit - Credit
     val targetProgress: Double,
-    val purchaseOrders: List<PurchaseOrderItem>,
-    val pendingBills: List<Bill> = emptyList()
+    val regularOrders: List<PurchaseOrderItem>, // Orders NOT linked to checks/bills
+    val obligatedOrders: List<PurchaseOrderItem> // Orders linked to checks/bills
 )
 
 data class PurchaseOrderItem(
@@ -415,7 +415,8 @@ class ReportsViewModel @Inject constructor(
                         }
 
                         // Calculate totals locally for accuracy and consistency
-                        val totalDebit = supplierEntries.sumOf { it.totalCost }
+                        // totalDebit should be GROSS (Quantity * costPrice)
+                        val totalDebit = supplierEntries.sumOf { it.quantity * it.costPrice }
                         val totalCredit = supplierBills.sumOf { it.paidAmount }
                         val balance = totalDebit - totalCredit
 
@@ -425,7 +426,8 @@ class ReportsViewModel @Inject constructor(
                         
                         val purchaseOrders = groupedEntries.map { (key, group) ->
                             val representative = group.first()
-                            val totalOrderCost = group.sumOf { it.totalCost }
+                            // totalOrderCost should be GROSS (Quantity * costPrice)
+                            val totalOrderCost = group.sumOf { it.quantity * it.costPrice }
 
                             val linkedBills = supplierBills.filter { bill ->
                                 bill.relatedEntryId == key || group.any { entry -> entry.id == bill.relatedEntryId }
@@ -441,25 +443,37 @@ class ReportsViewModel @Inject constructor(
 
                             val finalTotalCost = if (representative.grandTotalCost > 0) representative.grandTotalCost else totalOrderCost
 
+                            val refs = allLinkedBills.filter { bill ->
+                                bill.referenceNumber.isNotEmpty()
+                            }.map { bill ->
+                                val typeStr = when (bill.billType) {
+                                    BillType.CHECK -> "شيك"
+                                    BillType.BILL -> "كمبيالة"
+                                    BillType.TRANSFER -> "تحويل"
+                                    BillType.CASH -> "نقدي"
+                                    BillType.VISA -> "فيزا"
+                                    BillType.E_WALLET -> "محفظة"
+                                }
+                                "$typeStr: ${bill.referenceNumber}${if(bill.status != BillStatus.PAID) " (غير مسدد)" else ""}"
+                            }.distinct()
+
                             PurchaseOrderItem(
                                 entry = representative.copy(totalCost = finalTotalCost),
                                 linkedPaidAmount = totalLinkedPaid,
                                 remainingBalance = finalTotalCost - totalLinkedPaid,
-                                referenceNumbers = allLinkedBills.filter { bill ->
-                                    bill.referenceNumber.isNotEmpty() && bill.status == BillStatus.PAID
-                                }.map { bill ->
-                                    val typeStr = when (bill.billType) {
-                                        BillType.CHECK -> "شيك"
-                                        BillType.BILL -> "كمبيالة"
-                                        BillType.TRANSFER -> "تحويل"
-                                        BillType.CASH -> "نقدي"
-                                        BillType.VISA -> "فيزا"
-                                        BillType.E_WALLET -> "محفظة"
-                                    }
-                                    "$typeStr: ${bill.referenceNumber}"
-                                }.distinct()
+                                referenceNumbers = refs
                             )
                         }.sortedByDescending { it.entry.timestamp }
+
+                        val (obligated, regular) = purchaseOrders.partition { po ->
+                            // Consider "obligated" if it has any linked checks/bills (even if paid, as they passed through that state)
+                            // or specifically if it has matching bills by reference that are CHECKS or BILLS
+                            val poBills = supplierBills.filter { bill ->
+                                bill.relatedEntryId == (po.entry.orderId.ifEmpty { po.entry.id }) ||
+                                (bill.referenceNumber.isNotEmpty() && (bill.referenceNumber == po.entry.invoiceNumber || bill.referenceNumber == po.entry.id))
+                            }
+                            poBills.any { it.billType == BillType.CHECK || it.billType == BillType.BILL }
+                        }
 
                         val targetProgress = if (supplier.yearlyTarget > 0) totalDebit / supplier.yearlyTarget else 0.0
 
@@ -469,8 +483,8 @@ class ReportsViewModel @Inject constructor(
                             totalCredit = totalCredit,
                             balance = balance,
                             targetProgress = targetProgress,
-                            purchaseOrders = purchaseOrders,
-                            pendingBills = supplierBills.filter { it.status != BillStatus.PAID }
+                            regularOrders = regular,
+                            obligatedOrders = obligated
                         )
                     }
                 }.awaitAll()

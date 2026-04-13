@@ -294,7 +294,7 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
                             val index = filteredStock.indexOfFirst { it.product.name.trim().startsWith(letter.toString(), ignoreCase = true) }
                             if (index != -1) {
                                 scope.launch {
-                                    listState.animateScrollToItem(index)
+                                    listState.animateScrollToItem(index + 2) // Offset for SearchBar + Tabs
                                 }
                             }
                         },

@@ -124,8 +124,8 @@ class BillRepository @Inject constructor(
             .whereEqualTo("supplierId", supplierId)
 
         resetDate?.let { query = query.whereGreaterThan("createdAt", it) }
-        startDate?.let { query = query.whereGreaterThanOrEqualTo("dueDate", java.util.Date(it)) }
-        endDate?.let { query = query.whereLessThanOrEqualTo("dueDate", java.util.Date(it + 86400000)) }
+        startDate?.let { query = query.whereGreaterThanOrEqualTo("dueDate", java.util.Date(com.batterysales.utils.DateUtils.getStartOfDay(it))) }
+        endDate?.let { query = query.whereLessThanOrEqualTo("dueDate", java.util.Date(com.batterysales.utils.DateUtils.getEndOfDay(it))) }
 
         val snapshot = query.aggregate(AggregateField.sum("paidAmount")).get(AggregateSource.SERVER).await()
         return snapshot.getDouble(AggregateField.sum("paidAmount")) ?: 0.0

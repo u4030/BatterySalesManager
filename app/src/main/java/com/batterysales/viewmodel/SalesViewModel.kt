@@ -125,6 +125,10 @@ class SalesViewModel @Inject constructor(
         val entriesByVariant = approvedEntries.groupBy { it.productVariantId }
         val stockMap = mutableMapOf<Pair<String, String>, Int>()
 
+        // Ensure we use the reactive version of the selected variant/product for consistency in data (like stock levels)
+        val activeSelectedProduct = products.find { it.id == selectedProduct?.id } ?: selectedProduct
+        val activeSelectedVariant = allVariants.find { it.id == selectedVariant?.id } ?: selectedVariant
+
         allVariants.forEach { variant ->
             // Use denormalized stock if available, but for all warehouses
             if (variant.currentStock != null) {
@@ -173,8 +177,8 @@ class SalesViewModel @Inject constructor(
             variants = variants,
             warehouses = warehouses.filter { it.isActive },
             stockLevels = stockMap,
-            selectedProduct = selectedProduct,
-            selectedVariant = selectedVariant,
+            selectedProduct = activeSelectedProduct,
+            selectedVariant = activeSelectedVariant,
             selectedWarehouse = autoSelectedWarehouse,
             quantity = quantity,
             sellingPrice = sellingPrice,
@@ -399,17 +403,28 @@ class SalesViewModel @Inject constructor(
 
     fun findProductByBarcode(barcode: String) {
         viewModelScope.launch {
-            val variant = productVariantRepository.getVariantByBarcode(barcode)
-            if (variant != null) {
-                val product = productRepository.getProduct(variant.productId)
-                if (product != null) {
-                    // Update state carefully to ensure warehouse isn't lost
-                    _selectedProduct.value = product
-                    _selectedVariant.value = variant
-                    _sellingPrice.value = if (variant.sellingPrice > 0.0) variant.sellingPrice.toString() else ""
+            try {
+                _isLoading.value = true
+                val variant = productVariantRepository.getVariantByBarcode(barcode)
+                if (variant != null) {
+                    val product = productRepository.getProduct(variant.productId)
+                    if (product != null) {
+                        // Set product first, then variant
+                        _selectedProduct.value = product
+                        _selectedVariant.value = variant
+                        _sellingPrice.value = if (variant.sellingPrice > 0.0) variant.sellingPrice.toString() else ""
+                        _errorMessage.value = null
+                    } else {
+                        _errorMessage.value = "المنتج المرتبط بهذا الباركود غير موجود"
+                    }
+                } else {
+                    _errorMessage.value = "لم يتم العثور على منتج بهذا الباركود: $barcode"
                 }
-            } else {
-                _errorMessage.value = "لم يتم العثور على منتج بهذا الباركود"
+            } catch (e: Exception) {
+                _errorMessage.value = "خطأ أثناء البحث عن الباركود"
+                Log.e("SalesViewModel", "Barcode error", e)
+            } finally {
+                _isLoading.value = false
             }
         }
     }

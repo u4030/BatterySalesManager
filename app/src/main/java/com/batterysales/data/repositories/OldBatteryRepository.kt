@@ -117,8 +117,8 @@ class OldBatteryRepository @Inject constructor(
         }
 
         if (startDate != null && endDate != null) {
-            query = query.whereGreaterThanOrEqualTo("date", java.util.Date(startDate))
-                .whereLessThanOrEqualTo("date", java.util.Date(endDate + 86400000))
+            query = query.whereGreaterThanOrEqualTo("date", java.util.Date(com.batterysales.utils.DateUtils.getStartOfDay(startDate)))
+                .whereLessThanOrEqualTo("date", java.util.Date(com.batterysales.utils.DateUtils.getEndOfDay(endDate)))
         }
 
         query = query.orderBy("date", Query.Direction.DESCENDING)

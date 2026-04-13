@@ -191,14 +191,17 @@ class BillViewModel @Inject constructor(
                         else -> "نقدي"
                     }
                     
-                    // Add Treasury Transaction (EXPENSE)
+                    // Add Treasury Transaction (EXPENSE) - ALWAYS from Main Warehouse Treasury
+                    val mainWh = warehouseRepository.getWarehousesOnce().find { it.isMain && it.isActive }
+                    val targetWarehouseId = mainWh?.id ?: finalWarehouseId
+
                     val transaction = Transaction(
                         type = com.batterysales.data.models.TransactionType.EXPENSE,
                         amount = amount,
                         description = "دفع $typeLabel مباشر: $description (المورد: $supplierName)",
                         relatedId = billId,
                         referenceNumber = referenceNumber,
-                        warehouseId = finalWarehouseId,
+                        warehouseId = targetWarehouseId,
                         paymentMethod = paymentMethod
                     )
                     accountingRepository.addTransaction(transaction)

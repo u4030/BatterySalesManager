@@ -466,15 +466,6 @@ fun AddBillDialog(
             Spacer(modifier = Modifier.height(8.dp))
         }
 
-        if (currentUser?.role == "admin" && warehouses.isNotEmpty()) {
-            com.batterysales.ui.stockentry.Dropdown(
-                label = "المستودع المسؤول عن الالتزام",
-                selectedValue = warehouses.find { it.id == selectedWarehouseId }?.name ?: "اختر المستودع",
-                options = warehouses.map { it.name },
-                onOptionSelected = { index -> selectedWarehouseId = warehouses[index].id },
-                enabled = true
-            )
-        }
 
         com.batterysales.ui.stockentry.Dropdown(
             label = "المورد (اختياري)",
