@@ -27,6 +27,19 @@ data class StockEntry(
     val returnedQuantity: Int = 0,
     val returnDate: Date? = null
 ) {
+    /**
+     * Calculates the net impact of this entry on stock levels.
+     * For purchases (quantity > 0): quantity - returnedQuantity
+     * For sales (quantity < 0): quantity + returnedQuantity (since quantity is negative)
+     */
+    fun getNetQuantity(): Int {
+        return if (quantity >= 0) {
+            (quantity - returnedQuantity).coerceAtLeast(0)
+        } else {
+            (quantity + returnedQuantity).coerceAtMost(0)
+        }
+    }
+
     companion object {
         const val COLLECTION_NAME = "stock_entries"
 

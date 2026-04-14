@@ -122,32 +122,38 @@ class SalesViewModel @Inject constructor(
         currentUser = user
 
         val approvedEntries = stockEntries.filter { it.status == "approved" }
-        val entriesByVariant = approvedEntries.groupBy { it.productVariantId }
         val stockMap = mutableMapOf<Pair<String, String>, Int>()
 
-        // Ensure we use the reactive version of the selected variant/product for consistency in data (like stock levels)
-        val activeSelectedProduct = products.find { it.id == selectedProduct?.id } ?: selectedProduct
-        val activeSelectedVariant = allVariants.find { it.id == selectedVariant?.id } ?: selectedVariant
-
+        // Priority 1: Use denormalized currentStock as the absolute ground truth.
+        // It is updated in transactions and is the most reliable source for high-volume data.
         allVariants.forEach { variant ->
-            // Use denormalized stock if available, but for all warehouses
-            if (variant.currentStock != null) {
-                variant.currentStock.forEach { (warehouseId, qty) ->
-                    stockMap[Pair(variant.id, warehouseId)] = qty
-                }
+            variant.currentStock?.forEach { (warehouseId, qty) ->
+                stockMap[Pair(variant.id, warehouseId)] = qty
             }
+        }
 
-            // Fallback OR ensure all warehouses are covered by entries
-            val variantEntries = entriesByVariant[variant.id] ?: emptyList()
-            val warehouseGroups = variantEntries.groupBy { it.warehouseId }
-            warehouseGroups.forEach { (warehouseId, entries) ->
-                // Only override if not present in stockMap or if we want to trust entries more
-                // Usually variant.currentStock is the source of truth if it exists
-                if (variant.currentStock == null || !variant.currentStock.containsKey(warehouseId)) {
-                    stockMap[Pair(variant.id, warehouseId)] = entries.sumOf { it.quantity - it.returnedQuantity }
+        // Priority 2: Fallback to entries calculation only if currentStock is missing (migration)
+        // OR for the scanned variant to ensure it's represented even if not yet in allVariants.
+        val variantsToProcess = (allVariants + listOfNotNull(selectedVariant)).distinctBy { it.id }
+        variantsToProcess.forEach { variant ->
+            if (variant.currentStock == null) {
+                // This handles items not yet migrated to the denormalized pattern
+                val variantEntries = approvedEntries.filter { it.productVariantId == variant.id }
+                val warehouseGroups = variantEntries.groupBy { it.warehouseId }
+                warehouseGroups.forEach { (warehouseId, group) ->
+                    stockMap[Pair(variant.id, warehouseId)] = group.sumOf { it.getNetQuantity() }
+                }
+            } else if (variant.id == selectedVariant?.id) {
+                // Double check scanned variant stock from its own document to be safe
+                variant.currentStock.forEach { (whId, qty) ->
+                    stockMap[Pair(variant.id, whId)] = qty
                 }
             }
         }
+
+        // Final sync of selected items with the reactive versions from the flow
+        val activeSelectedProduct = products.find { it.id == selectedProduct?.id } ?: selectedProduct
+        val activeSelectedVariant = allVariants.find { it.id == selectedVariant?.id } ?: selectedVariant
 
         val isSeller = user?.role == User.ROLE_SELLER
         val autoSelectedWarehouse = if (isSeller) {
@@ -157,15 +163,14 @@ class SalesViewModel @Inject constructor(
         }
 
         val filteredProducts = if (isSeller && user?.warehouseId != null) {
-            // Filter products that have any approved stock entry in this warehouse with quantity > 0
-            val availableVariantIds = approvedEntries
-                .filter { it.warehouseId == user.warehouseId }
-                .groupBy { it.productVariantId }
-                .filter { (_, entries) -> entries.sumOf { it.quantity - it.returnedQuantity } > 0 }
-                .keys
+            // Filter products based on absolute currentStock, not just the limited entries flow!
+            val availableVariantIds = allVariants.filter { v ->
+                val qty = v.currentStock?.get(user.warehouseId) ?: 0
+                qty > 0
+            }.map { it.id }.toSet()
 
             val availableProductIds = allVariants.filter { availableVariantIds.contains(it.id) }.map { it.productId }.toSet()
-            products.filter { !it.archived && availableProductIds.contains(it.id) }
+            products.filter { !it.archived && (availableProductIds.contains(it.id) || it.id == selectedProduct?.id) }
                 .sortedBy { it.name }
         } else {
             products.filter { !it.archived }

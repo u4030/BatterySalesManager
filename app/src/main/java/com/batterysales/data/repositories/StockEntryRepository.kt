@@ -398,9 +398,7 @@ class StockEntryRepository @Inject constructor(
     }
 
     fun calculateSummary(entries: List<StockEntry>): Triple<Int, Double, Double> {
-        val totalQty = entries.sumOf { it.quantity }
-        val totalRet = entries.sumOf { it.returnedQuantity }
-        val currentQty = totalQty - totalRet
+        val currentQty = entries.sumOf { it.getNetQuantity() }
 
         val purchaseEntries = entries.filter { it.quantity > 0 }
         // Use Gross totals for average cost calculation to maintain consistency
