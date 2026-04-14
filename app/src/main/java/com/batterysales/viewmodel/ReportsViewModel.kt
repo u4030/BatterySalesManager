@@ -415,8 +415,11 @@ class ReportsViewModel @Inject constructor(
                         }
 
                         // Calculate totals locally for accuracy and consistency
-                        // totalDebit should be GROSS (Quantity * costPrice)
-                        val totalDebit = supplierEntries.sumOf { it.quantity * it.costPrice }
+                        // totalDebit should use the stored totalCost (which is now gross)
+                        // Fallback to quantity * price only if totalCost is missing (migration)
+                        val totalDebit = supplierEntries.sumOf {
+                            if (it.totalCost > 0) it.totalCost else it.quantity * it.costPrice
+                        }
                         val totalCredit = supplierBills.sumOf { it.paidAmount }
                         val balance = totalDebit - totalCredit
 
@@ -426,8 +429,10 @@ class ReportsViewModel @Inject constructor(
                         
                         val purchaseOrders = groupedEntries.map { (key, group) ->
                             val representative = group.first()
-                            // totalOrderCost should be GROSS (Quantity * costPrice)
-                            val totalOrderCost = group.sumOf { it.quantity * it.costPrice }
+                            // totalOrderCost should be the sum of totalCost in the group
+                            val totalOrderCost = group.sumOf {
+                                if (it.totalCost > 0) it.totalCost else it.quantity * it.costPrice
+                            }
 
                             val linkedBills = supplierBills.filter { bill ->
                                 bill.relatedEntryId == key || group.any { entry -> entry.id == bill.relatedEntryId }
@@ -441,7 +446,8 @@ class ReportsViewModel @Inject constructor(
                             val allLinkedBills = (linkedBills + matchingBillsByRef).distinctBy { it.id }
                             val totalLinkedPaid = allLinkedBills.sumOf { it.paidAmount }
 
-                            val finalTotalCost = if (representative.grandTotalCost > 0) representative.grandTotalCost else totalOrderCost
+                            // Use the actual calculated sum from the entries in the order for consistency
+                            val finalTotalCost = totalOrderCost
 
                             val refs = allLinkedBills.filter { bill ->
                                 bill.referenceNumber.isNotEmpty()
@@ -466,13 +472,12 @@ class ReportsViewModel @Inject constructor(
                         }.sortedByDescending { it.entry.timestamp }
 
                         val (obligated, regular) = purchaseOrders.partition { po ->
-                            // Consider "obligated" if it has any linked checks/bills (even if paid, as they passed through that state)
-                            // or specifically if it has matching bills by reference that are CHECKS or BILLS
+                            // Requirement 2: Show obligated if linked to UNPAID checks/bills
                             val poBills = supplierBills.filter { bill ->
                                 bill.relatedEntryId == (po.entry.orderId.ifEmpty { po.entry.id }) ||
                                 (bill.referenceNumber.isNotEmpty() && (bill.referenceNumber == po.entry.invoiceNumber || bill.referenceNumber == po.entry.id))
                             }
-                            poBills.any { it.billType == BillType.CHECK || it.billType == BillType.BILL }
+                            poBills.any { (it.billType == BillType.CHECK || it.billType == BillType.BILL) && it.status != BillStatus.PAID }
                         }
 
                         val targetProgress = if (supplier.yearlyTarget > 0) totalDebit / supplier.yearlyTarget else 0.0

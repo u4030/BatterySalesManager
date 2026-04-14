@@ -408,6 +408,13 @@ fun LedgerItemCard(
                         color = Color(0xFF8B5CF6)
                     )
                 }
+                if (entry.totalCost > 0) {
+                    InfoBadge(
+                        label = "إجمالي القيمة",
+                        value = "JD ${String.format("%.3f", entry.totalCost)}",
+                        color = Color(0xFFFB8C00)
+                    )
+                }
             }
             if (entry.returnedQuantity > 0) {
                 val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
