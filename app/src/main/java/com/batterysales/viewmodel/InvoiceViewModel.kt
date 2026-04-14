@@ -64,8 +64,12 @@ class InvoiceViewModel @Inject constructor(
                 return@flatMapLatest flowOf(PagingData.empty())
             }
 
-            val startOfToday = com.batterysales.utils.DateUtils.getStartOfDay(System.currentTimeMillis())
-            val endOfToday = com.batterysales.utils.DateUtils.getEndOfDay(System.currentTimeMillis())
+            val now = Calendar.getInstance()
+            now.set(Calendar.HOUR_OF_DAY, 0)
+            now.set(Calendar.MINUTE, 0)
+            now.set(Calendar.SECOND, 0)
+            now.set(Calendar.MILLISECOND, 0)
+            val startOfToday = now.timeInMillis
 
             Pager(PagingConfig(pageSize = 25)) { 
                 InvoicePagingSource(
@@ -73,7 +77,7 @@ class InvoiceViewModel @Inject constructor(
                     warehouseId = if (filters.warehouseId == "all" || filters.warehouseId.isBlank()) null else filters.warehouseId,
                     status = if (filters.selectedTab == 1) "pending" else null,
                     startDate = if (filters.selectedTab == 0) startOfToday else filters.startDate,
-                    endDate = if (filters.selectedTab == 0) endOfToday else filters.endDate,
+                    endDate = if (filters.selectedTab == 0) startOfToday else filters.endDate,
                     searchQuery = filters.searchQuery.ifBlank { null },
                     useUpdatedAt = false
                 )

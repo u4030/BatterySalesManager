@@ -21,12 +21,12 @@ import javax.inject.Inject
 @HiltViewModel
 class BillViewModel @Inject constructor(
     private val repository: BillRepository,
-    val userRepository: com.batterysales.data.repositories.UserRepository, // Public for UI collectState
     private val supplierRepository: SupplierRepository,
     private val stockEntryRepository: StockEntryRepository,
     private val accountingRepository: AccountingRepository,
     private val bankRepository: BankRepository,
-    private val warehouseRepository: com.batterysales.data.repositories.WarehouseRepository
+    private val warehouseRepository: com.batterysales.data.repositories.WarehouseRepository,
+    private val userRepository: com.batterysales.data.repositories.UserRepository
 ) : ViewModel() {
 
     private val _searchQuery = MutableStateFlow("")
@@ -191,17 +191,14 @@ class BillViewModel @Inject constructor(
                         else -> "نقدي"
                     }
                     
-                    // Add Treasury Transaction (EXPENSE) - ALWAYS from Main Warehouse Treasury
-                    val mainWh = warehouseRepository.getWarehousesOnce().find { it.isMain && it.isActive }
-                    val targetWarehouseId = mainWh?.id ?: finalWarehouseId
-
+                    // Add Treasury Transaction (EXPENSE)
                     val transaction = Transaction(
                         type = com.batterysales.data.models.TransactionType.EXPENSE,
                         amount = amount,
                         description = "دفع $typeLabel مباشر: $description (المورد: $supplierName)",
                         relatedId = billId,
                         referenceNumber = referenceNumber,
-                        warehouseId = targetWarehouseId,
+                        warehouseId = finalWarehouseId,
                         paymentMethod = paymentMethod
                     )
                     accountingRepository.addTransaction(transaction)
@@ -242,15 +239,8 @@ class BillViewModel @Inject constructor(
                         supplierName = supplierName
                     )
                     bankRepository.addTransaction(bankTransaction)
-                }
-
-                // Record in treasury (Accounting) for all types EXCEPT checks? 
-                // Or including checks if they affect the main warehouse treasury?
-                // The requirement 7 says "عند التسديد لمورد نقدا من شاشة الكمبيالات لا يتم تسديدها او حسابها في الخزينه"
-                // So "Cash" (نقدا) must definitely go to treasury.
-                
-                if (bill.billType != com.batterysales.data.models.BillType.CHECK) {
-                    // Record in treasury (Accounting) for other types
+                } else {
+                    // Record ONLY in treasury (Accounting) for other types
                     val paymentMethod = when (bill.billType) {
                         BillType.VISA -> "visa"
                         BillType.E_WALLET -> "e-wallet"
@@ -263,16 +253,13 @@ class BillViewModel @Inject constructor(
                         else -> "كمبيالة"
                     }
 
-                    val mainWh = warehouseRepository.getWarehousesOnce().find { it.isMain && it.isActive }
-                    val targetWarehouseId = mainWh?.id ?: (bill.warehouseId ?: userRepository.getCurrentUser()?.warehouseId)
-
                     val transaction = Transaction(
                         type = com.batterysales.data.models.TransactionType.EXPENSE,
                         amount = amount,
                         description = "تسديد ${if (amount >= (bill.amount - bill.paidAmount)) "كلي" else "جزئي"} ل$typeLabel: ${bill.description} (المورد: $supplierName)",
                         relatedId = billId,
                         referenceNumber = bill.referenceNumber,
-                        warehouseId = targetWarehouseId,
+                        warehouseId = bill.warehouseId,
                         paymentMethod = paymentMethod
                     )
                     accountingRepository.addTransaction(transaction)

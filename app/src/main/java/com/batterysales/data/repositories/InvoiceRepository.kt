@@ -92,24 +92,17 @@ class InvoiceRepository @Inject constructor(
         val dateField = if (useUpdatedAt) "updatedAt" else "invoiceDate"
 
         if (startDate != null && endDate != null && !isSearching) {
-            val start = Date(com.batterysales.utils.DateUtils.getStartOfDay(startDate))
-            val end = Date(com.batterysales.utils.DateUtils.getEndOfDay(endDate))
-
+            val start = Date(startDate)
+            val end = Date(endDate + 86400000)
+            
             query = query.whereGreaterThanOrEqualTo(dateField, start)
                 .whereLessThanOrEqualTo(dateField, end)
         }
 
         if (isSearching) {
-            // Determine if we should search by invoiceNumber, customerPhone or customerName
+            // Determine if we should search by invoiceNumber or customerPhone
             val isNumeric = searchQuery.all { it.isDigit() }
-            val searchField = when {
-                isNumeric && searchQuery.length >= 3 -> "customerPhone"
-                // If it contains letters, it might be customerName or invoiceNumber
-                // invoiceNumber is usually like "INV-..." or numeric-ish. 
-                // Let's check for customerName if it contains Arabic or is just text.
-                searchQuery.any { it in '\u0600'..'\u06FF' } -> "customerName"
-                else -> "invoiceNumber"
-            }
+            val searchField = if (isNumeric && searchQuery.length >= 3) "customerPhone" else "invoiceNumber"
 
             // Prefix search
             query = query.whereGreaterThanOrEqualTo(searchField, searchQuery)

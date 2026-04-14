@@ -41,8 +41,7 @@ data class SupplierReportItem(
     val totalCredit: Double, // Payments
     val balance: Double, // Debit - Credit
     val targetProgress: Double,
-    val regularOrders: List<PurchaseOrderItem>, // Orders NOT linked to checks/bills
-    val obligatedOrders: List<PurchaseOrderItem> // Orders linked to checks/bills
+    val purchaseOrders: List<PurchaseOrderItem>
 )
 
 data class PurchaseOrderItem(
@@ -121,44 +120,20 @@ class ReportsViewModel @Inject constructor(
     private val refreshTrigger = MutableStateFlow(0)
 
     // For Sidebar Navigation: Track all items in order to find indices
-    // Updated to include date filtering synchronization
     val allInventoryItemNames: StateFlow<List<String>> = combine(
         productRepository.getProducts(),
         productVariantRepository.getAllVariantsFlow(),
         _isSeller,
-        userRepository.getCurrentUserFlow(),
-        _inventoryStartDate,
-        _inventoryEndDate,
-        _barcodeFilter,
-        refreshTrigger
-    ) { args ->
-        val products = args[0] as List<Product>
-        val variants = args[1] as List<ProductVariant>
-        val seller = args[2] as Boolean
-        val user = args[3] as User?
-        val start = args[4] as Long?
-        val end = args[5] as Long?
-        val query = args[6] as String?
-
+        userRepository.getCurrentUserFlow()
+    ) { products, variants, seller, user ->
         val pMap = products.filter { !it.archived }.associateBy { it.id }
         val userWhId = user?.warehouseId
         
-        // This is a simplified version of the PagingSource logic to keep UI responsive
-        // We might not be able to check EVERY StockEntry here for performance, 
-        // but we can at least filter by basic criteria.
-        
         variants.filter { !it.archived }
-            .filter { v -> pMap.containsKey(v.productId) }
+            .filter { v -> pMap.containsKey(v.productId) } // Ensure product is not archived
             .filter { v ->
                 if (!seller || userWhId == null) true
                 else (v.currentStock?.get(userWhId) ?: 0) > 0
-            }
-            .filter { v ->
-                if (query.isNullOrBlank()) true
-                else {
-                    val pName = pMap[v.productId]?.name ?: ""
-                    pName.contains(query, ignoreCase = true) || v.barcode == query
-                }
             }
             .sortedWith(compareBy<ProductVariant> { pMap[it.productId]?.name ?: "" }.thenBy { it.capacity })
             .map { v -> pMap[v.productId]?.name ?: "" }
@@ -355,54 +330,35 @@ class ReportsViewModel @Inject constructor(
                 _isSupplierLoading.value = true
                 val query = _supplierSearchQuery.value
                 val allSuppliers = supplierRepository.getSuppliersOnce()
-                
-                // 1. Fetch all relevant entries and bills once in parallel
-                val allEntriesJob = async { stockEntryRepository.getAllStockEntries() }
-                val allBillsJob = async { billRepository.getAllBills() }
-
-                val allEntries = allEntriesJob.await()
-                val allBills = allBillsJob.await()
-
-                // Filter suppliers by name OR by search results in entries/bills (invoice/ref)
-                val suppliers = if (query.isBlank()) {
-                    allSuppliers
-                } else {
-                    val matchingEntrySupplierIds = allEntries.filter { 
-                        it.invoiceNumber.contains(query, ignoreCase = true) || it.orderId.contains(query, ignoreCase = true) 
-                    }.map { it.supplierId }.toSet()
-                    
-                    val matchingBillSupplierIds = allBills.filter { 
-                        it.referenceNumber.contains(query, ignoreCase = true) || it.description.contains(query, ignoreCase = true)
-                    }.map { it.supplierId }.toSet()
-
-                    allSuppliers.filter { 
-                        it.name.contains(query, ignoreCase = true) || 
-                        matchingEntrySupplierIds.contains(it.id) || 
-                        matchingBillSupplierIds.contains(it.id)
-                    }
-                }
+                val suppliers = if (query.isBlank()) allSuppliers 
+                               else allSuppliers.filter { it.name.contains(query, ignoreCase = true) }
                 
                 val start = _startDate.value
                 val end = _endDate.value
 
+                // 1. Fetch all relevant entries and bills once in parallel
+                val allEntriesJob = async { stockEntryRepository.getAllStockEntries() }
+                val allBillsJob = async { billRepository.getAllBills() }
+                
+                val allEntries = allEntriesJob.await()
+                val allBills = allBillsJob.await()
 
                 val report = suppliers.map { supplier ->
                     async {
-                        val adjustedStart = start?.let { com.batterysales.utils.DateUtils.getStartOfDay(it) }
-                        val adjustedEnd = end?.let { com.batterysales.utils.DateUtils.getEndOfDay(it) }
-
+                        val adjustedEnd = end?.let { it + 86400000 }
+                        
                         // Filter entries for this supplier
                         val supplierEntries = allEntries.filter { entry ->
                             val matchId = entry.supplierId.isNotEmpty() && entry.supplierId == supplier.id
                             // Robust name matching fallback for legacy entries
-                            val matchName = entry.supplier.isNotBlank() &&
+                            val matchName = entry.supplier.isNotBlank() && 
                                            (entry.supplier.trim().equals(supplier.name.trim(), ignoreCase = true) ||
                                             entry.supplier.trim().contains(supplier.name.trim(), ignoreCase = true))
-
+                            
                             (matchId || matchName) &&
                                     entry.status == "approved" &&
                                     (supplier.resetDate == null || !entry.timestamp.before(supplier.resetDate)) &&
-                                    (adjustedStart == null || entry.timestamp.time >= adjustedStart) &&
+                                    (start == null || entry.timestamp.time >= start) &&
                                     (adjustedEnd == null || entry.timestamp.time <= adjustedEnd)
                         }
 
@@ -410,16 +366,12 @@ class ReportsViewModel @Inject constructor(
                         val supplierBills = allBills.filter { bill ->
                             bill.supplierId == supplier.id &&
                                     (supplier.resetDate == null || !bill.createdAt.before(supplier.resetDate)) &&
-                                    (adjustedStart == null || bill.dueDate.time >= adjustedStart) &&
+                                    (start == null || bill.dueDate.time >= start) &&
                                     (adjustedEnd == null || bill.dueDate.time <= adjustedEnd)
                         }
 
                         // Calculate totals locally for accuracy and consistency
-                        // totalDebit should use the stored totalCost (which is now gross)
-                        // Fallback to quantity * price only if totalCost is missing (migration)
-                        val totalDebit = supplierEntries.sumOf { 
-                            if (it.totalCost > 0) it.totalCost else it.quantity * it.costPrice 
-                        }
+                        val totalDebit = supplierEntries.sumOf { it.totalCost }
                         val totalCredit = supplierBills.sumOf { it.paidAmount }
                         val balance = totalDebit - totalCredit
 
@@ -429,56 +381,32 @@ class ReportsViewModel @Inject constructor(
                         
                         val purchaseOrders = groupedEntries.map { (key, group) ->
                             val representative = group.first()
-                            // totalOrderCost should be the sum of totalCost in the group
-                            val totalOrderCost = group.sumOf { 
-                                if (it.totalCost > 0) it.totalCost else it.quantity * it.costPrice 
-                            }
+                            val totalOrderCost = if (representative.grandTotalCost > 0) representative.grandTotalCost else group.sumOf { it.totalCost }
 
                             val linkedBills = supplierBills.filter { bill ->
                                 bill.relatedEntryId == key || group.any { entry -> entry.id == bill.relatedEntryId }
                             }
                             val linkedPaid = linkedBills.sumOf { it.paidAmount }
 
-                            val matchingBillsByRef = supplierBills.filter { bill ->
-                                bill.referenceNumber.isNotEmpty() && (bill.referenceNumber == representative.invoiceNumber || bill.referenceNumber == representative.id)
-                            }
-                            
-                            val allLinkedBills = (linkedBills + matchingBillsByRef).distinctBy { it.id }
-                            val totalLinkedPaid = allLinkedBills.sumOf { it.paidAmount }
-
-                            // Use the actual calculated sum from the entries in the order for consistency
-                            val finalTotalCost = totalOrderCost
-
-                            val refs = allLinkedBills.filter { bill ->
-                                bill.referenceNumber.isNotEmpty()
-                            }.map { bill ->
-                                val typeStr = when (bill.billType) {
-                                    BillType.CHECK -> "شيك"
-                                    BillType.BILL -> "كمبيالة"
-                                    BillType.TRANSFER -> "تحويل"
-                                    BillType.CASH -> "نقدي"
-                                    BillType.VISA -> "فيزا"
-                                    BillType.E_WALLET -> "محفظة"
-                                }
-                                "$typeStr: ${bill.referenceNumber}${if(bill.status != BillStatus.PAID) " (غير مسدد)" else ""}"
-                            }.distinct()
-
                             PurchaseOrderItem(
-                                entry = representative.copy(totalCost = finalTotalCost),
-                                linkedPaidAmount = totalLinkedPaid,
-                                remainingBalance = finalTotalCost - totalLinkedPaid,
-                                referenceNumbers = refs
+                                entry = representative.copy(totalCost = totalOrderCost),
+                                linkedPaidAmount = linkedPaid,
+                                remainingBalance = totalOrderCost - linkedPaid,
+                                referenceNumbers = linkedBills.filter { bill ->
+                                    bill.referenceNumber.isNotEmpty() && bill.status == BillStatus.PAID
+                                }.map { bill ->
+                                    val typeStr = when (bill.billType) {
+                                        BillType.CHECK -> "شيك"
+                                        BillType.BILL -> "كمبيالة"
+                                        BillType.TRANSFER -> "تحويل"
+                                        BillType.CASH -> "نقدي"
+                                        BillType.VISA -> "فيزا"
+                                        BillType.E_WALLET -> "محفظة"
+                                    }
+                                    "$typeStr: ${bill.referenceNumber}"
+                                }.distinct()
                             )
                         }.sortedByDescending { it.entry.timestamp }
-
-                        val (obligated, regular) = purchaseOrders.partition { po ->
-                            // Requirement 2: Show obligated if linked to UNPAID checks/bills
-                            val poBills = supplierBills.filter { bill ->
-                                bill.relatedEntryId == (po.entry.orderId.ifEmpty { po.entry.id }) ||
-                                (bill.referenceNumber.isNotEmpty() && (bill.referenceNumber == po.entry.invoiceNumber || bill.referenceNumber == po.entry.id))
-                            }
-                            poBills.any { (it.billType == BillType.CHECK || it.billType == BillType.BILL) && it.status != BillStatus.PAID }
-                        }
 
                         val targetProgress = if (supplier.yearlyTarget > 0) totalDebit / supplier.yearlyTarget else 0.0
 
@@ -488,8 +416,7 @@ class ReportsViewModel @Inject constructor(
                             totalCredit = totalCredit,
                             balance = balance,
                             targetProgress = targetProgress,
-                            regularOrders = regular,
-                            obligatedOrders = obligated
+                            purchaseOrders = purchaseOrders
                         )
                     }
                 }.awaitAll()
