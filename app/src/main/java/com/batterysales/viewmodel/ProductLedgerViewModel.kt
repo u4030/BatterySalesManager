@@ -157,7 +157,7 @@ class ProductLedgerViewModel @Inject constructor(
     }
 
     suspend fun findVariantByBarcode(barcode: String): com.batterysales.data.models.ProductVariant? {
-        return productVariantRepository.getAllVariants().find { it.barcode == barcode }
+        return productVariantRepository.getAllVariants().find { it.barcode == barcode && !it.archived }
     }
 
     suspend fun getProductName(productId: String): String? {

@@ -82,6 +82,7 @@ class ProductVariantRepository @Inject constructor(
     suspend fun getVariantByBarcode(barcode: String): ProductVariant? {
         val snapshot = firestore.collection(ProductVariant.COLLECTION_NAME)
             .whereEqualTo("barcode", barcode)
+            .whereEqualTo("archived", false)
             .limit(1)
             .get()
             .await()
