@@ -122,42 +122,55 @@ class SalesViewModel @Inject constructor(
         currentUser = user
 
         val approvedEntries = stockEntries.filter { it.status == "approved" }
-        val entriesByVariant = approvedEntries.groupBy { it.productVariantId }
         val stockMap = mutableMapOf<Pair<String, String>, Int>()
 
+        // Priority 1: Use denormalized currentStock as the absolute ground truth.
+        // It is updated in transactions and is the most reliable source for high-volume data.
         allVariants.forEach { variant ->
-            if (variant.currentStock != null) {
-                // Use denormalized stock
-                variant.currentStock.forEach { (warehouseId, qty) ->
-                    stockMap[Pair(variant.id, warehouseId)] = qty
-                }
-            } else {
-                // Fallback to calculation from entries
-                val variantEntries = entriesByVariant[variant.id] ?: emptyList()
+            variant.currentStock?.forEach { (warehouseId, qty) ->
+                stockMap[Pair(variant.id, warehouseId)] = qty
+            }
+        }
+
+        // Priority 2: Fallback to entries calculation only if currentStock is missing (migration)
+        // OR for the scanned variant to ensure it's represented even if not yet in allVariants.
+        val variantsToProcess = (allVariants + listOfNotNull(selectedVariant)).distinctBy { it.id }
+        variantsToProcess.forEach { variant ->
+            if (variant.currentStock == null) {
+                // This handles items not yet migrated to the denormalized pattern
+                val variantEntries = approvedEntries.filter { it.productVariantId == variant.id }
                 val warehouseGroups = variantEntries.groupBy { it.warehouseId }
-                warehouseGroups.forEach { (warehouseId, entries) ->
-                    stockMap[Pair(variant.id, warehouseId)] = entries.sumOf { it.quantity - it.returnedQuantity }
+                warehouseGroups.forEach { (warehouseId, group) ->
+                    stockMap[Pair(variant.id, warehouseId)] = group.sumOf { it.getNetQuantity() }
+                }
+            } else if (variant.id == selectedVariant?.id) {
+                // Double check scanned variant stock from its own document to be safe
+                variant.currentStock.forEach { (whId, qty) ->
+                    stockMap[Pair(variant.id, whId)] = qty
                 }
             }
         }
 
+        // Final sync of selected items with the reactive versions from the flow
+        val activeSelectedProduct = products.find { it.id == selectedProduct?.id } ?: selectedProduct
+        val activeSelectedVariant = allVariants.find { it.id == selectedVariant?.id } ?: selectedVariant
+
         val isSeller = user?.role == User.ROLE_SELLER
-        val autoSelectedWarehouse = if (isSeller && selectedWarehouse == null) {
+        val autoSelectedWarehouse = if (isSeller) {
             warehouses.find { it.id == user?.warehouseId }
         } else {
             selectedWarehouse
         }
 
         val filteredProducts = if (isSeller && user?.warehouseId != null) {
-            // Filter products that have any approved stock entry in this warehouse with quantity > 0
-            val availableVariantIds = approvedEntries
-                .filter { it.warehouseId == user.warehouseId }
-                .groupBy { it.productVariantId }
-                .filter { (_, entries) -> entries.sumOf { it.quantity - it.returnedQuantity } > 0 }
-                .keys
+            // Filter products based on absolute currentStock, not just the limited entries flow!
+            val availableVariantIds = allVariants.filter { v ->
+                val qty = v.currentStock?.get(user.warehouseId) ?: 0
+                qty > 0
+            }.map { it.id }.toSet()
 
             val availableProductIds = allVariants.filter { availableVariantIds.contains(it.id) }.map { it.productId }.toSet()
-            products.filter { !it.archived && availableProductIds.contains(it.id) }
+            products.filter { !it.archived && (availableProductIds.contains(it.id) || it.id == selectedProduct?.id) }
                 .sortedBy { it.name }
         } else {
             products.filter { !it.archived }
@@ -169,8 +182,8 @@ class SalesViewModel @Inject constructor(
             variants = variants,
             warehouses = warehouses.filter { it.isActive },
             stockLevels = stockMap,
-            selectedProduct = selectedProduct,
-            selectedVariant = selectedVariant,
+            selectedProduct = activeSelectedProduct,
+            selectedVariant = activeSelectedVariant,
             selectedWarehouse = autoSelectedWarehouse,
             quantity = quantity,
             sellingPrice = sellingPrice,
@@ -189,8 +202,11 @@ class SalesViewModel @Inject constructor(
 
     fun onProductSelected(product: Product) {
         _selectedProduct.value = product
-        _selectedVariant.value = null
-        _sellingPrice.value = ""
+        // Reset variant and price when product changes, unless it's the SAME product (barcode scan might re-trigger)
+        if (_selectedVariant.value?.productId != product.id) {
+            _selectedVariant.value = null
+            _sellingPrice.value = ""
+        }
     }
 
     fun onVariantSelected(variant: ProductVariant) {
@@ -257,7 +273,7 @@ class SalesViewModel @Inject constructor(
 
         val available = state.stockLevels[Pair(variant.id, warehouse.id)] ?: 0
         if (qty > available) {
-            _errorMessage.value = "المخزون غير كافٍ. المتاح: $available، المطلوب: $qty"
+            _errorMessage.value = "المخزون غير كافٍ في مستودع ${warehouse.name}. المتاح: $available، المطلوب: $qty"
             return
         }
 
@@ -392,15 +408,28 @@ class SalesViewModel @Inject constructor(
 
     fun findProductByBarcode(barcode: String) {
         viewModelScope.launch {
-            val variant = productVariantRepository.getVariantByBarcode(barcode)
-            if (variant != null) {
-                val product = productRepository.getProduct(variant.productId)
-                if (product != null) {
-                    onProductSelected(product)
-                    onVariantSelected(variant)
+            try {
+                _isLoading.value = true
+                val variant = productVariantRepository.getVariantByBarcode(barcode)
+                if (variant != null) {
+                    val product = productRepository.getProduct(variant.productId)
+                    if (product != null) {
+                        // Set product first, then variant
+                        _selectedProduct.value = product
+                        _selectedVariant.value = variant
+                        _sellingPrice.value = if (variant.sellingPrice > 0.0) variant.sellingPrice.toString() else ""
+                        _errorMessage.value = null
+                    } else {
+                        _errorMessage.value = "المنتج المرتبط بهذا الباركود غير موجود"
+                    }
+                } else {
+                    _errorMessage.value = "لم يتم العثور على منتج بهذا الباركود: $barcode"
                 }
-            } else {
-                _errorMessage.value = "لم يتم العثور على منتج بهذا الباركود"
+            } catch (e: Exception) {
+                _errorMessage.value = "خطأ أثناء البحث عن الباركود"
+                Log.e("SalesViewModel", "Barcode error", e)
+            } finally {
+                _isLoading.value = false
             }
         }
     }

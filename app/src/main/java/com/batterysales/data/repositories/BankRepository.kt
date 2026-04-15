@@ -38,7 +38,7 @@ class BankRepository @Inject constructor(
     suspend fun getCurrentBalance(endDate: Long? = null): Double {
         var baseQuery: Query = firestore.collection(BankTransaction.COLLECTION_NAME)
         if (endDate != null) {
-            baseQuery = baseQuery.whereLessThanOrEqualTo("date", java.util.Date(endDate + 86400000))
+            baseQuery = baseQuery.whereLessThanOrEqualTo("date", java.util.Date(com.batterysales.utils.DateUtils.getEndOfDay(endDate)))
         }
 
         // Sum DEPOSIT
@@ -59,8 +59,8 @@ class BankRepository @Inject constructor(
             .whereEqualTo("type", BankTransactionType.WITHDRAWAL.name)
             
         if (startDate != null && endDate != null) {
-            baseQuery = baseQuery.whereGreaterThanOrEqualTo("date", java.util.Date(startDate))
-                .whereLessThanOrEqualTo("date", java.util.Date(endDate + 86400000))
+            baseQuery = baseQuery.whereGreaterThanOrEqualTo("date", java.util.Date(com.batterysales.utils.DateUtils.getStartOfDay(startDate)))
+                .whereLessThanOrEqualTo("date", java.util.Date(com.batterysales.utils.DateUtils.getEndOfDay(endDate)))
         }
 
         val snapshot = baseQuery.aggregate(AggregateField.sum("amount")).get(AggregateSource.SERVER).await()
@@ -82,8 +82,8 @@ class BankRepository @Inject constructor(
         }
 
         if (startDate != null && endDate != null) {
-            query = query.whereGreaterThanOrEqualTo("date", java.util.Date(startDate))
-                .whereLessThanOrEqualTo("date", java.util.Date(endDate + 86400000))
+            query = query.whereGreaterThanOrEqualTo("date", java.util.Date(com.batterysales.utils.DateUtils.getStartOfDay(startDate)))
+                .whereLessThanOrEqualTo("date", java.util.Date(com.batterysales.utils.DateUtils.getEndOfDay(endDate)))
         }
 
         // Add index-safe ordering

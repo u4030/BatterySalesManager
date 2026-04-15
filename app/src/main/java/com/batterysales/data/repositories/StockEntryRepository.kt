@@ -398,15 +398,14 @@ class StockEntryRepository @Inject constructor(
     }
 
     fun calculateSummary(entries: List<StockEntry>): Triple<Int, Double, Double> {
-        val totalQty = entries.sumOf { it.quantity }
-        val totalRet = entries.sumOf { it.returnedQuantity }
-        val currentQty = totalQty - totalRet
+        val currentQty = entries.sumOf { it.getNetQuantity() }
 
         val purchaseEntries = entries.filter { it.quantity > 0 }
-        val sumTotalCost = purchaseEntries.sumOf { it.totalCost }
-        val netPurchasedQty = purchaseEntries.sumOf { it.quantity - it.returnedQuantity }
+        // Use Gross totals for average cost calculation to maintain consistency
+        val sumTotalCost = purchaseEntries.sumOf { it.quantity * it.costPrice }
+        val grossPurchasedQty = purchaseEntries.sumOf { it.quantity }
         
-        val averageCost = if (netPurchasedQty > 0) sumTotalCost / netPurchasedQty else 0.0
+        val averageCost = if (grossPurchasedQty > 0) sumTotalCost / grossPurchasedQty else 0.0
         return Triple(currentQty, averageCost, currentQty * averageCost)
     }
 
@@ -429,8 +428,8 @@ class StockEntryRepository @Inject constructor(
             .whereEqualTo("status", "approved")
 
         resetDate?.let { query = query.whereGreaterThan("timestamp", it) }
-        startDate?.let { query = query.whereGreaterThanOrEqualTo("timestamp", java.util.Date(it)) }
-        endDate?.let { query = query.whereLessThanOrEqualTo("timestamp", java.util.Date(it + 86400000)) }
+        startDate?.let { query = query.whereGreaterThanOrEqualTo("timestamp", java.util.Date(com.batterysales.utils.DateUtils.getStartOfDay(it))) }
+        endDate?.let { query = query.whereLessThanOrEqualTo("timestamp", java.util.Date(com.batterysales.utils.DateUtils.getEndOfDay(it))) }
 
         val snapshot = query.aggregate(AggregateField.sum("totalCost")).get(AggregateSource.SERVER).await()
         return snapshot.getDouble(AggregateField.sum("totalCost")) ?: 0.0

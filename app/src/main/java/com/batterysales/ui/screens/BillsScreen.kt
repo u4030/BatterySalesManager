@@ -227,10 +227,12 @@ fun BillsScreen(
     }
 
     if (showAddBillDialog) {
+        val user by viewModel.userRepository.getCurrentUserFlow().collectAsState(initial = null)
         AddBillDialog(
             suppliers = suppliers,
             pendingPurchases = pendingPurchases,
             warehouses = warehouses,
+            currentUser = user,
             onDismiss = { showAddBillDialog = false },
             onAdd = { desc, amount, date, type, ref, supplierId, relatedEntryId, warehouseId, payImmediately ->
                 viewModel.addBill(desc, amount, date, type, ref, supplierId, relatedEntryId, warehouseId, payImmediately)
@@ -399,12 +401,14 @@ fun PaymentDialog(
             TextButton(onClick = onDismiss) { Text("إلغاء") }
         }
     ) {
-        Text("المبلغ المتبقي: JD ${String.format("%.3f", bill.amount - bill.paidAmount)}")
+        Text("المبلغ المتبقي: JD ${String.format("%.3f", bill.amount - bill.paidAmount)}", fontWeight = FontWeight.Bold)
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = amount,
             onValueChange = { amount = it },
-            label = "مبلغ الدفع"
+            label = "مبلغ الدفع",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
         )
+        Text("سيتم اقتطاع المبلغ من خزينة المستودع الرئيسي.", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
     }
 }
 
@@ -414,6 +418,7 @@ fun AddBillDialog(
     suppliers: List<com.batterysales.data.models.Supplier>,
     pendingPurchases: List<com.batterysales.data.models.StockEntry>,
     warehouses: List<com.batterysales.data.models.Warehouse>,
+    currentUser: com.batterysales.data.models.User?,
     onDismiss: () -> Unit,
     onAdd: (String, Double, Date, BillType, String, String, String?, String?, Boolean) -> Unit
 ) {
@@ -426,6 +431,7 @@ fun AddBillDialog(
     var selectedType by remember { mutableStateOf(BillType.CHECK) }
     var payImmediately by remember { mutableStateOf(false) }
     var showDatePicker by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
     // إنشاء الحالة الخاصة بمنتقي التاريخ هنا
     val datePickerState = rememberDatePickerState(initialSelectedDateMillis = System.currentTimeMillis())
 
@@ -440,13 +446,27 @@ fun AddBillDialog(
         confirmButton = {
             Button(onClick = {
                 val amt = amount.toDoubleOrNull() ?: 0.0
-                if (description.isNotEmpty() && amt > 0) onAdd(description, amt, selectedDate, selectedType, refNum, selectedSupplier?.id ?: "", selectedPurchase?.id, selectedWarehouseId, payImmediately)
+                if (description.isBlank()) {
+                    errorMessage = "الرجاء إدخال الوصف"
+                    return@Button
+                }
+                if (amt <= 0) {
+                    errorMessage = "الرجاء إدخال مبلغ صحيح"
+                    return@Button
+                }
+                onAdd(description, amt, selectedDate, selectedType, refNum, selectedSupplier?.id ?: "", selectedPurchase?.id, selectedWarehouseId, payImmediately)
             }) { Text("إضافة") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("إلغاء") }
         }
     ) {
+        if (errorMessage != null) {
+            Text(errorMessage!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+
+
         com.batterysales.ui.stockentry.Dropdown(
             label = "المورد (اختياري)",
             selectedValue = selectedSupplier?.name ?: "بدون مورد",
@@ -494,19 +514,22 @@ fun AddBillDialog(
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = amount,
             onValueChange = { amount = it },
-            label = "المبلغ"
+            label = "المبلغ",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
         )
 
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = refNum,
             onValueChange = { refNum = it },
-            label = "رقم السند / الشيك"
+            label = "رقم السند / الشيك",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
         )
 
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = description,
             onValueChange = { description = it },
-            label = "الوصف"
+            label = "الوصف",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.ARABIC
         )
 
         Text("نوع الالتزام:", fontSize = 14.sp, fontWeight = FontWeight.Medium)
@@ -640,17 +663,20 @@ fun EditBillDialog(
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = description,
             onValueChange = { description = it },
-            label = "الوصف"
+            label = "الوصف",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.ARABIC
         )
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = amount,
             onValueChange = { amount = it },
-            label = "المبلغ الإجمالي"
+            label = "المبلغ الإجمالي",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
         )
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = refNum,
             onValueChange = { refNum = it },
-            label = "رقم السند / الشيك"
+            label = "رقم السند / الشيك",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
         )
 
         com.batterysales.ui.stockentry.Dropdown(

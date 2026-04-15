@@ -106,7 +106,7 @@ class BillRepository @Inject constructor(
         limit: Long = 20
     ): Pair<List<Bill>, DocumentSnapshot?> {
         var query = firestore.collection(Bill.COLLECTION_NAME)
-            .orderBy("dueDate", Query.Direction.ASCENDING)
+            .orderBy("dueDate", Query.Direction.DESCENDING)
 
         if (lastDocument != null) {
             query = query.startAfter(lastDocument)
@@ -124,8 +124,8 @@ class BillRepository @Inject constructor(
             .whereEqualTo("supplierId", supplierId)
 
         resetDate?.let { query = query.whereGreaterThan("createdAt", it) }
-        startDate?.let { query = query.whereGreaterThanOrEqualTo("dueDate", java.util.Date(it)) }
-        endDate?.let { query = query.whereLessThanOrEqualTo("dueDate", java.util.Date(it + 86400000)) }
+        startDate?.let { query = query.whereGreaterThanOrEqualTo("dueDate", java.util.Date(com.batterysales.utils.DateUtils.getStartOfDay(it))) }
+        endDate?.let { query = query.whereLessThanOrEqualTo("dueDate", java.util.Date(com.batterysales.utils.DateUtils.getEndOfDay(it))) }
 
         val snapshot = query.aggregate(AggregateField.sum("paidAmount")).get(AggregateSource.SERVER).await()
         return snapshot.getDouble(AggregateField.sum("paidAmount")) ?: 0.0
