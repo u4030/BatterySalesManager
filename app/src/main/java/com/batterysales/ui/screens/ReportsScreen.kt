@@ -670,30 +670,7 @@ private fun supplierReportSectionRedesigned(
         }
         scope.items(suppliersWithBalance) { item ->
             Box(modifier = Modifier.padding(horizontal = 16.dp)) {
-                val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
-                SupplierCardRedesigned(item, navController, onPayPO = { po, method ->
-                    val bType = when(method) {
-                        "visa" -> BillType.VISA
-                        "e-wallet" -> BillType.E_WALLET
-                        else -> BillType.CASH
-                    }
-                    val methodLabel = when(method) {
-                        "visa" -> "فيزا"
-                        "e-wallet" -> "محفظة"
-                        else -> "نقدي"
-                    }
-
-                    billViewModel.addBill(
-                        description = "تسديد $methodLabel لطلبية شراء بتاريخ ${dateFormatter.format(po.entry.timestamp)}",
-                        amount = po.remainingBalance,
-                        dueDate = Date(),
-                        billType = bType,
-                        supplierId = item.supplier.id,
-                        relatedEntryId = po.entry.orderId.ifEmpty { po.entry.id },
-                        warehouseId = po.entry.warehouseId,
-                        payImmediately = true
-                    )
-                })
+                SupplierCardRedesigned(item, navController)
             }
         }
     }
@@ -712,30 +689,7 @@ private fun supplierReportSectionRedesigned(
         }
         scope.items(settledSuppliers) { item ->
             Box(modifier = Modifier.padding(horizontal = 16.dp)) {
-                val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
-                SupplierCardRedesigned(item, navController, onPayPO = { po, method ->
-                    val bType = when(method) {
-                        "visa" -> BillType.VISA
-                        "e-wallet" -> BillType.E_WALLET
-                        else -> BillType.CASH
-                    }
-                    val methodLabel = when(method) {
-                        "visa" -> "فيزا"
-                        "e-wallet" -> "محفظة"
-                        else -> "نقدي"
-                    }
-
-                    billViewModel.addBill(
-                        description = "تسديد $methodLabel لطلبية شراء بتاريخ ${dateFormatter.format(po.entry.timestamp)}",
-                        amount = po.remainingBalance,
-                        dueDate = Date(),
-                        billType = bType,
-                        supplierId = item.supplier.id,
-                        relatedEntryId = po.entry.orderId.ifEmpty { po.entry.id },
-                        warehouseId = po.entry.warehouseId,
-                        payImmediately = true
-                    )
-                })
+                SupplierCardRedesigned(item, navController)
             }
         }
     }
@@ -796,8 +750,7 @@ fun SupplierReportControls(viewModel: ReportsViewModel) {
 @Composable
 fun SupplierCardRedesigned(
     item: com.batterysales.viewmodel.SupplierReportItem,
-    navController: NavController,
-    onPayPO: (com.batterysales.viewmodel.PurchaseOrderItem, String) -> Unit = { _, _ -> }
+    navController: NavController
 ) {
     var expanded by remember { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -855,7 +808,7 @@ fun SupplierCardRedesigned(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     item.regularOrders.forEach { po ->
-                        PurchaseOrderCard(po, dateFormatter, navController, onPayPO)
+                        PurchaseOrderCard(po, dateFormatter, navController)
                     }
                 }
 
@@ -867,7 +820,7 @@ fun SupplierCardRedesigned(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     item.obligatedOrders.forEach { po ->
-                        PurchaseOrderCard(po, dateFormatter, navController, onPayPO)
+                        PurchaseOrderCard(po, dateFormatter, navController)
                     }
                 }
             }
@@ -895,8 +848,7 @@ fun SupplierCardRedesigned(
 fun PurchaseOrderCard(
     po: com.batterysales.viewmodel.PurchaseOrderItem,
     dateFormatter: java.text.SimpleDateFormat,
-    navController: NavController,
-    onPayPO: (com.batterysales.viewmodel.PurchaseOrderItem, String) -> Unit
+    navController: NavController
 ) {
     var expanded by remember { mutableStateOf(false) }
 
@@ -1001,19 +953,6 @@ fun PurchaseOrderCard(
                     }
                 }
 
-                if (po.remainingBalance > 0.001) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Button(
-                        onClick = { onPayPO(po, "cash") },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("تسديد نقدي للمتبقي", fontWeight = FontWeight.Bold)
-                    }
-                }
             }
         }
     }
