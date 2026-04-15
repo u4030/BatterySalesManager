@@ -425,8 +425,9 @@ class ReportsViewModel @Inject constructor(
                         val balance = totalDebit - totalCredit
 
                         // Group entries into Purchase Orders
+                        // Priority: invoiceNumber -> orderId -> id
                         val groupedEntries = supplierEntries.filter { it.quantity > 0 }
-                            .groupBy { it.orderId.ifEmpty { it.id } }
+                            .groupBy { it.invoiceNumber.ifEmpty { it.orderId.ifEmpty { it.id } } }
                         
                         val purchaseOrders = groupedEntries.map { (key, group) ->
                             val representative = group.first()
@@ -436,7 +437,7 @@ class ReportsViewModel @Inject constructor(
                             }
 
                             val linkedBills = supplierBills.filter { bill ->
-                                bill.relatedEntryId == key || group.any { entry -> entry.id == bill.relatedEntryId }
+                                bill.relatedEntryId == key || bill.referenceNumber == key || group.any { entry -> entry.id == bill.relatedEntryId || entry.invoiceNumber == bill.referenceNumber }
                             }
                             val linkedPaid = linkedBills.sumOf { it.paidAmount }
 
