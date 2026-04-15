@@ -236,7 +236,7 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                         }
                         2 -> {
                             if (!isSeller) {
-                                supplierReportSectionRedesigned(this, viewModel, supplierItems, billViewModel)
+                    supplierReportSectionRedesigned(this, viewModel, supplierItems, billViewModel, navController)
                             }
                         }
                     }
@@ -621,7 +621,8 @@ private fun supplierReportSectionRedesigned(
     scope: androidx.compose.foundation.lazy.LazyListScope,
     viewModel: ReportsViewModel,
     supplierItems: List<com.batterysales.viewmodel.SupplierReportItem>,
-    billViewModel: com.batterysales.viewmodel.BillViewModel
+    billViewModel: com.batterysales.viewmodel.BillViewModel,
+    navController: NavController
 ) {
     scope.item {
         SupplierReportControls(viewModel)
@@ -670,7 +671,7 @@ private fun supplierReportSectionRedesigned(
         scope.items(suppliersWithBalance) { item ->
             Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                 val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
-                SupplierCardRedesigned(item, onPayPO = { po, method ->
+                SupplierCardRedesigned(item, navController, onPayPO = { po, method ->
                     val bType = when(method) {
                         "visa" -> BillType.VISA
                         "e-wallet" -> BillType.E_WALLET
@@ -712,7 +713,7 @@ private fun supplierReportSectionRedesigned(
         scope.items(settledSuppliers) { item ->
             Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                 val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
-                SupplierCardRedesigned(item, onPayPO = { po, method ->
+                SupplierCardRedesigned(item, navController, onPayPO = { po, method ->
                     val bType = when(method) {
                         "visa" -> BillType.VISA
                         "e-wallet" -> BillType.E_WALLET
@@ -795,6 +796,7 @@ fun SupplierReportControls(viewModel: ReportsViewModel) {
 @Composable
 fun SupplierCardRedesigned(
     item: com.batterysales.viewmodel.SupplierReportItem,
+    navController: NavController,
     onPayPO: (com.batterysales.viewmodel.PurchaseOrderItem, String) -> Unit = { _, _ -> }
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -853,7 +855,7 @@ fun SupplierCardRedesigned(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     item.regularOrders.forEach { po ->
-                        PurchaseOrderCard(po, dateFormatter)
+                        PurchaseOrderCard(po, dateFormatter, navController, onPayPO)
                     }
                 }
 
@@ -865,7 +867,7 @@ fun SupplierCardRedesigned(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     item.obligatedOrders.forEach { po ->
-                        PurchaseOrderCard(po, dateFormatter)
+                        PurchaseOrderCard(po, dateFormatter, navController, onPayPO)
                     }
                 }
             }
@@ -892,12 +894,17 @@ fun SupplierCardRedesigned(
 @Composable
 fun PurchaseOrderCard(
     po: com.batterysales.viewmodel.PurchaseOrderItem,
-    dateFormatter: java.text.SimpleDateFormat
+    dateFormatter: java.text.SimpleDateFormat,
+    navController: NavController,
+    onPayPO: (com.batterysales.viewmodel.PurchaseOrderItem, String) -> Unit
 ) {
+    var expanded by remember { mutableStateOf(false) }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(bottom = 12.dp),
+            .padding(bottom = 12.dp)
+            .clickable { expanded = !expanded },
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.03f))
     ) {
@@ -957,6 +964,55 @@ fun PurchaseOrderCard(
                         lineHeight = 16.sp,
                         fontSize = 13.sp,
                     )
+                }
+            }
+
+            if (expanded) {
+                HorizontalDivider(modifier = Modifier.alpha(0.1f))
+                Text("الأصناف:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                po.items.forEach { entry ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                            .clickable {
+                                // Navigate to ledger with invoice search
+                                navController.navigate("product_ledger/${entry.productVariantId}/${entry.productName}/${entry.capacity}/no_spec")
+                                // Note: We should ideally pass invoiceNumber to search but need ViewModel support
+                            },
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        shape = RoundedCornerShape(8.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(entry.productName, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                Text("${entry.capacity}A", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text("الكمية: ${entry.quantity}", style = MaterialTheme.typography.bodySmall)
+                                Text("JD ${String.format("%.3f", entry.totalCost)}", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+
+                if (po.remainingBalance > 0.001) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = { onPayPO(po, "cash") },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("تسديد نقدي للمتبقي", fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }

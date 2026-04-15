@@ -49,7 +49,8 @@ data class PurchaseOrderItem(
     val entry: StockEntry,
     val linkedPaidAmount: Double,
     val remainingBalance: Double,
-    val referenceNumbers: List<String> = emptyList()
+    val referenceNumbers: List<String> = emptyList(),
+    val items: List<StockEntry> = emptyList()
 )
 
 @HiltViewModel
@@ -467,7 +468,8 @@ class ReportsViewModel @Inject constructor(
                                 entry = representative.copy(totalCost = finalTotalCost),
                                 linkedPaidAmount = totalLinkedPaid,
                                 remainingBalance = finalTotalCost - totalLinkedPaid,
-                                referenceNumbers = refs
+                                referenceNumbers = refs,
+                                items = group
                             )
                         }.sortedByDescending { it.entry.timestamp }
 
