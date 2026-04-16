@@ -841,11 +841,42 @@ fun SupplierCardRedesigned(
                 }
 
                 if (currentObligatedOrders.isNotEmpty()) {
-                    if (currentRegularOrders.isNotEmpty()) Spacer(modifier = Modifier.height(12.dp))
-                    Text("طلبيات شراء (شيكات/كمبيالات):", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color(0xFFEF4444))
-                    Spacer(modifier = Modifier.height(12.dp))
-                    currentObligatedOrders.forEach { po ->
-                        PurchaseOrderCard(po, dateFormatter, navController)
+                    if (currentRegularOrders.isNotEmpty()) Spacer(modifier = Modifier.height(16.dp))
+
+                    var obligatedExpanded by remember { mutableStateOf(false) }
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFEF4444).copy(alpha = 0.05f)),
+                        shape = RoundedCornerShape(16.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.2f))
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().clickable { obligatedExpanded = !obligatedExpanded },
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "طلبيات مرتبطة بشيكات/كمبيالات (${currentObligatedOrders.size})",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFEF4444)
+                                )
+                                Icon(
+                                    if (obligatedExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                    contentDescription = null,
+                                    tint = Color(0xFFEF4444)
+                                )
+                            }
+
+                            if (obligatedExpanded) {
+                                Spacer(modifier = Modifier.height(12.dp))
+                                currentObligatedOrders.forEach { po ->
+                                    PurchaseOrderCard(po, dateFormatter, navController)
+                                }
+                            }
+                        }
                     }
                 }
 

@@ -150,22 +150,24 @@ fun TabItem(
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
-    val backgroundColor = if (isSelected) Color.White.copy(alpha = 0.2f) else Color.Transparent
-    val textColor = if (isSelected) Color.White else Color.White.copy(alpha = 0.6f)
+    val backgroundColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+    val textColor = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
 
     Surface(
         modifier = modifier
-            .height(40.dp)
+            .height(44.dp)
             .clickable { onClick() },
         color = backgroundColor,
-        shape = RoundedCornerShape(12.dp)
+        shape = RoundedCornerShape(12.dp),
+        border = if (isSelected) androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)) else null
     ) {
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 16.dp)) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 12.dp)) {
             Text(
                 text = title,
                 color = textColor,
                 style = MaterialTheme.typography.labelLarge,
-                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                fontSize = 14.sp
             )
         }
     }
