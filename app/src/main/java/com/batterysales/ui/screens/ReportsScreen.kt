@@ -798,29 +798,60 @@ fun SupplierCardRedesigned(
             }
 
             if (expanded) {
+                var selectedSubTab by remember { mutableStateOf(0) }
                 val dateFormatter = java.text.SimpleDateFormat("yyyy/MM/dd hh:mm a", java.util.Locale.getDefault())
 
-                if (item.regularOrders.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(20.dp))
-                    HorizontalDivider(modifier = Modifier.alpha(0.05f))
-                    Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    TabItem(
+                        title = "غير مسددة",
+                        isSelected = selectedSubTab == 0,
+                        onClick = { selectedSubTab = 0 },
+                        modifier = Modifier.weight(1f)
+                    )
+                    TabItem(
+                        title = "مسددة",
+                        isSelected = selectedSubTab == 1,
+                        onClick = { selectedSubTab = 1 },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                val currentRegularOrders = if (selectedSubTab == 0) {
+                    item.regularOrders.filter { it.remainingBalance > 0.001 }
+                } else {
+                    item.regularOrders.filter { it.remainingBalance <= 0.001 }
+                }
+
+                val currentObligatedOrders = if (selectedSubTab == 0) {
+                    item.obligatedOrders.filter { it.remainingBalance > 0.001 }
+                } else {
+                    item.obligatedOrders.filter { it.remainingBalance <= 0.001 }
+                }
+
+                if (currentRegularOrders.isNotEmpty()) {
                     Text("طلبيات شراء (نقدية/رصيد):", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(12.dp))
-
-                    item.regularOrders.forEach { po ->
+                    currentRegularOrders.forEach { po ->
                         PurchaseOrderCard(po, dateFormatter, navController)
                     }
                 }
 
-                if (item.obligatedOrders.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(20.dp))
-                    HorizontalDivider(modifier = Modifier.alpha(0.05f))
-                    Spacer(modifier = Modifier.height(16.dp))
+                if (currentObligatedOrders.isNotEmpty()) {
+                    if (currentRegularOrders.isNotEmpty()) Spacer(modifier = Modifier.height(12.dp))
                     Text("طلبيات شراء (شيكات/كمبيالات):", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color(0xFFEF4444))
                     Spacer(modifier = Modifier.height(12.dp))
-
-                    item.obligatedOrders.forEach { po ->
+                    currentObligatedOrders.forEach { po ->
                         PurchaseOrderCard(po, dateFormatter, navController)
+                    }
+                }
+
+                if (currentRegularOrders.isEmpty() && currentObligatedOrders.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                        Text("لا يوجد طلبات في هذا القسم", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }

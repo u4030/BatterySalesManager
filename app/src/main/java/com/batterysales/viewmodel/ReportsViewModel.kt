@@ -475,12 +475,12 @@ class ReportsViewModel @Inject constructor(
                         }.sortedByDescending { it.entry.timestamp }
 
                         val (obligated, regular) = purchaseOrders.partition { po ->
-                            // Requirement 2: Show obligated if linked to UNPAID checks/bills
+                            // Obligated if any check or bill is linked, regardless of status
                             val poBills = supplierBills.filter { bill ->
                                 bill.relatedEntryId == (po.entry.orderId.ifEmpty { po.entry.id }) ||
                                 (bill.referenceNumber.isNotEmpty() && (bill.referenceNumber == po.entry.invoiceNumber || bill.referenceNumber == po.entry.id))
                             }
-                            poBills.any { (it.billType == BillType.CHECK || it.billType == BillType.BILL) && it.status != BillStatus.PAID }
+                            poBills.any { it.billType == BillType.CHECK || it.billType == BillType.BILL }
                         }
 
                         val targetProgress = if (supplier.yearlyTarget > 0) totalDebit / supplier.yearlyTarget else 0.0
