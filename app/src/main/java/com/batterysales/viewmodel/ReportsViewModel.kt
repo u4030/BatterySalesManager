@@ -50,7 +50,11 @@ data class PurchaseOrderItem(
     val linkedPaidAmount: Double,
     val remainingBalance: Double,
     val referenceNumbers: List<String> = emptyList(),
-    val items: List<StockEntry> = emptyList()
+    val items: List<StockEntry> = emptyList(),
+    val autoLinkedAmount: Double = 0.0, // المبلغ المرتبط تلقائياً من شيكات/كمبيالات أخرى
+    val hasManualLink: Boolean = false, // هل يوجد ربط يدوي (عن طريق الرقم أو الحقل المخصص)
+    val totalActualPaid: Double = 0.0, // إجمالي المبالغ المسددة فعلياً (نقدياً) لهذه الطلبية
+    val totalLinkedAmount: Double = 0.0 // إجمالي مبالغ الشيكات (الورقية) المرتبطة يدوياً وتلقائياً
 )
 
 @HiltViewModel
@@ -120,6 +124,7 @@ class ReportsViewModel @Inject constructor(
     val oldBatteryWarehouseSummary = _oldBatteryWarehouseSummary.asStateFlow()
 
     private val refreshTrigger = MutableStateFlow(0)
+    private var isMigrationRun = false
 
     // For Sidebar Navigation: Track all items in order to find indices
     // Updated to include date filtering synchronization
@@ -247,6 +252,19 @@ class ReportsViewModel @Inject constructor(
                 loadSupplierReport()
             }
         }.launchIn(viewModelScope)
+
+        // Run migration for existing data
+        viewModelScope.launch {
+            try {
+                // Run only once per session to avoid redundant Firestore reads
+                if (!isMigrationRun) {
+                    stockEntryRepository.migrateInvoiceDates()
+                    isMigrationRun = true
+                }
+            } catch (e: Exception) {
+                Log.e("ReportsViewModel", "Migration failed", e)
+            }
+        }
     }
 
     fun onTabSelected(index: Int) {
@@ -393,7 +411,7 @@ class ReportsViewModel @Inject constructor(
                         val adjustedEnd = end?.let { com.batterysales.utils.DateUtils.getEndOfDay(it) }
 
                         // Filter entries for this supplier
-                        val supplierEntries = allEntries.filter { entry ->
+                        val rawSupplierEntries = allEntries.filter { entry ->
                             val matchId = entry.supplierId.isNotEmpty() && entry.supplierId == supplier.id
                             // Robust name matching fallback for legacy entries
                             val matchName = entry.supplier.isNotBlank() &&
@@ -402,56 +420,92 @@ class ReportsViewModel @Inject constructor(
 
                             (matchId || matchName) &&
                                     entry.status == "approved" &&
-                                    (supplier.resetDate == null || !entry.timestamp.before(supplier.resetDate)) &&
-                                    (adjustedStart == null || entry.timestamp.time >= adjustedStart) &&
-                                    (adjustedEnd == null || entry.timestamp.time <= adjustedEnd)
+                                    (supplier.resetDate == null || !entry.getEffectiveDate().before(supplier.resetDate)) &&
+                                    (adjustedStart == null || entry.getEffectiveDate().time >= adjustedStart) &&
+                                    (adjustedEnd == null || entry.getEffectiveDate().time <= adjustedEnd)
+                        }
+
+                        // توحيد أرقام الفواتير للقيود التي تتشارك نفس معرف الطلبية
+                        val orderToInvoiceMap = rawSupplierEntries.filter { it.invoiceNumber.trim().isNotEmpty() && it.orderId.trim().isNotEmpty() }
+                            .associate { it.orderId.trim() to it.invoiceNumber.trim() }
+
+                        val supplierEntries = rawSupplierEntries.map { entry ->
+                            val orderKey = entry.orderId.trim()
+                            if (entry.invoiceNumber.trim().isEmpty() && orderKey.isNotEmpty() && orderToInvoiceMap.containsKey(orderKey)) {
+                                entry.copy(invoiceNumber = orderToInvoiceMap[orderKey]!!)
+                            } else entry
                         }
 
                         // Filter bills for this supplier
+                        // ملاحظة: الربط يعتمد على كافة الشيكات للمورد بغض النظر عن الفلتر الزمني للتقرير
+                        // لضمان دقة الأرصدة والروابط التلقائية
                         val supplierBills = allBills.filter { bill ->
                             bill.supplierId == supplier.id &&
-                                    (supplier.resetDate == null || !bill.createdAt.before(supplier.resetDate)) &&
-                                    (adjustedStart == null || bill.dueDate.time >= adjustedStart) &&
+                                    (supplier.resetDate == null || !bill.createdAt.before(supplier.resetDate))
+                        }
+
+                        // الشيكات التي تقع ضمن الفلتر الزمني (لعرضها في المجاميع إذا لزم الأمر مستقبلاً)
+                        val filteredBills = supplierBills.filter { bill ->
+                            (adjustedStart == null || bill.dueDate.time >= adjustedStart) &&
                                     (adjustedEnd == null || bill.dueDate.time <= adjustedEnd)
                         }
 
                         // Calculate totals locally for accuracy and consistency
-                        // totalDebit should use the stored totalCost (which is now gross)
-                        // Fallback to quantity * price only if totalCost is missing (migration)
-                        val totalDebit = supplierEntries.sumOf {
-                            if (it.totalCost > 0) it.totalCost else it.quantity * it.costPrice
-                        }
+                        // totalDebit should use the net cost (after returns)
+                        val totalDebit = supplierEntries.sumOf { it.getNetCost() }
                         val totalCredit = supplierBills.sumOf { it.paidAmount }
                         val balance = totalDebit - totalCredit
 
                         // Group entries into Purchase Orders
                         // Priority: invoiceNumber -> orderId -> id
-                        val groupedEntries = supplierEntries.filter { it.quantity > 0 }
-                            .groupBy { it.invoiceNumber.ifEmpty { it.orderId.ifEmpty { it.id } } }
+                        // ملاحظة: هذا المفتاح يجب أن يتطابق مع المفتاح المستخدم في BillRepository.autoLinkBillsForSupplier
+                        val groupedEntries = supplierEntries
+                            .groupBy { it.invoiceNumber.trim().ifEmpty { it.orderId.trim().ifEmpty { it.id } } }
 
                         val purchaseOrders = groupedEntries.map { (key, group) ->
                             val representative = group.first()
-                            // totalOrderCost should be the sum of totalCost in the group
-                            val totalOrderCost = group.sumOf {
-                                if (it.totalCost > 0) it.totalCost else it.quantity * it.costPrice
-                            }
+                            val totalOrderCost = group.sumOf { it.getNetCost() }
 
-                            val linkedBills = supplierBills.filter { bill ->
-                                bill.relatedEntryId == key || bill.referenceNumber == key || group.any { entry -> entry.id == bill.relatedEntryId || entry.invoiceNumber == bill.referenceNumber }
-                            }
-                            val linkedPaid = linkedBills.sumOf { it.paidAmount }
+                            val allLinkedBills = supplierBills.filter { bill ->
+                                val ref = bill.referenceNumber.trim()
+                                bill.relatedEntryId == key ||
+                                ref == key ||
+                                (ref.isNotEmpty() && (ref == representative.invoiceNumber.trim() || ref == representative.id)) ||
+                                group.any { entry ->
+                                    entry.id == bill.relatedEntryId ||
+                                    (ref.isNotEmpty() && ref == entry.invoiceNumber.trim())
+                                }
+                            }.distinctBy { it.id }
 
-                            val matchingBillsByRef = supplierBills.filter { bill ->
-                                bill.referenceNumber.isNotEmpty() && (bill.referenceNumber == representative.invoiceNumber || bill.referenceNumber == representative.id)
-                            }
-
-                            val allLinkedBills = (linkedBills + matchingBillsByRef).distinctBy { it.id }
                             val totalLinkedPaid = allLinkedBills.sumOf { it.paidAmount }
+                            val totalLinkedAmount = allLinkedBills.sumOf { it.amount }
+
+                            // حساب المبالغ المرتبطة تلقائياً من الشيكات التي لا تحمل ربطاً يدوياً
+                            val autoAllocatedBills = supplierBills
+                                .filter { bill -> allLinkedBills.none { it.id == bill.id } }
+
+                            // حساب المبالغ المرتبطة تلقائياً
+                            // نجمع التخصيصات للمفتاح الرئيسي للمجموعة (الفاتورة) وأيضاً لأي قيد فرعي داخلها
+                            // لضمان شمول كافة المبالغ الموزعة بواسطة الخوارزمية
+                            val autoAllocatedAmountForThisOrder = autoAllocatedBills.sumOf { bill ->
+                                val mainAlloc = bill.autoAllocations[key] ?: 0.0
+                                val subAlloc = group.sumOf { entry -> if (entry.id != key) bill.autoAllocations[entry.id] ?: 0.0 else 0.0 }
+                                mainAlloc + subAlloc
+                            }
+
+                            // حساب المبلغ المسدد فعلياً من الشيكات المرتبطة تلقائياً
+                            val autoAllocatedCashPaid = autoAllocatedBills.sumOf { bill ->
+                                val totalAllocForThisOrder = (bill.autoAllocations[key] ?: 0.0) +
+                                    group.sumOf { entry -> if (entry.id != key) bill.autoAllocations[entry.id] ?: 0.0 else 0.0 }
+
+                                if (bill.amount > 0) (totalAllocForThisOrder / bill.amount) * bill.paidAmount else 0.0
+                            }
 
                             // Use the actual calculated sum from the entries in the order for consistency
                             val finalTotalCost = totalOrderCost
+                            val totalActualPaid = totalLinkedPaid + autoAllocatedCashPaid
 
-                            val refs = allLinkedBills.filter { bill ->
+                            val refs = (allLinkedBills.filter { bill ->
                                 bill.referenceNumber.isNotEmpty()
                             }.map { bill ->
                                 val typeStr = when (bill.billType) {
@@ -463,24 +517,42 @@ class ReportsViewModel @Inject constructor(
                                     BillType.E_WALLET -> "محفظة"
                                 }
                                 "$typeStr: ${bill.referenceNumber}${if(bill.status != BillStatus.PAID) " (غير مسدد)" else ""}"
-                            }.distinct()
+                            } + supplierBills.filter { it.autoLinkedEntryIds.contains(key) && it.relatedEntryId == null }
+                                .map { bill ->
+                                    val typeStr = when (bill.billType) {
+                                        BillType.CHECK -> "شيك"
+                                        BillType.BILL -> "كمبيالة"
+                                        BillType.TRANSFER -> "تحويل"
+                                        BillType.CASH -> "نقدي"
+                                        BillType.VISA -> "فيزا"
+                                        BillType.E_WALLET -> "محفظة"
+                                    }
+                                    "$typeStr: ${bill.referenceNumber} (ربط تلقائي)"
+                                }).distinct()
+
+                            // تحديد ما إذا كان هناك ربط يدوي فعلي
+                            // نعتبره يدوياً إذا كان مرتبطاً عبر المعرف أو المرجع
+                            val actualManualBills = allLinkedBills
 
                             PurchaseOrderItem(
                                 entry = representative.copy(totalCost = finalTotalCost),
                                 linkedPaidAmount = totalLinkedPaid,
-                                remainingBalance = finalTotalCost - totalLinkedPaid,
+                                remainingBalance = finalTotalCost - totalActualPaid,
                                 referenceNumbers = refs,
-                                items = group
+                                items = group,
+                                autoLinkedAmount = autoAllocatedAmountForThisOrder,
+                                hasManualLink = allLinkedBills.isNotEmpty(),
+                                totalActualPaid = totalActualPaid,
+                                totalLinkedAmount = totalLinkedAmount + autoAllocatedAmountForThisOrder
                             )
-                        }.sortedByDescending { it.entry.timestamp }
+                        }.sortedWith(compareByDescending<PurchaseOrderItem> { it.entry.getEffectiveDate() }.thenByDescending { it.entry.timestamp })
 
                         val (obligated, regular) = purchaseOrders.partition { po ->
-                            // Obligated if any check or bill is linked, regardless of status
-                            val poBills = supplierBills.filter { bill ->
-                                bill.relatedEntryId == (po.entry.orderId.ifEmpty { po.entry.id }) ||
-                                        (bill.referenceNumber.isNotEmpty() && (bill.referenceNumber == po.entry.invoiceNumber || bill.referenceNumber == po.entry.id))
-                            }
-                            poBills.any { it.billType == BillType.CHECK || it.billType == BillType.BILL }
+                            // الطلبية تعتبر "مرتبطة" وتنتقل للقائمة التمددية فقط إذا كان هناك ربط يدوي
+                            // أو إذا كانت مغطاة بالكامل بواسطة الشيكات المرتبطة تلقائياً.
+                            // أما الطلبيات المغطاة جزئياً فتبقى في القائمة الرئيسية مع إظهار الملاحظة.
+                            val isFullyCovered = po.totalLinkedAmount >= po.entry.totalCost - 0.001
+                            po.hasManualLink || isFullyCovered
                         }
 
                         val targetProgress = if (supplier.yearlyTarget > 0) totalDebit / supplier.yearlyTarget else 0.0
