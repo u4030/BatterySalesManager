@@ -972,7 +972,7 @@ fun PurchaseOrderCard(
                             text = if (isFullyCovered)
                                 "مغطاة بالكامل من شيكات غير مرتبطة"
                             else
-                                "مغطاة جزئياً بمبلغ JD ${String.format("%.3f", po.autoLinkedAmount)} من شيكات غير مرتبطة",
+                                "مغطاة جزئياً بمبلغ JD ${String.format("%.3f", po.totalLinkedAmount)} من شيكات مرتبطة",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary
                         )

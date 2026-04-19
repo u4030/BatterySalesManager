@@ -431,7 +431,18 @@ class StockEntryRepository @Inject constructor(
             .get()
             .await()
 
-        val documentsToUpdate = snapshot.documents.filter { !it.contains("invoiceDate") || !it.contains("totalCost") }
+        // Get all suppliers to help with ID migration
+        val suppliersSnap = firestore.collection("suppliers").get().await()
+        val suppliersMap = suppliersSnap.documents.associate {
+            (it.getString("name") ?: "").trim().lowercase() to it.id
+        }
+
+        val documentsToUpdate = snapshot.documents.filter {
+            !it.contains("invoiceDate") ||
+            !it.contains("totalCost") ||
+            (it.getDouble("totalCost") ?: 0.0) == 0.0 ||
+            (it.getString("supplierId") ?: "").isEmpty()
+        }
         if (documentsToUpdate.isEmpty()) return
 
         // تقسيم العمليات إلى دفعات (بحد أقصى 500 عملية لكل دفعة)
@@ -447,6 +458,15 @@ class StockEntryRepository @Inject constructor(
                     if (!doc.contains("totalCost") || (doc.getDouble("totalCost") ?: 0.0) == 0.0) {
                         updates["totalCost"] = entry.quantity * entry.costPrice
                     }
+
+                    val currentId = doc.getString("supplierId") ?: ""
+                    if (currentId.isEmpty()) {
+                        val name = (doc.getString("supplier") ?: "").trim().lowercase()
+                        if (name.isNotEmpty() && suppliersMap.containsKey(name)) {
+                            updates["supplierId"] = suppliersMap[name]!!
+                        }
+                    }
+
                     if (updates.isNotEmpty()) {
                         batch.update(doc.reference, updates)
                     }

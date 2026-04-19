@@ -426,12 +426,13 @@ class ReportsViewModel @Inject constructor(
                         }
 
                         // توحيد أرقام الفواتير للقيود التي تتشارك نفس معرف الطلبية
-                        val orderToInvoiceMap = rawSupplierEntries.filter { it.invoiceNumber.isNotEmpty() && it.orderId.isNotEmpty() }
-                            .associate { it.orderId to it.invoiceNumber }
+                        val orderToInvoiceMap = rawSupplierEntries.filter { it.invoiceNumber.trim().isNotEmpty() && it.orderId.trim().isNotEmpty() }
+                            .associate { it.orderId.trim() to it.invoiceNumber.trim() }
 
                         val supplierEntries = rawSupplierEntries.map { entry ->
-                            if (entry.invoiceNumber.isEmpty() && entry.orderId.isNotEmpty() && orderToInvoiceMap.containsKey(entry.orderId)) {
-                                entry.copy(invoiceNumber = orderToInvoiceMap[entry.orderId]!!)
+                            val orderKey = entry.orderId.trim()
+                            if (entry.invoiceNumber.trim().isEmpty() && orderKey.isNotEmpty() && orderToInvoiceMap.containsKey(orderKey)) {
+                                entry.copy(invoiceNumber = orderToInvoiceMap[orderKey]!!)
                             } else entry
                         }
 
@@ -459,17 +460,21 @@ class ReportsViewModel @Inject constructor(
                         // Priority: invoiceNumber -> orderId -> id
                         // ملاحظة: هذا المفتاح يجب أن يتطابق مع المفتاح المستخدم في BillRepository.autoLinkBillsForSupplier
                         val groupedEntries = supplierEntries
-                            .groupBy { it.invoiceNumber.ifEmpty { it.orderId.ifEmpty { it.id } } }
+                            .groupBy { it.invoiceNumber.trim().ifEmpty { it.orderId.trim().ifEmpty { it.id } } }
 
                         val purchaseOrders = groupedEntries.map { (key, group) ->
                             val representative = group.first()
                             val totalOrderCost = group.sumOf { it.getNetCost() }
 
                             val allLinkedBills = supplierBills.filter { bill ->
+                                val ref = bill.referenceNumber.trim()
                                 bill.relatedEntryId == key ||
-                                bill.referenceNumber == key ||
-                                (bill.referenceNumber.isNotEmpty() && (bill.referenceNumber == representative.invoiceNumber || bill.referenceNumber == representative.id)) ||
-                                group.any { entry -> entry.id == bill.relatedEntryId || (bill.referenceNumber.isNotEmpty() && bill.referenceNumber == entry.invoiceNumber) }
+                                ref == key ||
+                                (ref.isNotEmpty() && (ref == representative.invoiceNumber.trim() || ref == representative.id)) ||
+                                group.any { entry ->
+                                    entry.id == bill.relatedEntryId ||
+                                    (ref.isNotEmpty() && ref == entry.invoiceNumber.trim())
+                                }
                             }.distinctBy { it.id }
 
                             val totalLinkedPaid = allLinkedBills.sumOf { it.paidAmount }
@@ -479,14 +484,21 @@ class ReportsViewModel @Inject constructor(
                             val autoAllocatedBills = supplierBills
                                 .filter { bill -> allLinkedBills.none { it.id == bill.id } }
 
-                            val autoAllocatedAmountForThisOrder = autoAllocatedBills
-                                .sumOf { it.autoAllocations[key] ?: 0.0 }
+                            // حساب المبالغ المرتبطة تلقائياً
+                            // نجمع التخصيصات للمفتاح الرئيسي للمجموعة (الفاتورة) وأيضاً لأي قيد فرعي داخلها
+                            // لضمان شمول كافة المبالغ الموزعة بواسطة الخوارزمية
+                            val autoAllocatedAmountForThisOrder = autoAllocatedBills.sumOf { bill ->
+                                val mainAlloc = bill.autoAllocations[key] ?: 0.0
+                                val subAlloc = group.sumOf { entry -> if (entry.id != key) bill.autoAllocations[entry.id] ?: 0.0 else 0.0 }
+                                mainAlloc + subAlloc
+                            }
 
                             // حساب المبلغ المسدد فعلياً من الشيكات المرتبطة تلقائياً
-                            // يتم احتساب نسبة مئوية من المبلغ المسدد من الشيك بناءً على تخصيصه لهذه الطلبية
                             val autoAllocatedCashPaid = autoAllocatedBills.sumOf { bill ->
-                                val allocation = bill.autoAllocations[key] ?: 0.0
-                                if (bill.amount > 0) (allocation / bill.amount) * bill.paidAmount else 0.0
+                                val totalAllocForThisOrder = (bill.autoAllocations[key] ?: 0.0) +
+                                    group.sumOf { entry -> if (entry.id != key) bill.autoAllocations[entry.id] ?: 0.0 else 0.0 }
+
+                                if (bill.amount > 0) (totalAllocForThisOrder / bill.amount) * bill.paidAmount else 0.0
                             }
 
                             // Use the actual calculated sum from the entries in the order for consistency

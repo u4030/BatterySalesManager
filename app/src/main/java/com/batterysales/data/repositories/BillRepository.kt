@@ -154,27 +154,36 @@ class BillRepository @Inject constructor(
     suspend fun autoLinkBillsForSupplier(supplierId: String, resetDate: Date? = null) {
         if (supplierId.isEmpty()) return
 
+        // Get supplier name to match legacy entries
+        val supplierDoc = firestore.collection("suppliers").document(supplierId).get().await()
+        val supplierName = (supplierDoc.getString("name") ?: "").trim().lowercase()
+
         // 1. جلب كافة فواتير المشتريات المعتمدة للمورد
-        val rawStockEntries = firestore.collection(com.batterysales.data.models.StockEntry.COLLECTION_NAME)
-            .whereEqualTo("supplierId", supplierId)
+        val allEntries = firestore.collection(com.batterysales.data.models.StockEntry.COLLECTION_NAME)
             .whereEqualTo("status", "approved")
             .get()
             .await()
             .documents.mapNotNull { it.toObject(com.batterysales.data.models.StockEntry::class.java)?.copy(id = it.id) }
-            .filter { resetDate == null || !it.getEffectiveDate().before(resetDate) }
+
+        val rawStockEntries = allEntries.filter { entry ->
+            val matchId = entry.supplierId == supplierId
+            val matchName = entry.supplier.trim().lowercase() == supplierName
+            (matchId || matchName) && (resetDate == null || !entry.getEffectiveDate().before(resetDate))
+        }
 
         // توحيد أرقام الفواتير للقيود التي تتشارك نفس معرف الطلبية
-        val orderToInvoiceMap = rawStockEntries.filter { it.invoiceNumber.isNotEmpty() && it.orderId.isNotEmpty() }
-            .associate { it.orderId to it.invoiceNumber }
+        val orderToInvoiceMap = rawStockEntries.filter { it.invoiceNumber.trim().isNotEmpty() && it.orderId.trim().isNotEmpty() }
+            .associate { it.orderId.trim() to it.invoiceNumber.trim() }
 
         val stockEntries = rawStockEntries.map { entry ->
-            if (entry.invoiceNumber.isEmpty() && entry.orderId.isNotEmpty() && orderToInvoiceMap.containsKey(entry.orderId)) {
-                entry.copy(invoiceNumber = orderToInvoiceMap[entry.orderId]!!)
+            val orderKey = entry.orderId.trim()
+            if (entry.invoiceNumber.trim().isEmpty() && orderKey.isNotEmpty() && orderToInvoiceMap.containsKey(orderKey)) {
+                entry.copy(invoiceNumber = orderToInvoiceMap[orderKey]!!)
             } else entry
         }
 
         // تجميع الفواتير حسب رقم الفاتورة أولاً، ثم معرف الطلبية، ثم المعرف الفريد
-        val orders = stockEntries.groupBy { it.invoiceNumber.ifEmpty { it.orderId.ifEmpty { it.id } } }
+        val orders = stockEntries.groupBy { it.invoiceNumber.trim().ifEmpty { it.orderId.trim().ifEmpty { it.id } } }
             .map { (key, group) ->
                 val totalCost = group.sumOf { it.getNetCost() }
                 val effectiveDate = group.minOf { it.getEffectiveDate() }
@@ -196,13 +205,20 @@ class BillRepository @Inject constructor(
         // فصل الروابط اليدوية لحساب المبالغ المتبقية في الفواتير
         // نعتبر الربط يدوياً إذا كان الحقل relatedEntryId معبأ أو إذا كان رقم المرجع يطابق رقم الفاتورة
         val manualLinks = mutableMapOf<String, Double>()
+
+        // خريطة لربط كل قيد فريد بالمجموعة (الفاتورة) التي ينتمي إليها
+        val entryToOrderMap = stockEntries.associate { it.id to it.invoiceNumber.trim().ifEmpty { it.orderId.trim().ifEmpty { it.id } } }
+
         allBills.forEach { bill ->
             if (bill.relatedEntryId != null) {
-                val current = manualLinks.getOrDefault(bill.relatedEntryId, 0.0)
-                manualLinks[bill.relatedEntryId] = current + bill.amount
+                // إذا كان القيد المرتبط ينتمي لمجموعة، نربط المبلغ بالمجموعة كاملة
+                val targetId = entryToOrderMap[bill.relatedEntryId] ?: bill.relatedEntryId
+                val current = manualLinks.getOrDefault(targetId, 0.0)
+                manualLinks[targetId] = current + bill.amount
             } else if (bill.referenceNumber.isNotEmpty()) {
-                // البحث عن فاتورة تطابق رقم المرجع
-                orders.find { it.first == bill.referenceNumber }?.let { (orderId, _) ->
+                val ref = bill.referenceNumber.trim()
+                // البحث عن فاتورة تطابق رقم المرجع (المرجع قد يكون رقم فاتورة أو معرف طلبية)
+                orders.find { it.first == ref }?.let { (orderId, _) ->
                     val current = manualLinks.getOrDefault(orderId, 0.0)
                     manualLinks[orderId] = current + bill.amount
                 }
@@ -219,7 +235,7 @@ class BillRepository @Inject constructor(
         // نستثني أيضاً الشيكات التي تم اعتبارها مرتبطة يدوياً عبر رقم المرجع
         val manualLinkedBillIds = allBills.filter { bill ->
             bill.relatedEntryId != null ||
-            (bill.referenceNumber.isNotEmpty() && orders.any { it.first == bill.referenceNumber })
+            (bill.referenceNumber.isNotEmpty() && orders.any { it.first == bill.referenceNumber.trim() })
         }.map { it.id }.toSet()
 
         val availableBills = allBills.filter { !manualLinkedBillIds.contains(it.id) }
