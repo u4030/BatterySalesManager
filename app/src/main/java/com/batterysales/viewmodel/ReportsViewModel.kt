@@ -51,7 +51,8 @@ data class PurchaseOrderItem(
     val remainingBalance: Double,
     val referenceNumbers: List<String> = emptyList(),
     val items: List<StockEntry> = emptyList(),
-    val autoLinkedAmount: Double = 0.0 // المبلغ المرتبط تلقائياً من شيكات/كمبيالات أخرى
+    val autoLinkedAmount: Double = 0.0, // المبلغ المرتبط تلقائياً من شيكات/كمبيالات أخرى
+    val hasManualLink: Boolean = false // هل يوجد ربط يدوي (عن طريق الرقم أو الحقل المخصص)
 )
 
 @HiltViewModel
@@ -409,10 +410,16 @@ class ReportsViewModel @Inject constructor(
                         }
 
                         // Filter bills for this supplier
+                        // ملاحظة: الربط يعتمد على كافة الشيكات للمورد بغض النظر عن الفلتر الزمني للتقرير
+                        // لضمان دقة الأرصدة والروابط التلقائية
                         val supplierBills = allBills.filter { bill ->
                             bill.supplierId == supplier.id &&
-                                    (supplier.resetDate == null || !bill.createdAt.before(supplier.resetDate)) &&
-                                    (adjustedStart == null || bill.dueDate.time >= adjustedStart) &&
+                                    (supplier.resetDate == null || !bill.createdAt.before(supplier.resetDate))
+                        }
+
+                        // الشيكات التي تقع ضمن الفلتر الزمني (لعرضها في المجاميع إذا لزم الأمر مستقبلاً)
+                        val filteredBills = supplierBills.filter { bill ->
+                            (adjustedStart == null || bill.dueDate.time >= adjustedStart) &&
                                     (adjustedEnd == null || bill.dueDate.time <= adjustedEnd)
                         }
 
@@ -437,20 +444,20 @@ class ReportsViewModel @Inject constructor(
                                 if (it.totalCost > 0) it.totalCost else it.quantity * it.costPrice
                             }
 
-                            val linkedBills = supplierBills.filter { bill ->
-                                bill.relatedEntryId == key || bill.referenceNumber == key || group.any { entry -> entry.id == bill.relatedEntryId || entry.invoiceNumber == bill.referenceNumber }
-                            }
-                            val linkedPaid = linkedBills.sumOf { it.paidAmount }
+                            val allLinkedBills = supplierBills.filter { bill ->
+                                bill.relatedEntryId == key ||
+                                bill.referenceNumber == key ||
+                                (bill.referenceNumber.isNotEmpty() && (bill.referenceNumber == representative.invoiceNumber || bill.referenceNumber == representative.id)) ||
+                                group.any { entry -> entry.id == bill.relatedEntryId || (bill.referenceNumber.isNotEmpty() && bill.referenceNumber == entry.invoiceNumber) }
+                            }.distinctBy { it.id }
 
-                            val matchingBillsByRef = supplierBills.filter { bill ->
-                                bill.referenceNumber.isNotEmpty() && (bill.referenceNumber == representative.invoiceNumber || bill.referenceNumber == representative.id)
-                            }
-
-                            val allLinkedBills = (linkedBills + matchingBillsByRef).distinctBy { it.id }
                             val totalLinkedPaid = allLinkedBills.sumOf { it.paidAmount }
+                            val totalLinkedAmount = allLinkedBills.sumOf { it.amount }
 
-                            // حساب المبالغ المرتبطة تلقائياً من الشيكات التي لا تحمل ربطاً يدوياً لهذه الفاتورة
-                            val autoAllocatedAmountForThisOrder = supplierBills.filter { it.relatedEntryId == null }
+                            // حساب المبالغ المرتبطة تلقائياً من الشيكات التي لا تحمل ربطاً يدوياً
+                            // نتجنب حساب الشيكات التي تم احتسابها بالفعل في الروابط اليدوية أعلاه
+                            val autoAllocatedAmountForThisOrder = supplierBills
+                                .filter { bill -> allLinkedBills.none { it.id == bill.id } }
                                 .sumOf { it.autoAllocations[key] ?: 0.0 }
 
                             // Use the actual calculated sum from the entries in the order for consistency
@@ -484,16 +491,20 @@ class ReportsViewModel @Inject constructor(
                             PurchaseOrderItem(
                                 entry = representative.copy(totalCost = finalTotalCost),
                                 linkedPaidAmount = totalLinkedPaid,
-                                remainingBalance = finalTotalCost - totalLinkedPaid - autoAllocatedAmountForThisOrder,
+                                remainingBalance = finalTotalCost - totalLinkedAmount - autoAllocatedAmountForThisOrder,
                                 referenceNumbers = refs,
                                 items = group,
-                                autoLinkedAmount = autoAllocatedAmountForThisOrder
+                                autoLinkedAmount = autoAllocatedAmountForThisOrder,
+                                hasManualLink = allLinkedBills.isNotEmpty()
                             )
                         }.sortedByDescending { it.entry.timestamp }
 
                         val (obligated, regular) = purchaseOrders.partition { po ->
-                            // تنتقل للفاتورة للطلبيات المرتبطة في حال كانت مغطاة بالكامل بشيكات (يدوية أو تلقائية)
-                            po.remainingBalance <= 0.001 && (po.linkedPaidAmount > 0 || po.autoLinkedAmount > 0)
+                            // الطلبية تعتبر "مرتبطة" إذا كان هناك ربط يدوي (حتى لو جزئي)
+                            // أو إذا كانت مغطاة بالكامل بالربط التلقائي
+                            val isFullyCoveredByAuto = po.remainingBalance <= 0.001 && po.autoLinkedAmount > 0
+
+                            po.hasManualLink || isFullyCoveredByAuto
                         }
 
                         val targetProgress = if (supplier.yearlyTarget > 0) totalDebit / supplier.yearlyTarget else 0.0
