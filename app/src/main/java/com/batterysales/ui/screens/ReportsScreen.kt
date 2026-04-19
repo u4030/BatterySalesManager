@@ -960,7 +960,7 @@ fun PurchaseOrderCard(
             }
 
             if (po.autoLinkedAmount > 0.001) {
-                val isFullyCovered = po.entry.totalCost - (po.linkedPaidAmount + po.autoLinkedAmount) <= 0.001
+                val isFullyCovered = po.totalLinkedAmount >= po.entry.totalCost - 0.001
                 Surface(
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.05f),
                     shape = RoundedCornerShape(8.dp)

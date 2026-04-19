@@ -422,6 +422,27 @@ class StockEntryRepository @Inject constructor(
             .filter { it.totalCost > 0 }
     }
 
+    /**
+     * يقوم بتحديث تاريخ الفاتورة للمدخلات القديمة ليتطابق مع تاريخ الإدخال
+     */
+    suspend fun migrateInvoiceDates() {
+        val snapshot = firestore.collection(StockEntry.COLLECTION_NAME).get().await()
+        firestore.runTransaction { transaction ->
+            snapshot.documents.forEach { doc ->
+                val entry = doc.toObject(StockEntry::class.java)
+                if (entry != null) {
+                    // إذا كان تاريخ الفاتورة هو نفسه تاريخ الإنشاء الافتراضي (أو غير موجود في الوثيقة)
+                    // نقوم بمساواته مع timestamp
+                    // نستخدم فحصاً بسيطاً: إذا كان الفرق بينهما أقل من دقيقة وكان كلاهما قريباً من وقت التشغيل الحالي
+                    // أو ببساطة إذا كان الحقل مفقوداً في الخريطة الأصلية
+                    if (!doc.contains("invoiceDate")) {
+                        transaction.update(doc.reference, "invoiceDate", entry.timestamp)
+                    }
+                }
+            }
+        }.await()
+    }
+
     suspend fun getSupplierDebit(supplierId: String, resetDate: java.util.Date? = null, startDate: Long? = null, endDate: Long? = null): Double {
         var query = firestore.collection(StockEntry.COLLECTION_NAME)
             .whereEqualTo("supplierId", supplierId)

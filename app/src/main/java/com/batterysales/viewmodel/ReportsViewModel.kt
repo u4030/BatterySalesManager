@@ -53,7 +53,8 @@ data class PurchaseOrderItem(
     val items: List<StockEntry> = emptyList(),
     val autoLinkedAmount: Double = 0.0, // المبلغ المرتبط تلقائياً من شيكات/كمبيالات أخرى
     val hasManualLink: Boolean = false, // هل يوجد ربط يدوي (عن طريق الرقم أو الحقل المخصص)
-    val totalActualPaid: Double = 0.0 // إجمالي المبالغ المسددة فعلياً (نقدياً) لهذه الطلبية
+    val totalActualPaid: Double = 0.0, // إجمالي المبالغ المسددة فعلياً (نقدياً) لهذه الطلبية
+    val totalLinkedAmount: Double = 0.0 // إجمالي مبالغ الشيكات (الورقية) المرتبطة يدوياً وتلقائياً
 )
 
 @HiltViewModel
@@ -250,6 +251,15 @@ class ReportsViewModel @Inject constructor(
                 loadSupplierReport()
             }
         }.launchIn(viewModelScope)
+
+        // Run migration for existing data
+        viewModelScope.launch {
+            try {
+                stockEntryRepository.migrateInvoiceDates()
+            } catch (e: Exception) {
+                Log.e("ReportsViewModel", "Migration failed", e)
+            }
+        }
     }
 
     fun onTabSelected(index: Int) {
@@ -510,9 +520,10 @@ class ReportsViewModel @Inject constructor(
                                 items = group,
                                 autoLinkedAmount = autoAllocatedAmountForThisOrder,
                                 hasManualLink = allLinkedBills.isNotEmpty(),
-                                totalActualPaid = totalActualPaid
+                                totalActualPaid = totalActualPaid,
+                                totalLinkedAmount = totalLinkedAmount + autoAllocatedAmountForThisOrder
                             )
-                        }.sortedByDescending { it.entry.invoiceDate }
+                        }.sortedWith(compareByDescending<PurchaseOrderItem> { it.entry.invoiceDate }.thenByDescending { it.entry.timestamp })
 
                         val (obligated, regular) = purchaseOrders.partition { po ->
                             // الطلبية تعتبر "مرتبطة" إذا كان هناك ربط يدوي

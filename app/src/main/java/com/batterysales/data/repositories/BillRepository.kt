@@ -168,9 +168,12 @@ class BillRepository @Inject constructor(
             .map { (key, group) ->
                 val totalCost = group.sumOf { if (it.totalCost > 0) it.totalCost else it.quantity * it.costPrice }
                 val sortingDate = group.minOf { it.invoiceDate }
-                key to (totalCost to sortingDate)
+                val sortingTimestamp = group.minOf { it.timestamp }
+                key to Triple(totalCost, sortingDate, sortingTimestamp)
             }
-            .sortedBy { it.second.second } // الترتيب حسب الأقدم (تاريخ الفاتورة)
+            .sortedWith(compareBy<Pair<String, Triple<Double, Date, Date>>> { it.second.second }
+                .thenBy { it.second.third }
+                .thenBy { it.first }) // الترتيب حسب الأقدم (تاريخ الفاتورة ثم تاريخ الإدخال)
 
         // 2. جلب كافة الشيكات والكمبيالات للمورد
         val allBills = firestore.collection(Bill.COLLECTION_NAME)
@@ -197,12 +200,18 @@ class BillRepository @Inject constructor(
 
         // حساب الميزان المتبقي لكل فاتورة (إجمالي التكلفة - الروابط اليدوية)
         val orderBalances = orders.map { (id, data) ->
-            val (totalCost, _) = data
+            val (totalCost, _, _) = data
             id to (totalCost - (manualLinks[id] ?: 0.0))
         }.filter { it.second > 0.001 }.toMutableList()
 
         // 3. تحديد الشيكات المتاحة للربط التلقائي (غير مرتبطة يدوياً وغير مسددة كلياً)
-        val availableBills = allBills.filter { it.relatedEntryId == null }
+        // نستثني أيضاً الشيكات التي تم اعتبارها مرتبطة يدوياً عبر رقم المرجع
+        val manualLinkedBillIds = allBills.filter { bill ->
+            bill.relatedEntryId != null ||
+            (bill.referenceNumber.isNotEmpty() && orders.any { it.first == bill.referenceNumber })
+        }.map { it.id }.toSet()
+
+        val availableBills = allBills.filter { !manualLinkedBillIds.contains(it.id) }
             .sortedBy { it.createdAt } // ربط الشيكات الأقدم أولاً
 
         // 4. تنفيذ خوارزمية FIFO لتوزيع المبالغ
@@ -244,6 +253,13 @@ class BillRepository @Inject constructor(
 
         // 5. تحديث قاعدة البيانات بالروابط الجديدة
         firestore.runTransaction { transaction ->
+            // نقوم بمسح الروابط التلقائية القديمة للشيكات التي أصبحت الآن مرتبطة يدوياً
+            manualLinkedBillIds.forEach { billId ->
+                val docRef = firestore.collection(Bill.COLLECTION_NAME).document(billId)
+                transaction.update(docRef, "autoLinkedEntryIds", emptyList<String>())
+                transaction.update(docRef, "autoAllocations", emptyMap<String, Double>())
+            }
+
             billUpdates.forEach { (billId, data) ->
                 val (ids, allocations) = data
                 val docRef = firestore.collection(Bill.COLLECTION_NAME).document(billId)
