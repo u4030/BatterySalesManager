@@ -41,20 +41,41 @@ class InventoryPagingSource(
             var rawFetchedSize = 0
             coroutineScope {
             if (searchQuery != null && searchQuery.isNotBlank()) {
-                // If this is the FIRST page, try barcode lookup
+                // If this is the FIRST page, try barcode and invoice lookup
                 if (params.key == null) {
+                    // 1. Barcode lookup
                     val barcodeSnap = firestore.collection(ProductVariant.COLLECTION_NAME)
                         .whereEqualTo("barcode", searchQuery)
                         .get().await()
 
-                    val foundVariants = barcodeSnap.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }.filter { !it.archived }
-                    variants.addAll(foundVariants)
+                    val foundBarcodeVariants = barcodeSnap.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }.filter { !it.archived }
+                    variants.addAll(foundBarcodeVariants)
 
-                    val barcodeProductIds = variants.map { it.productId }.distinct()
-                    barcodeProductIds.forEach { pid ->
-                        productsMap[pid]?.let { products.add(it) } ?: run {
-                            val doc = firestore.collection(Product.COLLECTION_NAME).document(pid).get().await()
-                            doc.toObject(Product::class.java)?.copy(id = doc.id)?.let { products.add(it) }
+                    // 2. Invoice/Reference Number lookup in StockEntry
+                    val entrySnap = firestore.collection(StockEntry.COLLECTION_NAME)
+                        .whereEqualTo("invoiceNumber", searchQuery)
+                        .get().await()
+                    
+                    val invoiceVariantIds = entrySnap.documents.mapNotNull { it.getString("productVariantId") }.distinct()
+                        .filter { vid -> variants.none { it.id == vid } }
+                    
+                    if (invoiceVariantIds.isNotEmpty()) {
+                        val invoiceVariants = invoiceVariantIds.chunked(30).flatMap { ids ->
+                            firestore.collection(ProductVariant.COLLECTION_NAME)
+                                .whereIn(com.google.firebase.firestore.FieldPath.documentId(), ids)
+                                .get().await().documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }
+                        }.filter { !it.archived }
+                        variants.addAll(invoiceVariants)
+                    }
+
+                    // Fetch missing products for all found variants
+                    val allProductIds = variants.map { it.productId }.distinct()
+                    allProductIds.forEach { pid ->
+                        if (products.none { it.id == pid }) {
+                            productsMap[pid]?.let { products.add(it) } ?: run {
+                                val doc = firestore.collection(Product.COLLECTION_NAME).document(pid).get().await()
+                                doc.toObject(Product::class.java)?.copy(id = doc.id)?.let { products.add(it) }
+                            }
                         }
                     }
                 }
@@ -160,8 +181,9 @@ class InventoryPagingSource(
                     
                     // Filter by date if applicable
                     if (startDate != null && endDate != null) {
-                        val adjustedEnd = endDate + 86400000
-                        val hasActivity = entries.any { it.timestamp.time in startDate..adjustedEnd }
+                        val start = com.batterysales.utils.DateUtils.getStartOfDay(startDate)
+                        val end = com.batterysales.utils.DateUtils.getEndOfDay(endDate)
+                        val hasActivity = entries.any { it.timestamp.time in start..end }
                         if (!hasActivity) return@mapNotNull null
                     }
 
