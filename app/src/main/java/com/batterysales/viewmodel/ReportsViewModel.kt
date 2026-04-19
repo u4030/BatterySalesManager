@@ -52,7 +52,8 @@ data class PurchaseOrderItem(
     val referenceNumbers: List<String> = emptyList(),
     val items: List<StockEntry> = emptyList(),
     val autoLinkedAmount: Double = 0.0, // المبلغ المرتبط تلقائياً من شيكات/كمبيالات أخرى
-    val hasManualLink: Boolean = false // هل يوجد ربط يدوي (عن طريق الرقم أو الحقل المخصص)
+    val hasManualLink: Boolean = false, // هل يوجد ربط يدوي (عن طريق الرقم أو الحقل المخصص)
+    val totalActualPaid: Double = 0.0 // إجمالي المبالغ المسددة فعلياً (نقدياً) لهذه الطلبية
 )
 
 @HiltViewModel
@@ -455,10 +456,18 @@ class ReportsViewModel @Inject constructor(
                             val totalLinkedAmount = allLinkedBills.sumOf { it.amount }
 
                             // حساب المبالغ المرتبطة تلقائياً من الشيكات التي لا تحمل ربطاً يدوياً
-                            // نتجنب حساب الشيكات التي تم احتسابها بالفعل في الروابط اليدوية أعلاه
-                            val autoAllocatedAmountForThisOrder = supplierBills
+                            val autoAllocatedBills = supplierBills
                                 .filter { bill -> allLinkedBills.none { it.id == bill.id } }
+
+                            val autoAllocatedAmountForThisOrder = autoAllocatedBills
                                 .sumOf { it.autoAllocations[key] ?: 0.0 }
+
+                            // حساب المبلغ المسدد فعلياً من الشيكات المرتبطة تلقائياً
+                            // يتم احتساب نسبة مئوية من المبلغ المسدد من الشيك بناءً على تخصيصه لهذه الطلبية
+                            val autoAllocatedCashPaid = autoAllocatedBills.sumOf { bill ->
+                                val allocation = bill.autoAllocations[key] ?: 0.0
+                                if (bill.amount > 0) (allocation / bill.amount) * bill.paidAmount else 0.0
+                            }
 
                             // Use the actual calculated sum from the entries in the order for consistency
                             val finalTotalCost = totalOrderCost
@@ -495,7 +504,8 @@ class ReportsViewModel @Inject constructor(
                                 referenceNumbers = refs,
                                 items = group,
                                 autoLinkedAmount = autoAllocatedAmountForThisOrder,
-                                hasManualLink = allLinkedBills.isNotEmpty()
+                                hasManualLink = allLinkedBills.isNotEmpty(),
+                                totalActualPaid = totalLinkedPaid + autoAllocatedCashPaid
                             )
                         }.sortedByDescending { it.entry.timestamp }
 

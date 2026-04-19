@@ -821,15 +821,15 @@ fun SupplierCardRedesigned(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 val currentRegularOrders = if (selectedSubTab == 0) {
-                    item.regularOrders.filter { it.remainingBalance > 0.001 }
+                    item.regularOrders.filter { it.totalActualPaid < it.entry.totalCost - 0.001 }
                 } else {
-                    item.regularOrders.filter { it.remainingBalance <= 0.001 }
+                    item.regularOrders.filter { it.totalActualPaid >= it.entry.totalCost - 0.001 }
                 }
 
                 val currentObligatedOrders = if (selectedSubTab == 0) {
-                    item.obligatedOrders.filter { it.remainingBalance > 0.001 }
+                    item.obligatedOrders.filter { it.totalActualPaid < it.entry.totalCost - 0.001 }
                 } else {
-                    item.obligatedOrders.filter { it.remainingBalance <= 0.001 }
+                    item.obligatedOrders.filter { it.totalActualPaid >= it.entry.totalCost - 0.001 }
                 }
 
                 if (currentRegularOrders.isNotEmpty()) {

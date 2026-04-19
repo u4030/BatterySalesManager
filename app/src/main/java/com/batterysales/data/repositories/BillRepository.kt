@@ -198,7 +198,7 @@ class BillRepository @Inject constructor(
         val billUpdates = mutableMapOf<String, Pair<List<String>, Map<String, Double>>>()
 
         for (bill in availableBills) {
-            var billRemainingAmount = bill.amount - bill.paidAmount
+            var billRemainingAmount = bill.amount
             val linkedIds = mutableListOf<String>()
             val allocations = mutableMapOf<String, Double>()
 
