@@ -200,7 +200,8 @@ fun StockEntryContent(
 
                 // Invoice Date Selection
                 var showDatePicker by remember { mutableStateOf(false) }
-                val datePickerState = rememberDatePickerState(initialSelectedDateMillis = uiState.invoiceDate.time)
+                val initialDate = uiState.invoiceDate ?: java.util.Date()
+                val datePickerState = rememberDatePickerState(initialSelectedDateMillis = initialDate.time)
                 val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
 
                 OutlinedCard(
@@ -218,7 +219,7 @@ fun StockEntryContent(
                         Icon(Icons.Default.CalendarToday, contentDescription = null, tint = Color(0xFFFB8C00))
                         Column {
                             Text("تاريخ الفاتورة", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text(dateFormatter.format(uiState.invoiceDate), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                            Text(dateFormatter.format(initialDate), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
                         }
                     }
                 }

@@ -124,6 +124,7 @@ class ReportsViewModel @Inject constructor(
     val oldBatteryWarehouseSummary = _oldBatteryWarehouseSummary.asStateFlow()
 
     private val refreshTrigger = MutableStateFlow(0)
+    private var isMigrationRun = false
 
     // For Sidebar Navigation: Track all items in order to find indices
     // Updated to include date filtering synchronization
@@ -255,7 +256,11 @@ class ReportsViewModel @Inject constructor(
         // Run migration for existing data
         viewModelScope.launch {
             try {
-                stockEntryRepository.migrateInvoiceDates()
+                // Run only once per session to avoid redundant Firestore reads
+                if (!isMigrationRun) {
+                    stockEntryRepository.migrateInvoiceDates()
+                    isMigrationRun = true
+                }
             } catch (e: Exception) {
                 Log.e("ReportsViewModel", "Migration failed", e)
             }
@@ -415,9 +420,9 @@ class ReportsViewModel @Inject constructor(
 
                             (matchId || matchName) &&
                                     entry.status == "approved" &&
-                                    (supplier.resetDate == null || !entry.timestamp.before(supplier.resetDate)) &&
-                                    (adjustedStart == null || entry.timestamp.time >= adjustedStart) &&
-                                    (adjustedEnd == null || entry.timestamp.time <= adjustedEnd)
+                                    (supplier.resetDate == null || !entry.getEffectiveDate().before(supplier.resetDate)) &&
+                                    (adjustedStart == null || entry.getEffectiveDate().time >= adjustedStart) &&
+                                    (adjustedEnd == null || entry.getEffectiveDate().time <= adjustedEnd)
                         }
 
                         // Filter bills for this supplier
@@ -523,7 +528,7 @@ class ReportsViewModel @Inject constructor(
                                 totalActualPaid = totalActualPaid,
                                 totalLinkedAmount = totalLinkedAmount + autoAllocatedAmountForThisOrder
                             )
-                        }.sortedWith(compareByDescending<PurchaseOrderItem> { it.entry.invoiceDate }.thenByDescending { it.entry.timestamp })
+                        }.sortedWith(compareByDescending<PurchaseOrderItem> { it.entry.getEffectiveDate() }.thenByDescending { it.entry.timestamp })
 
                         val (obligated, regular) = purchaseOrders.partition { po ->
                             // الطلبية تعتبر "مرتبطة" إذا كان هناك ربط يدوي

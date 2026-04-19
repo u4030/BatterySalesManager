@@ -26,7 +26,7 @@ data class StockEntryUiState(
     val quantity: String = "",
     val returnedQuantity: String = "0",
     val invoiceNumber: String = "",
-    val invoiceDate: Date = Date(),
+    val invoiceDate: Date? = null,
     val costInputMode: CostInputMode = CostInputMode.BY_AMPERE,
     val costValue: String = "",
     val minQuantity: String = "",

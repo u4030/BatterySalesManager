@@ -925,7 +925,7 @@ fun PurchaseOrderCard(
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = dateFormatter.format(po.entry.invoiceDate),
+                    text = dateFormatter.format(po.entry.getEffectiveDate()),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Bold
                 )

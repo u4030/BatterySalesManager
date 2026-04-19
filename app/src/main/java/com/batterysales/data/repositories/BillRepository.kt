@@ -151,7 +151,7 @@ class BillRepository @Inject constructor(
      * يقوم بتوزيع مبالغ الشيكات والكمبيالات غير المرتبطة على فواتير المشتريات غير المسددة
      * بنظام الأقدم فالأقدم (FIFO)
      */
-    suspend fun autoLinkBillsForSupplier(supplierId: String) {
+    suspend fun autoLinkBillsForSupplier(supplierId: String, resetDate: Date? = null) {
         if (supplierId.isEmpty()) return
 
         // 1. جلب كافة فواتير المشتريات المعتمدة للمورد
@@ -162,18 +162,19 @@ class BillRepository @Inject constructor(
             .await()
             .documents.mapNotNull { it.toObject(com.batterysales.data.models.StockEntry::class.java)?.copy(id = it.id) }
             .filter { it.quantity > 0 } // مشتريات فقط
+            .filter { resetDate == null || !it.getEffectiveDate().before(resetDate) }
 
         // تجميع الفواتير حسب رقم الفاتورة أو معرف الطلبية
         val orders = stockEntries.groupBy { it.invoiceNumber.ifEmpty { it.orderId.ifEmpty { it.id } } }
             .map { (key, group) ->
                 val totalCost = group.sumOf { if (it.totalCost > 0) it.totalCost else it.quantity * it.costPrice }
-                val sortingDate = group.minOf { it.invoiceDate }
+                val effectiveDate = group.minOf { it.getEffectiveDate() }
                 val sortingTimestamp = group.minOf { it.timestamp }
-                key to Triple(totalCost, sortingDate, sortingTimestamp)
+                key to Triple(totalCost, effectiveDate, sortingTimestamp)
             }
             .sortedWith(compareBy<Pair<String, Triple<Double, Date, Date>>> { it.second.second }
                 .thenBy { it.second.third }
-                .thenBy { it.first }) // الترتيب حسب الأقدم (تاريخ الفاتورة ثم تاريخ الإدخال)
+                .thenBy { it.first }) // الترتيب حسب الأقدم
 
         // 2. جلب كافة الشيكات والكمبيالات للمورد
         val allBills = firestore.collection(Bill.COLLECTION_NAME)
@@ -181,6 +182,7 @@ class BillRepository @Inject constructor(
             .get()
             .await()
             .documents.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) }
+            .filter { resetDate == null || !it.createdAt.before(resetDate) }
 
         // فصل الروابط اليدوية لحساب المبالغ المتبقية في الفواتير
         // نعتبر الربط يدوياً إذا كان الحقل relatedEntryId معبأ أو إذا كان رقم المرجع يطابق رقم الفاتورة
