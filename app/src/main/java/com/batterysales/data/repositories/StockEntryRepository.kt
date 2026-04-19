@@ -431,7 +431,7 @@ class StockEntryRepository @Inject constructor(
             .get()
             .await()
 
-        val documentsToUpdate = snapshot.documents.filter { !it.contains("invoiceDate") }
+        val documentsToUpdate = snapshot.documents.filter { !it.contains("invoiceDate") || !it.contains("totalCost") }
         if (documentsToUpdate.isEmpty()) return
 
         // تقسيم العمليات إلى دفعات (بحد أقصى 500 عملية لكل دفعة)
@@ -440,7 +440,16 @@ class StockEntryRepository @Inject constructor(
             chunk.forEach { doc ->
                 val entry = doc.toObject(StockEntry::class.java)
                 if (entry != null) {
-                    batch.update(doc.reference, "invoiceDate", entry.timestamp)
+                    val updates = mutableMapOf<String, Any>()
+                    if (!doc.contains("invoiceDate")) {
+                        updates["invoiceDate"] = entry.timestamp
+                    }
+                    if (!doc.contains("totalCost") || (doc.getDouble("totalCost") ?: 0.0) == 0.0) {
+                        updates["totalCost"] = entry.quantity * entry.costPrice
+                    }
+                    if (updates.isNotEmpty()) {
+                        batch.update(doc.reference, updates)
+                    }
                 }
             }
             batch.commit().await()

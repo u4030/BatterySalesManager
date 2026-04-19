@@ -161,11 +161,12 @@ class BillRepository @Inject constructor(
             .get()
             .await()
             .documents.mapNotNull { it.toObject(com.batterysales.data.models.StockEntry::class.java)?.copy(id = it.id) }
-            .filter { it.quantity > 0 } // مشتريات فقط
             .filter { resetDate == null || !it.getEffectiveDate().before(resetDate) }
 
-        // تجميع الفواتير حسب رقم الفاتورة أو معرف الطلبية
-        val orders = stockEntries.groupBy { it.invoiceNumber.ifEmpty { it.orderId.ifEmpty { it.id } } }
+        // تجميع الفواتير حسب معرف الطلبية أولاً، ثم رقم الفاتورة
+        // نتجاهل القيود التي ليس لها معرف طلبية أو رقم فاتورة في الربط التلقائي لتجنب ربط الشيكات بقيود عشوائية أو قديمة
+        val orders = stockEntries.filter { it.orderId.isNotEmpty() || it.invoiceNumber.isNotEmpty() }
+            .groupBy { it.orderId.ifEmpty { it.invoiceNumber } }
             .map { (key, group) ->
                 val totalCost = group.sumOf { it.getNetCost() }
                 val effectiveDate = group.minOf { it.getEffectiveDate() }

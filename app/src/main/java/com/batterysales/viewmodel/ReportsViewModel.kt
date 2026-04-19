@@ -446,10 +446,12 @@ class ReportsViewModel @Inject constructor(
                         val balance = totalDebit - totalCredit
 
                         // Group entries into Purchase Orders
-                        // Priority: invoiceNumber -> orderId -> id
+                        // Priority: orderId -> invoiceNumber -> id
                         // ملاحظة: هذا المفتاح يجب أن يتطابق مع المفتاح المستخدم في BillRepository.autoLinkBillsForSupplier
-                        val groupedEntries = supplierEntries.filter { it.quantity > 0 }
-                            .groupBy { it.invoiceNumber.ifEmpty { it.orderId.ifEmpty { it.id } } }
+                        // نستبعد القيود الفردية التي ليس لها رقم فاتورة أو طلبية من منطق التجميع الرئيسي هنا
+                        val groupedEntries = supplierEntries
+                            .filter { it.orderId.isNotEmpty() || it.invoiceNumber.isNotEmpty() || it.quantity > 0 }
+                            .groupBy { it.orderId.ifEmpty { it.invoiceNumber.ifEmpty { it.id } } }
 
                         val purchaseOrders = groupedEntries.map { (key, group) ->
                             val representative = group.first()

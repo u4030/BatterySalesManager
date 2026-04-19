@@ -48,8 +48,16 @@ data class StockEntry(
         return if (quantity == 0) 0.0
         else {
             val ratio = getNetQuantity().toDouble() / quantity
-            totalCost * ratio
+            getEffectiveTotalCost() * ratio
         }
+    }
+
+    /**
+     * يعيد إجمالي التكلفة المسجل، أو يحسبه من السعر والكمية إذا كان مفقوداً (للبيانات القديمة)
+     */
+    fun getEffectiveTotalCost(): Double {
+        // نستخدم القيمة المطلقة للمقارنة بـ 0.001 لضمان شمول القيم السالبة المسجلة
+        return if (Math.abs(totalCost) > 0.001) totalCost else (quantity * costPrice)
     }
 
     /**
