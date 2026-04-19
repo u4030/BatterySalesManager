@@ -147,6 +147,102 @@ class BillRepository @Inject constructor(
             .await()
     }
 
+    /**
+     * يقوم بتوزيع مبالغ الشيكات والكمبيالات غير المرتبطة على فواتير المشتريات غير المسددة
+     * بنظام الأقدم فالأقدم (FIFO)
+     */
+    suspend fun autoLinkBillsForSupplier(supplierId: String) {
+        if (supplierId.isEmpty()) return
+
+        // 1. جلب كافة فواتير المشتريات المعتمدة للمورد
+        val stockEntries = firestore.collection(com.batterysales.data.models.StockEntry.COLLECTION_NAME)
+            .whereEqualTo("supplierId", supplierId)
+            .whereEqualTo("status", "approved")
+            .get()
+            .await()
+            .documents.mapNotNull { it.toObject(com.batterysales.data.models.StockEntry::class.java)?.copy(id = it.id) }
+            .filter { it.quantity > 0 } // مشتريات فقط
+
+        // تجميع الفواتير حسب رقم الفاتورة أو معرف الطلبية
+        val orders = stockEntries.groupBy { it.invoiceNumber.ifEmpty { it.orderId.ifEmpty { it.id } } }
+            .map { (key, group) ->
+                val totalCost = group.sumOf { if (it.totalCost > 0) it.totalCost else it.quantity * it.costPrice }
+                val timestamp = group.minOf { it.timestamp }
+                key to (totalCost to timestamp)
+            }
+            .sortedBy { it.second.second } // الترتيب حسب الأقدم
+
+        // 2. جلب كافة الشيكات والكمبيالات للمورد
+        val allBills = firestore.collection(Bill.COLLECTION_NAME)
+            .whereEqualTo("supplierId", supplierId)
+            .get()
+            .await()
+            .documents.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) }
+
+        // فصل الروابط اليدوية لحساب المبالغ المتبقية في الفواتير
+        val manualLinks = allBills.filter { it.relatedEntryId != null }
+            .groupBy { it.relatedEntryId!! }
+            .mapValues { entry -> entry.value.sumOf { it.amount } }
+
+        // حساب الميزان المتبقي لكل فاتورة (إجمالي التكلفة - الروابط اليدوية)
+        val orderBalances = orders.map { (id, data) ->
+            val (totalCost, _) = data
+            id to (totalCost - (manualLinks[id] ?: 0.0))
+        }.filter { it.second > 0.001 }.toMutableList()
+
+        // 3. تحديد الشيكات المتاحة للربط التلقائي (غير مرتبطة يدوياً وغير مسددة كلياً)
+        val availableBills = allBills.filter { it.relatedEntryId == null }
+            .sortedBy { it.createdAt } // ربط الشيكات الأقدم أولاً
+
+        // 4. تنفيذ خوارزمية FIFO لتوزيع المبالغ
+        val billUpdates = mutableMapOf<String, Pair<List<String>, Map<String, Double>>>()
+
+        for (bill in availableBills) {
+            var billRemainingAmount = bill.amount - bill.paidAmount
+            val linkedIds = mutableListOf<String>()
+            val allocations = mutableMapOf<String, Double>()
+
+            if (billRemainingAmount <= 0) {
+                billUpdates[bill.id] = emptyList<String>() to emptyMap<String, Double>()
+                continue
+            }
+
+            val iterator = orderBalances.iterator()
+            while (iterator.hasNext() && billRemainingAmount > 0.001) {
+                val orderBalanceEntry = iterator.next()
+                val orderId = orderBalanceEntry.first
+                var currentOrderBalance = orderBalanceEntry.second
+
+                val allocation = minOf(billRemainingAmount, currentOrderBalance)
+
+                if (allocation > 0.001) {
+                    linkedIds.add(orderId)
+                    allocations[orderId] = allocation
+                    billRemainingAmount -= allocation
+                    currentOrderBalance -= allocation
+
+                    // تحديث الرصيد المتبقي للفاتورة في القائمة
+                    val index = orderBalances.indexOfFirst { it.first == orderId }
+                    if (index != -1) {
+                        orderBalances[index] = orderId to currentOrderBalance
+                    }
+                }
+            }
+            billUpdates[bill.id] = linkedIds to allocations
+        }
+
+        // 5. تحديث قاعدة البيانات بالروابط الجديدة
+        firestore.runTransaction { transaction ->
+            billUpdates.forEach { (billId, data) ->
+                val (ids, allocations) = data
+                val docRef = firestore.collection(Bill.COLLECTION_NAME).document(billId)
+                transaction.update(docRef, "autoLinkedEntryIds", ids)
+                transaction.update(docRef, "autoAllocations", allocations)
+                transaction.update(docRef, "updatedAt", Date())
+            }
+        }.await()
+    }
+
     suspend fun getLinkedEntryIds(): Set<String> {
         val snapshot = firestore.collection(Bill.COLLECTION_NAME)
             .whereNotEqualTo("relatedEntryId", null)

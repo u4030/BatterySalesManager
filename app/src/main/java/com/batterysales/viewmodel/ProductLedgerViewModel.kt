@@ -40,6 +40,7 @@ enum class LedgerCategory(val label: String) {
 @HiltViewModel
 class ProductLedgerViewModel @Inject constructor(
     private val stockEntryRepository: StockEntryRepository,
+    private val billRepository: com.batterysales.data.repositories.BillRepository,
     private val productRepository: com.batterysales.data.repositories.ProductRepository,
     private val productVariantRepository: com.batterysales.data.repositories.ProductVariantRepository,
     private val userRepository: UserRepository,
@@ -167,7 +168,16 @@ class ProductLedgerViewModel @Inject constructor(
     fun deleteStockEntry(entryId: String) {
         viewModelScope.launch {
             try {
+                val entry = stockEntryRepository.getStockEntryById(entryId)
                 stockEntryRepository.deleteStockEntry(entryId)
+
+                // تحديث الروابط التلقائية للمورد بعد الحذف
+                entry?.let {
+                    if (it.supplierId.isNotEmpty()) {
+                        billRepository.autoLinkBillsForSupplier(it.supplierId)
+                    }
+                }
+
                 loadData(reset = true)
             } catch (e: Exception) {
                 Log.e("ProductLedgerViewModel", "Error deleting stock entry", e)
@@ -227,9 +237,10 @@ class ProductLedgerViewModel @Inject constructor(
                         // But BillRepository.addBill doesn't automatically add a transaction.
                         // BillViewModel does. 
                         // So we'll just use the repository directly.
-                        com.google.firebase.firestore.FirebaseFirestore.getInstance()
-                            .collection(com.batterysales.data.models.Bill.COLLECTION_NAME)
-                            .add(bill).await()
+                        billRepository.addBill(bill)
+
+                        // تحديث الروابط التلقائية للمورد
+                        billRepository.autoLinkBillsForSupplier(entry.supplierId)
 
                     } else if (returnMode == "treasury_cash") {
                         // Pay from Main Warehouse Treasury

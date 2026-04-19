@@ -66,6 +66,7 @@ class StockEntryViewModel @Inject constructor(
     private val warehouseRepository: WarehouseRepository,
     private val stockEntryRepository: StockEntryRepository,
     private val supplierRepository: SupplierRepository,
+    private val billRepository: BillRepository,
     private val userRepository: UserRepository,
     private val networkHelper: com.batterysales.utils.NetworkHelper,
     savedStateHandle: SavedStateHandle
@@ -335,6 +336,11 @@ class StockEntryViewModel @Inject constructor(
                     )
                     stockEntryRepository.updateStockEntry(updatedEntry)
 
+                    // تحديث الروابط التلقائية للمورد
+                    if (updatedEntry.supplierId.isNotEmpty()) {
+                        billRepository.autoLinkBillsForSupplier(updatedEntry.supplierId)
+                    }
+
                     // Update variant minQuantity if Admin
                     if (state.isAdmin) {
                         val updatedVariant = state.selectedVariant!!.copy(minQuantity = updatedItem.minQuantity)
@@ -369,6 +375,12 @@ class StockEntryViewModel @Inject constructor(
                         )
                     }
                     stockEntryRepository.addStockEntries(entries)
+
+                    // تحديث الروابط التلقائية للمورد
+                    val supplierId = entries.firstOrNull()?.supplierId
+                    if (!supplierId.isNullOrEmpty()) {
+                        billRepository.autoLinkBillsForSupplier(supplierId)
+                    }
 
                     // Update minQuantity for all added variants if Admin
                     if (state.isAdmin) {

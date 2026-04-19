@@ -175,6 +175,9 @@ class BillViewModel @Inject constructor(
                 )
                 val billId = repository.addBill(bill)
 
+                // تحديث الروابط التلقائية للمورد
+                repository.autoLinkBillsForSupplier(supplierId)
+
                 if (payImmediately) {
                     val supplier = _suppliers.value.find { it.id == supplierId }
                     val supplierName = supplier?.name ?: ""
@@ -226,6 +229,9 @@ class BillViewModel @Inject constructor(
                 val supplierName = supplier?.name ?: ""
                 
                 repository.recordPayment(billId, amount)
+
+                // تحديث الروابط التلقائية بعد تسجيل الدفعة (لأن الرصيد المتاح من الشيك تغير)
+                repository.autoLinkBillsForSupplier(bill.supplierId)
 
                 // Logic updated based on requirement:
                 // 1. Promissory Notes (BILL/TRANSFER/OTHER) are deducted from Treasury (Accounting)
@@ -288,7 +294,12 @@ class BillViewModel @Inject constructor(
     fun deleteBill(billId: String) {
         viewModelScope.launch {
             try {
+                val bill = repository.getBill(billId)
                 repository.deleteBill(billId)
+
+                // تحديث الروابط التلقائية للمورد بعد الحذف
+                bill?.let { repository.autoLinkBillsForSupplier(it.supplierId) }
+
                 // Also delete related treasury or bank transactions
                 accountingRepository.deleteTransactionsByRelatedId(billId)
                 bankRepository.deleteTransactionsByBillId(billId)
@@ -303,6 +314,10 @@ class BillViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 repository.updateBill(bill)
+
+                // تحديث الروابط التلقائية للمورد
+                repository.autoLinkBillsForSupplier(bill.supplierId)
+
                 // Also update treasury transactions description only
                 // Overwriting amount would be wrong if partial payments exist
                 accountingRepository.updateTransactionByRelatedId(

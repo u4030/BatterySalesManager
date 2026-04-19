@@ -959,6 +959,23 @@ fun PurchaseOrderCard(
                 )
             }
 
+            if (po.autoLinkedAmount > 0.001 && po.remainingBalance > 0.001) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.05f),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "مغطاة جزئياً بمبلغ JD ${String.format("%.3f", po.autoLinkedAmount)} من شيكات غير مرتبطة",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
+
 
             if (po.referenceNumbers.isNotEmpty()) {
                 HorizontalDivider(modifier = Modifier.alpha(0.1f))

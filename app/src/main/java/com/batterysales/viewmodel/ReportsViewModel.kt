@@ -50,7 +50,8 @@ data class PurchaseOrderItem(
     val linkedPaidAmount: Double,
     val remainingBalance: Double,
     val referenceNumbers: List<String> = emptyList(),
-    val items: List<StockEntry> = emptyList()
+    val items: List<StockEntry> = emptyList(),
+    val autoLinkedAmount: Double = 0.0 // المبلغ المرتبط تلقائياً من شيكات/كمبيالات أخرى
 )
 
 @HiltViewModel
@@ -448,10 +449,14 @@ class ReportsViewModel @Inject constructor(
                             val allLinkedBills = (linkedBills + matchingBillsByRef).distinctBy { it.id }
                             val totalLinkedPaid = allLinkedBills.sumOf { it.paidAmount }
 
+                            // حساب المبالغ المرتبطة تلقائياً من الشيكات التي لا تحمل ربطاً يدوياً لهذه الفاتورة
+                            val autoAllocatedAmountForThisOrder = supplierBills.filter { it.relatedEntryId == null }
+                                .sumOf { it.autoAllocations[key] ?: 0.0 }
+
                             // Use the actual calculated sum from the entries in the order for consistency
                             val finalTotalCost = totalOrderCost
 
-                            val refs = allLinkedBills.filter { bill ->
+                            val refs = (allLinkedBills.filter { bill ->
                                 bill.referenceNumber.isNotEmpty()
                             }.map { bill ->
                                 val typeStr = when (bill.billType) {
@@ -463,24 +468,32 @@ class ReportsViewModel @Inject constructor(
                                     BillType.E_WALLET -> "محفظة"
                                 }
                                 "$typeStr: ${bill.referenceNumber}${if(bill.status != BillStatus.PAID) " (غير مسدد)" else ""}"
-                            }.distinct()
+                            } + supplierBills.filter { it.autoLinkedEntryIds.contains(key) && it.relatedEntryId == null }
+                                .map { bill ->
+                                    val typeStr = when (bill.billType) {
+                                        BillType.CHECK -> "شيك"
+                                        BillType.BILL -> "كمبيالة"
+                                        BillType.TRANSFER -> "تحويل"
+                                        BillType.CASH -> "نقدي"
+                                        BillType.VISA -> "فيزا"
+                                        BillType.E_WALLET -> "محفظة"
+                                    }
+                                    "$typeStr: ${bill.referenceNumber} (ربط تلقائي)"
+                                }).distinct()
 
                             PurchaseOrderItem(
                                 entry = representative.copy(totalCost = finalTotalCost),
                                 linkedPaidAmount = totalLinkedPaid,
-                                remainingBalance = finalTotalCost - totalLinkedPaid,
+                                remainingBalance = finalTotalCost - totalLinkedPaid - autoAllocatedAmountForThisOrder,
                                 referenceNumbers = refs,
-                                items = group
+                                items = group,
+                                autoLinkedAmount = autoAllocatedAmountForThisOrder
                             )
                         }.sortedByDescending { it.entry.timestamp }
 
                         val (obligated, regular) = purchaseOrders.partition { po ->
-                            // Obligated if any check or bill is linked, regardless of status
-                            val poBills = supplierBills.filter { bill ->
-                                bill.relatedEntryId == (po.entry.orderId.ifEmpty { po.entry.id }) ||
-                                        (bill.referenceNumber.isNotEmpty() && (bill.referenceNumber == po.entry.invoiceNumber || bill.referenceNumber == po.entry.id))
-                            }
-                            poBills.any { it.billType == BillType.CHECK || it.billType == BillType.BILL }
+                            // تنتقل للفاتورة للطلبيات المرتبطة في حال كانت مغطاة بالكامل بشيكات (يدوية أو تلقائية)
+                            po.remainingBalance <= 0.001 && (po.linkedPaidAmount > 0 || po.autoLinkedAmount > 0)
                         }
 
                         val targetProgress = if (supplier.yearlyTarget > 0) totalDebit / supplier.yearlyTarget else 0.0
