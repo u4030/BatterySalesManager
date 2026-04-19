@@ -155,7 +155,7 @@ class BillRepository @Inject constructor(
         if (supplierId.isEmpty()) return
 
         // 1. جلب كافة فواتير المشتريات المعتمدة للمورد
-        val stockEntries = firestore.collection(com.batterysales.data.models.StockEntry.COLLECTION_NAME)
+        val rawStockEntries = firestore.collection(com.batterysales.data.models.StockEntry.COLLECTION_NAME)
             .whereEqualTo("supplierId", supplierId)
             .whereEqualTo("status", "approved")
             .get()
@@ -163,10 +163,18 @@ class BillRepository @Inject constructor(
             .documents.mapNotNull { it.toObject(com.batterysales.data.models.StockEntry::class.java)?.copy(id = it.id) }
             .filter { resetDate == null || !it.getEffectiveDate().before(resetDate) }
 
-        // تجميع الفواتير حسب معرف الطلبية أولاً، ثم رقم الفاتورة
-        // نتجاهل القيود التي ليس لها معرف طلبية أو رقم فاتورة في الربط التلقائي لتجنب ربط الشيكات بقيود عشوائية أو قديمة
-        val orders = stockEntries.filter { it.orderId.isNotEmpty() || it.invoiceNumber.isNotEmpty() }
-            .groupBy { it.orderId.ifEmpty { it.invoiceNumber } }
+        // توحيد أرقام الفواتير للقيود التي تتشارك نفس معرف الطلبية
+        val orderToInvoiceMap = rawStockEntries.filter { it.invoiceNumber.isNotEmpty() && it.orderId.isNotEmpty() }
+            .associate { it.orderId to it.invoiceNumber }
+
+        val stockEntries = rawStockEntries.map { entry ->
+            if (entry.invoiceNumber.isEmpty() && entry.orderId.isNotEmpty() && orderToInvoiceMap.containsKey(entry.orderId)) {
+                entry.copy(invoiceNumber = orderToInvoiceMap[entry.orderId]!!)
+            } else entry
+        }
+
+        // تجميع الفواتير حسب رقم الفاتورة أولاً، ثم معرف الطلبية، ثم المعرف الفريد
+        val orders = stockEntries.groupBy { it.invoiceNumber.ifEmpty { it.orderId.ifEmpty { it.id } } }
             .map { (key, group) ->
                 val totalCost = group.sumOf { it.getNetCost() }
                 val effectiveDate = group.minOf { it.getEffectiveDate() }

@@ -411,7 +411,7 @@ class ReportsViewModel @Inject constructor(
                         val adjustedEnd = end?.let { com.batterysales.utils.DateUtils.getEndOfDay(it) }
 
                         // Filter entries for this supplier
-                        val supplierEntries = allEntries.filter { entry ->
+                        val rawSupplierEntries = allEntries.filter { entry ->
                             val matchId = entry.supplierId.isNotEmpty() && entry.supplierId == supplier.id
                             // Robust name matching fallback for legacy entries
                             val matchName = entry.supplier.isNotBlank() &&
@@ -423,6 +423,16 @@ class ReportsViewModel @Inject constructor(
                                     (supplier.resetDate == null || !entry.getEffectiveDate().before(supplier.resetDate)) &&
                                     (adjustedStart == null || entry.getEffectiveDate().time >= adjustedStart) &&
                                     (adjustedEnd == null || entry.getEffectiveDate().time <= adjustedEnd)
+                        }
+
+                        // توحيد أرقام الفواتير للقيود التي تتشارك نفس معرف الطلبية
+                        val orderToInvoiceMap = rawSupplierEntries.filter { it.invoiceNumber.isNotEmpty() && it.orderId.isNotEmpty() }
+                            .associate { it.orderId to it.invoiceNumber }
+
+                        val supplierEntries = rawSupplierEntries.map { entry ->
+                            if (entry.invoiceNumber.isEmpty() && entry.orderId.isNotEmpty() && orderToInvoiceMap.containsKey(entry.orderId)) {
+                                entry.copy(invoiceNumber = orderToInvoiceMap[entry.orderId]!!)
+                            } else entry
                         }
 
                         // Filter bills for this supplier
@@ -446,12 +456,10 @@ class ReportsViewModel @Inject constructor(
                         val balance = totalDebit - totalCredit
 
                         // Group entries into Purchase Orders
-                        // Priority: orderId -> invoiceNumber -> id
+                        // Priority: invoiceNumber -> orderId -> id
                         // ملاحظة: هذا المفتاح يجب أن يتطابق مع المفتاح المستخدم في BillRepository.autoLinkBillsForSupplier
-                        // نستبعد القيود الفردية التي ليس لها رقم فاتورة أو طلبية من منطق التجميع الرئيسي هنا
                         val groupedEntries = supplierEntries
-                            .filter { it.orderId.isNotEmpty() || it.invoiceNumber.isNotEmpty() || it.quantity > 0 }
-                            .groupBy { it.orderId.ifEmpty { it.invoiceNumber.ifEmpty { it.id } } }
+                            .groupBy { it.invoiceNumber.ifEmpty { it.orderId.ifEmpty { it.id } } }
 
                         val purchaseOrders = groupedEntries.map { (key, group) ->
                             val representative = group.first()
