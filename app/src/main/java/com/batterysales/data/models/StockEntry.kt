@@ -16,6 +16,7 @@ data class StockEntry(
     val grandTotalAmperes: Int = 0,
     val grandTotalCost: Double = 0.0,
     val timestamp: Date = Date(),
+    val invoiceDate: Date = Date(), // تاريخ الفاتورة الفعلي
     val supplier: String = "", // Legacy supplier name
     val supplierId: String = "", // Link to Supplier model
     val invoiceId: String? = null, // Link to invoice for sales entries

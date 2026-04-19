@@ -26,6 +26,7 @@ data class StockEntryUiState(
     val quantity: String = "",
     val returnedQuantity: String = "0",
     val invoiceNumber: String = "",
+    val invoiceDate: Date = Date(),
     val costInputMode: CostInputMode = CostInputMode.BY_AMPERE,
     val costValue: String = "",
     val minQuantity: String = "",
@@ -153,6 +154,7 @@ class StockEntryViewModel @Inject constructor(
                 selectedWarehouse = warehouse,
                 selectedSupplier = supplier,
                 invoiceNumber = entry.invoiceNumber,
+                invoiceDate = entry.invoiceDate,
                 quantity = entry.quantity.toString(),
                 returnedQuantity = entry.returnedQuantity.toString(),
                 costValue = entry.costPrice.toString(),
@@ -237,6 +239,7 @@ class StockEntryViewModel @Inject constructor(
     }
     fun onSupplierNameChanged(name: String) { _uiState.update { it.copy(supplierName = name) } }
     fun onInvoiceNumberChanged(number: String) { _uiState.update { it.copy(invoiceNumber = number) } }
+    fun onInvoiceDateChanged(date: Date) { _uiState.update { it.copy(invoiceDate = date) } }
     fun onRemoveItemClicked(item: StockEntryItem) { _uiState.update { it.copy(stockItems = it.stockItems - item) } }
     fun onDismissError() { _uiState.update { it.copy(errorMessage = null) } }
 
@@ -330,6 +333,7 @@ class StockEntryViewModel @Inject constructor(
                         totalAmperes = updatedItem.totalAmperes,
                         totalCost = updatedItem.totalCost,
                         timestamp = originalEntry.timestamp,
+                        invoiceDate = state.invoiceDate,
                         supplier = state.supplierName,
                         supplierId = state.selectedSupplier?.id ?: "",
                         invoiceNumber = state.invoiceNumber
@@ -365,6 +369,7 @@ class StockEntryViewModel @Inject constructor(
                             grandTotalAmperes = grandTotalAmperes,
                             grandTotalCost = grandTotalCost,
                             timestamp = now,
+                            invoiceDate = state.invoiceDate,
                             supplier = state.supplierName,
                             supplierId = state.selectedSupplier?.id ?: "",
                             invoiceNumber = state.invoiceNumber,

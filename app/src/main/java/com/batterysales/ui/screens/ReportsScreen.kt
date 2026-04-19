@@ -925,7 +925,7 @@ fun PurchaseOrderCard(
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = dateFormatter.format(po.entry.timestamp),
+                    text = dateFormatter.format(po.entry.invoiceDate),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -959,7 +959,8 @@ fun PurchaseOrderCard(
                 )
             }
 
-            if (po.autoLinkedAmount > 0.001 && po.remainingBalance > 0.001) {
+            if (po.autoLinkedAmount > 0.001) {
+                val isFullyCovered = po.entry.totalCost - (po.linkedPaidAmount + po.autoLinkedAmount) <= 0.001
                 Surface(
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.05f),
                     shape = RoundedCornerShape(8.dp)
@@ -968,7 +969,10 @@ fun PurchaseOrderCard(
                         Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "مغطاة جزئياً بمبلغ JD ${String.format("%.3f", po.autoLinkedAmount)} من شيكات غير مرتبطة",
+                            text = if (isFullyCovered)
+                                "مغطاة بالكامل من شيكات غير مرتبطة"
+                            else
+                                "مغطاة جزئياً بمبلغ JD ${String.format("%.3f", po.autoLinkedAmount)} من شيكات غير مرتبطة",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary
                         )

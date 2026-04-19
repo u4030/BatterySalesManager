@@ -435,12 +435,12 @@ class ReportsViewModel @Inject constructor(
 
                         // Group entries into Purchase Orders
                         // Priority: invoiceNumber -> orderId -> id
+                        // ملاحظة: هذا المفتاح يجب أن يتطابق مع المفتاح المستخدم في BillRepository.autoLinkBillsForSupplier
                         val groupedEntries = supplierEntries.filter { it.quantity > 0 }
                             .groupBy { it.invoiceNumber.ifEmpty { it.orderId.ifEmpty { it.id } } }
 
                         val purchaseOrders = groupedEntries.map { (key, group) ->
                             val representative = group.first()
-                            // totalOrderCost should be the sum of totalCost in the group
                             val totalOrderCost = group.sumOf {
                                 if (it.totalCost > 0) it.totalCost else it.quantity * it.costPrice
                             }
@@ -471,6 +471,7 @@ class ReportsViewModel @Inject constructor(
 
                             // Use the actual calculated sum from the entries in the order for consistency
                             val finalTotalCost = totalOrderCost
+                            val totalActualPaid = totalLinkedPaid + autoAllocatedCashPaid
 
                             val refs = (allLinkedBills.filter { bill ->
                                 bill.referenceNumber.isNotEmpty()
@@ -497,24 +498,27 @@ class ReportsViewModel @Inject constructor(
                                     "$typeStr: ${bill.referenceNumber} (ربط تلقائي)"
                                 }).distinct()
 
+                            // تحديد ما إذا كان هناك ربط يدوي فعلي
+                            // نعتبره يدوياً إذا كان مرتبطاً عبر المعرف أو المرجع
+                            val actualManualBills = allLinkedBills
+
                             PurchaseOrderItem(
                                 entry = representative.copy(totalCost = finalTotalCost),
                                 linkedPaidAmount = totalLinkedPaid,
-                                remainingBalance = finalTotalCost - totalLinkedAmount - autoAllocatedAmountForThisOrder,
+                                remainingBalance = finalTotalCost - totalActualPaid,
                                 referenceNumbers = refs,
                                 items = group,
                                 autoLinkedAmount = autoAllocatedAmountForThisOrder,
                                 hasManualLink = allLinkedBills.isNotEmpty(),
-                                totalActualPaid = totalLinkedPaid + autoAllocatedCashPaid
+                                totalActualPaid = totalActualPaid
                             )
-                        }.sortedByDescending { it.entry.timestamp }
+                        }.sortedByDescending { it.entry.invoiceDate }
 
                         val (obligated, regular) = purchaseOrders.partition { po ->
-                            // الطلبية تعتبر "مرتبطة" إذا كان هناك ربط يدوي (حتى لو جزئي)
-                            // أو إذا كانت مغطاة بالكامل بالربط التلقائي
-                            val isFullyCoveredByAuto = po.remainingBalance <= 0.001 && po.autoLinkedAmount > 0
-
-                            po.hasManualLink || isFullyCoveredByAuto
+                            // الطلبية تعتبر "مرتبطة" إذا كان هناك ربط يدوي
+                            // أو إذا كان هناك أي مبلغ مرتبط تلقائياً (حتى لو لم يغطها بالكامل)
+                            // بناءً على طلب المستخدم لنقلها للقائمة التمددية الخاصة بالشيكات
+                            po.hasManualLink || po.autoLinkedAmount > 0.001
                         }
 
                         val targetProgress = if (supplier.yearlyTarget > 0) totalDebit / supplier.yearlyTarget else 0.0

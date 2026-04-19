@@ -197,6 +197,48 @@ fun StockEntryContent(
                     modifier = Modifier.fillMaxWidth(),
                     keyboardType = KeyboardLanguage.NUMERIC
                 )
+
+                // Invoice Date Selection
+                var showDatePicker by remember { mutableStateOf(false) }
+                val datePickerState = rememberDatePickerState(initialSelectedDateMillis = uiState.invoiceDate.time)
+                val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
+
+                OutlinedCard(
+                    onClick = { showDatePicker = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.outlinedCardColors(containerColor = Color.Transparent),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(Icons.Default.CalendarToday, contentDescription = null, tint = Color(0xFFFB8C00))
+                        Column {
+                            Text("تاريخ الفاتورة", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(dateFormatter.format(uiState.invoiceDate), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                if (showDatePicker) {
+                    DatePickerDialog(
+                        onDismissRequest = { showDatePicker = false },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                datePickerState.selectedDateMillis?.let { viewModel.onInvoiceDateChanged(java.util.Date(it)) }
+                                showDatePicker = false
+                            }) { Text("موافق") }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showDatePicker = false }) { Text("إلغاء") }
+                        }
+                    ) {
+                        DatePicker(state = datePickerState)
+                    }
+                }
             }
         }
 

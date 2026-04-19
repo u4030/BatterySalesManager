@@ -167,10 +167,10 @@ class BillRepository @Inject constructor(
         val orders = stockEntries.groupBy { it.invoiceNumber.ifEmpty { it.orderId.ifEmpty { it.id } } }
             .map { (key, group) ->
                 val totalCost = group.sumOf { if (it.totalCost > 0) it.totalCost else it.quantity * it.costPrice }
-                val timestamp = group.minOf { it.timestamp }
-                key to (totalCost to timestamp)
+                val sortingDate = group.minOf { it.invoiceDate }
+                key to (totalCost to sortingDate)
             }
-            .sortedBy { it.second.second } // الترتيب حسب الأقدم
+            .sortedBy { it.second.second } // الترتيب حسب الأقدم (تاريخ الفاتورة)
 
         // 2. جلب كافة الشيكات والكمبيالات للمورد
         val allBills = firestore.collection(Bill.COLLECTION_NAME)
@@ -180,9 +180,20 @@ class BillRepository @Inject constructor(
             .documents.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) }
 
         // فصل الروابط اليدوية لحساب المبالغ المتبقية في الفواتير
-        val manualLinks = allBills.filter { it.relatedEntryId != null }
-            .groupBy { it.relatedEntryId!! }
-            .mapValues { entry -> entry.value.sumOf { it.amount } }
+        // نعتبر الربط يدوياً إذا كان الحقل relatedEntryId معبأ أو إذا كان رقم المرجع يطابق رقم الفاتورة
+        val manualLinks = mutableMapOf<String, Double>()
+        allBills.forEach { bill ->
+            if (bill.relatedEntryId != null) {
+                val current = manualLinks.getOrDefault(bill.relatedEntryId, 0.0)
+                manualLinks[bill.relatedEntryId] = current + bill.amount
+            } else if (bill.referenceNumber.isNotEmpty()) {
+                // البحث عن فاتورة تطابق رقم المرجع
+                orders.find { it.first == bill.referenceNumber }?.let { (orderId, _) ->
+                    val current = manualLinks.getOrDefault(orderId, 0.0)
+                    manualLinks[orderId] = current + bill.amount
+                }
+            }
+        }
 
         // حساب الميزان المتبقي لكل فاتورة (إجمالي التكلفة - الروابط اليدوية)
         val orderBalances = orders.map { (id, data) ->
