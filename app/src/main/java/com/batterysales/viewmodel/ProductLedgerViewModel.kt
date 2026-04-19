@@ -202,6 +202,11 @@ class ProductLedgerViewModel @Inject constructor(
                 )
                 stockEntryRepository.updateStockEntry(updatedEntry)
 
+                // Always refresh links if it's a supplier entry
+                if (entry.supplierId.isNotEmpty()) {
+                    billRepository.autoLinkBillsForSupplier(entry.supplierId)
+                }
+
                 // 2. Handle Financials
                 val returnAmount = returnQty * entry.costPrice
                 if (returnAmount > 0) {
@@ -238,9 +243,6 @@ class ProductLedgerViewModel @Inject constructor(
                         // BillViewModel does. 
                         // So we'll just use the repository directly.
                         billRepository.addBill(bill)
-
-                        // تحديث الروابط التلقائية للمورد
-                        billRepository.autoLinkBillsForSupplier(entry.supplierId)
 
                     } else if (returnMode == "treasury_cash") {
                         // Pay from Main Warehouse Treasury

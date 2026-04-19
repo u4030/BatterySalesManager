@@ -42,6 +42,17 @@ data class StockEntry(
     }
 
     /**
+     * يحسب التكلفة الصافية لهذا القيد بعد خصم المرتجعات
+     */
+    fun getNetCost(): Double {
+        return if (quantity == 0) 0.0
+        else {
+            val ratio = getNetQuantity().toDouble() / quantity
+            totalCost * ratio
+        }
+    }
+
+    /**
      * يعيد تاريخ الفاتورة الفعلي إذا وجد، وإلا يعيد تاريخ الإدخال
      */
     fun getEffectiveDate(): Date = invoiceDate ?: timestamp

@@ -401,8 +401,8 @@ class StockEntryRepository @Inject constructor(
         val currentQty = entries.sumOf { it.getNetQuantity() }
 
         val purchaseEntries = entries.filter { it.quantity > 0 }
-        // Use Gross totals for average cost calculation to maintain consistency
-        val sumTotalCost = purchaseEntries.sumOf { it.quantity * it.costPrice }
+        // Use stored totalCost for accuracy, which is the gross cost of the purchase
+        val sumTotalCost = purchaseEntries.sumOf { it.totalCost }
         val grossPurchasedQty = purchaseEntries.sumOf { it.quantity }
         
         val averageCost = if (grossPurchasedQty > 0) sumTotalCost / grossPurchasedQty else 0.0
@@ -424,23 +424,27 @@ class StockEntryRepository @Inject constructor(
 
     /**
      * يقوم بتحديث تاريخ الفاتورة للمدخلات القديمة ليتطابق مع تاريخ الإدخال
+     * يستخدم دفعات (Batches) لضمان القابلية للتوسع وتجنب حدود المعاملات
      */
     suspend fun migrateInvoiceDates() {
-        val snapshot = firestore.collection(StockEntry.COLLECTION_NAME).get().await()
-        firestore.runTransaction { transaction ->
-            snapshot.documents.forEach { doc ->
+        val snapshot = firestore.collection(StockEntry.COLLECTION_NAME)
+            .get()
+            .await()
+
+        val documentsToUpdate = snapshot.documents.filter { !it.contains("invoiceDate") }
+        if (documentsToUpdate.isEmpty()) return
+
+        // تقسيم العمليات إلى دفعات (بحد أقصى 500 عملية لكل دفعة)
+        documentsToUpdate.chunked(500).forEach { chunk ->
+            val batch = firestore.batch()
+            chunk.forEach { doc ->
                 val entry = doc.toObject(StockEntry::class.java)
                 if (entry != null) {
-                    // إذا كان تاريخ الفاتورة هو نفسه تاريخ الإنشاء الافتراضي (أو غير موجود في الوثيقة)
-                    // نقوم بمساواته مع timestamp
-                    // نستخدم فحصاً بسيطاً: إذا كان الفرق بينهما أقل من دقيقة وكان كلاهما قريباً من وقت التشغيل الحالي
-                    // أو ببساطة إذا كان الحقل مفقوداً في الخريطة الأصلية
-                    if (!doc.contains("invoiceDate")) {
-                        transaction.update(doc.reference, "invoiceDate", entry.timestamp)
-                    }
+                    batch.update(doc.reference, "invoiceDate", entry.timestamp)
                 }
             }
-        }.await()
+            batch.commit().await()
+        }
     }
 
     suspend fun getSupplierDebit(supplierId: String, resetDate: java.util.Date? = null, startDate: Long? = null, endDate: Long? = null): Double {

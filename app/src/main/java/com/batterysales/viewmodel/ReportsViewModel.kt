@@ -440,11 +440,8 @@ class ReportsViewModel @Inject constructor(
                         }
 
                         // Calculate totals locally for accuracy and consistency
-                        // totalDebit should use the stored totalCost (which is now gross)
-                        // Fallback to quantity * price only if totalCost is missing (migration)
-                        val totalDebit = supplierEntries.sumOf {
-                            if (it.totalCost > 0) it.totalCost else it.quantity * it.costPrice
-                        }
+                        // totalDebit should use the net cost (after returns)
+                        val totalDebit = supplierEntries.sumOf { it.getNetCost() }
                         val totalCredit = supplierBills.sumOf { it.paidAmount }
                         val balance = totalDebit - totalCredit
 
@@ -456,9 +453,7 @@ class ReportsViewModel @Inject constructor(
 
                         val purchaseOrders = groupedEntries.map { (key, group) ->
                             val representative = group.first()
-                            val totalOrderCost = group.sumOf {
-                                if (it.totalCost > 0) it.totalCost else it.quantity * it.costPrice
-                            }
+                            val totalOrderCost = group.sumOf { it.getNetCost() }
 
                             val allLinkedBills = supplierBills.filter { bill ->
                                 bill.relatedEntryId == key ||
@@ -531,10 +526,11 @@ class ReportsViewModel @Inject constructor(
                         }.sortedWith(compareByDescending<PurchaseOrderItem> { it.entry.getEffectiveDate() }.thenByDescending { it.entry.timestamp })
 
                         val (obligated, regular) = purchaseOrders.partition { po ->
-                            // الطلبية تعتبر "مرتبطة" إذا كان هناك ربط يدوي
-                            // أو إذا كان هناك أي مبلغ مرتبط تلقائياً (حتى لو لم يغطها بالكامل)
-                            // بناءً على طلب المستخدم لنقلها للقائمة التمددية الخاصة بالشيكات
-                            po.hasManualLink || po.autoLinkedAmount > 0.001
+                            // الطلبية تعتبر "مرتبطة" وتنتقل للقائمة التمددية فقط إذا كان هناك ربط يدوي
+                            // أو إذا كانت مغطاة بالكامل بواسطة الشيكات المرتبطة تلقائياً.
+                            // أما الطلبيات المغطاة جزئياً فتبقى في القائمة الرئيسية مع إظهار الملاحظة.
+                            val isFullyCovered = po.totalLinkedAmount >= po.entry.totalCost - 0.001
+                            po.hasManualLink || isFullyCovered
                         }
 
                         val targetProgress = if (supplier.yearlyTarget > 0) totalDebit / supplier.yearlyTarget else 0.0
