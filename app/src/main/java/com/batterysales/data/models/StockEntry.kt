@@ -16,6 +16,7 @@ data class StockEntry(
     val grandTotalAmperes: Int = 0,
     val grandTotalCost: Double = 0.0,
     val timestamp: Date = Date(),
+    val invoiceDate: Date? = null, // تاريخ الفاتورة الفعلي (اختياري)
     val supplier: String = "", // Legacy supplier name
     val supplierId: String = "", // Link to Supplier model
     val invoiceId: String? = null, // Link to invoice for sales entries
@@ -39,6 +40,30 @@ data class StockEntry(
             (quantity + returnedQuantity).coerceAtMost(0)
         }
     }
+
+    /**
+     * يحسب التكلفة الصافية لهذا القيد بعد خصم المرتجعات
+     */
+    fun getNetCost(): Double {
+        return if (quantity == 0) 0.0
+        else {
+            val ratio = getNetQuantity().toDouble() / quantity
+            getEffectiveTotalCost() * ratio
+        }
+    }
+
+    /**
+     * يعيد إجمالي التكلفة المسجل، أو يحسبه من السعر والكمية إذا كان مفقوداً (للبيانات القديمة)
+     */
+    fun getEffectiveTotalCost(): Double {
+        // نستخدم القيمة المطلقة للمقارنة بـ 0.001 لضمان شمول القيم السالبة المسجلة
+        return if (Math.abs(totalCost) > 0.001) totalCost else (quantity * costPrice)
+    }
+
+    /**
+     * يعيد تاريخ الفاتورة الفعلي إذا وجد، وإلا يعيد تاريخ الإدخال
+     */
+    fun getEffectiveDate(): Date = invoiceDate ?: timestamp
 
     companion object {
         const val COLLECTION_NAME = "stock_entries"

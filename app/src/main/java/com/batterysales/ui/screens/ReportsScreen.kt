@@ -821,15 +821,15 @@ fun SupplierCardRedesigned(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 val currentRegularOrders = if (selectedSubTab == 0) {
-                    item.regularOrders.filter { it.remainingBalance > 0.001 }
+                    item.regularOrders.filter { it.totalActualPaid < it.entry.totalCost - 0.001 }
                 } else {
-                    item.regularOrders.filter { it.remainingBalance <= 0.001 }
+                    item.regularOrders.filter { it.totalActualPaid >= it.entry.totalCost - 0.001 }
                 }
 
                 val currentObligatedOrders = if (selectedSubTab == 0) {
-                    item.obligatedOrders.filter { it.remainingBalance > 0.001 }
+                    item.obligatedOrders.filter { it.totalActualPaid < it.entry.totalCost - 0.001 }
                 } else {
-                    item.obligatedOrders.filter { it.remainingBalance <= 0.001 }
+                    item.obligatedOrders.filter { it.totalActualPaid >= it.entry.totalCost - 0.001 }
                 }
 
                 if (currentRegularOrders.isNotEmpty()) {
@@ -925,7 +925,7 @@ fun PurchaseOrderCard(
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = dateFormatter.format(po.entry.timestamp),
+                    text = dateFormatter.format(po.entry.getEffectiveDate()),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -957,6 +957,27 @@ fun PurchaseOrderCard(
                     fontWeight = FontWeight.Bold,
                     color = if (po.remainingBalance > 0) Color(0xFFEF4444) else Color(0xFF10B981)
                 )
+            }
+
+            if (po.autoLinkedAmount > 0.001) {
+                val isFullyCovered = po.totalLinkedAmount >= po.entry.totalCost - 0.001
+                Surface(
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.05f),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = if (isFullyCovered) 
+                                "مغطاة بالكامل من شيكات غير مرتبطة" 
+                            else 
+                                "مغطاة جزئياً بمبلغ JD ${String.format("%.3f", po.totalLinkedAmount)} من شيكات مرتبطة",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
             }
 
 

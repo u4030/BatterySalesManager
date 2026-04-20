@@ -401,8 +401,8 @@ class StockEntryRepository @Inject constructor(
         val currentQty = entries.sumOf { it.getNetQuantity() }
 
         val purchaseEntries = entries.filter { it.quantity > 0 }
-        // Use Gross totals for average cost calculation to maintain consistency
-        val sumTotalCost = purchaseEntries.sumOf { it.quantity * it.costPrice }
+        // Use stored totalCost for accuracy, which is the gross cost of the purchase
+        val sumTotalCost = purchaseEntries.sumOf { it.totalCost }
         val grossPurchasedQty = purchaseEntries.sumOf { it.quantity }
         
         val averageCost = if (grossPurchasedQty > 0) sumTotalCost / grossPurchasedQty else 0.0
@@ -420,6 +420,60 @@ class StockEntryRepository @Inject constructor(
             .await()
         return snapshot.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
             .filter { it.totalCost > 0 }
+    }
+
+    /**
+     * يقوم بتحديث تاريخ الفاتورة للمدخلات القديمة ليتطابق مع تاريخ الإدخال
+     * يستخدم دفعات (Batches) لضمان القابلية للتوسع وتجنب حدود المعاملات
+     */
+    suspend fun migrateInvoiceDates() {
+        val snapshot = firestore.collection(StockEntry.COLLECTION_NAME)
+            .get()
+            .await()
+
+        // Get all suppliers to help with ID migration
+        val suppliersSnap = firestore.collection("suppliers").get().await()
+        val suppliersMap = suppliersSnap.documents.associate { 
+            (it.getString("name") ?: "").trim().lowercase() to it.id 
+        }
+
+        val documentsToUpdate = snapshot.documents.filter { 
+            !it.contains("invoiceDate") || 
+            !it.contains("totalCost") || 
+            (it.getDouble("totalCost") ?: 0.0) == 0.0 ||
+            (it.getString("supplierId") ?: "").isEmpty()
+        }
+        if (documentsToUpdate.isEmpty()) return
+
+        // تقسيم العمليات إلى دفعات (بحد أقصى 500 عملية لكل دفعة)
+        documentsToUpdate.chunked(500).forEach { chunk ->
+            val batch = firestore.batch()
+            chunk.forEach { doc ->
+                val entry = doc.toObject(StockEntry::class.java)
+                if (entry != null) {
+                    val updates = mutableMapOf<String, Any>()
+                    if (!doc.contains("invoiceDate")) {
+                        updates["invoiceDate"] = entry.timestamp
+                    }
+                    if (!doc.contains("totalCost") || (doc.getDouble("totalCost") ?: 0.0) == 0.0) {
+                        updates["totalCost"] = entry.quantity * entry.costPrice
+                    }
+                    
+                    val currentId = doc.getString("supplierId") ?: ""
+                    if (currentId.isEmpty()) {
+                        val name = (doc.getString("supplier") ?: "").trim().lowercase()
+                        if (name.isNotEmpty() && suppliersMap.containsKey(name)) {
+                            updates["supplierId"] = suppliersMap[name]!!
+                        }
+                    }
+
+                    if (updates.isNotEmpty()) {
+                        batch.update(doc.reference, updates)
+                    }
+                }
+            }
+            batch.commit().await()
+        }
     }
 
     suspend fun getSupplierDebit(supplierId: String, resetDate: java.util.Date? = null, startDate: Long? = null, endDate: Long? = null): Double {

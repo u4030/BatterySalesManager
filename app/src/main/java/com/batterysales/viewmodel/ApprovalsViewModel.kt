@@ -34,6 +34,7 @@ class ApprovalsViewModel @Inject constructor(
     private val productVariantRepository: ProductVariantRepository,
     private val warehouseRepository: WarehouseRepository,
     private val approvalRepository: ApprovalRepository,
+    private val billRepository: com.batterysales.data.repositories.BillRepository,
     private val userRepository: UserRepository
 ) : ViewModel() {
 
@@ -93,6 +94,13 @@ class ApprovalsViewModel @Inject constructor(
     fun approveEntry(entryId: String) {
         viewModelScope.launch {
             stockEntryRepository.approveEntry(entryId)
+            
+            // تحديث الروابط التلقائية للمورد بعد الموافقة
+            stockEntryRepository.getStockEntryById(entryId)?.let { entry ->
+                if (entry.supplierId.isNotEmpty()) {
+                    billRepository.autoLinkBillsForSupplier(entry.supplierId)
+                }
+            }
         }
     }
 

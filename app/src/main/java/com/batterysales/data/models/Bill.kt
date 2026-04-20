@@ -22,6 +22,8 @@ data class Bill(
     val referenceNumber: String = "", // رقم السند/الشيك
     val supplierId: String = "", // Link to Supplier model
     val relatedEntryId: String? = null, // Link to a specific StockEntry (Purchase)
+    val autoLinkedEntryIds: List<String> = emptyList(), // الروابط التلقائية للطلبيات
+    val autoAllocations: Map<String, Double> = emptyMap(), // المبالغ الموزعة تلقائياً لكل طلبية
     val warehouseId: String? = null // المستودع المرتبط
 ) {
     companion object {

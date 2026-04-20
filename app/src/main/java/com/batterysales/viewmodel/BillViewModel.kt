@@ -174,6 +174,10 @@ class BillViewModel @Inject constructor(
                     paidDate = if (payImmediately) Date() else null
                 )
                 val billId = repository.addBill(bill)
+                
+                // تحديث الروابط التلقائية للمورد
+                val supplier = _suppliers.value.find { it.id == supplierId }
+                repository.autoLinkBillsForSupplier(supplierId, supplier?.resetDate)
 
                 if (payImmediately) {
                     val supplier = _suppliers.value.find { it.id == supplierId }
@@ -222,10 +226,13 @@ class BillViewModel @Inject constructor(
                 // Fetch the bill once to get details
                 val snapshot = repository.getBill(billId) ?: return@launch
                 val bill = snapshot
-                val supplier = _suppliers.value.find { it.id == bill.supplierId }
-                val supplierName = supplier?.name ?: ""
+                val supplierObj = _suppliers.value.find { it.id == bill.supplierId }
+                val supplierName = supplierObj?.name ?: ""
                 
                 repository.recordPayment(billId, amount)
+                
+                // تحديث الروابط التلقائية بعد تسجيل الدفعة (لأن الرصيد المتاح من الشيك تغير)
+                repository.autoLinkBillsForSupplier(bill.supplierId, supplierObj?.resetDate)
 
                 // Logic updated based on requirement:
                 // 1. Promissory Notes (BILL/TRANSFER/OTHER) are deducted from Treasury (Accounting)
@@ -288,7 +295,15 @@ class BillViewModel @Inject constructor(
     fun deleteBill(billId: String) {
         viewModelScope.launch {
             try {
+                val bill = repository.getBill(billId)
                 repository.deleteBill(billId)
+                
+                // تحديث الروابط التلقائية للمورد بعد الحذف
+                bill?.let { b ->
+                    val supplier = _suppliers.value.find { it.id == b.supplierId }
+                    repository.autoLinkBillsForSupplier(b.supplierId, supplier?.resetDate)
+                }
+
                 // Also delete related treasury or bank transactions
                 accountingRepository.deleteTransactionsByRelatedId(billId)
                 bankRepository.deleteTransactionsByBillId(billId)
@@ -303,6 +318,11 @@ class BillViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 repository.updateBill(bill)
+                
+                // تحديث الروابط التلقائية للمورد
+                val supplier = _suppliers.value.find { it.id == bill.supplierId }
+                repository.autoLinkBillsForSupplier(bill.supplierId, supplier?.resetDate)
+
                 // Also update treasury transactions description only
                 // Overwriting amount would be wrong if partial payments exist
                 accountingRepository.updateTransactionByRelatedId(
