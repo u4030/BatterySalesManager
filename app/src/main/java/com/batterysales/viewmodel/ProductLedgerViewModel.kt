@@ -49,6 +49,7 @@ class ProductLedgerViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val productVariantId: String = savedStateHandle.get<String>("variantId") ?: ""
+    private val targetWarehouseId: String? = savedStateHandle.get<String>("warehouseId")
     val productName: String = savedStateHandle.get<String>("productName") ?: "سجل المنتج"
     val variantCapacity: String = savedStateHandle.get<String>("variantCapacity") ?: ""
     val variantSpecification: String = (savedStateHandle.get<String>("variantSpecification") ?: "").let { if(it == "no_spec") "" else it }
@@ -79,13 +80,18 @@ class ProductLedgerViewModel @Inject constructor(
     val ledgerItems: Flow<PagingData<LedgerItem>> = combine(
         _selectedCategory,
         _searchQuery,
+        userRepository.getCurrentUserFlow(),
         refreshTrigger
-    ) { category, query, _ ->
-        category to query
-    }.flatMapLatest { (category, query) ->
+    ) { category, query, user, _ ->
+        Triple(category, query, user)
+    }.flatMapLatest { (category, query, user) ->
         val warehouseMap = allWarehouses.associateBy { it.id }
+
+        // Priority: Passed warehouseId (from deep-link) > Seller's assigned warehouse
+        val warehouseFilter = targetWarehouseId ?: if (user?.role == "seller") user.warehouseId else null
+
         Pager(PagingConfig(pageSize = 20)) {
-            StockEntryPagingSource(stockEntryRepository, productVariantId)
+            StockEntryPagingSource(stockEntryRepository, productVariantId, warehouseFilter)
         }.flow.map { pagingData ->
             val mapped: PagingData<LedgerItem> = pagingData.map { entry ->
                 LedgerItem(

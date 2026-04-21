@@ -276,6 +276,10 @@ class AppNotificationManager @Inject constructor(
 
     private suspend fun performFullLowStockCheck(isStartup: Boolean) {
         try {
+            val user = userRepository.getCurrentUser() ?: return
+            val isAdmin = user.role == User.ROLE_ADMIN
+            val userWhId = user.warehouseId
+
             val allVariants = productVariantRepository.getAllVariants().filter { !it.archived }
             val allWarehouses = warehouseRepository.getWarehousesOnce()
             val productsMap = productRepository.getProductsOnce().associateBy { it.id }
@@ -283,7 +287,10 @@ class AppNotificationManager @Inject constructor(
             val lowStockMessages = mutableListOf<String>()
 
             for (variant in allVariants) {
-                for (warehouse in allWarehouses) {
+                val targetWarehouses = if (isAdmin) allWarehouses
+                                       else allWarehouses.filter { it.id == userWhId }
+
+                for (warehouse in targetWarehouses) {
                     val threshold = variant.minQuantities[warehouse.id] ?: variant.minQuantity
                     if (threshold <= 0) continue
 
