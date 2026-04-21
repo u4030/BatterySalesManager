@@ -544,7 +544,7 @@ fun OldBatteryReportSectionRedesigned(
     else oldBatteryWarehouseSummary[warehouses[selectedWHIndex - 1].id] ?: Pair(0, 0.0)
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        if (warehouses.isNotEmpty()) {
+        if (warehouses.size > 1) {
             androidx.compose.foundation.lazy.LazyRow(
                 modifier = Modifier.fillMaxWidth(),
                 contentPadding = PaddingValues(horizontal = 16.dp),

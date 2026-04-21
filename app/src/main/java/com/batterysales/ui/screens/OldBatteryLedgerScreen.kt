@@ -143,7 +143,8 @@ fun OldBatteryLedgerScreen(
                                         onClick = {
                                             showSaleDialog = com.batterysales.data.models.OldBatteryTransaction(
                                                 quantity = summary.first,
-                                                totalAmperes = summary.second
+                                                totalAmperes = summary.second,
+                                                warehouseId = if (isSeller) userWarehouseId ?: "" else (selectedFilterWH ?: "")
                                             )
                                         },
                                         modifier = Modifier.fillMaxWidth().height(48.dp),

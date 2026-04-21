@@ -226,9 +226,12 @@ class OldBatteryViewModel @Inject constructor(
     fun addManualIntake(quantity: Int, totalAmperes: Double, notes: String, warehouseId: String) {
         viewModelScope.launch {
             try {
+                // Enforce seller warehouse if applicable
+                val finalWarehouseId = if (_isSeller.value) _userWarehouseId.value ?: warehouseId else warehouseId
+
                 val transaction = com.batterysales.data.models.OldBatteryTransaction(
                     quantity = quantity,
-                    warehouseId = warehouseId,
+                    warehouseId = finalWarehouseId,
                     totalAmperes = totalAmperes,
                     type = com.batterysales.data.models.OldBatteryTransactionType.INTAKE,
                     date = java.util.Date(),
@@ -245,9 +248,12 @@ class OldBatteryViewModel @Inject constructor(
     fun sellBatteries(quantity: Int, totalAmperes: Double, amount: Double, warehouseId: String) {
         viewModelScope.launch {
             try {
+                // Enforce seller warehouse if applicable
+                val finalWarehouseId = if (_isSeller.value) _userWarehouseId.value ?: warehouseId else warehouseId
+
                 val transaction = OldBatteryTransaction(
                     quantity = quantity,
-                    warehouseId = warehouseId,
+                    warehouseId = finalWarehouseId,
                     totalAmperes = totalAmperes,
                     amount = amount,
                     type = OldBatteryTransactionType.SALE,
