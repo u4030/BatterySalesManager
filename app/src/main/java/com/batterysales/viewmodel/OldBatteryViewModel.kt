@@ -26,6 +26,7 @@ import javax.inject.Inject
 @HiltViewModel
 class OldBatteryViewModel @Inject constructor(
     private val repository: OldBatteryRepository,
+    private val scrapWarehouseRepository: com.batterysales.data.repositories.ScrapWarehouseRepository,
     private val accountingRepository: AccountingRepository,
     private val invoiceRepository: InvoiceRepository,
     private val userRepository: com.batterysales.data.repositories.UserRepository,
@@ -38,8 +39,8 @@ class OldBatteryViewModel @Inject constructor(
     private val _warehouseSummary = MutableStateFlow<Map<String, Pair<Int, Double>>>(emptyMap())
     val warehouseSummary = _warehouseSummary.asStateFlow()
 
-    private val _warehouses = MutableStateFlow<List<com.batterysales.data.models.Warehouse>>(emptyList())
-    val warehouses = _warehouses.asStateFlow()
+    private val _scrapWarehouses = MutableStateFlow<List<com.batterysales.data.models.ScrapWarehouse>>(emptyList())
+    val scrapWarehouses = _scrapWarehouses.asStateFlow()
 
     private val _isSeller = MutableStateFlow(false)
     val isSeller = _isSeller.asStateFlow()
@@ -95,15 +96,23 @@ class OldBatteryViewModel @Inject constructor(
                 _summary.value = Pair(0, 0.0)
                 _selectedWarehouseId.value = null
 
-                warehouseRepository.getWarehouses().onEach { allWh ->
-                    val active = allWh.filter { it.isActive }
-                    _warehouses.value = active
+                scrapWarehouseRepository.getScrapWarehouses().onEach { allScrapWh ->
+                    val active = allScrapWh.filter { it.isActive }
+
+                    val filtered = if (user?.role == "seller") {
+                        active.filter { it.parentWarehouseId == user.warehouseId }
+                    } else active
+
+                    _scrapWarehouses.value = filtered
 
                     if (user?.role == "admin" && _selectedWarehouseId.value == null) {
-                        active.firstOrNull()?.let {
-                            _selectedWarehouseId.value = it.id
-                            loadTransactions(reset = true, warehouseId = it.id)
+                        filtered.firstOrNull()?.let {
+                            _selectedWarehouseId.value = it.parentWarehouseId
+                            loadTransactions(reset = true, warehouseId = it.parentWarehouseId)
                         }
+                    } else if (user?.role == "seller") {
+                        _selectedWarehouseId.value = user.warehouseId
+                        loadTransactions(reset = true, warehouseId = user.warehouseId)
                     }
                 }.launchIn(viewModelScope)
 
@@ -133,9 +142,15 @@ class OldBatteryViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val warehouseFilter = if (_isSeller.value) _userWarehouseId.value else warehouseId
-                // Load summary via aggregation
-                val summ = repository.getStockSummary(warehouseFilter)
-                _summary.value = summ
+
+                // Use ScrapWarehouse entity for summary instead of aggregation
+                val scrapWh = _scrapWarehouses.value.find { it.parentWarehouseId == warehouseFilter }
+                if (scrapWh != null) {
+                    _summary.value = Pair(scrapWh.totalQuantity, scrapWh.totalAmperes)
+                } else {
+                    // Fallback to aggregation if entity not yet loaded/migrated
+                    _summary.value = repository.getStockSummary(warehouseFilter)
+                }
 
             } catch (e: Exception) {
                 Log.e("OldBatteryViewModel", "Error loading transactions", e)

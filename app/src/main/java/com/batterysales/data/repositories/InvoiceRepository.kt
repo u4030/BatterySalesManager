@@ -15,7 +15,8 @@ import java.util.Date
 import javax.inject.Inject
 
 class InvoiceRepository @Inject constructor(
-    private val firestore: FirebaseFirestore
+    private val firestore: FirebaseFirestore,
+    private val oldBatteryRepository: OldBatteryRepository
 ) {
 
     suspend fun createInvoice(invoice: Invoice): Invoice {
@@ -228,6 +229,11 @@ class InvoiceRepository @Inject constructor(
                 transaction.set(scrapRef, oldBatteryTransaction.copy(id = scrapRef.id, invoiceId = finalInvoice.id))
             }
         }.await()
+
+        // Sync scrap warehouse if needed
+        if (oldBatteryTransaction != null) {
+            oldBatteryRepository.syncScrapWarehouse(oldBatteryTransaction.warehouseId)
+        }
 
         return finalInvoice.id
     }
