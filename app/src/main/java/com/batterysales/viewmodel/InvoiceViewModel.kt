@@ -58,14 +58,19 @@ class InvoiceViewModel @Inject constructor(
     private val refreshTrigger = MutableStateFlow(0)
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    val invoices: Flow<PagingData<Invoice>> = combine(filterState, refreshTrigger) { f, _ -> f }
-        .flatMapLatest { filters ->
+    val invoices: Flow<PagingData<Invoice>> = combine(
+        filterState,
+        userRepository.getCurrentUserFlow(),
+        refreshTrigger
+    ) { f, u, _ -> f to u }
+        .flatMapLatest { (filters, user) ->
             if (filters.warehouseId.isBlank() && !_uiState.value.isAdmin) {
                 return@flatMapLatest flowOf(PagingData.empty())
             }
 
             val startOfToday = com.batterysales.utils.DateUtils.getStartOfDay(System.currentTimeMillis())
             val endOfToday = com.batterysales.utils.DateUtils.getEndOfDay(System.currentTimeMillis())
+            val sellerId = if (user?.role == "seller") user.id else null
 
             Pager(PagingConfig(pageSize = 25)) { 
                 InvoicePagingSource(
@@ -75,6 +80,7 @@ class InvoiceViewModel @Inject constructor(
                     startDate = if (filters.selectedTab == 0) startOfToday else filters.startDate,
                     endDate = if (filters.selectedTab == 0) endOfToday else filters.endDate,
                     searchQuery = filters.searchQuery.ifBlank { null },
+                    sellerId = sellerId,
                     useUpdatedAt = false
                 )
             }.flow.cachedIn(viewModelScope)

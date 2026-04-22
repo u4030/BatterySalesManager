@@ -336,7 +336,9 @@ class SalesViewModel @Inject constructor(
                     status = if (paidAmount >= finalTotal) "paid" else "pending",
                     paymentMethod = state.paymentMethod,
                     warehouseId = warehouse.id,
-                    invoiceDate = Date()
+                    invoiceDate = Date(),
+                    sellerId = currentUser?.id ?: "",
+                    sellerName = currentUser?.displayName ?: ""
                 )
 
                 val stockEntry = StockEntry(
@@ -379,6 +381,7 @@ class SalesViewModel @Inject constructor(
                         totalAmperes = newInvoice.oldBatteriesTotalAmperes,
                         type = OldBatteryTransactionType.INTAKE,
                         notes = "مستلم من فاتورة: $customerName",
+                        createdBy = currentUser?.id ?: "",
                         createdByUserName = currentUser?.displayName ?: ""
                     )
                 } else null

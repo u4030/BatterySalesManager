@@ -63,7 +63,8 @@ class DashboardViewModel @Inject constructor(
     private val approvalRepository: ApprovalRepository,
     private val warehouseRepository: WarehouseRepository,
     private val userRepository: UserRepository,
-    private val paymentRepository: PaymentRepository
+    private val paymentRepository: PaymentRepository,
+    private val invoiceRepository: InvoiceRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DashboardUiState())
@@ -138,7 +139,10 @@ class DashboardViewModel @Inject constructor(
                     it.warehouseId == warehouse.id && (it.timestamp.after(startOfToday) || it.timestamp.equals(startOfToday))
                 }
                 val warehouseInvoices = allInvoices.filter {
-                    it.warehouseId == warehouse.id && (it.createdAt.after(startOfToday) || it.createdAt.equals(startOfToday))
+                    val matchWarehouse = it.warehouseId == warehouse.id
+                    val matchSeller = if (user?.role == "seller") it.sellerId == user.id else true
+                    val matchDate = it.createdAt.after(startOfToday) || it.createdAt.equals(startOfToday)
+                    matchWarehouse && matchSeller && matchDate
                 }
 
                 val collection = warehousePayments.sumOf { it.amount }
