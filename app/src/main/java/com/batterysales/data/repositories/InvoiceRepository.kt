@@ -74,7 +74,6 @@ class InvoiceRepository @Inject constructor(
         startDate: Long? = null,
         endDate: Long? = null,
         searchQuery: String? = null,
-        sellerId: String? = null,
         lastDocument: DocumentSnapshot? = null,
         limit: Long = 20,
         useUpdatedAt: Boolean = false
@@ -87,10 +86,6 @@ class InvoiceRepository @Inject constructor(
 
         if (status != null) {
             query = query.whereEqualTo("status", status)
-        }
-
-        if (!sellerId.isNullOrBlank()) {
-            query = query.whereEqualTo("sellerId", sellerId)
         }
 
         val isSearching = !searchQuery.isNullOrBlank()

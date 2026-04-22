@@ -13,7 +13,6 @@ class InvoicePagingSource(
     private val startDate: Long?,
     private val endDate: Long?,
     private val searchQuery: String?,
-    private val sellerId: String? = null,
     private val useUpdatedAt: Boolean = false
 ) : PagingSource<DocumentSnapshot, Invoice>() {
 
@@ -27,7 +26,6 @@ class InvoicePagingSource(
                 startDate = startDate,
                 endDate = endDate,
                 searchQuery = searchQuery,
-                sellerId = sellerId,
                 lastDocument = params.key,
                 limit = params.loadSize.toLong(),
                 useUpdatedAt = useUpdatedAt
