@@ -276,37 +276,42 @@ fun DashboardScreen(
                                             androidx.compose.foundation.layout.FlowRow(
                                                 modifier = Modifier.fillMaxWidth(),
                                                 horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                                                verticalArrangement = Arrangement.spacedBy(12.dp)
                                             ) {
-                                                Column {
+                                                Column(modifier = Modifier.weight(1f)) {
                                                     Text(
-                                                        "إجمالي التحصيل | ",
+                                                        "إجمالي المبيعات",
                                                         color = Color.White.copy(alpha = 0.6f),
                                                         style = MaterialTheme.typography.labelSmall
                                                     )
                                                     Text(
-                                                        "JD ${
-                                                            String.format(
-                                                                "%,.2f",
-                                                                stats.todayCollection
-                                                            )
-                                                        }",
-                                                        color = Color(0xFF10B981),
-                                                        fontWeight = FontWeight.Bold,
-                                                        style = MaterialTheme.typography.bodyLarge
-                                                    )
-                                                }
-                                                Column(horizontalAlignment = Alignment.End) {
-                                                    Text(
-                                                        "عدد الفواتير",
-                                                        color = Color.White.copy(alpha = 0.6f),
-                                                        style = MaterialTheme.typography.labelSmall
-                                                    )
-                                                    Text(
-                                                        "${stats.todayCollectionCount}",
+                                                        "JD ${String.format("%,.2f", stats.todaySales)}",
                                                         color = Color.White,
                                                         fontWeight = FontWeight.Bold,
-                                                        style = MaterialTheme.typography.bodyLarge
+                                                        style = MaterialTheme.typography.bodyMedium
+                                                    )
+                                                    Text(
+                                                        "(${stats.todaySalesCount} فاتورة)",
+                                                        color = Color.White.copy(alpha = 0.6f),
+                                                        style = MaterialTheme.typography.labelSmall
+                                                    )
+                                                }
+                                                Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.End) {
+                                                    Text(
+                                                        "إجمالي التحصيل",
+                                                        color = Color.White.copy(alpha = 0.6f),
+                                                        style = MaterialTheme.typography.labelSmall
+                                                    )
+                                                    Text(
+                                                        "JD ${String.format("%,.2f", stats.todayCollection)}",
+                                                        color = Color(0xFF10B981),
+                                                        fontWeight = FontWeight.Bold,
+                                                        style = MaterialTheme.typography.bodyMedium
+                                                    )
+                                                    Text(
+                                                        "(${stats.todayCollectionCount} تحصيل)",
+                                                        color = Color.White.copy(alpha = 0.6f),
+                                                        style = MaterialTheme.typography.labelSmall
                                                     )
                                                 }
                                             }

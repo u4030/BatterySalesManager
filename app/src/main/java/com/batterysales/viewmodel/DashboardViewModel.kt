@@ -16,7 +16,9 @@ data class WarehouseStats(
     val warehouseId: String,
     val warehouseName: String,
     val todayCollection: Double, // Payments received today
-    val todayCollectionCount: Int // Number of unique invoices collected today
+    val todayCollectionCount: Int, // Number of unique invoices collected today
+    val todaySales: Double, // Total invoice amount today
+    val todaySalesCount: Int // Total invoices created today
 )
 
 data class AppNotification(
@@ -81,7 +83,8 @@ class DashboardViewModel @Inject constructor(
             stockEntryRepository.getPendingEntriesFlow(),
             paymentRepository.getAllPaymentsFlow(),
             stockEntryRepository.getAllStockEntriesFlow(),
-            approvalRepository.getPendingRequestsFlow()
+            approvalRepository.getPendingRequestsFlow(),
+            invoiceRepository.getAllInvoices()
         ) { array ->
             val warehouses = array[0] as List<com.batterysales.data.models.Warehouse>
             val user = array[1] as com.batterysales.data.models.User?
@@ -92,6 +95,7 @@ class DashboardViewModel @Inject constructor(
             val allPayments = array[6] as List<com.batterysales.data.models.Payment>
             val allStockEntries = array[7] as List<StockEntry>
             val pendingRequests = array[8] as List<com.batterysales.data.models.ApprovalRequest>
+            val allInvoices = array[9] as List<Invoice>
 
             val isAdmin = user?.role == "admin"
             val userWarehouseId = user?.warehouseId
@@ -133,16 +137,24 @@ class DashboardViewModel @Inject constructor(
                 val warehousePayments = allPayments.filter {
                     it.warehouseId == warehouse.id && (it.timestamp.after(startOfToday) || it.timestamp.equals(startOfToday))
                 }
+                val warehouseInvoices = allInvoices.filter {
+                    it.warehouseId == warehouse.id && (it.createdAt.after(startOfToday) || it.createdAt.equals(startOfToday))
+                }
+
                 val collection = warehousePayments.sumOf { it.amount }
-                val count = warehousePayments.map { it.invoiceId }.distinct().size
+                val collectionCount = warehousePayments.map { it.invoiceId }.distinct().size
+                val sales = warehouseInvoices.sumOf { it.finalAmount }
+                val salesCount = warehouseInvoices.size
 
                 WarehouseStats(
                     warehouseId = warehouse.id,
                     warehouseName = warehouse.name,
                     todayCollection = collection,
-                    todayCollectionCount = count
+                    todayCollectionCount = collectionCount,
+                    todaySales = sales,
+                    todaySalesCount = salesCount
                 )
-            }.filter { if (isAdmin) it.todayCollection > 0 || it.todayCollectionCount > 0 else true }
+            }.filter { if (isAdmin) it.todaySalesCount > 0 || it.todayCollectionCount > 0 else true }
 
             // 4. Low Stock Notifications
             val pMap = products.associateBy { it.id }
