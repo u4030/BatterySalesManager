@@ -216,16 +216,13 @@ class DashboardViewModel @Inject constructor(
 
             // 3. Low Stock Notifications (Placed last)
             lowStockItems.forEach { item ->
-                // Construct route for deep-linking to product ledger
-                val ledgerRoute = "product_ledger/${item.variantId}/${item.productName}/${item.capacity}/no_spec"
-
                 allNotifications.add(
                     AppNotification(
                         id = "low_stock_${item.variantId}_${item.warehouseName}",
                         title = "مخزون منخفض: ${item.productName}",
                         message = "السعة: ${item.capacity}A | الكمية المتبقية: ${item.currentQuantity} (الحد: ${item.minQuantity}) في ${item.warehouseName}",
                         type = NotificationType.LOW_STOCK,
-                        route = ledgerRoute
+                        route = "reports"
                     )
                 )
             }

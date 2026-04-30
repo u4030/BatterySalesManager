@@ -33,20 +33,9 @@ class WarehouseRepository @Inject constructor(
     }
 
     suspend fun addWarehouse(warehouse: Warehouse) {
-        firestore.runTransaction { transaction ->
-            val docRef = firestore.collection(Warehouse.COLLECTION_NAME).document()
-            val finalWarehouse = warehouse.copy(id = docRef.id)
-            transaction.set(docRef, finalWarehouse)
-
-            // Automatically create linked ScrapWarehouse
-            val scrapDocRef = firestore.collection(com.batterysales.data.models.ScrapWarehouse.COLLECTION_NAME).document()
-            val scrapWarehouse = com.batterysales.data.models.ScrapWarehouse(
-                id = scrapDocRef.id,
-                name = "سكراب - ${warehouse.name}",
-                parentWarehouseId = docRef.id
-            )
-            transaction.set(scrapDocRef, scrapWarehouse)
-        }.await()
+        val docRef = firestore.collection(Warehouse.COLLECTION_NAME).document()
+        val finalWarehouse = warehouse.copy(id = docRef.id)
+        docRef.set(finalWarehouse).await()
     }
 
     suspend fun getWarehouse(warehouseId: String): Warehouse? {
@@ -58,36 +47,10 @@ class WarehouseRepository @Inject constructor(
     }
 
     suspend fun updateWarehouse(warehouse: Warehouse) {
-        firestore.runTransaction { transaction ->
-            val warehouseRef = firestore.collection(Warehouse.COLLECTION_NAME).document(warehouse.id)
-            transaction.set(warehouseRef, warehouse)
-
-            // Keep ScrapWarehouse name in sync
-            val scrapQuery = firestore.collection(com.batterysales.data.models.ScrapWarehouse.COLLECTION_NAME)
-                .whereEqualTo("parentWarehouseId", warehouse.id)
-                .limit(1)
-
-            // Note: Transactions require reads before writes.
-            // But we can't easily perform a query inside a transaction without knowing the ID.
-            // We'll use a separate transaction for the scrap warehouse if needed,
-            // or just update it via query result.
-        }.await()
-
-        // Sync name after transaction
-        syncScrapWarehouseName(warehouse.id, warehouse.name)
-    }
-
-    private suspend fun syncScrapWarehouseName(parentWarehouseId: String, newName: String) {
-        val snapshot = firestore.collection(com.batterysales.data.models.ScrapWarehouse.COLLECTION_NAME)
-            .whereEqualTo("parentWarehouseId", parentWarehouseId)
-            .get()
+        firestore.collection(Warehouse.COLLECTION_NAME)
+            .document(warehouse.id)
+            .set(warehouse)
             .await()
-
-        val batch = firestore.batch()
-        snapshot.documents.forEach { doc ->
-            batch.update(doc.reference, "name", "سكراب - $newName")
-        }
-        batch.commit().await()
     }
 
     suspend fun deleteWarehouse(warehouseId: String) {

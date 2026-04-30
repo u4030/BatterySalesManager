@@ -49,7 +49,6 @@ class ProductLedgerViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val productVariantId: String = savedStateHandle.get<String>("variantId") ?: ""
-    private val targetWarehouseId: String? = savedStateHandle.get<String>("warehouseId")
     val productName: String = savedStateHandle.get<String>("productName") ?: "سجل المنتج"
     val variantCapacity: String = savedStateHandle.get<String>("variantCapacity") ?: ""
     val variantSpecification: String = (savedStateHandle.get<String>("variantSpecification") ?: "").let { if(it == "no_spec") "" else it }
@@ -80,18 +79,13 @@ class ProductLedgerViewModel @Inject constructor(
     val ledgerItems: Flow<PagingData<LedgerItem>> = combine(
         _selectedCategory,
         _searchQuery,
-        userRepository.getCurrentUserFlow(),
         refreshTrigger
-    ) { category, query, user, _ ->
-        Triple(category, query, user)
-    }.flatMapLatest { (category, query, user) ->
+    ) { category, query, _ ->
+        category to query
+    }.flatMapLatest { (category, query) ->
         val warehouseMap = allWarehouses.associateBy { it.id }
-
-        // Priority: Passed warehouseId (from deep-link) > Seller's assigned warehouse
-        val warehouseFilter = targetWarehouseId ?: if (user?.role == "seller") user.warehouseId else null
-
         Pager(PagingConfig(pageSize = 20)) {
-            StockEntryPagingSource(stockEntryRepository, productVariantId, warehouseFilter)
+            StockEntryPagingSource(stockEntryRepository, productVariantId)
         }.flow.map { pagingData ->
             val mapped: PagingData<LedgerItem> = pagingData.map { entry ->
                 LedgerItem(
@@ -251,22 +245,18 @@ class ProductLedgerViewModel @Inject constructor(
                         billRepository.addBill(bill)
 
                     } else if (returnMode == "treasury_cash") {
-                        // Pay from Main Warehouse Treasury
-                        val allWh = allWarehouses
-                        val mainWh = allWh.find { it.isMain && it.isActive }
-                        if (mainWh != null) {
-                            val transaction = com.batterysales.data.models.Transaction(
-                                type = com.batterysales.data.models.TransactionType.INCOME, // Money coming BACK to us
-                                amount = returnAmount,
-                                description = "إرجاع نقدي من مورد: $productName - $notes",
-                                warehouseId = mainWh.id,
-                                paymentMethod = "cash",
-                                relatedId = entry.id
-                            )
-                            com.google.firebase.firestore.FirebaseFirestore.getInstance()
-                                .collection(com.batterysales.data.models.Transaction.COLLECTION_NAME)
-                                .add(transaction).await()
-                        }
+                        // Pay from the warehouse treasury where the material was originally received
+                        val transaction = com.batterysales.data.models.Transaction(
+                            type = com.batterysales.data.models.TransactionType.INCOME, // Money coming BACK to us
+                            amount = returnAmount,
+                            description = "إرجاع نقدي من مورد: $productName - $notes",
+                            warehouseId = entry.warehouseId,
+                            paymentMethod = "cash",
+                            relatedId = entry.id
+                        )
+                        com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                            .collection(com.batterysales.data.models.Transaction.COLLECTION_NAME)
+                            .add(transaction).await()
                     }
                 }
 

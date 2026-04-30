@@ -28,7 +28,6 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.batterysales.data.models.OldBatteryTransaction
 import com.batterysales.data.models.OldBatteryTransactionType
-import com.batterysales.data.models.ScrapWarehouse
 import com.batterysales.viewmodel.OldBatteryViewModel
 import java.text.SimpleDateFormat
 import java.util.*
@@ -48,7 +47,7 @@ fun OldBatteryLedgerScreen(
     val keyboardController = com.batterysales.ui.components.LocalCustomKeyboardController.current
     val pagingItems = viewModel.transactions.collectAsLazyPagingItems()
     val summary by viewModel.summary.collectAsState()
-    val scrapWarehouses by viewModel.scrapWarehouses.collectAsState()
+    val warehouses by viewModel.warehouses.collectAsState()
     val isSeller by viewModel.isSeller.collectAsState()
     val userWarehouseId by viewModel.userWarehouseId.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -144,8 +143,7 @@ fun OldBatteryLedgerScreen(
                                         onClick = {
                                             showSaleDialog = com.batterysales.data.models.OldBatteryTransaction(
                                                 quantity = summary.first,
-                                                totalAmperes = summary.second,
-                                                warehouseId = if (isSeller) userWarehouseId ?: "" else (selectedFilterWH ?: "")
+                                                totalAmperes = summary.second
                                             )
                                         },
                                         modifier = Modifier.fillMaxWidth().height(48.dp),
@@ -175,21 +173,21 @@ fun OldBatteryLedgerScreen(
                 }
             }
 
-            if (!isSeller && scrapWarehouses.size > 1) {
+            if (!isSeller && warehouses.isNotEmpty()) {
                 item {
                     androidx.compose.foundation.lazy.LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         contentPadding = PaddingValues(horizontal = 16.dp),
                         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
                     ) {
-                        items(scrapWarehouses) { scrapWh ->
+                        items(warehouses) { warehouse ->
                             FilterChip(
-                                selected = selectedFilterWH == scrapWh.parentWarehouseId,
+                                selected = selectedFilterWH == warehouse.id,
                                 onClick = { 
-                                    selectedFilterWH = scrapWh.parentWarehouseId
-                                    viewModel.loadTransactions(reset = true, warehouseId = scrapWh.parentWarehouseId)
+                                    selectedFilterWH = warehouse.id
+                                    viewModel.loadTransactions(reset = true, warehouseId = warehouse.id)
                                 },
-                                label = { Text(scrapWh.name.removePrefix("سكراب - ")) },
+                                label = { Text(warehouse.name) },
                                 colors = FilterChipDefaults.filterChipColors(selectedContainerColor = accentColor, selectedLabelColor = Color.White)
                             )
                         }
@@ -213,7 +211,7 @@ fun OldBatteryLedgerScreen(
                 items(pagingItems.itemCount) { index ->
                     val trans = pagingItems[index]
                     trans?.let {
-                        val warehouseName = scrapWarehouses.find { wh -> wh.parentWarehouseId == it.warehouseId }?.name ?: "غير معروف"
+                        val warehouseName = warehouses.find { wh -> wh.id == it.warehouseId }?.name ?: "غير معروف"
                         OldBatteryTransactionCard(
                             transaction = it,
                             warehouseName = warehouseName,
@@ -237,7 +235,7 @@ fun OldBatteryLedgerScreen(
 
     if (showAddDialog) {
         AddEditOldBatteryDialog(
-            scrapWarehouses = scrapWarehouses,
+            warehouses = warehouses,
             isSeller = isSeller,
             userWarehouseId = userWarehouseId,
             onDismiss = { showAddDialog = false },
@@ -251,7 +249,7 @@ fun OldBatteryLedgerScreen(
     if (showEditDialog != null) {
         AddEditOldBatteryDialog(
             transaction = showEditDialog,
-            scrapWarehouses = scrapWarehouses,
+            warehouses = warehouses,
             isSeller = isSeller,
             userWarehouseId = userWarehouseId,
             onDismiss = { showEditDialog = null },
@@ -444,7 +442,7 @@ fun OldBatteryTransactionCard(
 @Composable
 fun AddEditOldBatteryDialog(
     transaction: OldBatteryTransaction? = null,
-    scrapWarehouses: List<com.batterysales.data.models.ScrapWarehouse>,
+    warehouses: List<com.batterysales.data.models.Warehouse>,
     isSeller: Boolean,
     userWarehouseId: String?,
     onDismiss: () -> Unit,
@@ -456,7 +454,7 @@ fun AddEditOldBatteryDialog(
     
     // Default to user warehouse if seller, or existing transaction warehouse, or first warehouse
     val initialWH = if (isSeller) userWarehouseId ?: "" 
-                   else transaction?.warehouseId ?: (if (scrapWarehouses.isNotEmpty()) scrapWarehouses[0].parentWarehouseId else "")
+                   else transaction?.warehouseId ?: (if (warehouses.isNotEmpty()) warehouses[0].id else "")
                    
     var selectedWarehouseId by remember { mutableStateOf(initialWH) }
 
@@ -468,22 +466,22 @@ fun AddEditOldBatteryDialog(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                if (scrapWarehouses.size > 1 && !isSeller) {
+                if (warehouses.isNotEmpty() && !isSeller) {
                     Text("المستودع:", style = MaterialTheme.typography.titleSmall)
                     androidx.compose.foundation.lazy.LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        items(scrapWarehouses) { scrapWh ->
+                        items(warehouses) { warehouse ->
                             FilterChip(
-                                selected = selectedWarehouseId == scrapWh.parentWarehouseId,
-                                onClick = { selectedWarehouseId = scrapWh.parentWarehouseId },
-                                label = { Text(scrapWh.name.removePrefix("سكراب - ")) }
+                                selected = selectedWarehouseId == warehouse.id,
+                                onClick = { selectedWarehouseId = warehouse.id },
+                                label = { Text(warehouse.name) }
                             )
                         }
                     }
                 } else if (isSeller) {
-                    val whName = scrapWarehouses.find { it.parentWarehouseId == userWarehouseId }?.name ?: "المستودع الخاص بك"
+                    val whName = warehouses.find { it.id == userWarehouseId }?.name ?: "المستودع الخاص بك"
                     Text("المستودع: $whName", style = MaterialTheme.typography.bodyMedium)
                 }
 

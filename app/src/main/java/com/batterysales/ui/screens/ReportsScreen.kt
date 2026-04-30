@@ -25,7 +25,6 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.batterysales.data.models.Warehouse
-import com.batterysales.data.models.ScrapWarehouse
 import com.batterysales.ui.components.BarcodeScanner
 import com.batterysales.ui.components.InfoBadge
 import com.batterysales.viewmodel.InventoryReportItem
@@ -70,7 +69,7 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
     val isSeller by viewModel.isSeller.collectAsState()
     val warehouses by viewModel.filteredWarehouses.collectAsState()
     val oldBatterySummary by viewModel.oldBatterySummary.collectAsState()
-    val scrapWarehouses by viewModel.scrapWarehouses.collectAsState()
+    val oldBatteryWarehouseSummary by viewModel.oldBatteryWarehouseSummary.collectAsState()
     val isInventoryLoading by viewModel.isInventoryLoading.collectAsState()
     val isSupplierLoading by viewModel.isSupplierLoading.collectAsState()
     val isScrapLoading by viewModel.isScrapLoading.collectAsState()
@@ -228,8 +227,9 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                         1 -> {
                             item {
                                 OldBatteryReportSectionRedesigned(
-                                    scrapWarehouses = scrapWarehouses,
+                                    warehouses = warehouses,
                                     oldBatterySummary = oldBatterySummary,
+                                    oldBatteryWarehouseSummary = oldBatteryWarehouseSummary,
                                     onNavigate = { navController.navigate("old_battery_ledger") }
                                 )
                             }
@@ -534,19 +534,17 @@ fun ReportItemCard(
 
 @Composable
 fun OldBatteryReportSectionRedesigned(
-    scrapWarehouses: List<ScrapWarehouse>,
+    warehouses: List<Warehouse>,
     oldBatterySummary: Pair<Int, Double>,
+    oldBatteryWarehouseSummary: Map<String, Pair<Int, Double>>,
     onNavigate: () -> Unit
 ) {
     var selectedWHIndex by remember { mutableIntStateOf(0) }
     val currentSummary = if (selectedWHIndex == 0) oldBatterySummary
-    else {
-        val scrapWh = scrapWarehouses[selectedWHIndex - 1]
-        Pair(scrapWh.totalQuantity, scrapWh.totalAmperes)
-    }
+    else oldBatteryWarehouseSummary[warehouses[selectedWHIndex - 1].id] ?: Pair(0, 0.0)
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        if (scrapWarehouses.size > 1) {
+        if (warehouses.isNotEmpty()) {
             androidx.compose.foundation.lazy.LazyRow(
                 modifier = Modifier.fillMaxWidth(),
                 contentPadding = PaddingValues(horizontal = 16.dp),
@@ -559,11 +557,11 @@ fun OldBatteryReportSectionRedesigned(
                         label = { Text("الكل") }
                     )
                 }
-                items(scrapWarehouses.size) { index ->
+                items(warehouses.size) { index ->
                     FilterChip(
                         selected = selectedWHIndex == index + 1,
                         onClick = { selectedWHIndex = index + 1 },
-                        label = { Text(scrapWarehouses[index].name.removePrefix("سكراب - ")) }
+                        label = { Text(warehouses[index].name) }
                     )
                 }
             }
@@ -797,6 +795,9 @@ fun SupplierCardRedesigned(
                 InfoBadge(label = "مدين", value = "JD ${String.format("%.3f", item.totalDebit)}", color = Color(0xFFFB8C00))
                 InfoBadge(label = "دائن", value = "JD ${String.format("%.3f", item.totalCredit)}", color = Color(0xFF10B981))
                 InfoBadge(label = "المتبقي", value = "JD ${String.format("%.3f", item.balance)}", color = if (item.balance > 0) Color(0xFFEF4444) else Color(0xFF10B981))
+                if (item.unallocatedCredit > 0.001) {
+                    InfoBadge(label = "رصيد غير موزع", value = "JD ${String.format("%.3f", item.unallocatedCredit)}", color = Color(0xFF3B82F6))
+                }
             }
 
             if (expanded) {

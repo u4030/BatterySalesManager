@@ -42,7 +42,8 @@ data class StockEntry(
     }
 
     /**
-     * يحسب التكلفة الصافية لهذا القيد بعد خصم المرتجعات
+     * يحسب التكلفة الصافية لهذا القيد بعد خصم المرتجعات.
+     * القيمة الناتجة تكون موجبة للمشتريات وسالبة للمبيعات/المرتجعات.
      */
     fun getNetCost(): Double {
         return if (quantity == 0) 0.0
@@ -53,11 +54,13 @@ data class StockEntry(
     }
 
     /**
-     * يعيد إجمالي التكلفة المسجل، أو يحسبه من السعر والكمية إذا كان مفقوداً (للبيانات القديمة)
+     * يعيد إجمالي التكلفة مع مراعاة الإشارة (موجب للمشتريات، سالب للمبيعات).
+     * يعتمد على totalCost المسجل أو يحسبه من السعر والكمية.
      */
     fun getEffectiveTotalCost(): Double {
-        // نستخدم القيمة المطلقة للمقارنة بـ 0.001 لضمان شمول القيم السالبة المسجلة
-        return if (Math.abs(totalCost) > 0.001) totalCost else (quantity * costPrice)
+        val sign = if (quantity >= 0) 1.0 else -1.0
+        val cost = if (Math.abs(totalCost) > 0.001) Math.abs(totalCost) else (Math.abs(quantity.toDouble()) * costPrice)
+        return cost * sign
     }
 
     /**

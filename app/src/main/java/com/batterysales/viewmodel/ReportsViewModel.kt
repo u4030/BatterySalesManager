@@ -40,6 +40,7 @@ data class SupplierReportItem(
     val totalDebit: Double, // Purchases
     val totalCredit: Double, // Payments
     val balance: Double, // Debit - Credit
+    val unallocatedCredit: Double = 0.0, // Credit not linked to any order
     val targetProgress: Double,
     val regularOrders: List<PurchaseOrderItem>, // Orders NOT linked to checks/bills
     val obligatedOrders: List<PurchaseOrderItem> // Orders linked to checks/bills
@@ -120,8 +121,8 @@ class ReportsViewModel @Inject constructor(
     private val _oldBatterySummary = MutableStateFlow<Pair<Int, Double>>(Pair(0, 0.0))
     val oldBatterySummary = _oldBatterySummary.asStateFlow()
 
-    private val _scrapWarehouses = MutableStateFlow<List<ScrapWarehouse>>(emptyList())
-    val scrapWarehouses = _scrapWarehouses.asStateFlow()
+    private val _oldBatteryWarehouseSummary = MutableStateFlow<Map<String, Pair<Int, Double>>>(emptyMap())
+    val oldBatteryWarehouseSummary = _oldBatteryWarehouseSummary.asStateFlow()
 
     private val refreshTrigger = MutableStateFlow(0)
     private var isMigrationRun = false
@@ -259,13 +260,6 @@ class ReportsViewModel @Inject constructor(
                 // Run only once per session to avoid redundant Firestore reads
                 if (!isMigrationRun) {
                     stockEntryRepository.migrateInvoiceDates()
-
-                    // Migrate Scrap Warehouses
-                    val warehouses = warehouseRepository.getWarehousesOnce()
-                    warehouses.forEach { wh ->
-                        oldBatteryRepository.syncScrapWarehouse(wh.id)
-                    }
-
                     isMigrationRun = true
                 }
             } catch (e: Exception) {
@@ -352,28 +346,23 @@ class ReportsViewModel @Inject constructor(
             _isScrapLoading.value = true
             val user = userRepository.getCurrentUser()
             val seller = user?.role == "seller"
+            val targetWarehouseId = if (seller) user?.warehouseId else null
 
-            val scrapWhRef = firestore.collection(ScrapWarehouse.COLLECTION_NAME)
-            val snapshot = scrapWhRef.get().await()
-            val allScrapWh = snapshot.documents.mapNotNull { it.toObject(ScrapWarehouse::class.java)?.copy(id = it.id) }
-                .filter { it.isActive }
-
-            if (seller) {
-                val myScrapWh = allScrapWh.find { it.parentWarehouseId == user?.warehouseId }
-                if (myScrapWh != null) {
-                    _oldBatterySummary.value = Pair(myScrapWh.totalQuantity, myScrapWh.totalAmperes)
-                    _scrapWarehouses.value = listOf(myScrapWh)
-                } else {
-                    _oldBatterySummary.value = Pair(0, 0.0)
-                    _scrapWarehouses.value = emptyList()
-                }
+            if (targetWarehouseId != null) {
+                val summary = oldBatteryRepository.getStockSummary(targetWarehouseId)
+                _oldBatterySummary.value = summary
+                _oldBatteryWarehouseSummary.value = mapOf(targetWarehouseId to summary)
             } else {
-                val totalQty = allScrapWh.sumOf { it.totalQuantity }
-                val totalAmps = allScrapWh.sumOf { it.totalAmperes }
-                _oldBatterySummary.value = Pair(totalQty, totalAmps)
-                _scrapWarehouses.value = allScrapWh.sortedBy { it.name }
-            }
+                val globalSummary = oldBatteryRepository.getStockSummary(null)
+                _oldBatterySummary.value = globalSummary
 
+                val activeWarehouses = warehouses.value.filter { it.isActive }.sortedBy { it.name }
+                val whSummaries = mutableMapOf<String, Pair<Int, Double>>()
+                for (wh in activeWarehouses) {
+                    whSummaries[wh.id] = oldBatteryRepository.getStockSummary(wh.id)
+                }
+                _oldBatteryWarehouseSummary.value = whSummaries
+            }
             _isScrapLoading.value = false
         }
     }
@@ -423,12 +412,12 @@ class ReportsViewModel @Inject constructor(
                         val adjustedEnd = end?.let { com.batterysales.utils.DateUtils.getEndOfDay(it) }
 
                         // Filter entries for this supplier
+                        val supplierName = supplier.name.trim().lowercase()
                         val rawSupplierEntries = allEntries.filter { entry ->
                             val matchId = entry.supplierId.isNotEmpty() && entry.supplierId == supplier.id
                             // Robust name matching fallback for legacy entries
                             val matchName = entry.supplier.isNotBlank() &&
-                                    (entry.supplier.trim().equals(supplier.name.trim(), ignoreCase = true) ||
-                                            entry.supplier.trim().contains(supplier.name.trim(), ignoreCase = true))
+                                    entry.supplier.trim().lowercase() == supplierName
 
                             (matchId || matchName) &&
                                     entry.status == "approved" &&
@@ -569,11 +558,16 @@ class ReportsViewModel @Inject constructor(
 
                         val targetProgress = if (supplier.yearlyTarget > 0) totalDebit / supplier.yearlyTarget else 0.0
 
+                        // Calculate credit that hasn't been linked to any order
+                        val totalAllocatedCredit = (regular + obligated).sumOf { it.totalActualPaid }
+                        val unallocatedCredit = (totalCredit - totalAllocatedCredit).coerceAtLeast(0.0)
+
                         SupplierReportItem(
                             supplier = supplier,
                             totalDebit = totalDebit,
                             totalCredit = totalCredit,
                             balance = balance,
+                            unallocatedCredit = unallocatedCredit,
                             targetProgress = targetProgress,
                             regularOrders = regular,
                             obligatedOrders = obligated
