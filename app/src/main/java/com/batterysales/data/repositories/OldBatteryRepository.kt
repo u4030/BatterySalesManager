@@ -32,20 +32,66 @@ class OldBatteryRepository @Inject constructor(
         }
         val idToUse = if (transaction.id.isNotBlank()) transaction.id else docRef.id
         docRef.set(transaction.copy(id = idToUse)).await()
+        syncScrapWarehouse(transaction.warehouseId)
     }
 
     suspend fun updateTransaction(transaction: OldBatteryTransaction) {
+        // Fetch old transaction to calculate diff
+        val oldDoc = firestore.collection(OldBatteryTransaction.COLLECTION_NAME).document(transaction.id).get().await()
+        val oldTrans = oldDoc.toObject(OldBatteryTransaction::class.java)
+
         firestore.collection(OldBatteryTransaction.COLLECTION_NAME)
             .document(transaction.id)
             .set(transaction)
             .await()
+
+        syncScrapWarehouse(transaction.warehouseId)
+        if (oldTrans != null && oldTrans.warehouseId != transaction.warehouseId) {
+            syncScrapWarehouse(oldTrans.warehouseId)
+        }
     }
 
     suspend fun deleteTransaction(id: String) {
+        val oldDoc = firestore.collection(OldBatteryTransaction.COLLECTION_NAME).document(id).get().await()
+        val oldTrans = oldDoc.toObject(OldBatteryTransaction::class.java)
+
         firestore.collection(OldBatteryTransaction.COLLECTION_NAME)
             .document(id)
             .delete()
             .await()
+
+        oldTrans?.let { syncScrapWarehouse(it.warehouseId) }
+    }
+
+    /**
+     * Recalculates and updates the ScrapWarehouse totals for a specific parent warehouse.
+     */
+    suspend fun syncScrapWarehouse(parentWarehouseId: String) {
+        val summary = getStockSummary(parentWarehouseId)
+
+        val snapshot = firestore.collection(com.batterysales.data.models.ScrapWarehouse.COLLECTION_NAME)
+            .whereEqualTo("parentWarehouseId", parentWarehouseId)
+            .get()
+            .await()
+
+        if (snapshot.isEmpty) {
+            // Create if missing (Migration fallback)
+            val parentWh = firestore.collection("warehouses").document(parentWarehouseId).get().await()
+            val name = parentWh.getString("name") ?: "غير معروف"
+            val scrapWh = com.batterysales.data.models.ScrapWarehouse(
+                name = "سكراب - $name",
+                parentWarehouseId = parentWarehouseId,
+                totalQuantity = summary.first,
+                totalAmperes = summary.second
+            )
+            firestore.collection(com.batterysales.data.models.ScrapWarehouse.COLLECTION_NAME).add(scrapWh).await()
+        } else {
+            val docRef = snapshot.documents.first().reference
+            firestore.runTransaction { transaction ->
+                transaction.update(docRef, "totalQuantity", summary.first)
+                transaction.update(docRef, "totalAmperes", summary.second)
+            }.await()
+        }
     }
 
     suspend fun deleteTransactionsByInvoiceId(invoiceId: String) {

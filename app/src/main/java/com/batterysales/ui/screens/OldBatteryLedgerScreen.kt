@@ -28,6 +28,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.batterysales.data.models.OldBatteryTransaction
 import com.batterysales.data.models.OldBatteryTransactionType
+import com.batterysales.data.models.ScrapWarehouse
 import com.batterysales.viewmodel.OldBatteryViewModel
 import java.text.SimpleDateFormat
 import java.util.*
@@ -47,6 +48,7 @@ fun OldBatteryLedgerScreen(
     val keyboardController = com.batterysales.ui.components.LocalCustomKeyboardController.current
     val pagingItems = viewModel.transactions.collectAsLazyPagingItems()
     val summary by viewModel.summary.collectAsState()
+    val scrapWarehouses by viewModel.scrapWarehouses.collectAsState()
     val warehouses by viewModel.warehouses.collectAsState()
     val isSeller by viewModel.isSeller.collectAsState()
     val userWarehouseId by viewModel.userWarehouseId.collectAsState()
@@ -173,21 +175,32 @@ fun OldBatteryLedgerScreen(
                 }
             }
 
-            if (!isSeller && warehouses.isNotEmpty()) {
+            if (!isSeller && scrapWarehouses.isNotEmpty()) {
                 item {
                     androidx.compose.foundation.lazy.LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         contentPadding = PaddingValues(horizontal = 16.dp),
                         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
                     ) {
-                        items(warehouses) { warehouse ->
+                        item {
                             FilterChip(
-                                selected = selectedFilterWH == warehouse.id,
-                                onClick = { 
-                                    selectedFilterWH = warehouse.id
-                                    viewModel.loadTransactions(reset = true, warehouseId = warehouse.id)
+                                selected = selectedFilterWH == null,
+                                onClick = {
+                                    selectedFilterWH = null
+                                    viewModel.loadTransactions(reset = true, warehouseId = null)
                                 },
-                                label = { Text(warehouse.name) },
+                                label = { Text("الكل") },
+                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = accentColor, selectedLabelColor = Color.White)
+                            )
+                        }
+                        items(scrapWarehouses) { scrapWh ->
+                            FilterChip(
+                                selected = selectedFilterWH == scrapWh.parentWarehouseId,
+                                onClick = { 
+                                    selectedFilterWH = scrapWh.parentWarehouseId
+                                    viewModel.loadTransactions(reset = true, warehouseId = scrapWh.parentWarehouseId)
+                                },
+                                label = { Text(scrapWh.name.removePrefix("سكراب - ")) },
                                 colors = FilterChipDefaults.filterChipColors(selectedContainerColor = accentColor, selectedLabelColor = Color.White)
                             )
                         }
@@ -211,10 +224,10 @@ fun OldBatteryLedgerScreen(
                 items(pagingItems.itemCount) { index ->
                     val trans = pagingItems[index]
                     trans?.let {
-                        val warehouseName = warehouses.find { wh -> wh.id == it.warehouseId }?.name ?: "غير معروف"
+                        val warehouseName = scrapWarehouses.find { wh -> wh.parentWarehouseId == it.warehouseId }?.name ?: "غير معروف"
                         OldBatteryTransactionCard(
                             transaction = it,
-                            warehouseName = warehouseName,
+                            warehouseName = warehouseName.removePrefix("سكراب - "),
                             onEdit = { showEditDialog = it },
                             onDelete = { showDeleteConfirm = it },
                             onSell = { showSaleDialog = it }

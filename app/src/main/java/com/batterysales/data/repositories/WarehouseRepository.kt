@@ -33,9 +33,20 @@ class WarehouseRepository @Inject constructor(
     }
 
     suspend fun addWarehouse(warehouse: Warehouse) {
-        val docRef = firestore.collection(Warehouse.COLLECTION_NAME).document()
-        val finalWarehouse = warehouse.copy(id = docRef.id)
-        docRef.set(finalWarehouse).await()
+        firestore.runTransaction { transaction ->
+            val docRef = firestore.collection(Warehouse.COLLECTION_NAME).document()
+            val finalWarehouse = warehouse.copy(id = docRef.id)
+            transaction.set(docRef, finalWarehouse)
+
+            // Automatically create linked ScrapWarehouse
+            val scrapDocRef = firestore.collection(com.batterysales.data.models.ScrapWarehouse.COLLECTION_NAME).document()
+            val scrapWarehouse = com.batterysales.data.models.ScrapWarehouse(
+                id = scrapDocRef.id,
+                name = "سكراب - ${warehouse.name}",
+                parentWarehouseId = docRef.id
+            )
+            transaction.set(scrapDocRef, scrapWarehouse)
+        }.await()
     }
 
     suspend fun getWarehouse(warehouseId: String): Warehouse? {
