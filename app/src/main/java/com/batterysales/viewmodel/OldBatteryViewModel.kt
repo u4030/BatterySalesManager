@@ -59,21 +59,18 @@ class OldBatteryViewModel @Inject constructor(
 
     private val refreshTrigger = MutableStateFlow(0)
 
+    private val dateRange = combine(_startDate, _endDate) { start, end -> Pair(start, end) }
+
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val transactions: Flow<PagingData<OldBatteryTransaction>> = combine(
         _selectedWarehouseId,
-        _startDate,
-        _endDate,
+        dateRange,
         _isSeller,
         _userWarehouseId,
         refreshTrigger
-    ) { args: Array<Any?> ->
-        val selId = args[0] as String?
-        val start = args[1] as Long?
-        val end = args[2] as Long?
-        val seller = args[3] as Boolean
-        val userWhId = args[4] as String?
-        Quadruple(if (seller) userWhId else selId, start, end, seller)
+    ) { selId, range, seller, userWhId, _ ->
+        val (start, end) = range
+        com.batterysales.utils.Quadruple(if (seller) userWhId else selId, start, end, seller)
     }.flatMapLatest { quadruple ->
         val (warehouseId, start, end, _) = quadruple
         Pager(PagingConfig(pageSize = 20)) {
@@ -211,6 +208,10 @@ class OldBatteryViewModel @Inject constructor(
             try {
                 repository.deleteTransaction(id)
                 refreshTrigger.value += 1
+
+                // Note: We deliberately do NOT delete the linked treasury transaction here.
+                // This ensures a persistent audit trail for financial expenses/income,
+                // even if the scrap record itself is deleted for correction.
             } catch (e: Exception) {
                 Log.e("OldBatteryViewModel", "Error deleting transaction", e)
             }
@@ -257,7 +258,9 @@ class OldBatteryViewModel @Inject constructor(
     fun addManualIntake(quantity: Int, totalAmperes: Double, amount: Double, notes: String, warehouseId: String) {
         viewModelScope.launch {
             try {
+                val transactionId = UUID.randomUUID().toString()
                 val transaction = com.batterysales.data.models.OldBatteryTransaction(
+                    id = transactionId,
                     quantity = quantity,
                     warehouseId = warehouseId,
                     totalAmperes = totalAmperes,
@@ -277,7 +280,7 @@ class OldBatteryViewModel @Inject constructor(
                         amount = amount,
                         description = "شراء بطاريات قديمة (سكراب): $quantity حبة",
                         warehouseId = warehouseId,
-                        relatedId = null
+                        relatedId = transactionId // Link to scrap transaction for traceability
                     )
                     accountingRepository.addTransaction(treasuryTransaction)
                 }
@@ -293,7 +296,9 @@ class OldBatteryViewModel @Inject constructor(
                 // Enforce seller warehouse if applicable
                 val finalWarehouseId = if (_isSeller.value) _userWarehouseId.value ?: warehouseId else warehouseId
 
+                val transactionId = UUID.randomUUID().toString()
                 val transaction = OldBatteryTransaction(
+                    id = transactionId,
                     quantity = quantity,
                     warehouseId = finalWarehouseId,
                     totalAmperes = totalAmperes,
@@ -313,7 +318,7 @@ class OldBatteryViewModel @Inject constructor(
                     amount = amount,
                     description = "بيع بطاريات قديمة (سكراب): $quantity حبة",
                     warehouseId = finalWarehouseId,
-                    relatedId = null // Manual income in treasury
+                    relatedId = transactionId // Link for traceability
                 )
                 accountingRepository.addTransaction(treasuryTransaction)
             } catch (e: Exception) {

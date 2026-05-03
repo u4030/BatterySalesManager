@@ -456,11 +456,13 @@ class ReportsViewModel @Inject constructor(
                         }
 
                         // Calculate totals locally for accuracy and consistency
-                        // totalDebit represents the net purchase cost (Purchases - Returns magnitude).
-                        // However, returns also appear in totalCredit as paid bills.
-                        // To avoid double-counting, we sum ONLY positive purchases for totalDebit
-                        // and let the Bills (which include returns) handle the credit side.
+                        // totalDebit represents the GROSS purchase cost.
+                        // Returns are tracked as separate credit records (Bills with type CREDIT or just subtracted from totalCredit in balance).
+                        // To avoid double-counting and ensure balance matches (Gross Purchases - (Payments + Returns)),
+                        // we use GROSS cost for debit and let the credit side represent the "Offset".
                         val totalDebit = supplierEntries.filter { it.quantity > 0 }.sumOf { it.getEffectiveTotalCost() }
+
+                        // Calculate total credit: Actual Payments + Value of returned materials (Credit Bills)
                         val totalCredit = supplierBills.sumOf { it.paidAmount }
                         val balance = totalDebit - totalCredit
 
@@ -563,11 +565,9 @@ class ReportsViewModel @Inject constructor(
                         }.sortedWith(compareByDescending<PurchaseOrderItem> { it.entry.getEffectiveDate() }.thenByDescending { it.entry.timestamp })
 
                         val (obligated, regular) = purchaseOrders.partition { po ->
-                            // الطلبية تعتبر "مرتبطة" وتنتقل للقائمة التمددية فقط إذا كان هناك ربط يدوي
-                            // أو إذا كانت مغطاة بالكامل بواسطة الشيكات المرتبطة تلقائياً.
-                            // أما الطلبيات المغطاة جزئياً فتبقى في القائمة الرئيسية مع إظهار الملاحظة.
-                            val isFullyCovered = po.totalLinkedAmount >= po.entry.totalCost - 0.001
-                            po.hasManualLink || isFullyCovered
+                            // الطلبية تعتبر "مرتبطة" وتنتقل للقائمة التمددية إذا كان هناك أي نوع من الربط (يدوي أو تلقائي)
+                            // لضمان استجابة النظام لطلب المستخدم بنقل الفواتير المرتبطة بشيكات
+                            po.hasManualLink || po.totalLinkedAmount > 0.001
                         }
 
                         val targetProgress = if (supplier.yearlyTarget > 0) totalDebit / supplier.yearlyTarget else 0.0

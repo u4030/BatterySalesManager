@@ -12,6 +12,7 @@ data class OldBatteryTransaction(
     val amount: Double = 0.0, // Only for SALE type
     val date: Date = Date(),
     val notes: String = "",
+    val createdBy: String = "",
     val createdByUserName: String = ""
 ) {
     companion object {

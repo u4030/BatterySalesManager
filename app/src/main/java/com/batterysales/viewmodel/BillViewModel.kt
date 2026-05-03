@@ -220,6 +220,7 @@ class BillViewModel @Inject constructor(
     fun recordPayment(billId: String, amount: Double) {
         viewModelScope.launch {
             try {
+                _isLoading.value = true
                 // Fetch the bill once to get details
                 val snapshot = repository.getBill(billId) ?: return@launch
                 val bill = snapshot
