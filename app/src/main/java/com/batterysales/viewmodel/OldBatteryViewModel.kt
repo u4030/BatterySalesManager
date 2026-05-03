@@ -67,9 +67,15 @@ class OldBatteryViewModel @Inject constructor(
         _isSeller,
         _userWarehouseId,
         refreshTrigger
-    ) { selId, start, end, seller, userWhId, _ ->
+    ) { args: Array<Any?> ->
+        val selId = args[0] as String?
+        val start = args[1] as Long?
+        val end = args[2] as Long?
+        val seller = args[3] as Boolean
+        val userWhId = args[4] as String?
         Quadruple(if (seller) userWhId else selId, start, end, seller)
-    }.flatMapLatest { (warehouseId, start, end, _) ->
+    }.flatMapLatest { quadruple ->
+        val (warehouseId, start, end, _) = quadruple
         Pager(PagingConfig(pageSize = 20)) {
             OldBatteryPagingSource(repository, warehouseId, start, end)
         }.flow.cachedIn(viewModelScope)
@@ -259,6 +265,7 @@ class OldBatteryViewModel @Inject constructor(
                     type = com.batterysales.data.models.OldBatteryTransactionType.INTAKE,
                     date = java.util.Date(),
                     notes = notes,
+                    createdBy = currentUser?.id ?: "",
                     createdByUserName = currentUser?.displayName ?: ""
                 )
                 repository.addTransaction(transaction)
@@ -294,6 +301,7 @@ class OldBatteryViewModel @Inject constructor(
                     type = OldBatteryTransactionType.SALE,
                     date = Date(),
                     notes = "بيع بطاريات قديمة",
+                    createdBy = currentUser?.id ?: "",
                     createdByUserName = currentUser?.displayName ?: ""
                 )
                 repository.addTransaction(transaction)

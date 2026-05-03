@@ -413,29 +413,33 @@ class ReportsViewModel @Inject constructor(
 
                         // Filter entries for this supplier
                         val supplierName = supplier.name.trim().lowercase()
-                        val rawSupplierEntries = allEntries.filter { entry ->
-                            val matchId = entry.supplierId.isNotEmpty() && entry.supplierId == supplier.id
-                            // Robust name matching fallback for legacy entries
-                            val matchName = entry.supplier.isNotBlank() &&
-                                    entry.supplier.trim().lowercase() == supplierName
 
-                            (matchId || matchName) &&
-                                    entry.status == "approved" &&
-                                    (supplier.resetDate == null || !entry.getEffectiveDate().before(supplier.resetDate)) &&
-                                    (adjustedStart == null || entry.getEffectiveDate().time >= adjustedStart) &&
-                                    (adjustedEnd == null || entry.getEffectiveDate().time <= adjustedEnd)
+                        // We must fetch ALL entries for grouping to ensure returns are matched to purchases
+                        // regardless of the UI date filter.
+                        val allRawSupplierEntries = allEntries.filter { entry ->
+                            val matchId = entry.supplierId.isNotEmpty() && entry.supplierId == supplier.id
+                            val matchName = entry.supplier.isNotBlank() && entry.supplier.trim().lowercase() == supplierName
+                            (matchId || matchName) && entry.status == "approved" &&
+                                    (supplier.resetDate == null || !entry.getEffectiveDate().before(supplier.resetDate))
                         }
 
-                        // توحيد أرقام الفواتير للقيود التي تتشارك نفس معرف الطلبية
-                        val orderToInvoiceMap = rawSupplierEntries.filter { it.invoiceNumber.trim().isNotEmpty() && it.orderId.trim().isNotEmpty() }
+                        // Propagate invoice numbers across orderId groups
+                        val orderToInvoiceMap = allRawSupplierEntries.filter { it.invoiceNumber.trim().isNotEmpty() && it.orderId.trim().isNotEmpty() }
                             .associate { it.orderId.trim() to it.invoiceNumber.trim() }
 
-                        val supplierEntries = rawSupplierEntries.map { entry ->
+                        val allSupplierEntries = allRawSupplierEntries.map { entry ->
                             val orderKey = entry.orderId.trim()
                             if (entry.invoiceNumber.trim().isEmpty() && orderKey.isNotEmpty() && orderToInvoiceMap.containsKey(orderKey)) {
                                 entry.copy(invoiceNumber = orderToInvoiceMap[orderKey]!!)
                             } else entry
                         }
+
+                        // Apply the UI date filter ONLY for the final entries to display
+                        val supplierEntries = allSupplierEntries.filter { entry ->
+                            (adjustedStart == null || entry.getEffectiveDate().time >= adjustedStart) &&
+                                    (adjustedEnd == null || entry.getEffectiveDate().time <= adjustedEnd)
+                        }
+
 
                         // Filter bills for this supplier
                         // ملاحظة: الربط يعتمد على كافة الشيكات للمورد بغض النظر عن الفلتر الزمني للتقرير
@@ -475,7 +479,14 @@ class ReportsViewModel @Inject constructor(
                             val allLinkedBills = supplierBills.filter { bill ->
                                 val ref = bill.referenceNumber.trim()
                                 val isLinkedToMainKey = bill.relatedEntryId == key || ref == key || (ref.isNotEmpty() && ref == representative.invoiceNumber.trim())
-                                val isLinkedToSubEntry = group.any { entry ->
+
+                                // Expand sub-entry matching to include ALL entries in the hierarchy (even filtered ones)
+                                // to ensure return bills are correctly associated.
+                                val hierarchy = allSupplierEntries.filter {
+                                    it.invoiceNumber.trim().ifEmpty { it.orderId.trim().ifEmpty { it.id } } == key
+                                }
+
+                                val isLinkedToSubEntry = hierarchy.any { entry ->
                                     entry.id == bill.relatedEntryId || (ref.isNotEmpty() && ref == entry.invoiceNumber.trim()) || entry.id == bill.referenceNumber.trim()
                                 }
                                 isLinkedToMainKey || isLinkedToSubEntry

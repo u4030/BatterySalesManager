@@ -474,6 +474,13 @@ fun AddEditOldBatteryDialog(
                    
     var selectedWarehouseId by remember(initialWH) { mutableStateOf(initialWH) }
 
+    // Auto-select first warehouse for Admin if none selected
+    LaunchedEffect(warehouses, isSeller) {
+        if (!isSeller && selectedWarehouseId.isEmpty() && warehouses.isNotEmpty()) {
+            selectedWarehouseId = warehouses[0].id
+        }
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (transaction == null) "إضافة بطاريات قديمة" else "تعديل السجل") },
