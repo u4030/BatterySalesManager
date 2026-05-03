@@ -531,6 +531,7 @@ class ReportsViewModel @Inject constructor(
                             val finalTotalCost = totalOrderCost
 
                             // إجمالي المبالغ المرتبطة (الورقية) سواء يدوياً أو تلقائياً
+                            // نستخدم القيمة الكاملة للشيكات المرتبطة هنا
                             val totalLinkedValue = totalLinkedAmount + autoAllocatedAmountForThisOrder
 
                             // المبالغ المسددة تشمل: الدفعات اليدوية على الشيكات المرتبطة + الدفعات (نقدية) المحسوبة من الشيكات المرتبطة تلقائياً
@@ -568,9 +569,8 @@ class ReportsViewModel @Inject constructor(
                             PurchaseOrderItem(
                                 entry = representative.copy(totalCost = finalTotalCost),
                                 linkedPaidAmount = totalLinkedPaid,
-                                // المتبقي في القيد هو التكلفة ناقص إجمالي قيمة الشيكات المرتبطة (وليس فقط المسدد منها نقدياً)
-                                // ليعكس القيمة التي لم يتم تغطيتها بأي شيك أو كمبيالة بعد
-                                remainingBalance = finalTotalCost - totalLinkedValue,
+                                // المتبقي هو التكلفة ناقص إجمالي قيمة الشيكات المرتبطة (مع تقريب الصفر للفائض)
+                                remainingBalance = (finalTotalCost - totalLinkedValue).coerceAtLeast(0.0),
                                 referenceNumbers = refs,
                                 items = group,
                                 autoLinkedAmount = autoAllocatedAmountForThisOrder,
@@ -588,9 +588,13 @@ class ReportsViewModel @Inject constructor(
 
                         val targetProgress = if (supplier.yearlyTarget > 0) totalDebit / supplier.yearlyTarget else 0.0
 
-                        // Calculate credit that hasn't been linked to any order
-                        val totalAllocatedCredit = (regular + obligated).sumOf { it.totalActualPaid }
-                        val unallocatedCredit = (totalCredit - totalAllocatedCredit).coerceAtLeast(0.0)
+                        // Calculate unallocated credit accurately:
+                        // Total Supplier Credit - (Sum of applied credit across all purchase orders, capped at each order's cost)
+                        // This ensures that surplus on any order is correctly reflected as unallocated.
+                        val totalAppliedCredit = (regular + obligated).sumOf { po ->
+                            minOf(po.entry.totalCost, po.totalLinkedAmount)
+                        }
+                        val unallocatedCredit = (totalCredit - totalAppliedCredit).coerceAtLeast(0.0)
 
                         SupplierReportItem(
                             supplier = supplier,

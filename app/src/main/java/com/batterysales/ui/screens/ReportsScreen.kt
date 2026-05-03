@@ -955,10 +955,10 @@ fun PurchaseOrderCard(
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("المتبقي:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
-                    text = "JD ${String.format("%.3f", po.remainingBalance)}",
+                    text = "JD ${String.format("%.3f", po.remainingBalance.coerceAtLeast(0.0))}",
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Bold,
-                    color = if (po.remainingBalance > 0) Color(0xFFEF4444) else Color(0xFF10B981)
+                    color = if (po.remainingBalance > 0.001) Color(0xFFEF4444) else Color(0xFF10B981)
                 )
             }
 

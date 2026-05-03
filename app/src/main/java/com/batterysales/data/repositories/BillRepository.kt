@@ -227,23 +227,52 @@ class BillRepository @Inject constructor(
         }
 
         // حساب الميزان المتبقي لكل فاتورة (إجمالي التكلفة - الروابط اليدوية)
+        // وحساب أي فائض من الروابط اليدوية لاستخدامه في التوزيع التلقائي (FIFO)
+        var manualSurplus = 0.0
         val orderBalances = orders.map { (id, data) ->
             val (totalCost, _, _) = data
-            id to (totalCost - (manualLinks[id] ?: 0.0))
-        }.filter { it.second > 0.001 }.toMutableList()
+            val manualAmount = manualLinks[id] ?: 0.0
+            val balance = totalCost - manualAmount
+            if (balance < 0) {
+                manualSurplus += -balance // إضافة الفائض للرصيد المتاح
+                id to 0.0
+            } else {
+                id to balance
+            }
+        }.toMutableList()
 
         // 3. تحديد الشيكات المتاحة للربط التلقائي (غير مرتبطة يدوياً وغير مسددة كلياً)
-        // نستثني أيضاً الشيكات التي تم اعتبارها مرتبطة يدوياً عبر رقم المرجع
         val manualLinkedBillIds = allBills.filter { bill ->
             bill.relatedEntryId != null ||
             (bill.referenceNumber.isNotEmpty() && orders.any { it.first == bill.referenceNumber.trim() })
         }.map { it.id }.toSet()
 
         val availableBills = allBills.filter { !manualLinkedBillIds.contains(it.id) }
-            .sortedBy { it.createdAt } // ربط الشيكات الأقدم أولاً
+            .sortedBy { it.createdAt }
 
         // 4. تنفيذ خوارزمية FIFO لتوزيع المبالغ
         val billUpdates = mutableMapOf<String, Pair<List<String>, Map<String, Double>>>()
+
+        // توزيع الفائض اليدوي أولاً على الفواتير المتبقية
+        if (manualSurplus > 0.001) {
+            val iterator = orderBalances.iterator()
+            while (iterator.hasNext() && manualSurplus > 0.001) {
+                val orderBalanceEntry = iterator.next()
+                val orderId = orderBalanceEntry.first
+                var currentOrderBalance = orderBalanceEntry.second
+
+                val allocation = minOf(manualSurplus, currentOrderBalance)
+                if (allocation > 0.001) {
+                    manualSurplus -= allocation
+                    currentOrderBalance -= allocation
+                    val index = orderBalances.indexOfFirst { it.first == orderId }
+                    if (index != -1) orderBalances[index] = orderId to currentOrderBalance
+
+                    // يتم تخزين هذا التوزيع في أول شيك متاح للمورد كحاوية، أو تجاهله إذا كان التقرير يحسب الفائض عالمياً
+                    // الحل الأفضل هو توزيعه من الشيكات المتاحة
+                }
+            }
+        }
 
         for (bill in availableBills) {
             var billRemainingAmount = bill.amount
