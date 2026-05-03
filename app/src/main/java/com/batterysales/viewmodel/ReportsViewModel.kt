@@ -471,13 +471,11 @@ class ReportsViewModel @Inject constructor(
 
                             val allLinkedBills = supplierBills.filter { bill ->
                                 val ref = bill.referenceNumber.trim()
-                                bill.relatedEntryId == key ||
-                                ref == key ||
-                                (ref.isNotEmpty() && (ref == representative.invoiceNumber.trim() || ref == representative.id)) ||
-                                group.any { entry ->
-                                    entry.id == bill.relatedEntryId ||
-                                    (ref.isNotEmpty() && ref == entry.invoiceNumber.trim())
+                                val isLinkedToMainKey = bill.relatedEntryId == key || ref == key || (ref.isNotEmpty() && ref == representative.invoiceNumber.trim())
+                                val isLinkedToSubEntry = group.any { entry ->
+                                    entry.id == bill.relatedEntryId || (ref.isNotEmpty() && ref == entry.invoiceNumber.trim()) || entry.id == bill.referenceNumber.trim()
                                 }
+                                isLinkedToMainKey || isLinkedToSubEntry
                             }.distinctBy { it.id }
 
                             val totalLinkedPaid = allLinkedBills.sumOf { it.paidAmount }

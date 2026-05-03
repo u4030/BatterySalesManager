@@ -467,10 +467,12 @@ fun AddEditOldBatteryDialog(
     var notes by remember { mutableStateOf(transaction?.notes ?: "") }
     
     // Default to user warehouse if seller, or existing transaction warehouse, or first warehouse
-    val initialWH = if (isSeller) userWarehouseId ?: "" 
-                   else transaction?.warehouseId ?: (if (warehouses.isNotEmpty()) warehouses[0].id else "")
+    val initialWH = remember(warehouses, userWarehouseId, transaction) {
+        if (isSeller) userWarehouseId ?: ""
+        else transaction?.warehouseId ?: (if (warehouses.isNotEmpty()) warehouses[0].id else "")
+    }
                    
-    var selectedWarehouseId by remember { mutableStateOf(initialWH) }
+    var selectedWarehouseId by remember(initialWH) { mutableStateOf(initialWH) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -530,7 +532,12 @@ fun AddEditOldBatteryDialog(
                 val q = qty.toIntOrNull() ?: 0
                 val a = amps.toDoubleOrNull() ?: 0.0
                 val am = amount.toDoubleOrNull() ?: 0.0
-                if (q > 0 && selectedWarehouseId.isNotEmpty()) onConfirm(q, a, am, notes, selectedWarehouseId)
+
+                // For manual intake, we allow q > 0 and a > 0
+                // amount can be 0 or more.
+                if (q > 0 && selectedWarehouseId.isNotEmpty()) {
+                    onConfirm(q, a, am, notes, selectedWarehouseId)
+                }
             }) { Text("موافق") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }

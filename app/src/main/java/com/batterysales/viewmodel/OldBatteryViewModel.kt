@@ -119,6 +119,10 @@ class OldBatteryViewModel @Inject constructor(
                     }
                 }.launchIn(viewModelScope)
 
+                warehouseRepository.getWarehouses().onEach { allWh ->
+                    _warehouses.value = allWh.filter { it.isActive }
+                }.launchIn(viewModelScope)
+
                 if (user?.role == "seller") {
                     loadTransactions(reset = true, warehouseId = user.warehouseId)
                 }
