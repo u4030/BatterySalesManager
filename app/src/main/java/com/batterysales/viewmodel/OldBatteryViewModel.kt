@@ -241,19 +241,31 @@ class OldBatteryViewModel @Inject constructor(
         invoiceRepository.updateInvoice(updatedInvoice)
     }
 
-    fun addManualIntake(quantity: Int, totalAmperes: Double, notes: String, warehouseId: String) {
+    fun addManualIntake(quantity: Int, totalAmperes: Double, amount: Double, notes: String, warehouseId: String) {
         viewModelScope.launch {
             try {
                 val transaction = com.batterysales.data.models.OldBatteryTransaction(
                     quantity = quantity,
                     warehouseId = warehouseId,
                     totalAmperes = totalAmperes,
+                    amount = amount,
                     type = com.batterysales.data.models.OldBatteryTransactionType.INTAKE,
                     date = java.util.Date(),
                     notes = notes,
                     createdByUserName = currentUser?.displayName ?: ""
                 )
                 repository.addTransaction(transaction)
+
+                if (amount > 0) {
+                    val treasuryTransaction = Transaction(
+                        type = TransactionType.EXPENSE,
+                        amount = amount,
+                        description = "شراء بطاريات قديمة (سكراب): $quantity حبة",
+                        warehouseId = warehouseId,
+                        relatedId = null
+                    )
+                    accountingRepository.addTransaction(treasuryTransaction)
+                }
             } catch (e: Exception) {
                 Log.e("OldBatteryViewModel", "Error adding manual intake", e)
             }

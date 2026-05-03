@@ -185,7 +185,7 @@ class BillRepository @Inject constructor(
         // تجميع الفواتير حسب رقم الفاتورة أولاً، ثم معرف الطلبية، ثم المعرف الفريد
         val orders = stockEntries.groupBy { it.invoiceNumber.trim().ifEmpty { it.orderId.trim().ifEmpty { it.id } } }
             .map { (key, group) ->
-                val totalCost = group.sumOf { it.getNetCost() }
+                val totalCost = group.sumOf { it.getEffectiveTotalCost() }
                 val effectiveDate = group.minOf { it.getEffectiveDate() }
                 val sortingTimestamp = group.minOf { it.timestamp }
                 key to Triple(totalCost, effectiveDate, sortingTimestamp)
