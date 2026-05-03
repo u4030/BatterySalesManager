@@ -230,6 +230,15 @@ class ReportsViewModel @Inject constructor(
                 }
             }
 
+        // Listen for Bill/Check updates for FIFO and supplier balances
+        firestore.collection(Bill.COLLECTION_NAME)
+            .addSnapshotListener { snapshot, e ->
+                if (e == null && snapshot != null) {
+                    Log.d("ReportsViewModel", "Bills updated, refreshing supplier report")
+                    loadSupplierReport()
+                }
+            }
+
         // Also listen for Product updates to refresh names/specs immediately
         firestore.collection(Product.COLLECTION_NAME)
             .addSnapshotListener { snapshot, e ->
@@ -520,6 +529,11 @@ class ReportsViewModel @Inject constructor(
 
                             // Use the actual calculated sum from the entries in the order for consistency
                             val finalTotalCost = totalOrderCost
+
+                            // إجمالي المبالغ المرتبطة (الورقية) سواء يدوياً أو تلقائياً
+                            val totalLinkedValue = totalLinkedAmount + autoAllocatedAmountForThisOrder
+
+                            // المبالغ المسددة تشمل: الدفعات اليدوية على الشيكات المرتبطة + الدفعات (نقدية) المحسوبة من الشيكات المرتبطة تلقائياً
                             val totalActualPaid = totalLinkedPaid + autoAllocatedCashPaid
 
                             val refs = (allLinkedBills.filter { bill ->
@@ -554,13 +568,15 @@ class ReportsViewModel @Inject constructor(
                             PurchaseOrderItem(
                                 entry = representative.copy(totalCost = finalTotalCost),
                                 linkedPaidAmount = totalLinkedPaid,
-                                remainingBalance = finalTotalCost - totalActualPaid,
+                                // المتبقي في القيد هو التكلفة ناقص إجمالي قيمة الشيكات المرتبطة (وليس فقط المسدد منها نقدياً)
+                                // ليعكس القيمة التي لم يتم تغطيتها بأي شيك أو كمبيالة بعد
+                                remainingBalance = finalTotalCost - totalLinkedValue,
                                 referenceNumbers = refs,
                                 items = group,
                                 autoLinkedAmount = autoAllocatedAmountForThisOrder,
                                 hasManualLink = allLinkedBills.isNotEmpty(),
                                 totalActualPaid = totalActualPaid,
-                                totalLinkedAmount = totalLinkedAmount + autoAllocatedAmountForThisOrder
+                                totalLinkedAmount = totalLinkedValue
                             )
                         }.sortedWith(compareByDescending<PurchaseOrderItem> { it.entry.getEffectiveDate() }.thenByDescending { it.entry.timestamp })
 

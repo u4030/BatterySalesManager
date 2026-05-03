@@ -209,9 +209,8 @@ class OldBatteryViewModel @Inject constructor(
                 repository.deleteTransaction(id)
                 refreshTrigger.value += 1
 
-                // Note: We deliberately do NOT delete the linked treasury transaction here.
-                // This ensures a persistent audit trail for financial expenses/income,
-                // even if the scrap record itself is deleted for correction.
+                // الحذف من الخزينة عند حذف قيد السكراب لضمان مطابقة الأرصدة
+                accountingRepository.deleteTransactionsByRelatedId(id)
             } catch (e: Exception) {
                 Log.e("OldBatteryViewModel", "Error deleting transaction", e)
             }

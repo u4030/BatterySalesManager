@@ -222,7 +222,10 @@ class BillViewModel @Inject constructor(
             try {
                 _isLoading.value = true
                 // Fetch the bill once to get details
-                val snapshot = repository.getBill(billId) ?: return@launch
+                val snapshot = repository.getBill(billId) ?: run {
+                    _isLoading.value = false
+                    return@launch
+                }
                 val bill = snapshot
                 val supplierObj = _suppliers.value.find { it.id == bill.supplierId }
                 val supplierName = supplierObj?.name ?: ""
