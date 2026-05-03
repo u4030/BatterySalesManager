@@ -57,14 +57,17 @@ class OldBatteryViewModel @Inject constructor(
     private val _startDate = MutableStateFlow<Long?>(null)
     private val _endDate = MutableStateFlow<Long?>(null)
 
+    private val refreshTrigger = MutableStateFlow(0)
+
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val transactions: Flow<PagingData<OldBatteryTransaction>> = combine(
         _selectedWarehouseId,
         _startDate,
         _endDate,
         _isSeller,
-        _userWarehouseId
-    ) { selId, start, end, seller, userWhId ->
+        _userWarehouseId,
+        refreshTrigger
+    ) { selId, start, end, seller, userWhId, _ ->
         Quadruple(if (seller) userWhId else selId, start, end, seller)
     }.flatMapLatest { (warehouseId, start, end, _) ->
         Pager(PagingConfig(pageSize = 20)) {
@@ -201,8 +204,7 @@ class OldBatteryViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 repository.deleteTransaction(id)
-                // Sync with invoice is now less direct with Paging, 
-                // typically we'd fetch the transaction first if needed.
+                refreshTrigger.value += 1
             } catch (e: Exception) {
                 Log.e("OldBatteryViewModel", "Error deleting transaction", e)
             }
@@ -213,6 +215,7 @@ class OldBatteryViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 repository.updateTransaction(transaction)
+                refreshTrigger.value += 1
 
                 // Sync with invoice if applicable
                 transaction.invoiceId?.let { invoiceId ->
@@ -259,6 +262,7 @@ class OldBatteryViewModel @Inject constructor(
                     createdByUserName = currentUser?.displayName ?: ""
                 )
                 repository.addTransaction(transaction)
+                refreshTrigger.value += 1
 
                 if (amount > 0) {
                     val treasuryTransaction = Transaction(
@@ -293,6 +297,7 @@ class OldBatteryViewModel @Inject constructor(
                     createdByUserName = currentUser?.displayName ?: ""
                 )
                 repository.addTransaction(transaction)
+                refreshTrigger.value += 1
 
                 // Add to Treasury
                 val treasuryTransaction = Transaction(

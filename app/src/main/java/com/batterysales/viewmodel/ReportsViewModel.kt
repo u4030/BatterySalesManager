@@ -452,10 +452,11 @@ class ReportsViewModel @Inject constructor(
                         }
 
                         // Calculate totals locally for accuracy and consistency
-                        // totalDebit represents the GROSS purchase cost.
-                        // Returns are handled as "Credit" items in the bills collection.
-                        // Using net cost here would cause double-counting of the returns.
-                        val totalDebit = supplierEntries.sumOf { it.getEffectiveTotalCost() }
+                        // totalDebit represents the net purchase cost (Purchases - Returns magnitude).
+                        // However, returns also appear in totalCredit as paid bills.
+                        // To avoid double-counting, we sum ONLY positive purchases for totalDebit
+                        // and let the Bills (which include returns) handle the credit side.
+                        val totalDebit = supplierEntries.filter { it.quantity > 0 }.sumOf { it.getEffectiveTotalCost() }
                         val totalCredit = supplierBills.sumOf { it.paidAmount }
                         val balance = totalDebit - totalCredit
 
@@ -467,7 +468,9 @@ class ReportsViewModel @Inject constructor(
 
                         val purchaseOrders = groupedEntries.map { (key, group) ->
                             val representative = group.first()
-                            val totalOrderCost = group.sumOf { it.getEffectiveTotalCost() }
+                            // For individual order balance, we also use only positive purchases
+                            // and then let the linked bills (which include returns) subtract.
+                            val totalOrderCost = group.filter { it.quantity > 0 }.sumOf { it.getEffectiveTotalCost() }
 
                             val allLinkedBills = supplierBills.filter { bill ->
                                 val ref = bill.referenceNumber.trim()
