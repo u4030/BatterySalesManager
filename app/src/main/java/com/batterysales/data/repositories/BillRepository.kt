@@ -183,7 +183,11 @@ class BillRepository @Inject constructor(
         }
 
         // تجميع الفواتير حسب رقم الفاتورة أولاً، ثم معرف الطلبية، ثم المعرف الفريد
-        val orders = stockEntries.groupBy { it.invoiceNumber.trim().ifEmpty { it.orderId.trim().ifEmpty { it.id } } }
+        val orders = stockEntries.groupBy {
+            val inv = it.invoiceNumber.trim().uppercase()
+            if (inv.isNotEmpty()) "INV_$inv"
+            else it.orderId.trim().ifEmpty { it.id }
+        }
             .map { (key, group) ->
                 // نستخدم فقط المشتريات الإيجابية هنا لأن المرتجعات مسجلة كشيكات (دائن) في قاعدة البيانات
                 val totalCost = group.filter { it.quantity > 0 }.sumOf { it.getEffectiveTotalCost() }
@@ -232,7 +236,11 @@ class BillRepository @Inject constructor(
         // جلب الديون الصافية (قيمة المرتجعات) التي لم يتم تسويتها بشيكات/كمبيالات دائنة
         // هذه الديون تعمل كـ "رصيد إضافي" يمكن توزيعه على الفواتير المدينة
         val supplierReturns = stockEntries.filter { it.quantity < 0 }
-            .groupBy { it.invoiceNumber.trim().ifEmpty { it.orderId.trim().ifEmpty { it.id } } }
+            .groupBy {
+                val inv = it.invoiceNumber.trim().uppercase()
+                if (inv.isNotEmpty()) "INV_$inv"
+                else it.orderId.trim().ifEmpty { it.id }
+            }
             .mapValues { it.value.sumOf { entry -> -entry.getEffectiveTotalCost() } }
 
         var totalAvailableCreditPool = 0.0

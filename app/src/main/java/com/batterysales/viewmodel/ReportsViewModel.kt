@@ -432,12 +432,13 @@ class ReportsViewModel @Inject constructor(
                                     (supplier.resetDate == null || !entry.getEffectiveDate().before(supplier.resetDate))
                         }
 
-                        // Propagate invoice numbers across orderId groups
+                        // Propagate invoice numbers across orderId groups with case-insensitivity
                         val orderToInvoiceMap = allRawSupplierEntries.filter { it.invoiceNumber.trim().isNotEmpty() && it.orderId.trim().isNotEmpty() }
                             .associate { it.orderId.trim() to it.invoiceNumber.trim() }
 
                         val allSupplierEntries = allRawSupplierEntries.map { entry ->
                             val orderKey = entry.orderId.trim()
+                            // If entry has no invoice number but its order group does, propagate it
                             if (entry.invoiceNumber.trim().isEmpty() && orderKey.isNotEmpty() && orderToInvoiceMap.containsKey(orderKey)) {
                                 entry.copy(invoiceNumber = orderToInvoiceMap[orderKey]!!)
                             } else entry
@@ -475,11 +476,15 @@ class ReportsViewModel @Inject constructor(
                         val totalCredit = supplierBills.sumOf { it.paidAmount }
                         val balance = totalDebit - totalCredit
 
-                        // Group entries into Purchase Orders
-                        // Priority: invoiceNumber -> orderId -> id
+                        // Group entries into Purchase Orders with robust matching
+                        // Priority: invoiceNumber (Case-Insensitive) -> orderId -> id
                         // ملاحظة: هذا المفتاح يجب أن يتطابق مع المفتاح المستخدم في BillRepository.autoLinkBillsForSupplier
                         val groupedEntries = supplierEntries
-                            .groupBy { it.invoiceNumber.trim().ifEmpty { it.orderId.trim().ifEmpty { it.id } } }
+                            .groupBy {
+                                val inv = it.invoiceNumber.trim().uppercase()
+                                if (inv.isNotEmpty()) "INV_$inv"
+                                else it.orderId.trim().ifEmpty { it.id }
+                            }
 
                         val purchaseOrders = groupedEntries.map { (key, group) ->
                             val representative = group.first()
@@ -583,31 +588,47 @@ class ReportsViewModel @Inject constructor(
                             )
                         }.sortedWith(compareByDescending<PurchaseOrderItem> { it.entry.getEffectiveDate() }.thenByDescending { it.entry.timestamp })
 
-                        val (obligated, regular) = purchaseOrders.partition { po ->
-                            // الطلبية تعتبر "مرتبطة" وتنتقل للقائمة التمددية إذا كان هناك أي نوع من الربط (يدوي أو تلقائي)
-                            // لضمان استجابة النظام لطلب المستخدم بنقل الفواتير المرتبطة بشيكات
-                            po.hasManualLink || po.totalLinkedAmount > 0.001
-                        }
-
                         val targetProgress = if (supplier.yearlyTarget > 0) totalDebit / supplier.yearlyTarget else 0.0
 
-                        // Calculate unallocated credit accurately:
-                        // Total Supplier Credit - (Sum of applied credit across all purchase orders, capped at each order's net cost)
-                        // This ensures that surplus on any order is correctly reflected as unallocated.
-                        val totalAppliedCredit = (regular + obligated).sumOf { po ->
+                        // Calculate unallocated credit accurately BEFORE final UI distribution
+                        val totalAppliedCreditBeforePool = purchaseOrders.sumOf { po ->
                             minOf(po.entry.totalCost, po.totalLinkedAmount)
                         }
-                        val unallocatedCredit = (totalCredit - totalAppliedCredit).coerceAtLeast(0.0)
+                        var remainingGlobalCredit = (totalCredit - totalAppliedCreditBeforePool).coerceAtLeast(0.0)
+
+                        // 4. التوزيع النهائي للرصيد العالمي (الفائض + المرتجعات غير المرتبطة) على الفواتير المتبقية للعرض فقط
+                        // لضمان تصفير "المتبقي" في الفواتير إذا كان هناك رصيد كافٍ للمورد
+                        val allOrdersSorted = purchaseOrders.sortedWith(
+                            compareBy<PurchaseOrderItem> { it.entry.getEffectiveDate() }
+                                .thenBy { it.entry.timestamp }
+                        )
+
+                        val finalizedOrders = allOrdersSorted.map { po ->
+                            if (remainingGlobalCredit > 0.001 && po.remainingBalance > 0.001) {
+                                val allocation = minOf(remainingGlobalCredit, po.remainingBalance)
+                                remainingGlobalCredit -= allocation
+                                po.copy(
+                                    remainingBalance = po.remainingBalance - allocation,
+                                    autoLinkedAmount = po.autoLinkedAmount + allocation,
+                                    totalLinkedAmount = po.totalLinkedAmount + allocation
+                                )
+                            } else po
+                        }
+
+                        val (finalObligated, finalRegular) = finalizedOrders.partition { po ->
+                            // الطلبية تعتبر "مرتبطة" وتنتقل للقائمة التمددية إذا كان هناك أي نوع من الربط (يدوي أو تلقائي)
+                            po.hasManualLink || po.totalLinkedAmount > 0.001
+                        }
 
                         SupplierReportItem(
                             supplier = supplier,
                             totalDebit = totalDebit,
                             totalCredit = totalCredit,
                             balance = balance,
-                            unallocatedCredit = unallocatedCredit,
+                            unallocatedCredit = remainingGlobalCredit,
                             targetProgress = targetProgress,
-                            regularOrders = regular,
-                            obligatedOrders = obligated
+                            regularOrders = finalRegular,
+                            obligatedOrders = finalObligated
                         )
                     }
                 }.awaitAll()
