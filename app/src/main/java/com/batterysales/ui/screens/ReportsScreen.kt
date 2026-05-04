@@ -846,7 +846,7 @@ fun SupplierCardRedesigned(
                 if (currentObligatedOrders.isNotEmpty()) {
                     if (currentRegularOrders.isNotEmpty()) Spacer(modifier = Modifier.height(16.dp))
 
-                    var obligatedExpanded by remember { mutableStateOf(false) }
+                    var obligatedExpanded by remember { mutableStateOf(true) }
 
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -963,7 +963,8 @@ fun PurchaseOrderCard(
             }
 
             if (po.totalLinkedAmount > 0.001) {
-                val isFullyCovered = po.totalLinkedAmount >= po.entry.totalCost - 0.001
+                // Determine if it was covered fully by checks (manual + auto)
+                val isCheckFullyCovered = po.totalLinkedAmount >= (po.entry.totalCost - po.totalReturnCredit) - 0.001
                 Surface(
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.05f),
                     shape = RoundedCornerShape(8.dp)
@@ -972,7 +973,7 @@ fun PurchaseOrderCard(
                         Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = if (isFullyCovered)
+                            text = if (isCheckFullyCovered)
                                 "مغطاة بالكامل من شيكات غير مرتبطة"
                             else
                                 "مغطاة جزئياً بمبلغ JD ${String.format("%.3f", po.totalLinkedAmount)} من شيكات مرتبطة",
