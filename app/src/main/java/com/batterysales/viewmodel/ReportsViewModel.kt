@@ -483,8 +483,11 @@ class ReportsViewModel @Inject constructor(
 
                         val purchaseOrders = groupedEntries.map { (key, group) ->
                             val representative = group.first()
-                            // For individual order balance, we also use only positive purchases
-                            // and then let the linked bills (which include returns) subtract.
+
+                                // Net order cost: Purchases - Returns
+                                val netOrderCost = group.sumOf { it.getEffectiveTotalCost() }
+
+                                // Gross cost for progress tracking and totals
                             val totalOrderCost = group.filter { it.quantity > 0 }.sumOf { it.getEffectiveTotalCost() }
 
                             val allLinkedBills = supplierBills.filter { bill ->
@@ -567,10 +570,10 @@ class ReportsViewModel @Inject constructor(
                             val actualManualBills = allLinkedBills
 
                             PurchaseOrderItem(
-                                entry = representative.copy(totalCost = finalTotalCost),
+                                entry = representative.copy(totalCost = netOrderCost),
                                 linkedPaidAmount = totalLinkedPaid,
-                                // المتبقي هو التكلفة ناقص إجمالي قيمة الشيكات المرتبطة (مع تقريب الصفر للفائض)
-                                remainingBalance = (finalTotalCost - totalLinkedValue).coerceAtLeast(0.0),
+                                // المتبقي هو التكلفة الصافية ناقص إجمالي قيمة الشيكات المرتبطة (مع تقريب الصفر للفائض)
+                                remainingBalance = (netOrderCost - totalLinkedValue).coerceAtLeast(0.0),
                                 referenceNumbers = refs,
                                 items = group,
                                 autoLinkedAmount = autoAllocatedAmountForThisOrder,
@@ -589,7 +592,7 @@ class ReportsViewModel @Inject constructor(
                         val targetProgress = if (supplier.yearlyTarget > 0) totalDebit / supplier.yearlyTarget else 0.0
 
                         // Calculate unallocated credit accurately:
-                        // Total Supplier Credit - (Sum of applied credit across all purchase orders, capped at each order's cost)
+                        // Total Supplier Credit - (Sum of applied credit across all purchase orders, capped at each order's net cost)
                         // This ensures that surplus on any order is correctly reflected as unallocated.
                         val totalAppliedCredit = (regular + obligated).sumOf { po ->
                             minOf(po.entry.totalCost, po.totalLinkedAmount)

@@ -228,18 +228,36 @@ class BillRepository @Inject constructor(
 
         // حساب الميزان المتبقي لكل فاتورة (إجمالي التكلفة - الروابط اليدوية)
         // وحساب أي فائض من الروابط اليدوية لاستخدامه في التوزيع التلقائي (FIFO)
-        var manualSurplus = 0.0
+
+        // جلب الديون الصافية (قيمة المرتجعات) التي لم يتم تسويتها بشيكات/كمبيالات دائنة
+        // هذه الديون تعمل كـ "رصيد إضافي" يمكن توزيعه على الفواتير المدينة
+        val supplierReturns = stockEntries.filter { it.quantity < 0 }
+            .groupBy { it.invoiceNumber.trim().ifEmpty { it.orderId.trim().ifEmpty { it.id } } }
+            .mapValues { it.value.sumOf { entry -> -entry.getEffectiveTotalCost() } }
+
+        var totalAvailableCreditPool = 0.0
         val orderBalances = orders.map { (id, data) ->
             val (totalCost, _, _) = data
+
+            // المبالغ المتاحة لتغطية هذه الفاتورة: الروابط اليدوية + قيمة المرتجعات المرتبطة بنفس الفاتورة
             val manualAmount = manualLinks[id] ?: 0.0
-            val balance = totalCost - manualAmount
+            val returnValue = supplierReturns[id] ?: 0.0
+
+            val balance = totalCost - manualAmount - returnValue
             if (balance < 0) {
-                manualSurplus += -balance // إضافة الفائض للرصيد المتاح
+                totalAvailableCreditPool += -balance // إضافة الفائض للرصيد المتاح (FIFO)
                 id to 0.0
             } else {
                 id to balance
             }
         }.toMutableList()
+
+        // إضافة مبالغ المرتجعات "اليتيمة" (غير المرتبطة بفاتورة شراء) إلى مجمع الرصيد المتاح
+        supplierReturns.forEach { (id, value) ->
+            if (orders.none { it.first == id }) {
+                totalAvailableCreditPool += value
+            }
+        }
 
         // 3. تحديد الشيكات المتاحة للربط التلقائي (غير مرتبطة يدوياً وغير مسددة كلياً)
         val manualLinkedBillIds = allBills.filter { bill ->
@@ -253,23 +271,20 @@ class BillRepository @Inject constructor(
         // 4. تنفيذ خوارزمية FIFO لتوزيع المبالغ
         val billUpdates = mutableMapOf<String, Pair<List<String>, Map<String, Double>>>()
 
-        // توزيع الفائض اليدوي أولاً على الفواتير المتبقية
-        if (manualSurplus > 0.001) {
+        // توزيع مجمع الرصيد المتاح (الفائض اليدوي + المرتجعات) أولاً على الفواتير المتبقية
+        if (totalAvailableCreditPool > 0.001) {
             val iterator = orderBalances.iterator()
-            while (iterator.hasNext() && manualSurplus > 0.001) {
+            while (iterator.hasNext() && totalAvailableCreditPool > 0.001) {
                 val orderBalanceEntry = iterator.next()
                 val orderId = orderBalanceEntry.first
                 var currentOrderBalance = orderBalanceEntry.second
 
-                val allocation = minOf(manualSurplus, currentOrderBalance)
+                val allocation = minOf(totalAvailableCreditPool, currentOrderBalance)
                 if (allocation > 0.001) {
-                    manualSurplus -= allocation
+                    totalAvailableCreditPool -= allocation
                     currentOrderBalance -= allocation
                     val index = orderBalances.indexOfFirst { it.first == orderId }
                     if (index != -1) orderBalances[index] = orderId to currentOrderBalance
-
-                    // يتم تخزين هذا التوزيع في أول شيك متاح للمورد كحاوية، أو تجاهله إذا كان التقرير يحسب الفائض عالمياً
-                    // الحل الأفضل هو توزيعه من الشيكات المتاحة
                 }
             }
         }
