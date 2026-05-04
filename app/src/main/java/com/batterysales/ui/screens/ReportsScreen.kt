@@ -962,8 +962,10 @@ fun PurchaseOrderCard(
                 )
             }
 
-            if (po.autoLinkedAmount > 0.001) {
-                val isFullyCovered = po.totalLinkedAmount >= po.entry.totalCost - 0.001
+            val totalCoverage = po.totalLinkedAmount + po.totalReturnCredit
+            val isFullyCovered = totalCoverage >= po.entry.totalCost - 0.001
+
+            if (totalCoverage > 0.001) {
                 Surface(
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.05f),
                     shape = RoundedCornerShape(8.dp)
@@ -971,11 +973,20 @@ fun PurchaseOrderCard(
                     Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
                         Spacer(modifier = Modifier.width(4.dp))
+
+                        val coverageParts = mutableListOf<String>()
+                        if (po.totalLinkedAmount > 0.001) {
+                            coverageParts.add("شيكات بمبلغ JD ${String.format("%.3f", po.totalLinkedAmount)}")
+                        }
+                        if (po.totalReturnCredit > 0.001) {
+                            coverageParts.add("مرتجعات بمبلغ JD ${String.format("%.3f", po.totalReturnCredit)}")
+                        }
+
                         Text(
                             text = if (isFullyCovered)
-                                "مغطاة بالكامل من شيكات غير مرتبطة"
+                                "مغطاة بالكامل (${coverageParts.joinToString(" + ")})"
                             else
-                                "مغطاة جزئياً بمبلغ JD ${String.format("%.3f", po.totalLinkedAmount)} من شيكات مرتبطة",
+                                "مغطاة جزئياً (${coverageParts.joinToString(" + ")})",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary
                         )

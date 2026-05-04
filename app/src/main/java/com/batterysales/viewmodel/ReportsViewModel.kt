@@ -55,7 +55,8 @@ data class PurchaseOrderItem(
     val autoLinkedAmount: Double = 0.0, // المبلغ المرتبط تلقائياً من شيكات/كمبيالات أخرى
     val hasManualLink: Boolean = false, // هل يوجد ربط يدوي (عن طريق الرقم أو الحقل المخصص)
     val totalActualPaid: Double = 0.0, // إجمالي المبالغ المسددة فعلياً (نقدياً) لهذه الطلبية
-    val totalLinkedAmount: Double = 0.0 // إجمالي مبالغ الشيكات (الورقية) المرتبطة يدوياً وتلقائياً
+    val totalLinkedAmount: Double = 0.0, // إجمالي مبالغ الشيكات (الورقية) المرتبطة يدوياً وتلقائياً
+    val totalReturnCredit: Double = 0.0 // قيمة المواد المرتجعة المرتبطة بهذه الطلبية
 )
 
 @HiltViewModel
@@ -472,8 +473,9 @@ class ReportsViewModel @Inject constructor(
                         // we use GROSS cost for debit and let the credit side represent the "Offset".
                         val totalDebit = supplierEntries.filter { it.quantity > 0 }.sumOf { it.getEffectiveTotalCost() }
 
-                        // Calculate total credit: Actual Payments + Value of returned materials (Credit Bills)
-                        val totalCredit = supplierBills.sumOf { it.paidAmount }
+                        // Calculate total credit: Actual Payments (from Bills/Checks) + Value of returned materials (from StockEntries)
+                        val supplierReturnsValue = allRawSupplierEntries.filter { it.quantity < 0 }.sumOf { -it.getEffectiveTotalCost() }
+                        val totalCredit = supplierBills.sumOf { it.paidAmount } + supplierReturnsValue
                         val balance = totalDebit - totalCredit
 
                         // Group entries into Purchase Orders with robust matching
@@ -489,11 +491,14 @@ class ReportsViewModel @Inject constructor(
                         val purchaseOrders = groupedEntries.map { (key, group) ->
                             val representative = group.first()
 
-                                // Net order cost: Purchases - Returns
-                                val netOrderCost = group.sumOf { it.getEffectiveTotalCost() }
-
-                                // Gross cost for progress tracking and totals
+                            // Gross cost (Sum of positive quantity entries)
                             val totalOrderCost = group.filter { it.quantity > 0 }.sumOf { it.getEffectiveTotalCost() }
+
+                            // Net cost for internal verification: Purchases - Returns
+                            val netOrderCost = group.sumOf { it.getEffectiveTotalCost() }
+
+                            // Value of returns in this group (to be subtracted from balance)
+                            val totalReturnCredit = (totalOrderCost - netOrderCost).coerceAtLeast(0.0)
 
                             val allLinkedBills = supplierBills.filter { bill ->
                                 val ref = bill.referenceNumber.trim()
@@ -575,26 +580,26 @@ class ReportsViewModel @Inject constructor(
                             val actualManualBills = allLinkedBills
 
                             PurchaseOrderItem(
-                                entry = representative.copy(totalCost = netOrderCost),
+                                entry = representative.copy(totalCost = totalOrderCost),
                                 linkedPaidAmount = totalLinkedPaid,
-                                // المتبقي هو التكلفة الصافية ناقص إجمالي قيمة الشيكات المرتبطة (مع تقريب الصفر للفائض)
-                                remainingBalance = (netOrderCost - totalLinkedValue).coerceAtLeast(0.0),
+                                // المتبقي = التكلفة الإجمالية - (قيمة الشيكات + قيمة المرتجعات)
+                                remainingBalance = (totalOrderCost - totalLinkedValue - totalReturnCredit).coerceAtLeast(0.0),
                                 referenceNumbers = refs,
                                 items = group,
                                 autoLinkedAmount = autoAllocatedAmountForThisOrder,
                                 hasManualLink = allLinkedBills.isNotEmpty(),
                                 totalActualPaid = totalActualPaid,
-                                totalLinkedAmount = totalLinkedValue
+                                totalLinkedAmount = totalLinkedValue,
+                                totalReturnCredit = totalReturnCredit
                             )
                         }.sortedWith(compareByDescending<PurchaseOrderItem> { it.entry.getEffectiveDate() }.thenByDescending { it.entry.timestamp })
 
                         val targetProgress = if (supplier.yearlyTarget > 0) totalDebit / supplier.yearlyTarget else 0.0
 
-                        // Calculate unallocated credit accurately BEFORE final UI distribution
-                        val totalAppliedCreditBeforePool = purchaseOrders.sumOf { po ->
-                            minOf(po.entry.totalCost, po.totalLinkedAmount)
-                        }
-                        var remainingGlobalCredit = (totalCredit - totalAppliedCreditBeforePool).coerceAtLeast(0.0)
+                        // Calculate unallocated realized credit accurately BEFORE final UI distribution
+                        // We subtract all payments already tied to specific orders (via checks or cash)
+                        val totalRealizedCreditApplied = purchaseOrders.sumOf { it.totalActualPaid }
+                        var remainingGlobalCredit = (totalCredit - totalRealizedCreditApplied).coerceAtLeast(0.0)
 
                         // 4. التوزيع النهائي للرصيد العالمي (الفائض + المرتجعات غير المرتبطة) على الفواتير المتبقية للعرض فقط
                         // لضمان تصفير "المتبقي" في الفواتير إذا كان هناك رصيد كافٍ للمورد
@@ -608,9 +613,8 @@ class ReportsViewModel @Inject constructor(
                                 val allocation = minOf(remainingGlobalCredit, po.remainingBalance)
                                 remainingGlobalCredit -= allocation
                                 po.copy(
-                                    remainingBalance = po.remainingBalance - allocation,
-                                    autoLinkedAmount = po.autoLinkedAmount + allocation,
-                                    totalLinkedAmount = po.totalLinkedAmount + allocation
+                                    remainingBalance = (po.remainingBalance - allocation).coerceAtLeast(0.0),
+                                    totalActualPaid = po.totalActualPaid + allocation
                                 )
                             } else po
                         }
