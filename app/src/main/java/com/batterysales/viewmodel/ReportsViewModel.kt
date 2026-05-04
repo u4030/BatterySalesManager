@@ -606,6 +606,7 @@ class ReportsViewModel @Inject constructor(
                         val allOrdersSorted = purchaseOrders.sortedWith(
                             compareBy<PurchaseOrderItem> { it.entry.getEffectiveDate() }
                                 .thenBy { it.entry.timestamp }
+                                .thenBy { it.entry.id }
                         )
 
                         val finalizedOrders = allOrdersSorted.map { po ->
@@ -617,11 +618,13 @@ class ReportsViewModel @Inject constructor(
 
                                 po.copy(
                                     remainingBalance = (po.remainingBalance - allocation).coerceAtLeast(0.0),
-                                    totalActualPaid = po.totalActualPaid + allocation,
+                                    // نزيد المبالغ المرتبطة لنقلها للقائمة التمددية وتفعيل ملاحظات التغطية
+                                    autoLinkedAmount = po.autoLinkedAmount + allocation,
+                                    totalLinkedAmount = po.totalLinkedAmount + allocation,
                                     referenceNumbers = newRefs
                                 )
                             } else po
-                        }
+                        }.sortedWith(compareByDescending<PurchaseOrderItem> { it.entry.getEffectiveDate() }.thenByDescending { it.entry.timestamp })
 
                         val (finalObligated, finalRegular) = finalizedOrders.partition { po ->
                             // الطلبية تعتبر "مرتبطة" وتنتقل للقائمة التمددية إذا كان هناك أي نوع من الربط (يدوي أو تلقائي)
