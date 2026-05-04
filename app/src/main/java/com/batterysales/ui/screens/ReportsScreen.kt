@@ -962,10 +962,8 @@ fun PurchaseOrderCard(
                 )
             }
 
-            val totalCoverage = po.totalLinkedAmount + po.totalReturnCredit
-            val isFullyCovered = totalCoverage >= po.entry.totalCost - 0.001
-
-            if (totalCoverage > 0.001) {
+            if (po.totalLinkedAmount > 0.001) {
+                val isFullyCovered = po.totalLinkedAmount >= po.entry.totalCost - 0.001
                 Surface(
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.05f),
                     shape = RoundedCornerShape(8.dp)
@@ -973,22 +971,31 @@ fun PurchaseOrderCard(
                     Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
                         Spacer(modifier = Modifier.width(4.dp))
-
-                        val coverageParts = mutableListOf<String>()
-                        if (po.totalLinkedAmount > 0.001) {
-                            coverageParts.add("شيكات بمبلغ JD ${String.format("%.3f", po.totalLinkedAmount)}")
-                        }
-                        if (po.totalReturnCredit > 0.001) {
-                            coverageParts.add("مرتجعات بمبلغ JD ${String.format("%.3f", po.totalReturnCredit)}")
-                        }
-
                         Text(
                             text = if (isFullyCovered)
-                                "مغطاة بالكامل (${coverageParts.joinToString(" + ")})"
+                                "مغطاة بالكامل من شيكات غير مرتبطة"
                             else
-                                "مغطاة جزئياً (${coverageParts.joinToString(" + ")})",
+                                "مغطاة جزئياً بمبلغ JD ${String.format("%.3f", po.totalLinkedAmount)} من شيكات مرتبطة",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
+
+            if (po.totalReturnCredit > 0.001) {
+                Surface(
+                    color = Color(0xFF10B981).copy(alpha = 0.05f),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.padding(top = 4.dp)
+                ) {
+                    Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.KeyboardReturn, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFF10B981))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "مرتجعات بمبلغ JD ${String.format("%.3f", po.totalReturnCredit)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFF10B981)
                         )
                     }
                 }

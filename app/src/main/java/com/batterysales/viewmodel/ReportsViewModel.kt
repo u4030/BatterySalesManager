@@ -612,9 +612,13 @@ class ReportsViewModel @Inject constructor(
                             if (remainingGlobalCredit > 0.001 && po.remainingBalance > 0.001) {
                                 val allocation = minOf(remainingGlobalCredit, po.remainingBalance)
                                 remainingGlobalCredit -= allocation
+                                val newRefs = po.referenceNumbers.toMutableList()
+                                newRefs.add("تسوية من رصيد المورد: JD ${String.format("%.3f", allocation)}")
+
                                 po.copy(
                                     remainingBalance = (po.remainingBalance - allocation).coerceAtLeast(0.0),
-                                    totalActualPaid = po.totalActualPaid + allocation
+                                    totalActualPaid = po.totalActualPaid + allocation,
+                                    referenceNumbers = newRefs
                                 )
                             } else po
                         }
