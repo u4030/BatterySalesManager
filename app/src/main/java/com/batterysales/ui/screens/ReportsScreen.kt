@@ -1021,7 +1021,59 @@ fun PurchaseOrderCard(
             }
 
 
-            if (po.referenceNumbers.isNotEmpty()) {
+            if (po.paymentAllocations.isNotEmpty()) {
+                HorizontalDivider(modifier = Modifier.alpha(0.1f))
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    po.paymentAllocations.forEach { allocation ->
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            val typeStr = when (allocation.type) {
+                                BillType.CHECK -> "شيك"
+                                BillType.BILL -> "كمبيالة"
+                                BillType.TRANSFER -> "تحويل"
+                                BillType.CASH -> "نقدي"
+                                BillType.VISA -> "فيزا"
+                                BillType.E_WALLET -> "محفظة"
+                            }
+
+                            Icon(
+                                if (allocation.type == BillType.CHECK || allocation.type == BillType.BILL) Icons.Default.FactCheck else Icons.Default.Payments,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                                tint = if (allocation.isPaid) Color(0xFF10B981) else Color(0xFFFB8C00)
+                            )
+
+                            Text(
+                                text = "$typeStr: ${allocation.reference}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.weight(1f)
+                            )
+
+                            Text(
+                                text = "JD ${String.format("%.3f", allocation.amount)}",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = if (allocation.isAuto) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                            )
+
+                            if (allocation.isAuto) {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Text(
+                                        "تلقائي",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontSize = 8.sp,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            } else if (po.referenceNumbers.isNotEmpty()) {
                 HorizontalDivider(modifier = Modifier.alpha(0.1f))
                 Row(verticalAlignment = Alignment.Top) {
                     Icon(

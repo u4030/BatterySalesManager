@@ -349,7 +349,8 @@ class SalesViewModel @Inject constructor(
                     supplier = "Sale",
                     timestamp = Date(),
                     status = "approved",
-                    createdBy = currentUser?.id ?: ""
+                    createdBy = currentUser?.id ?: "",
+                    createdByUserName = currentUser?.displayName ?: ""
                 )
 
                 val payment = if (paidAmount > 0) {

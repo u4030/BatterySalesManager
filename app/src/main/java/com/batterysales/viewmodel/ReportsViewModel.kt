@@ -46,6 +46,14 @@ data class SupplierReportItem(
     val obligatedOrders: List<PurchaseOrderItem> // Orders linked to checks/bills
 )
 
+data class PaymentAllocationInfo(
+    val type: BillType,
+    val reference: String,
+    val amount: Double,
+    val isAuto: Boolean,
+    val isPaid: Boolean
+)
+
 data class PurchaseOrderItem(
     val entry: StockEntry,
     val linkedPaidAmount: Double,
@@ -57,7 +65,8 @@ data class PurchaseOrderItem(
     val totalActualPaid: Double = 0.0, // إجمالي المبالغ المسددة فعلياً (نقدياً) لهذه الطلبية
     val totalLinkedAmount: Double = 0.0, // إجمالي مبالغ الشيكات (الورقية) المرتبطة يدوياً وتلقائياً
     val totalReturnCredit: Double = 0.0, // قيمة المواد المرتجعة المرتبطة بهذه الطلبية
-    val totalCashPaid: Double = 0.0 // المبالغ المسددة نقداً لهذه الطلبية
+    val totalCashPaid: Double = 0.0, // المبالغ المسددة نقداً لهذه الطلبية
+    val paymentAllocations: List<PaymentAllocationInfo> = emptyList() // تفاصيل توزيع المبالغ (أرقام الشيكات وقيمها)
 )
 
 @HiltViewModel
@@ -553,6 +562,41 @@ class ReportsViewModel @Inject constructor(
                             // المبالغ المسددة فعلياً تشمل النقدي + المسدد من الشيكات المرتبطة
                             val totalActualPaid = finalCashPaid + totalLinkedPaid
 
+                            // تفاصيل توزيع المبالغ
+                            val allocations = mutableListOf<PaymentAllocationInfo>()
+
+                            // 1. المبالغ المرتبطة يدوياً
+                            allLinkedBills.forEach { bill ->
+                                allocations.add(
+                                    PaymentAllocationInfo(
+                                        type = bill.billType,
+                                        reference = bill.referenceNumber,
+                                        amount = bill.amount,
+                                        isAuto = false,
+                                        isPaid = bill.status == com.batterysales.data.models.BillStatus.PAID
+                                    )
+                                )
+                            }
+
+                            // 2. المبالغ المرتبطة تلقائياً
+                            autoAllocatedBills.forEach { bill ->
+                                val mainAlloc = bill.autoAllocations[key] ?: 0.0
+                                val subAlloc = group.sumOf { entry -> if (entry.id != key) bill.autoAllocations[entry.id] ?: 0.0 else 0.0 }
+                                val totalAlloc = mainAlloc + subAlloc
+
+                                if (totalAlloc > 0.001) {
+                                    allocations.add(
+                                        PaymentAllocationInfo(
+                                            type = bill.billType,
+                                            reference = bill.referenceNumber,
+                                            amount = totalAlloc,
+                                            isAuto = true,
+                                            isPaid = bill.status == com.batterysales.data.models.BillStatus.PAID
+                                        )
+                                    )
+                                }
+                            }
+
                             val refs = (allLinkedBills.filter { bill ->
                                 bill.referenceNumber.isNotEmpty()
                             }.map { bill ->
@@ -564,7 +608,7 @@ class ReportsViewModel @Inject constructor(
                                     BillType.VISA -> "فيزا"
                                     BillType.E_WALLET -> "محفظة"
                                 }
-                                "$typeStr: ${bill.referenceNumber}${if(bill.status != BillStatus.PAID) " (غير مسدد)" else ""}"
+                                "$typeStr: ${bill.referenceNumber}${if(bill.status != com.batterysales.data.models.BillStatus.PAID) " (غير مسدد)" else ""}"
                             } + supplierBills.filter { it.autoLinkedEntryIds.contains(key) && it.relatedEntryId == null }
                                 .map { bill ->
                                     val typeStr = when (bill.billType) {
@@ -585,8 +629,9 @@ class ReportsViewModel @Inject constructor(
                             PurchaseOrderItem(
                                 entry = representative.copy(totalCost = totalOrderCost),
                                 linkedPaidAmount = totalLinkedPaid,
-                                // المتبقي = التكلفة الإجمالية - (قيمة الشيكات + قيمة المرتجعات + النقدي المباشر)
-                                remainingBalance = (totalOrderCost - finalLinkedValue - totalReturnCredit - finalCashPaid).coerceAtLeast(0.0),
+                                // المتبقي (الذمة المالية): التكلفة الإجمالية - (المبالغ المسددة فعلياً + قيمة المرتجعات)
+                                // ملاحظة: الشيكات غير المسددة لا تخصم من الذمة المالية هنا حسب طلب المستخدم
+                                remainingBalance = (totalOrderCost - totalActualPaid - totalReturnCredit).coerceAtLeast(0.0),
                                 referenceNumbers = refs,
                                 items = group,
                                 autoLinkedAmount = autoAllocatedAmountForThisOrder,
@@ -594,7 +639,8 @@ class ReportsViewModel @Inject constructor(
                                 totalActualPaid = totalActualPaid,
                                 totalLinkedAmount = finalLinkedValue,
                                 totalReturnCredit = totalReturnCredit,
-                                totalCashPaid = finalCashPaid
+                                totalCashPaid = finalCashPaid,
+                                paymentAllocations = allocations
                             )
                         }.sortedWith(compareByDescending<PurchaseOrderItem> { it.entry.getEffectiveDate() }.thenByDescending { it.entry.timestamp })
 
