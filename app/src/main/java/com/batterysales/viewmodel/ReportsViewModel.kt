@@ -56,7 +56,8 @@ data class PurchaseOrderItem(
     val hasManualLink: Boolean = false, // هل يوجد ربط يدوي (عن طريق الرقم أو الحقل المخصص)
     val totalActualPaid: Double = 0.0, // إجمالي المبالغ المسددة فعلياً (نقدياً) لهذه الطلبية
     val totalLinkedAmount: Double = 0.0, // إجمالي مبالغ الشيكات (الورقية) المرتبطة يدوياً وتلقائياً
-    val totalReturnCredit: Double = 0.0 // قيمة المواد المرتجعة المرتبطة بهذه الطلبية
+    val totalReturnCredit: Double = 0.0, // قيمة المواد المرتجعة المرتبطة بهذه الطلبية
+    val totalCashPaid: Double = 0.0 // المبالغ المسددة نقداً لهذه الطلبية
 )
 
 @HiltViewModel
@@ -467,13 +468,11 @@ class ReportsViewModel @Inject constructor(
                         }
 
                         // Calculate totals locally for accuracy and consistency
-                        // totalDebit represents the GROSS purchase cost.
-                        // Returns are tracked as separate credit records (Bills with type CREDIT or just subtracted from totalCredit in balance).
-                        // To avoid double-counting and ensure balance matches (Gross Purchases - (Payments + Returns)),
-                        // we use GROSS cost for debit and let the credit side represent the "Offset".
-                        val totalDebit = supplierEntries.filter { it.quantity > 0 }.sumOf { it.getEffectiveTotalCost() }
+                        // totalDebit represents the GROSS purchase cost (Lifetime since reset).
+                        // We use allSupplierEntries (unfiltered by UI date) to ensure the balance is accurate.
+                        val totalDebit = allSupplierEntries.filter { it.quantity > 0 }.sumOf { it.getEffectiveTotalCost() }
 
-                        // Calculate total credit: Actual Payments (from Bills/Checks) + Value of returned materials (from StockEntries)
+                        // Calculate total credit (Lifetime since reset): Actual Payments (from Bills/Checks) + Value of returned materials (from StockEntries)
                         val supplierReturnsValue = allRawSupplierEntries.filter { it.quantity < 0 }.sumOf { -it.getEffectiveTotalCost() }
                         val totalCredit = supplierBills.sumOf { it.paidAmount } + supplierReturnsValue
                         val balance = totalDebit - totalCredit
@@ -517,7 +516,8 @@ class ReportsViewModel @Inject constructor(
                             }.distinctBy { it.id }
 
                             val totalLinkedPaid = allLinkedBills.sumOf { it.paidAmount }
-                            val totalLinkedAmount = allLinkedBills.sumOf { it.amount }
+                            val totalLinkedValue = allLinkedBills.filter { it.billType == BillType.CHECK || it.billType == BillType.BILL }.sumOf { it.amount }
+                            val totalOrderCashPaid = allLinkedBills.filter { it.billType != BillType.CHECK && it.billType != BillType.BILL }.sumOf { it.paidAmount }
 
                             // حساب المبالغ المرتبطة تلقائياً من الشيكات التي لا تحمل ربطاً يدوياً
                             val autoAllocatedBills = supplierBills
@@ -532,23 +532,26 @@ class ReportsViewModel @Inject constructor(
                                 mainAlloc + subAlloc
                             }
 
-                            // حساب المبلغ المسدد فعلياً من الشيكات المرتبطة تلقائياً
-                            val autoAllocatedCashPaid = autoAllocatedBills.sumOf { bill ->
-                                val totalAllocForThisOrder = (bill.autoAllocations[key] ?: 0.0) +
-                                    group.sumOf { entry -> if (entry.id != key) bill.autoAllocations[entry.id] ?: 0.0 else 0.0 }
+                            // حساب المبلغ المسدد فعلياً والمبالغ الورقية المرتبطة تلقائياً
+                            val autoAllocatedValue = autoAllocatedBills.filter { it.billType == BillType.CHECK || it.billType == BillType.BILL }.sumOf { bill ->
+                                (bill.autoAllocations[key] ?: 0.0) +
+                                group.sumOf { entry -> if (entry.id != key) bill.autoAllocations[entry.id] ?: 0.0 else 0.0 }
+                            }
 
-                                if (bill.amount > 0) (totalAllocForThisOrder / bill.amount) * bill.paidAmount else 0.0
+                            val autoAllocatedCash = autoAllocatedBills.filter { it.billType != BillType.CHECK && it.billType != BillType.BILL }.sumOf { bill ->
+                                (bill.autoAllocations[key] ?: 0.0) +
+                                group.sumOf { entry -> if (entry.id != key) bill.autoAllocations[entry.id] ?: 0.0 else 0.0 }
                             }
 
                             // Use the actual calculated sum from the entries in the order for consistency
                             val finalTotalCost = totalOrderCost
 
-                            // إجمالي المبالغ المرتبطة (الورقية) سواء يدوياً أو تلقائياً
-                            // نستخدم القيمة الكاملة للشيكات المرتبطة هنا
-                            val totalLinkedValue = totalLinkedAmount + autoAllocatedAmountForThisOrder
+                            // التجميع النهائي للقيم
+                            val finalLinkedValue = totalLinkedValue + autoAllocatedValue
+                            val finalCashPaid = totalOrderCashPaid + autoAllocatedCash
 
-                            // المبالغ المسددة تشمل: الدفعات اليدوية على الشيكات المرتبطة + الدفعات (نقدية) المحسوبة من الشيكات المرتبطة تلقائياً
-                            val totalActualPaid = totalLinkedPaid + autoAllocatedCashPaid
+                            // المبالغ المسددة فعلياً تشمل النقدي + المسدد من الشيكات المرتبطة
+                            val totalActualPaid = finalCashPaid + totalLinkedPaid
 
                             val refs = (allLinkedBills.filter { bill ->
                                 bill.referenceNumber.isNotEmpty()
@@ -582,15 +585,16 @@ class ReportsViewModel @Inject constructor(
                             PurchaseOrderItem(
                                 entry = representative.copy(totalCost = totalOrderCost),
                                 linkedPaidAmount = totalLinkedPaid,
-                                // المتبقي = التكلفة الإجمالية - (قيمة الشيكات + قيمة المرتجعات)
-                                remainingBalance = (totalOrderCost - totalLinkedValue - totalReturnCredit).coerceAtLeast(0.0),
+                                // المتبقي = التكلفة الإجمالية - (قيمة الشيكات + قيمة المرتجعات + النقدي المباشر)
+                                remainingBalance = (totalOrderCost - finalLinkedValue - totalReturnCredit - finalCashPaid).coerceAtLeast(0.0),
                                 referenceNumbers = refs,
                                 items = group,
                                 autoLinkedAmount = autoAllocatedAmountForThisOrder,
                                 hasManualLink = allLinkedBills.isNotEmpty(),
                                 totalActualPaid = totalActualPaid,
-                                totalLinkedAmount = totalLinkedValue,
-                                totalReturnCredit = totalReturnCredit
+                                totalLinkedAmount = finalLinkedValue,
+                                totalReturnCredit = totalReturnCredit,
+                                totalCashPaid = finalCashPaid
                             )
                         }.sortedWith(compareByDescending<PurchaseOrderItem> { it.entry.getEffectiveDate() }.thenByDescending { it.entry.timestamp })
 
@@ -598,7 +602,7 @@ class ReportsViewModel @Inject constructor(
 
                         // Calculate unallocated realized credit accurately BEFORE final UI distribution
                         // We subtract all payments already tied to specific orders (via checks or cash)
-                        val totalRealizedCreditApplied = purchaseOrders.sumOf { it.totalActualPaid }
+                        val totalRealizedCreditApplied = purchaseOrders.sumOf { it.totalActualPaid + it.totalReturnCredit }
                         var remainingGlobalCredit = (totalCredit - totalRealizedCreditApplied).coerceAtLeast(0.0)
 
                         // 4. التوزيع النهائي للرصيد العالمي (الفائض + المرتجعات غير المرتبطة) على الفواتير المتبقية للعرض فقط
@@ -618,9 +622,8 @@ class ReportsViewModel @Inject constructor(
 
                                 po.copy(
                                     remainingBalance = (po.remainingBalance - allocation).coerceAtLeast(0.0),
-                                    // نزيد المبالغ المرتبطة لنقلها للقائمة التمددية وتفعيل ملاحظات التغطية
-                                    autoLinkedAmount = po.autoLinkedAmount + allocation,
-                                    totalLinkedAmount = po.totalLinkedAmount + allocation,
+                                    // نزيد المبالغ النقدية لنقلها للقائمة التمددية وتفعيل ملاحظات التغطية
+                                    totalCashPaid = po.totalCashPaid + allocation,
                                     referenceNumbers = newRefs
                                 )
                             } else po

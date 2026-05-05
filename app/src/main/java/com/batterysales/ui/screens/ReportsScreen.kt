@@ -964,7 +964,7 @@ fun PurchaseOrderCard(
 
             if (po.totalLinkedAmount > 0.001) {
                 // Determine if it was covered fully by checks (manual + auto)
-                val isCheckFullyCovered = po.totalLinkedAmount >= (po.entry.totalCost - po.totalReturnCredit) - 0.001
+                val isCheckFullyCovered = po.totalLinkedAmount >= (po.entry.totalCost - po.totalReturnCredit - po.totalCashPaid) - 0.001
                 Surface(
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.05f),
                     shape = RoundedCornerShape(8.dp)
@@ -976,9 +976,27 @@ fun PurchaseOrderCard(
                             text = if (isCheckFullyCovered)
                                 "مغطاة بالكامل من شيكات غير مرتبطة"
                             else
-                                "مغطاة جزئياً بمبلغ JD ${String.format("%.3f", po.totalLinkedAmount)} من شيكات مرتبطة",
+                                "مغطاة بشيكات/كمبيالات بمبلغ JD ${String.format("%.3f", po.totalLinkedAmount)}",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
+
+            if (po.totalCashPaid > 0.001) {
+                Surface(
+                    color = Color(0xFFFBC02D).copy(alpha = 0.05f),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.padding(top = 4.dp)
+                ) {
+                    Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Payments, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFFFBC02D))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "مسدد نقداً بمبلغ JD ${String.format("%.3f", po.totalCashPaid)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFF917304)
                         )
                     }
                 }
