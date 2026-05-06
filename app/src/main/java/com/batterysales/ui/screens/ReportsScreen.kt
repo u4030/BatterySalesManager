@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.batterysales.data.models.Warehouse
+import com.batterysales.data.models.ScrapWarehouse
 import com.batterysales.ui.components.BarcodeScanner
 import com.batterysales.ui.components.InfoBadge
 import com.batterysales.viewmodel.InventoryReportItem
@@ -69,7 +70,7 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
     val isSeller by viewModel.isSeller.collectAsState()
     val warehouses by viewModel.filteredWarehouses.collectAsState()
     val oldBatterySummary by viewModel.oldBatterySummary.collectAsState()
-    val oldBatteryWarehouseSummary by viewModel.oldBatteryWarehouseSummary.collectAsState()
+    val scrapWarehouses by viewModel.scrapWarehouses.collectAsState()
     val isInventoryLoading by viewModel.isInventoryLoading.collectAsState()
     val isSupplierLoading by viewModel.isSupplierLoading.collectAsState()
     val isScrapLoading by viewModel.isScrapLoading.collectAsState()
@@ -227,9 +228,8 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                         1 -> {
                             item {
                                 OldBatteryReportSectionRedesigned(
-                                    warehouses = warehouses,
+                                    scrapWarehouses = scrapWarehouses,
                                     oldBatterySummary = oldBatterySummary,
-                                    oldBatteryWarehouseSummary = oldBatteryWarehouseSummary,
                                     onNavigate = { navController.navigate("old_battery_ledger") }
                                 )
                             }
@@ -534,17 +534,19 @@ fun ReportItemCard(
 
 @Composable
 fun OldBatteryReportSectionRedesigned(
-    warehouses: List<Warehouse>,
+    scrapWarehouses: List<ScrapWarehouse>,
     oldBatterySummary: Pair<Int, Double>,
-    oldBatteryWarehouseSummary: Map<String, Pair<Int, Double>>,
     onNavigate: () -> Unit
 ) {
     var selectedWHIndex by remember { mutableIntStateOf(0) }
     val currentSummary = if (selectedWHIndex == 0) oldBatterySummary
-    else oldBatteryWarehouseSummary[warehouses[selectedWHIndex - 1].id] ?: Pair(0, 0.0)
+    else {
+        val scrapWh = scrapWarehouses[selectedWHIndex - 1]
+        Pair(scrapWh.totalQuantity, scrapWh.totalAmperes)
+    }
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        if (warehouses.isNotEmpty()) {
+        if (scrapWarehouses.size > 1) {
             androidx.compose.foundation.lazy.LazyRow(
                 modifier = Modifier.fillMaxWidth(),
                 contentPadding = PaddingValues(horizontal = 16.dp),
@@ -557,11 +559,11 @@ fun OldBatteryReportSectionRedesigned(
                         label = { Text("الكل") }
                     )
                 }
-                items(warehouses.size) { index ->
+                items(scrapWarehouses.size) { index ->
                     FilterChip(
                         selected = selectedWHIndex == index + 1,
                         onClick = { selectedWHIndex = index + 1 },
-                        label = { Text(warehouses[index].name) }
+                        label = { Text(scrapWarehouses[index].name.removePrefix("سكراب - ")) }
                     )
                 }
             }
