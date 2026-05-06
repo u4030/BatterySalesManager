@@ -422,7 +422,7 @@ class ReportsViewModel @Inject constructor(
                         val adjustedStart = start?.let { com.batterysales.utils.DateUtils.getStartOfDay(it) }
                         val adjustedEnd = end?.let { com.batterysales.utils.DateUtils.getEndOfDay(it) }
 
-                        // Filter entries for this supplier
+                        // Filter entries for this supplier - Use all entries since reset for accurate balance and FIFO distribution
                         val rawSupplierEntries = allEntries.filter { entry ->
                             val matchId = entry.supplierId.isNotEmpty() && entry.supplierId == supplier.id
                             // Robust name matching fallback for legacy entries
@@ -432,9 +432,7 @@ class ReportsViewModel @Inject constructor(
 
                             (matchId || matchName) &&
                                     entry.status == "approved" &&
-                                    (supplier.resetDate == null || !entry.getEffectiveDate().before(supplier.resetDate)) &&
-                                    (adjustedStart == null || entry.getEffectiveDate().time >= adjustedStart) &&
-                                    (adjustedEnd == null || entry.getEffectiveDate().time <= adjustedEnd)
+                                    (supplier.resetDate == null || !entry.getEffectiveDate().before(supplier.resetDate))
                         }
 
                         // توحيد أرقام الفواتير للقيود التي تتشارك نفس معرف الطلبية
@@ -561,13 +559,19 @@ class ReportsViewModel @Inject constructor(
 
                         // توزيع الرصيد الدائن العام (المرتجعات والنقد الزائد) بنظام FIFO
                         val realizedBillsCredit = supplierBills.sumOf { it.paidAmount }
-                        val allocatedRealizedCredit = purchaseOrders.sumOf { it.totalActualPaid }
-                        var unallocatedRealizedCredit = (realizedBillsCredit - allocatedRealizedCredit).coerceAtLeast(0.0)
+                        val totalAllocatedCash = purchaseOrders.sumOf { it.totalActualPaid }
+                        var unallocatedRealizedCredit = (realizedBillsCredit - totalAllocatedCash)
 
-                        // رصد الفواتير التي فيها زيادة دفع (يدوية غالباً) لإضافتها للمجمع النقدي
-                        val excessPaymentCredit = purchaseOrders.filter { it.entry.totalCost > 0 && it.remainingBalance < -0.001 }
+                        // رصد المبالغ التي يمكن استردادها للمجمع:
+                        // 1. زيادة الدفع في الطلبيات الموجبة (manual overpayment)
+                        // 2. كافة المبالغ "المدفوعة" في طلبيات المرتجعات (لأن المرتجع بحد ذاته هو رصيد)
+                        val excessOnPositive = purchaseOrders.filter { it.entry.totalCost > 0 && it.remainingBalance < -0.001 }
                             .sumOf { -it.remainingBalance }
-                        unallocatedRealizedCredit += excessPaymentCredit
+                        val paidOnNegative = purchaseOrders.filter { it.entry.totalCost <= 0 }
+                            .sumOf { it.totalActualPaid }
+
+                        unallocatedRealizedCredit += (excessOnPositive + paidOnNegative)
+                        unallocatedRealizedCredit = unallocatedRealizedCredit.coerceAtLeast(0.0)
 
                         var returnsCreditPool = purchaseOrders.filter { it.entry.totalCost < 0 }.sumOf { -it.entry.totalCost }
 
@@ -584,6 +588,7 @@ class ReportsViewModel @Inject constructor(
                                         currentPo = currentPo.copy(
                                             totalActualPaid = currentPo.totalActualPaid + take,
                                             remainingBalance = currentPo.remainingBalance - take,
+                                            totalLinkedAmount = currentPo.totalLinkedAmount + take,
                                             referenceNumbers = currentPo.referenceNumbers + "خصم مرتجعات مواد: JD ${String.format("%.3f", take)}"
                                         )
                                     }
@@ -597,6 +602,7 @@ class ReportsViewModel @Inject constructor(
                                         currentPo = currentPo.copy(
                                             totalActualPaid = currentPo.totalActualPaid + take,
                                             remainingBalance = currentPo.remainingBalance - take,
+                                            totalLinkedAmount = currentPo.totalLinkedAmount + take,
                                             referenceNumbers = currentPo.referenceNumbers + "تسوية من رصيد نقدي: JD ${String.format("%.3f", take)}"
                                         )
                                     }
@@ -604,7 +610,13 @@ class ReportsViewModel @Inject constructor(
                                 currentPo
                             }.sortedWith(compareByDescending<PurchaseOrderItem> { it.entry.getEffectiveDate() }.thenByDescending { it.entry.timestamp })
 
-                        val (obligated, regular) = processedOrders.partition { po ->
+                        // الآن نقوم بالفلترة حسب التاريخ المختار للعرض في القائمة
+                        val finalOrdersForDisplay = processedOrders.filter { po ->
+                            (adjustedStart == null || po.entry.getEffectiveDate().time >= adjustedStart) &&
+                                    (adjustedEnd == null || po.entry.getEffectiveDate().time <= adjustedEnd)
+                        }
+
+                        val (obligated, regular) = finalOrdersForDisplay.partition { po ->
                             // الطلبية تعتبر "مرتبطة" وتنتقل للقائمة التمددية فقط إذا كان هناك ربط يدوي 
                             // أو إذا كانت مغطاة بالكامل بواسطة الشيكات المرتبطة تلقائياً.
                             // أما الطلبيات المغطاة جزئياً فتبقى في القائمة الرئيسية مع إظهار الملاحظة.
