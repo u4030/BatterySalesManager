@@ -460,15 +460,7 @@ class ReportsViewModel @Inject constructor(
                                     (adjustedEnd == null || bill.dueDate.time <= adjustedEnd)
                         }
 
-                        // Calculate totals locally for accuracy and consistency
-                        // totalDebit should use the net cost (after returns)
-                        val totalDebit = supplierEntries.sumOf { it.getNetCost() }
-                        val totalCredit = supplierBills.sumOf { it.paidAmount }
-                        val balance = totalDebit - totalCredit
-
-                        // Group entries into Purchase Orders
-                        // Priority: invoiceNumber -> orderId -> id
-                        // ملاحظة: هذا المفتاح يجب أن يتطابق مع المفتاح المستخدم في BillRepository.autoLinkBillsForSupplier
+                        // 1. تجميع طلبيات الشراء وحساب الروابط اليدوية الأولية
                         val groupedEntries = supplierEntries
                             .groupBy { it.invoiceNumber.trim().ifEmpty { it.orderId.trim().ifEmpty { it.id } } }
 
@@ -476,7 +468,8 @@ class ReportsViewModel @Inject constructor(
                             val representative = group.first()
                             val totalOrderCost = group.sumOf { it.getNetCost() }
 
-                            val allLinkedBills = supplierBills.filter { bill ->
+                            // تحديد الروابط اليدوية لهذا الطلب
+                            val manualLinkedBills = supplierBills.filter { bill ->
                                 val ref = bill.referenceNumber.trim()
                                 bill.relatedEntryId == key || 
                                 ref == key || 
@@ -486,36 +479,11 @@ class ReportsViewModel @Inject constructor(
                                     (ref.isNotEmpty() && ref == entry.invoiceNumber.trim()) 
                                 }
                             }.distinctBy { it.id }
-                            
-                            val totalLinkedPaid = allLinkedBills.sumOf { it.paidAmount }
-                            val totalLinkedAmount = allLinkedBills.sumOf { it.amount }
 
-                            // حساب المبالغ المرتبطة تلقائياً من الشيكات التي لا تحمل ربطاً يدوياً
-                            val autoAllocatedBills = supplierBills
-                                .filter { bill -> allLinkedBills.none { it.id == bill.id } }
-                            
-                            // حساب المبالغ المرتبطة تلقائياً
-                            // نجمع التخصيصات للمفتاح الرئيسي للمجموعة (الفاتورة) وأيضاً لأي قيد فرعي داخلها
-                            // لضمان شمول كافة المبالغ الموزعة بواسطة الخوارزمية
-                            val autoAllocatedAmountForThisOrder = autoAllocatedBills.sumOf { bill ->
-                                val mainAlloc = bill.autoAllocations[key] ?: 0.0
-                                val subAlloc = group.sumOf { entry -> if (entry.id != key) bill.autoAllocations[entry.id] ?: 0.0 else 0.0 }
-                                mainAlloc + subAlloc
-                            }
+                            val manualPaid = manualLinkedBills.sumOf { it.paidAmount }
+                            val manualPaper = manualLinkedBills.sumOf { it.amount }
 
-                            // حساب المبلغ المسدد فعلياً من الشيكات المرتبطة تلقائياً
-                            val autoAllocatedCashPaid = autoAllocatedBills.sumOf { bill ->
-                                val totalAllocForThisOrder = (bill.autoAllocations[key] ?: 0.0) + 
-                                    group.sumOf { entry -> if (entry.id != key) bill.autoAllocations[entry.id] ?: 0.0 else 0.0 }
-                                    
-                                if (bill.amount > 0) (totalAllocForThisOrder / bill.amount) * bill.paidAmount else 0.0
-                            }
-
-                            // Use the actual calculated sum from the entries in the order for consistency
-                            val finalTotalCost = totalOrderCost
-                            val totalActualPaid = totalLinkedPaid + autoAllocatedCashPaid
-
-                            val refs = (allLinkedBills.filter { bill ->
+                            val refs = (manualLinkedBills.filter { bill ->
                                 bill.referenceNumber.isNotEmpty()
                             }.map { bill ->
                                 val typeStr = when (bill.billType) {
@@ -527,88 +495,82 @@ class ReportsViewModel @Inject constructor(
                                     BillType.E_WALLET -> "محفظة"
                                 }
                                 "$typeStr: ${bill.referenceNumber}${if(bill.status != BillStatus.PAID) " (غير مسدد)" else ""}"
-                            } + supplierBills.filter { it.autoLinkedEntryIds.contains(key) && it.relatedEntryId == null }
-                                .map { bill ->
-                                    val typeStr = when (bill.billType) {
-                                        BillType.CHECK -> "شيك"
-                                        BillType.BILL -> "كمبيالة"
-                                        BillType.TRANSFER -> "تحويل"
-                                        BillType.CASH -> "نقدي"
-                                        BillType.VISA -> "فيزا"
-                                        BillType.E_WALLET -> "محفظة"
-                                    }
-                                    "$typeStr: ${bill.referenceNumber} (ربط تلقائي)"
-                                }).distinct()
+                            }).distinct()
 
-                            // تحديد ما إذا كان هناك ربط يدوي فعلي
-                            // نعتبره يدوياً إذا كان مرتبطاً عبر المعرف أو المرجع
-                            val actualManualBills = allLinkedBills
-                            
                             PurchaseOrderItem(
-                                entry = representative.copy(totalCost = finalTotalCost),
-                                linkedPaidAmount = totalLinkedPaid,
-                                remainingBalance = finalTotalCost - totalActualPaid,
+                                entry = representative.copy(totalCost = totalOrderCost),
+                                linkedPaidAmount = manualPaid,
+                                remainingBalance = totalOrderCost, // سيتم تحديثه لاحقاً
                                 referenceNumbers = refs,
                                 items = group,
-                                autoLinkedAmount = autoAllocatedAmountForThisOrder,
-                                hasManualLink = allLinkedBills.isNotEmpty(),
-                                totalActualPaid = totalActualPaid,
-                                totalLinkedAmount = totalLinkedAmount + autoAllocatedAmountForThisOrder
+                                hasManualLink = manualLinkedBills.isNotEmpty(),
+                                totalActualPaid = manualPaid,
+                                totalLinkedAmount = manualPaper
                             )
                         }
 
-                        // توزيع الرصيد الدائن العام (المرتجعات والنقد الزائد) بنظام FIFO
-                        val realizedBillsCredit = supplierBills.sumOf { it.paidAmount }
-                        val totalAllocatedCash = purchaseOrders.sumOf { it.totalActualPaid }
-                        var unallocatedRealizedCredit = (realizedBillsCredit - totalAllocatedCash)
-
-                        // رصد المبالغ التي يمكن استردادها للمجمع:
-                        // 1. زيادة الدفع في الطلبيات الموجبة (manual overpayment)
-                        // 2. كافة المبالغ "المدفوعة" في طلبيات المرتجعات (لأن المرتجع بحد ذاته هو رصيد)
-                        val excessOnPositive = purchaseOrders.filter { it.entry.totalCost > 0 && it.remainingBalance < -0.001 }
-                            .sumOf { -it.remainingBalance }
-                        val paidOnNegative = purchaseOrders.filter { it.entry.totalCost <= 0 }
-                            .sumOf { it.totalActualPaid }
-
-                        unallocatedRealizedCredit += (excessOnPositive + paidOnNegative)
-                        unallocatedRealizedCredit = unallocatedRealizedCredit.coerceAtLeast(0.0)
-
-                        var returnsCreditPool = purchaseOrders.filter { it.entry.totalCost < 0 }.sumOf { -it.entry.totalCost }
-
-                        val processedOrders = purchaseOrders.filter { it.entry.totalCost > 0 }
+                        // 2. إعداد مجمعات الأرصدة (Pools) بنظام FIFO
+                        val positiveOrders = purchaseOrders.filter { it.entry.totalCost > 0 }
                             .sortedWith(compareBy<PurchaseOrderItem> { it.entry.getEffectiveDate() }.thenBy { it.entry.timestamp })
-                            .map { po ->
-                                var currentPo = po.copy(remainingBalance = po.remainingBalance.coerceAtLeast(0.0))
 
-                                // 1. تطبيق مجمع المرتجعات أولاً
-                                if (returnsCreditPool > 0.001) {
-                                    val take = minOf(returnsCreditPool, currentPo.remainingBalance)
-                                    if (take > 0.001) {
-                                        returnsCreditPool -= take
-                                        currentPo = currentPo.copy(
-                                            totalActualPaid = currentPo.totalActualPaid + take,
-                                            remainingBalance = currentPo.remainingBalance - take,
-                                            totalLinkedAmount = currentPo.totalLinkedAmount + take,
-                                            referenceNumbers = currentPo.referenceNumbers + "خصم مرتجعات مواد: JD ${String.format("%.3f", take)}"
-                                        )
-                                    }
-                                }
+                        // خصم الاستهلاك اليدوي من المجمعات أولاً، مع استرجاع الفائض للمجمع
+                        val manualAdjustedOrders = positiveOrders.map { po ->
+                            val cost = po.entry.totalCost
+                            val consumedCash = minOf(po.totalActualPaid, cost)
+                            val consumedPaper = minOf(po.totalLinkedAmount, cost)
 
-                                // 2. تطبيق مجمع النقد الزائد ثانياً
-                                if (unallocatedRealizedCredit > 0.001) {
-                                    val take = minOf(unallocatedRealizedCredit, currentPo.remainingBalance)
-                                    if (take > 0.001) {
-                                        unallocatedRealizedCredit -= take
-                                        currentPo = currentPo.copy(
-                                            totalActualPaid = currentPo.totalActualPaid + take,
-                                            remainingBalance = currentPo.remainingBalance - take,
-                                            totalLinkedAmount = currentPo.totalLinkedAmount + take,
-                                            referenceNumbers = currentPo.referenceNumbers + "تسوية من رصيد نقدي: JD ${String.format("%.3f", take)}"
-                                        )
-                                    }
-                                }
-                                currentPo
-                            }.sortedWith(compareByDescending<PurchaseOrderItem> { it.entry.getEffectiveDate() }.thenByDescending { it.entry.timestamp })
+                            po.copy(
+                                totalActualPaid = consumedCash,
+                                totalLinkedAmount = maxOf(consumedCash, consumedPaper)
+                            )
+                        }
+
+                        // حساب الأرصدة المتبقية في المجمعات بعد الاستهلاك اليدوي "المفيد"
+                        var globalReturns = purchaseOrders.filter { it.entry.totalCost < 0 }.sumOf { -it.entry.totalCost }
+                        var globalCash = supplierBills.sumOf { it.paidAmount } -
+                                manualAdjustedOrders.sumOf { it.totalActualPaid }
+                        var globalPaper = supplierBills.sumOf { it.amount } -
+                                manualAdjustedOrders.sumOf { it.totalLinkedAmount }
+
+                        val processedOrders = manualAdjustedOrders.map { po ->
+                            val cost = po.entry.totalCost
+                            var currentPaid = po.totalActualPaid
+                            var currentPaper = po.totalLinkedAmount
+
+                            // أ. توزيع المرتجعات (تخفض المتبقي وتزيد التغطية)
+                            val takeReturns = minOf(globalReturns, (cost - currentPaid).coerceAtLeast(0.0))
+                            globalReturns -= takeReturns
+                            currentPaid += takeReturns
+                            currentPaper = maxOf(currentPaper, currentPaid)
+
+                            // ب. توزيع النقد المتبقي (يخفض المتبقي ويزيد التغطية)
+                            val takeCash = minOf(globalCash, (cost - currentPaid).coerceAtLeast(0.0))
+                            globalCash -= takeCash
+                            globalPaper = (globalPaper - takeCash).coerceAtLeast(0.0) // استهلاك النقد يقلل من سعة الأوراق المتاحة
+                            currentPaid += takeCash
+                            currentPaper = maxOf(currentPaper, currentPaid)
+
+                            // ج. توزيع التغطية الورقية المتبقية (تزيد التغطية فقط)
+                            val takePaper = minOf(globalPaper, (cost - currentPaper).coerceAtLeast(0.0))
+                            globalPaper -= takePaper
+                            currentPaper += takePaper
+
+                            val newRefs = po.referenceNumbers.toMutableList()
+                            if (takeReturns > 0.001) newRefs.add("خصم مرتجعات مواد: JD ${String.format("%.3f", takeReturns)}")
+                            if (takeCash > 0.001) newRefs.add("تسوية من رصيد نقدي: JD ${String.format("%.3f", takeCash)}")
+
+                            po.copy(
+                                totalActualPaid = currentPaid,
+                                remainingBalance = (cost - currentPaid).coerceAtLeast(0.0),
+                                totalLinkedAmount = currentPaper,
+                                autoLinkedAmount = currentPaper - po.totalLinkedAmount,
+                                referenceNumbers = newRefs.distinct()
+                            )
+                        }.sortedWith(compareByDescending<PurchaseOrderItem> { it.entry.getEffectiveDate() }.thenByDescending { it.entry.timestamp })
+
+                        val totalDebit = positiveOrders.sumOf { it.entry.totalCost }
+                        val totalCredit = supplierBills.sumOf { it.paidAmount } + purchaseOrders.filter { it.entry.totalCost < 0 }.sumOf { -it.entry.totalCost }
+                        val balance = totalDebit - totalCredit
 
                         // الآن نقوم بالفلترة حسب التاريخ المختار للعرض في القائمة
                         val finalOrdersForDisplay = processedOrders.filter { po ->
