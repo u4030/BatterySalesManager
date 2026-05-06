@@ -509,62 +509,100 @@ class ReportsViewModel @Inject constructor(
                             )
                         }
 
-                        // 2. إعداد مجمعات الأرصدة (Pools) بنظام FIFO
+                        // 2. إعداد المجمعات والبيانات للربط التلقائي بنظام FIFO
                         val positiveOrders = purchaseOrders.filter { it.entry.totalCost > 0 }
                             .sortedWith(compareBy<PurchaseOrderItem> { it.entry.getEffectiveDate() }.thenBy { it.entry.timestamp })
 
-                        // خصم الاستهلاك اليدوي من المجمعات أولاً، مع استرجاع الفائض للمجمع
+                        // ننشئ نسخة من الشيكات لتتبع المبالغ المتاحة فيها
+                        data class BillFIFOState(
+                            val bill: Bill,
+                            var remainingPaper: Double,
+                            var remainingCash: Double
+                        )
+
+                        val availableBills = supplierBills.sortedBy { it.createdAt }.map {
+                            BillFIFOState(it, it.amount, it.paidAmount)
+                        }
+
+                        // خصم الاستهلاك اليدوي أولاً من الشيكات المحددة
                         val manualAdjustedOrders = positiveOrders.map { po ->
                             val cost = po.entry.totalCost
-                            val consumedCash = minOf(po.totalActualPaid, cost)
-                            val consumedPaper = minOf(po.totalLinkedAmount, cost)
+                            val key = po.entry.invoiceNumber.trim().ifEmpty { po.entry.orderId.trim().ifEmpty { po.entry.id } }
+                            val orderIds = po.items.map { it.id }.toSet()
+
+                            // نجد الشيكات المرتبطة يدوياً بهذا الطلب ونخصم منها
+                            val linkedBills = availableBills.filter { state ->
+                                val ref = state.bill.referenceNumber.trim()
+                                state.bill.relatedEntryId == key ||
+                                ref == key ||
+                                (ref.isNotEmpty() && (ref == po.entry.invoiceNumber.trim() || ref == po.entry.id)) ||
+                                orderIds.contains(state.bill.relatedEntryId)
+                            }
+
+                            var currentPaid = 0.0
+                            var currentPaper = 0.0
+                            linkedBills.forEach { state ->
+                                val takeP = minOf(state.remainingPaper, (cost - currentPaper).coerceAtLeast(0.0))
+                                val takeC = minOf(state.remainingCash, (cost - currentPaid).coerceAtLeast(0.0))
+                                state.remainingPaper -= takeP
+                                state.remainingCash -= takeC
+                                currentPaid += takeC
+                                currentPaper += takeP
+                            }
 
                             po.copy(
-                                totalActualPaid = consumedCash,
-                                totalLinkedAmount = maxOf(consumedCash, consumedPaper)
+                                totalActualPaid = currentPaid,
+                                totalLinkedAmount = maxOf(currentPaid, currentPaper)
                             )
                         }
 
-                        // حساب الأرصدة المتبقية في المجمعات بعد الاستهلاك اليدوي "المفيد"
                         var globalReturns = purchaseOrders.filter { it.entry.totalCost < 0 }.sumOf { -it.entry.totalCost }
-                        var globalCash = supplierBills.sumOf { it.paidAmount } -
-                                manualAdjustedOrders.sumOf { it.totalActualPaid }
-                        var globalPaper = supplierBills.sumOf { it.amount } -
-                                manualAdjustedOrders.sumOf { it.totalLinkedAmount }
 
                         val processedOrders = manualAdjustedOrders.map { po ->
                             val cost = po.entry.totalCost
                             var currentPaid = po.totalActualPaid
                             var currentPaper = po.totalLinkedAmount
+                            val autoRefs = mutableListOf<String>()
 
-                            // أ. توزيع المرتجعات (تخفض المتبقي وتزيد التغطية)
+                            // أ. توزيع المرتجعات أولاً
                             val takeReturns = minOf(globalReturns, (cost - currentPaid).coerceAtLeast(0.0))
                             globalReturns -= takeReturns
                             currentPaid += takeReturns
                             currentPaper = maxOf(currentPaper, currentPaid)
+                            if (takeReturns > 0.001) autoRefs.add("خصم مرتجعات مواد: JD ${String.format("%.3f", takeReturns)}")
 
-                            // ب. توزيع النقد المتبقي (يخفض المتبقي ويزيد التغطية)
-                            val takeCash = minOf(globalCash, (cost - currentPaid).coerceAtLeast(0.0))
-                            globalCash -= takeCash
-                            globalPaper = (globalPaper - takeCash).coerceAtLeast(0.0) // استهلاك النقد يقلل من سعة الأوراق المتاحة
-                            currentPaid += takeCash
-                            currentPaper = maxOf(currentPaper, currentPaid)
+                            // ب. توزيع الشيكات المتبقية (تلقائياً)
+                            availableBills.forEach { state ->
+                                val remainingToPay = (cost - currentPaid).coerceAtLeast(0.0)
+                                val remainingToCover = (cost - currentPaper).coerceAtLeast(0.0)
 
-                            // ج. توزيع التغطية الورقية المتبقية (تزيد التغطية فقط)
-                            val takePaper = minOf(globalPaper, (cost - currentPaper).coerceAtLeast(0.0))
-                            globalPaper -= takePaper
-                            currentPaper += takePaper
+                                val takeC = minOf(state.remainingCash, remainingToPay)
+                                val takeP = minOf(state.remainingPaper, remainingToCover)
 
-                            val newRefs = po.referenceNumbers.toMutableList()
-                            if (takeReturns > 0.001) newRefs.add("خصم مرتجعات مواد: JD ${String.format("%.3f", takeReturns)}")
-                            if (takeCash > 0.001) newRefs.add("تسوية من رصيد نقدي: JD ${String.format("%.3f", takeCash)}")
+                                if (takeP > 0.001) {
+                                    state.remainingCash -= takeC
+                                    state.remainingPaper -= takeP
+                                    currentPaid += takeC
+                                    currentPaper += takeP
+
+                                    val typeStr = when (state.bill.billType) {
+                                        BillType.CHECK -> "شيك"
+                                        BillType.BILL -> "كمبيالة"
+                                        BillType.TRANSFER -> "تحويل"
+                                        BillType.CASH -> "نقدي"
+                                        BillType.VISA -> "فيزا"
+                                        BillType.E_WALLET -> "محفظة"
+                                    }
+                                    autoRefs.add("$typeStr: ${state.bill.referenceNumber} (ربط تلقائي)")
+                                }
+                            }
 
                             po.copy(
                                 totalActualPaid = currentPaid,
                                 remainingBalance = (cost - currentPaid).coerceAtLeast(0.0),
                                 totalLinkedAmount = currentPaper,
                                 autoLinkedAmount = currentPaper - po.totalLinkedAmount,
-                                referenceNumbers = newRefs.distinct()
+                                referenceNumbers = (po.referenceNumbers + autoRefs).distinct()
                             )
                         }.sortedWith(compareByDescending<PurchaseOrderItem> { it.entry.getEffectiveDate() }.thenByDescending { it.entry.timestamp })
 
