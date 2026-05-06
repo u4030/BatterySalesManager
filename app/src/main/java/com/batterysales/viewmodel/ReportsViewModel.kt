@@ -557,9 +557,54 @@ class ReportsViewModel @Inject constructor(
                                 totalActualPaid = totalActualPaid,
                                 totalLinkedAmount = totalLinkedAmount + autoAllocatedAmountForThisOrder
                             )
-                        }.sortedWith(compareByDescending<PurchaseOrderItem> { it.entry.getEffectiveDate() }.thenByDescending { it.entry.timestamp })
+                        }
 
-                        val (obligated, regular) = purchaseOrders.partition { po ->
+                        // توزيع الرصيد الدائن العام (المرتجعات والنقد الزائد) بنظام FIFO
+                        val realizedBillsCredit = supplierBills.sumOf { it.paidAmount }
+                        val allocatedRealizedCredit = purchaseOrders.sumOf { it.totalActualPaid }
+                        var unallocatedRealizedCredit = (realizedBillsCredit - allocatedRealizedCredit).coerceAtLeast(0.0)
+
+                        // رصد الفواتير التي فيها زيادة دفع (يدوية غالباً) لإضافتها للمجمع النقدي
+                        val excessPaymentCredit = purchaseOrders.filter { it.entry.totalCost > 0 && it.remainingBalance < -0.001 }
+                            .sumOf { -it.remainingBalance }
+                        unallocatedRealizedCredit += excessPaymentCredit
+
+                        var returnsCreditPool = purchaseOrders.filter { it.entry.totalCost < 0 }.sumOf { -it.entry.totalCost }
+
+                        val processedOrders = purchaseOrders.filter { it.entry.totalCost > 0 }
+                            .sortedWith(compareBy<PurchaseOrderItem> { it.entry.getEffectiveDate() }.thenBy { it.entry.timestamp })
+                            .map { po ->
+                                var currentPo = po.copy(remainingBalance = po.remainingBalance.coerceAtLeast(0.0))
+
+                                // 1. تطبيق مجمع المرتجعات أولاً
+                                if (returnsCreditPool > 0.001) {
+                                    val take = minOf(returnsCreditPool, currentPo.remainingBalance)
+                                    if (take > 0.001) {
+                                        returnsCreditPool -= take
+                                        currentPo = currentPo.copy(
+                                            totalActualPaid = currentPo.totalActualPaid + take,
+                                            remainingBalance = currentPo.remainingBalance - take,
+                                            referenceNumbers = currentPo.referenceNumbers + "خصم مرتجعات مواد: JD ${String.format("%.3f", take)}"
+                                        )
+                                    }
+                                }
+
+                                // 2. تطبيق مجمع النقد الزائد ثانياً
+                                if (unallocatedRealizedCredit > 0.001) {
+                                    val take = minOf(unallocatedRealizedCredit, currentPo.remainingBalance)
+                                    if (take > 0.001) {
+                                        unallocatedRealizedCredit -= take
+                                        currentPo = currentPo.copy(
+                                            totalActualPaid = currentPo.totalActualPaid + take,
+                                            remainingBalance = currentPo.remainingBalance - take,
+                                            referenceNumbers = currentPo.referenceNumbers + "تسوية من رصيد نقدي: JD ${String.format("%.3f", take)}"
+                                        )
+                                    }
+                                }
+                                currentPo
+                            }.sortedWith(compareByDescending<PurchaseOrderItem> { it.entry.getEffectiveDate() }.thenByDescending { it.entry.timestamp })
+
+                        val (obligated, regular) = processedOrders.partition { po ->
                             // الطلبية تعتبر "مرتبطة" وتنتقل للقائمة التمددية فقط إذا كان هناك ربط يدوي 
                             // أو إذا كانت مغطاة بالكامل بواسطة الشيكات المرتبطة تلقائياً.
                             // أما الطلبيات المغطاة جزئياً فتبقى في القائمة الرئيسية مع إظهار الملاحظة.
