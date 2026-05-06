@@ -105,8 +105,10 @@ class BillRepository @Inject constructor(
         lastDocument: DocumentSnapshot? = null,
         limit: Long = 20
     ): Pair<List<Bill>, DocumentSnapshot?> {
+        // Sorting by supplierId (ASC) and then dueDate (ASC) as requested
         var query = firestore.collection(Bill.COLLECTION_NAME)
-            .orderBy("dueDate", Query.Direction.DESCENDING)
+            .orderBy("supplierId", Query.Direction.ASCENDING)
+            .orderBy("dueDate", Query.Direction.ASCENDING)
 
         if (lastDocument != null) {
             query = query.startAfter(lastDocument)

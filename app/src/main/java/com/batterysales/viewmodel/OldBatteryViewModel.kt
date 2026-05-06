@@ -106,9 +106,10 @@ class OldBatteryViewModel @Inject constructor(
                     _scrapWarehouses.value = filtered
 
                     if (user?.role == "admin" && _selectedWarehouseId.value == null) {
+                        // For admin, don't pre-select a warehouse to force manual selection in dialogs
+                        // But load initial data from first available if needed for summary
                         filtered.firstOrNull()?.let {
-                            _selectedWarehouseId.value = it.parentWarehouseId
-                            loadTransactions(reset = true, warehouseId = it.parentWarehouseId)
+                            loadTransactions(reset = true, warehouseId = null) // Load all for admin view initially
                         }
                     } else if (user?.role == "seller") {
                         _selectedWarehouseId.value = user.warehouseId
@@ -238,7 +239,7 @@ class OldBatteryViewModel @Inject constructor(
         invoiceRepository.updateInvoice(updatedInvoice)
     }
 
-    fun addManualIntake(quantity: Int, totalAmperes: Double, notes: String, warehouseId: String) {
+    fun addManualIntake(quantity: Int, totalAmperes: Double, amount: Double, notes: String, warehouseId: String) {
         viewModelScope.launch {
             try {
                 // Enforce seller warehouse if applicable
@@ -248,12 +249,26 @@ class OldBatteryViewModel @Inject constructor(
                     quantity = quantity,
                     warehouseId = finalWarehouseId,
                     totalAmperes = totalAmperes,
+                    amount = amount,
                     type = com.batterysales.data.models.OldBatteryTransactionType.INTAKE,
                     date = java.util.Date(),
                     notes = notes,
                     createdByUserName = currentUser?.displayName ?: ""
                 )
-                repository.addTransaction(transaction)
+                val transId = repository.addTransaction(transaction)
+
+                // Add to Treasury as EXPENSE if amount > 0
+                if (amount > 0.001) {
+                    val treasuryTransaction = Transaction(
+                        type = TransactionType.EXPENSE,
+                        amount = amount,
+                        description = "شراء بطاريات قديمة (سكراب): $quantity حبة",
+                        warehouseId = finalWarehouseId,
+                        relatedId = transId,
+                        paymentMethod = "cash"
+                    )
+                    accountingRepository.addTransaction(treasuryTransaction)
+                }
             } catch (e: Exception) {
                 Log.e("OldBatteryViewModel", "Error adding manual intake", e)
             }
