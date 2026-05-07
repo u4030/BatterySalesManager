@@ -367,14 +367,8 @@ class ReportsViewModel @Inject constructor(
                 val supplierIds = suppliers.map { it.id }
 
                 // 1. Fetch relevant entries and bills in parallel, TARGETED by supplier IDs
-                val allEntriesJob = async {
-                    if (suppliers.size < 50) stockEntryRepository.getEntriesBySuppliers(supplierIds)
-                    else stockEntryRepository.getAllStockEntries() // Fallback if list is too large for whereIn
-                }
-                val allBillsJob = async {
-                    if (suppliers.size < 50) billRepository.getBillsBySuppliers(supplierIds)
-                    else billRepository.getAllBills()
-                }
+                val allEntriesJob = async { stockEntryRepository.getEntriesBySuppliers(supplierIds) }
+                val allBillsJob = async { billRepository.getBillsBySuppliers(supplierIds) }
 
                 val allEntries = allEntriesJob.await()
                 val allBills = allBillsJob.await()

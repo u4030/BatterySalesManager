@@ -70,13 +70,6 @@ class SalesViewModel @Inject constructor(
     val uiState: StateFlow<SalesUiState> = combine(
         productRepository.getProducts(),
         warehouseRepository.getWarehouses(),
-        userRepository.getCurrentUserFlow().flatMapLatest { user ->
-            if (user?.role == User.ROLE_SELLER && user.warehouseId != null) {
-                stockEntryRepository.getStockEntriesByWarehouseFlow(user.warehouseId)
-            } else {
-                stockEntryRepository.getAllStockEntriesFlow()
-            }
-        },
         userRepository.getCurrentUserFlow(),
         _selectedProduct,
         _selectedVariant,
@@ -100,8 +93,7 @@ class SalesViewModel @Inject constructor(
     ) { args ->
         val products = args[0] as List<Product>
         val warehouses = args[1] as List<Warehouse>
-        val stockEntries = args[2] as List<StockEntry>
-        val user = args[3] as User?
+        val user = args[2] as User?
         val selectedProduct = args[4] as Product?
         val selectedVariant = args[5] as ProductVariant?
         val selectedWarehouse = args[6] as Warehouse?
@@ -118,36 +110,15 @@ class SalesViewModel @Inject constructor(
         val allVariants = args[17] as List<ProductVariant>
         val variants = args[18] as List<ProductVariant>
 
-        allStockEntries = stockEntries
         currentUser = user
 
-        val approvedEntries = stockEntries.filter { it.status == "approved" }
         val stockMap = mutableMapOf<Pair<String, String>, Int>()
 
-        // Priority 1: Use denormalized currentStock as the absolute ground truth.
+        // Use denormalized currentStock as the absolute ground truth.
         // It is updated in transactions and is the most reliable source for high-volume data.
         allVariants.forEach { variant ->
             variant.currentStock?.forEach { (warehouseId, qty) ->
                 stockMap[Pair(variant.id, warehouseId)] = qty
-            }
-        }
-
-        // Priority 2: Fallback to entries calculation only if currentStock is missing (migration)
-        // OR for the scanned variant to ensure it's represented even if not yet in allVariants.
-        val variantsToProcess = (allVariants + listOfNotNull(selectedVariant)).distinctBy { it.id }
-        variantsToProcess.forEach { variant ->
-            if (variant.currentStock == null) {
-                // This handles items not yet migrated to the denormalized pattern
-                val variantEntries = approvedEntries.filter { it.productVariantId == variant.id }
-                val warehouseGroups = variantEntries.groupBy { it.warehouseId }
-                warehouseGroups.forEach { (warehouseId, group) ->
-                    stockMap[Pair(variant.id, warehouseId)] = group.sumOf { it.getNetQuantity() }
-                }
-            } else if (variant.id == selectedVariant?.id) {
-                // Double check scanned variant stock from its own document to be safe
-                variant.currentStock.forEach { (whId, qty) ->
-                    stockMap[Pair(variant.id, whId)] = qty
-                }
             }
         }
 
@@ -257,19 +228,11 @@ class SalesViewModel @Inject constructor(
             _errorMessage.value = "الرجاء اختيار المنتج والصنف والمستودع"
             return
         }
-//        if (customerName.isBlank()) {
-//            _errorMessage.value = "الرجاء إدخال اسم العميل"
-//            return
-//        }
 
         if (qty <= 0) {
             _errorMessage.value = "الرجاء إدخال كمية صحيحة"
             return
         }
-//        if (price <= 0) {
-//            _errorMessage.value = "الرجاء إدخال سعر البيع"
-//            return
-//        }
 
         val available = state.stockLevels[Pair(variant.id, warehouse.id)] ?: 0
         if (qty > available) {
@@ -296,12 +259,8 @@ class SalesViewModel @Inject constructor(
                     return@launch
                 }
 
-                val positiveEntries = allStockEntries.filter {
-                    it.productVariantId == variant.id && it.warehouseId == warehouse.id && it.quantity > 0
-                }
-                val totalCostOfPurchases = positiveEntries.sumOf { it.totalCost }
-                val totalItemsPurchased = positiveEntries.sumOf { it.quantity - it.returnedQuantity }
-                val weightedAverageCost = if (totalItemsPurchased > 0) totalCostOfPurchases / totalItemsPurchased else 0.0
+                // Optimization: Calculate weighted average cost via targeted server-side aggregation
+                val weightedAverageCost = stockEntryRepository.getWeightedAverageCost(variant.id, warehouse.id)
 
                 val total = qty * price
                 val oldBatteriesVal = state.oldBatteriesValue.toDoubleOrNull() ?: 0.0

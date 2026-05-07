@@ -530,4 +530,60 @@ class StockEntryRepository @Inject constructor(
             .update("currentStock", stockMap)
             .await()
     }
+
+    /**
+     * Efficiently calculates weighted average cost for a specific variant using aggregation.
+     */
+    suspend fun getWeightedAverageCost(variantId: String, warehouseId: String?): Double {
+        var query = firestore.collection(StockEntry.COLLECTION_NAME)
+            .whereEqualTo("productVariantId", variantId)
+            .whereGreaterThan("quantity", 0) // Only purchases
+            .whereEqualTo("status", "approved")
+
+        if (warehouseId != null) {
+            query = query.whereEqualTo("warehouseId", warehouseId)
+        }
+
+        val sumSnap = query.aggregate(
+            AggregateField.sum("totalCost"),
+            AggregateField.sum("quantity"),
+            AggregateField.sum("returnedQuantity")
+        ).get(AggregateSource.SERVER).await()
+
+        val totalCost = sumSnap.getDouble(AggregateField.sum("totalCost")) ?: 0.0
+        val qty = (sumSnap.getLong(AggregateField.sum("quantity")) ?: 0).toInt()
+        val ret = (sumSnap.getLong(AggregateField.sum("returnedQuantity")) ?: 0).toInt()
+
+        val netQty = qty - ret
+        return if (netQty > 0) totalCost / netQty else 0.0
+    }
+
+    suspend fun getVariantQuantity(variantId: String, warehouseId: String?): Int {
+        var query = firestore.collection(StockEntry.COLLECTION_NAME)
+            .whereEqualTo("productVariantId", variantId)
+            .whereEqualTo("status", "approved")
+
+        if (warehouseId != null) {
+            query = query.whereEqualTo("warehouseId", warehouseId)
+        }
+
+        val snap = query.aggregate(
+            AggregateField.sum("quantity"),
+            AggregateField.sum("returnedQuantity")
+        ).get(AggregateSource.SERVER).await()
+
+        val qty = (snap.getLong(AggregateField.sum("quantity")) ?: 0).toInt()
+        val ret = (snap.getLong(AggregateField.sum("returnedQuantity")) ?: 0).toInt()
+        return qty - ret
+    }
+
+    suspend fun hasActivityInRange(variantId: String, start: Long, end: Long): Boolean {
+        val snap = firestore.collection(StockEntry.COLLECTION_NAME)
+            .whereEqualTo("productVariantId", variantId)
+            .whereGreaterThanOrEqualTo("timestamp", java.util.Date(start))
+            .whereLessThanOrEqualTo("timestamp", java.util.Date(end))
+            .count()
+            .get(AggregateSource.SERVER).await()
+        return snap.count > 0
+    }
 }

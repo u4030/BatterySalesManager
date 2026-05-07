@@ -174,53 +174,46 @@ class InventoryPagingSource(
 
             val data = coroutineScope {
                 val variantIds = variants.map { it.id }
-                val allEntriesMap = stockEntryRepository.getEntriesForVariants(variantIds)
 
                 variants.mapNotNull { variant ->
-                    val entries = allEntriesMap[variant.id] ?: emptyList()
-                    
-                    // Filter by date if applicable
-                    if (startDate != null && endDate != null) {
-                        val start = com.batterysales.utils.DateUtils.getStartOfDay(startDate)
-                        val end = com.batterysales.utils.DateUtils.getEndOfDay(endDate)
-                        val hasActivity = entries.any { it.timestamp.time in start..end }
-                        if (!hasActivity) return@mapNotNull null
-                    }
-
                     async {
                         val finalProduct = getProduct(variant.productId, products, productsMap) ?: Product(name = "Unknown")
                         val warehouseIds = warehouseList.map { it.id }.toSet()
-                        val entries = allEntriesMap[variant.id] ?: emptyList()
 
+                        // 1. Efficient Stock Retrieval from pre-aggregated currentStock map
                         val (whQuantities, totalQty) = if (variant.currentStock != null) {
                             val filtered = variant.currentStock.filter { warehouseIds.contains(it.key) }
                             filtered to filtered.values.sum()
                         } else {
-                            // Fallback to calculation
+                            // Dangerous fallback: Summing raw entries. Ideally variants should have currentStock initialized.
+                            // We use a light targeted aggregation here instead of fetching all entries.
                             val quantities = warehouseList.associate { wh ->
-                                wh.id to stockEntryRepository.calculateSummary(entries.filter { it.warehouseId == wh.id }).first
+                                wh.id to stockEntryRepository.getVariantQuantity(variant.id, wh.id)
                             }
-                            quantities to stockEntryRepository.calculateSummary(if (warehouseList.isNotEmpty()) entries.filter { warehouseIds.contains(it.warehouseId) } else entries).first
+                            quantities to quantities.values.sum()
                         }
 
-                        // For cost, we still need entries (weighted average calculation)
-                        val relevantEntries = if (warehouseList.isNotEmpty()) {
-                            entries.filter { warehouseIds.contains(it.warehouseId) }
-                        } else {
-                            entries
+                        // Filter by date if applicable (requires entries, but we only fetch if necessary)
+                        if (startDate != null && endDate != null) {
+                            val start = com.batterysales.utils.DateUtils.getStartOfDay(startDate)
+                            val end = com.batterysales.utils.DateUtils.getEndOfDay(endDate)
+                            val hasActivity = stockEntryRepository.hasActivityInRange(variant.id, start, end)
+                            if (!hasActivity) return@async null
                         }
-                        val summary = stockEntryRepository.calculateSummary(relevantEntries)
+
+                        // 2. Efficient Cost Calculation via targeted server-side aggregation
+                        val averageCost = stockEntryRepository.getWeightedAverageCost(variant.id, null) // Global average cost
 
                         InventoryReportItem(
                             product = finalProduct,
                             variant = variant,
                             warehouseQuantities = whQuantities,
                             totalQuantity = totalQty,
-                            averageCost = summary.second,
-                            totalCostValue = totalQty * summary.second
+                            averageCost = averageCost,
+                            totalCostValue = totalQty * averageCost
                         )
                     }
-                }.awaitAll().filter { !isSeller || it.totalQuantity > 0 }
+                }.awaitAll().filterNotNull().filter { !isSeller || it.totalQuantity > 0 }
             }
 
             LoadResult.Page(

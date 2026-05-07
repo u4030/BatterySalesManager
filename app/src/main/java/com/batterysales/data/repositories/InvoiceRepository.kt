@@ -34,9 +34,13 @@ class InvoiceRepository @Inject constructor(
         return snapshot.toObject(Invoice::class.java)?.copy(id = snapshot.id)
     }
 
-    fun getAllInvoices(): Flow<List<Invoice>> = callbackFlow {
+    /**
+     * Warning: Dangerous broad listener. Use getInvoicesPaginated instead.
+     */
+    fun getAllInvoices(limit: Long = 1000): Flow<List<Invoice>> = callbackFlow {
         val listenerRegistration = firestore.collection(Invoice.COLLECTION_NAME)
             .orderBy("createdAt", Query.Direction.DESCENDING)
+            .limit(limit)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     close(error)

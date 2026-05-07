@@ -185,46 +185,39 @@ class OldBatteryRepository @Inject constructor(
         batch.commit().await()
     }
 
+    /**
+     * Optimized summary retrieval from pre-calculated ScrapWarehouse documents.
+     */
     suspend fun getStockSummary(warehouseId: String? = null): Pair<Int, Double> {
+        if (warehouseId != null) {
+            val snap = firestore.collection(com.batterysales.data.models.ScrapWarehouse.COLLECTION_NAME)
+                .whereEqualTo("parentWarehouseId", warehouseId)
+                .limit(1).get().await()
+            val scrapWh = snap.documents.firstOrNull()?.toObject(com.batterysales.data.models.ScrapWarehouse::class.java)
+            if (scrapWh != null) return Pair(scrapWh.totalQuantity, scrapWh.totalAmperes)
+        } else {
+            val snap = firestore.collection(com.batterysales.data.models.ScrapWarehouse.COLLECTION_NAME).get().await()
+            val list = snap.documents.mapNotNull { it.toObject(com.batterysales.data.models.ScrapWarehouse::class.java) }
+            if (list.isNotEmpty()) return Pair(list.sumOf { it.totalQuantity }, list.sumOf { it.totalAmperes })
+        }
+
+        // Deep fallback only if summary document is missing
         var baseQuery: Query = firestore.collection(OldBatteryTransaction.COLLECTION_NAME)
         if (warehouseId != null) {
             baseQuery = baseQuery.whereEqualTo("warehouseId", warehouseId)
         }
 
-        // Aggregate INTAKE
-        val intakeQuery = baseQuery.whereEqualTo("type", OldBatteryTransactionType.INTAKE.name)
-        val intakeSnap = intakeQuery.aggregate(
-            AggregateField.sum("quantity"),
-            AggregateField.sum("totalAmperes")
-        ).get(AggregateSource.SERVER).await()
+        val intakeSnap = baseQuery.whereEqualTo("type", OldBatteryTransactionType.INTAKE.name)
+            .aggregate(AggregateField.sum("quantity"), AggregateField.sum("totalAmperes")).get(AggregateSource.SERVER).await()
+        val saleSnap = baseQuery.whereEqualTo("type", OldBatteryTransactionType.SALE.name)
+            .aggregate(AggregateField.sum("quantity"), AggregateField.sum("totalAmperes")).get(AggregateSource.SERVER).await()
+        val adjSnap = baseQuery.whereEqualTo("type", OldBatteryTransactionType.ADJUSTMENT.name)
+            .aggregate(AggregateField.sum("quantity"), AggregateField.sum("totalAmperes")).get(AggregateSource.SERVER).await()
 
-        // Aggregate SALE
-        val saleQuery = baseQuery.whereEqualTo("type", OldBatteryTransactionType.SALE.name)
-        val saleSnap = saleQuery.aggregate(
-            AggregateField.sum("quantity"),
-            AggregateField.sum("totalAmperes")
-        ).get(AggregateSource.SERVER).await()
+        val totalQty = (intakeSnap.getLong(AggregateField.sum("quantity")) ?: 0) - (saleSnap.getLong(AggregateField.sum("quantity")) ?: 0) + (adjSnap.getLong(AggregateField.sum("quantity")) ?: 0)
+        val totalAmps = (intakeSnap.getDouble(AggregateField.sum("totalAmperes")) ?: 0.0) - (saleSnap.getDouble(AggregateField.sum("totalAmperes")) ?: 0.0) + (adjSnap.getDouble(AggregateField.sum("totalAmperes")) ?: 0.0)
 
-        // Aggregate ADJUSTMENT
-        val adjQuery = baseQuery.whereEqualTo("type", OldBatteryTransactionType.ADJUSTMENT.name)
-        val adjSnap = adjQuery.aggregate(
-            AggregateField.sum("quantity"),
-            AggregateField.sum("totalAmperes")
-        ).get(AggregateSource.SERVER).await()
-
-        val intakeQty = intakeSnap.getLong(AggregateField.sum("quantity"))?.toInt() ?: 0
-        val intakeAmps = intakeSnap.getDouble(AggregateField.sum("totalAmperes")) ?: 0.0
-
-        val saleQty = saleSnap.getLong(AggregateField.sum("quantity"))?.toInt() ?: 0
-        val saleAmps = saleSnap.getDouble(AggregateField.sum("totalAmperes")) ?: 0.0
-
-        val adjQty = adjSnap.getLong(AggregateField.sum("quantity"))?.toInt() ?: 0
-        val adjAmps = adjSnap.getDouble(AggregateField.sum("totalAmperes")) ?: 0.0
-
-        val totalQty = intakeQty - saleQty + adjQty
-        val totalAmps = intakeAmps - saleAmps + adjAmps
-
-        return Pair(totalQty, totalAmps)
+        return Pair(totalQty.toInt(), totalAmps)
     }
 
     suspend fun getTransactionsPaginated(

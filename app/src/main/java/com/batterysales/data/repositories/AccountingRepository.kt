@@ -22,8 +22,12 @@ class AccountingRepository @Inject constructor(
         return snapshot.documents.mapNotNull { it.toObject(Transaction::class.java)?.copy(id = it.id) }
     }
 
-    suspend fun getAllExpenses(): List<Expense> {
+    /**
+     * Warning: Fetches the ENTIRE collection.
+     */
+    suspend fun getAllExpenses(limit: Long = 1000): List<Expense> {
         val snapshot = firestore.collection(Expense.COLLECTION_NAME)
+            .limit(limit)
             .get()
             .await()
         return snapshot.documents.mapNotNull { it.toObject(Expense::class.java)?.copy(id = it.id) }

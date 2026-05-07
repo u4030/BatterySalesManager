@@ -16,8 +16,12 @@ import javax.inject.Inject
 class BankRepository @Inject constructor(
     private val firestore: FirebaseFirestore
 ) {
-    fun getAllTransactionsFlow(): Flow<List<BankTransaction>> {
+    /**
+     * Warning: Dangerous broad listener. Use getTransactionsPaginated instead.
+     */
+    fun getAllTransactionsFlow(limit: Long = 1000): Flow<List<BankTransaction>> {
         return firestore.collection(BankTransaction.COLLECTION_NAME)
+            .limit(limit)
             .snapshots()
             .map { snapshot ->
                 snapshot.documents.mapNotNull { it.toObject(BankTransaction::class.java)?.copy(id = it.id) }
