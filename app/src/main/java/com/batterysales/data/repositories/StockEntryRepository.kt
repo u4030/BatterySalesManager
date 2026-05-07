@@ -29,13 +29,13 @@ class StockEntryRepository @Inject constructor(
             transaction.set(docRef, finalEntry)
 
             if (finalEntry.status == "approved" && variant != null) {
-                val updates = mutableMapOf<String, Any>()
+                val variantUpdates = mutableMapOf<String, Any>()
 
                 // Update Stock Map
                 variant.currentStock?.let {
                     val newStockMap = it.toMutableMap()
                     newStockMap[finalEntry.warehouseId] = (newStockMap[finalEntry.warehouseId] ?: 0) + (finalEntry.quantity - finalEntry.returnedQuantity)
-                    updates["currentStock"] = newStockMap
+                    variantUpdates["currentStock"] = newStockMap
                 }
 
                 // Update Weighted Average Cost (Only on purchases)
@@ -44,13 +44,40 @@ class StockEntryRepository @Inject constructor(
                     val newTotalQty = (variant.currentStock?.values?.sum() ?: 0) + finalEntry.quantity
                     if (newTotalQty > 0) {
                         val newAvgCost = (currentTotalCost + finalEntry.totalCost) / newTotalQty
-                        updates["weightedAverageCost"] = newAvgCost
+                        variantUpdates["weightedAverageCost"] = newAvgCost
                     }
                 }
 
-                if (updates.isNotEmpty()) {
-                    transaction.update(variantRef, updates)
+                if (variantUpdates.isNotEmpty()) {
+                    transaction.update(variantRef, variantUpdates)
                 }
+
+                // --- Update Supplier Denormalized Totals ---
+                if (finalEntry.supplierId.isNotEmpty()) {
+                    val supplierRef = firestore.collection("suppliers").document(finalEntry.supplierId)
+                    val cost = finalEntry.getNetCost()
+                    if (cost > 0) {
+                        // Purchase: Increase Debit
+                        transaction.update(supplierRef, "totalDebit", com.google.firebase.firestore.FieldValue.increment(cost))
+                        transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(cost))
+                    } else if (cost < 0) {
+                        // Return: Increase Credit (represented as negative cost in entries)
+                        transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(-cost))
+                        transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(cost))
+                    }
+                }
+
+                // --- Update Global System Stats ---
+                val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
+                val cost = finalEntry.getNetCost()
+                val qty = finalEntry.quantity - finalEntry.returnedQuantity
+
+                transaction.update(statsRef, mapOf(
+                    "totalInventoryQuantity" to com.google.firebase.firestore.FieldValue.increment(qty.toLong()),
+                    "totalInventoryValue" to com.google.firebase.firestore.FieldValue.increment(cost),
+                    "totalSupplierDebt" to com.google.firebase.firestore.FieldValue.increment(cost),
+                    "updatedAt" to java.util.Date()
+                ))
             }
         }.await()
     }
@@ -529,7 +556,7 @@ class StockEntryRepository @Inject constructor(
     /**
      * Comprehensive migration for all variants to populate denormalized fields.
      */
-    suspend fun migrateAllVariants(productRepository: ProductRepository) {
+    suspend fun migrateAllVariants(productRepository: ProductRepository, supplierRepository: SupplierRepository, billRepository: BillRepository) {
         val products = productRepository.getProductsOnce().associateBy { it.id }
         val variantsSnap = firestore.collection(com.batterysales.data.models.ProductVariant.COLLECTION_NAME).get().await()
 
@@ -540,6 +567,46 @@ class StockEntryRepository @Inject constructor(
                 syncVariantStock(variant.id, product)
             }
         }
+
+        // Migrate Suppliers
+        val suppliers = supplierRepository.getSuppliersOnce()
+        val allEntries = getAllStockEntries(limit = 20000)
+        val allBills = billRepository.getAllBills()
+
+        suppliers.forEach { supplier ->
+            val supplierEntries = allEntries.filter { it.supplierId == supplier.id && it.status == "approved" }
+            val supplierBills = allBills.filter { it.supplierId == supplier.id }
+
+            val debit = supplierEntries.filter { it.getNetCost() > 0 }.sumOf { it.getNetCost() }
+            val returnCredit = supplierEntries.filter { it.getNetCost() < 0 }.sumOf { -it.getNetCost() }
+            val paymentCredit = supplierBills.sumOf { it.paidAmount }
+
+            val totalCredit = returnCredit + paymentCredit
+
+            firestore.collection("suppliers").document(supplier.id).update(mapOf(
+                "totalDebit" to debit,
+                "totalCredit" to totalCredit,
+                "currentBalance" to (debit - totalCredit)
+            ))
+        }
+
+        // Initialize Global Stats
+        val totalInvValue = variantsSnap.documents.mapNotNull { it.toObject(com.batterysales.data.models.ProductVariant::class.java) }
+            .sumOf { (it.currentStock?.values?.sum() ?: 0) * it.weightedAverageCost }
+        val totalInvQty = variantsSnap.documents.mapNotNull { it.toObject(com.batterysales.data.models.ProductVariant::class.java) }
+            .sumOf { it.currentStock?.values?.sum() ?: 0 }
+            val totalDebt = suppliers.sumOf { s ->
+                val supplierEntries = allEntries.filter { it.supplierId == s.id && it.status == "approved" }
+                val supplierBills = allBills.filter { it.supplierId == s.id }
+            supplierEntries.sumOf { it.getNetCost() } - supplierBills.sumOf { it.paidAmount }
+        }
+
+        firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
+            .set(com.batterysales.data.models.SystemStats(
+                totalSupplierDebt = totalDebt,
+                totalInventoryValue = totalInvValue,
+                totalInventoryQuantity = totalInvQty
+            ))
     }
 
     /**

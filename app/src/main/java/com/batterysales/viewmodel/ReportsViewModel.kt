@@ -232,7 +232,7 @@ class ReportsViewModel @Inject constructor(
                 // Run only once per session to avoid redundant Firestore reads
                 if (!isMigrationRun) {
                     stockEntryRepository.migrateInvoiceDates()
-                    stockEntryRepository.migrateAllVariants(productRepository)
+                    stockEntryRepository.migrateAllVariants(productRepository, supplierRepository, billRepository)
                     isMigrationRun = true
                 }
             } catch (e: Exception) {
@@ -279,7 +279,7 @@ class ReportsViewModel @Inject constructor(
             _grandTotalInventoryQuantity.value = 0
             _grandTotalInventoryValue.value = 0.0
 
-            // Calculate Global Grand Total once
+            // Calculate Global Grand Total using SystemStats for maximum speed
             viewModelScope.launch {
                 _isInventoryLoading.value = true
                 try {
@@ -287,24 +287,30 @@ class ReportsViewModel @Inject constructor(
                     val seller = user?.role == "seller"
                     val targetWarehouseId = if (seller) user?.warehouseId else null
 
-                    var baseQuery = firestore.collection(StockEntry.COLLECTION_NAME)
-                        .whereEqualTo("status", "approved")
+                    if (targetWarehouseId == null) {
+                        // Use Global Stats for admin/total view
+                        val statsSnap = firestore.collection(SystemStats.COLLECTION_NAME).document(SystemStats.DOCUMENT_ID).get().await()
+                        val stats = statsSnap.toObject(SystemStats::class.java)
+                        if (stats != null) {
+                            _grandTotalInventoryQuantity.value = stats.totalInventoryQuantity
+                            _grandTotalInventoryValue.value = stats.totalInventoryValue
+                        }
+                    } else {
+                        // For seller, still need targeted aggregation for their specific warehouse
+                        // But we can optimize this to use a per-warehouse stats document in the future
+                        var baseQuery = firestore.collection(StockEntry.COLLECTION_NAME)
+                            .whereEqualTo("status", "approved")
+                            .whereEqualTo("warehouseId", targetWarehouseId)
 
-                    if (targetWarehouseId != null) {
-                        baseQuery = baseQuery.whereEqualTo("warehouseId", targetWarehouseId)
+                        val qtySnap = baseQuery.aggregate(
+                            AggregateField.sum("quantity"),
+                            AggregateField.sum("returnedQuantity")
+                        ).get(AggregateSource.SERVER).await()
+
+                        val totalQty = (qtySnap.getLong(AggregateField.sum("quantity")) ?: 0).toInt()
+                        val totalRet = (qtySnap.getLong(AggregateField.sum("returnedQuantity")) ?: 0).toInt()
+                        _grandTotalInventoryQuantity.value = totalQty - totalRet
                     }
-
-                    val qtySnap = baseQuery.aggregate(
-                        AggregateField.sum("quantity"),
-                        AggregateField.sum("returnedQuantity")
-                    ).get(AggregateSource.SERVER).await()
-
-                    val totalQty = (qtySnap.getLong(AggregateField.sum("quantity")) ?: 0).toInt()
-                    val totalRet = (qtySnap.getLong(AggregateField.sum("returnedQuantity")) ?: 0).toInt()
-                    _grandTotalInventoryQuantity.value = totalQty - totalRet
-
-                    // Note: Value is harder to aggregate server-side due to weighted average.
-                    // But we can approximate or let the paging source handle individual sums for the current view.
                 } catch (e: Exception) {
                     Log.e("ReportsViewModel", "Error calculating grand total", e)
                 } finally {
@@ -318,6 +324,7 @@ class ReportsViewModel @Inject constructor(
         viewModelScope.launch {
             _isScrapLoading.value = true
             try {
+                // Use Global Stats or cached summary for instant load
                 val summary = oldBatteryRepository.getStockSummary()
                 _oldBatterySummary.value = summary
 
@@ -378,6 +385,11 @@ class ReportsViewModel @Inject constructor(
                     async {
                         val adjustedStart = start?.let { com.batterysales.utils.DateUtils.getStartOfDay(it) }
                         val adjustedEnd = end?.let { com.batterysales.utils.DateUtils.getEndOfDay(it) }
+
+                        // Use denormalized balance for the main summary if no date filter is applied
+                        val displayDebit = if (start == null && end == null) supplier.totalDebit else 0.0
+                        val displayCredit = if (start == null && end == null) supplier.totalCredit else 0.0
+                        val displayBalance = if (start == null && end == null) supplier.currentBalance else 0.0
 
                         // Filter entries for this supplier - Use all entries since reset for accurate balance and FIFO distribution
                         val rawSupplierEntries = allEntries.filter { entry ->
@@ -573,9 +585,9 @@ class ReportsViewModel @Inject constructor(
                             )
                         }.sortedWith(compareByDescending<PurchaseOrderItem> { it.entry.getEffectiveDate() }.thenByDescending { it.entry.timestamp })
 
-                        val totalDebit = positiveOrders.sumOf { it.entry.totalCost }
-                        val totalCredit = supplierBills.sumOf { it.paidAmount } + purchaseOrders.filter { it.entry.totalCost < 0 }.sumOf { -it.entry.totalCost }
-                        val balance = totalDebit - totalCredit
+                        val totalDebit = if (start == null && end == null) displayDebit else positiveOrders.sumOf { it.entry.totalCost }
+                        val totalCredit = if (start == null && end == null) displayCredit else supplierBills.sumOf { it.paidAmount } + purchaseOrders.filter { it.entry.totalCost < 0 }.sumOf { -it.entry.totalCost }
+                        val balance = if (start == null && end == null) displayBalance else totalDebit - totalCredit
 
                         // الآن نقوم بالفلترة حسب التاريخ المختار للعرض في القائمة
                         val finalOrdersForDisplay = processedOrders.filter { po ->

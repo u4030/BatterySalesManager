@@ -177,7 +177,7 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                     else -> false
                 }
 
-                if (currentTabLoading && (selectedTab != 0 || pagingItems.itemCount == 0)) {
+                if (currentTabLoading && (selectedTab != 0 || pagingItems.itemCount == 0) && (selectedTab != 2 || supplierItems.isEmpty())) {
                     item {
                         Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator(color = accentColor)

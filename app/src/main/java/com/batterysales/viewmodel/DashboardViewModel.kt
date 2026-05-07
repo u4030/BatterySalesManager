@@ -7,6 +7,7 @@ import com.batterysales.data.models.Invoice
 import com.batterysales.data.models.ProductVariant
 import com.batterysales.data.models.StockEntry
 import com.batterysales.data.repositories.*
+import kotlinx.coroutines.tasks.await
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import java.util.*
@@ -40,6 +41,7 @@ data class DashboardUiState(
     val upcomingBills: List<com.batterysales.data.models.Bill> = emptyList(),
     val warehouseStats: List<WarehouseStats> = emptyList(),
     val notifications: List<AppNotification> = emptyList(),
+    val systemStats: com.batterysales.data.models.SystemStats = com.batterysales.data.models.SystemStats(),
     val isLoading: Boolean = true
 )
 
@@ -61,7 +63,8 @@ class DashboardViewModel @Inject constructor(
     private val approvalRepository: ApprovalRepository,
     private val warehouseRepository: WarehouseRepository,
     private val userRepository: UserRepository,
-    private val paymentRepository: PaymentRepository
+    private val paymentRepository: PaymentRepository,
+    private val firestore: com.google.firebase.firestore.FirebaseFirestore
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DashboardUiState())
@@ -97,6 +100,10 @@ class DashboardViewModel @Inject constructor(
 
                 val isAdmin = user?.role == "admin"
                 val userWarehouseId = user?.warehouseId
+
+                // Fetch Global System Stats
+                val systemStatsSnap = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID).get().await()
+                val systemStats = systemStatsSnap.toObject(com.batterysales.data.models.SystemStats::class.java) ?: com.batterysales.data.models.SystemStats()
 
                 // 1. Pending Approvals Count (Efficient server-side count)
                 val pendingEntriesCount = stockEntryRepository.getPendingCount()
@@ -214,6 +221,7 @@ class DashboardViewModel @Inject constructor(
                         upcomingBills = upcoming,
                         warehouseStats = warehouseStatsList,
                         notifications = allNotifications,
+                        systemStats = systemStats,
                         isLoading = false
                     )
                 )

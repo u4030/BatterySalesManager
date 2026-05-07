@@ -50,7 +50,18 @@ class PaymentRepository @Inject constructor(
     suspend fun addPayment(payment: Payment): String {
         val docRef = firestore.collection(Payment.COLLECTION_NAME).document()
         val finalPayment = payment.copy(id = docRef.id)
-        docRef.set(finalPayment).await()
+
+        firestore.runTransaction { transaction ->
+            transaction.set(docRef, finalPayment)
+
+            // Update Global System Stats (Customer Debt Reduction)
+            val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
+            transaction.update(statsRef, mapOf(
+                "totalCustomerDebt" to com.google.firebase.firestore.FieldValue.increment(-finalPayment.amount),
+                "updatedAt" to java.util.Date()
+            ))
+        }.await()
+
         return docRef.id
     }
 

@@ -91,6 +91,20 @@ class BillRepository @Inject constructor(
             }
 
             transaction.update(billRef, updates)
+
+            // Update Supplier Denormalized Totals
+            if (bill.supplierId.isNotEmpty()) {
+                val supplierRef = firestore.collection("suppliers").document(bill.supplierId)
+                transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(paymentAmount))
+                transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-paymentAmount))
+            }
+
+            // Update Global System Stats
+            val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
+            transaction.update(statsRef, mapOf(
+                "totalSupplierDebt" to com.google.firebase.firestore.FieldValue.increment(-paymentAmount),
+                "updatedAt" to java.util.Date()
+            ))
         }.await()
     }
 

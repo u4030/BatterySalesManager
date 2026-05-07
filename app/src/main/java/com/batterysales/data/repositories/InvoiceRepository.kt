@@ -215,6 +215,19 @@ class InvoiceRepository @Inject constructor(
                 transaction.update(variantRef, "currentStock", newStockMap)
             }
 
+            // Update Global System Stats
+            val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
+            val qty = stockEntry.quantity - stockEntry.returnedQuantity
+            val valueChange = qty * (variant?.weightedAverageCost ?: 0.0)
+            val customerDebtChange = invoice.remainingAmount
+
+            transaction.update(statsRef, mapOf(
+                "totalInventoryQuantity" to com.google.firebase.firestore.FieldValue.increment(qty.toLong()),
+                "totalInventoryValue" to com.google.firebase.firestore.FieldValue.increment(valueChange),
+                "totalCustomerDebt" to com.google.firebase.firestore.FieldValue.increment(customerDebtChange),
+                "updatedAt" to java.util.Date()
+            ))
+
             // 3. Create Payment (if any)
             if (payment != null) {
                 val paymentRef = firestore.collection(com.batterysales.data.models.Payment.COLLECTION_NAME).document()

@@ -11,6 +11,9 @@ data class Supplier(
     val yearlyTarget: Double = 0.0,
     val yearlyTarget2: Double = 0.0,
     val yearlyTarget3: Double = 0.0,
+    val totalDebit: Double = 0.0, // Denormalized: Total Purchases
+    val totalCredit: Double = 0.0, // Denormalized: Total Payments + Returns
+    val currentBalance: Double = 0.0, // Debit - Credit
     val resetDate: Date? = null,
     val createdAt: Date = Date(),
     val updatedAt: Date = Date()
