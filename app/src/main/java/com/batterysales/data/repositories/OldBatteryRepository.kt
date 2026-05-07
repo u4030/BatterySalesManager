@@ -24,21 +24,16 @@ class OldBatteryRepository @Inject constructor(
             }
     }
 
-    suspend fun addTransaction(transaction: OldBatteryTransaction) {
+    suspend fun addTransaction(transaction: OldBatteryTransaction): String {
+        val docRef = if (transaction.id.isNotBlank()) {
+            firestore.collection(OldBatteryTransaction.COLLECTION_NAME).document(transaction.id)
+        } else {
+            firestore.collection(OldBatteryTransaction.COLLECTION_NAME).document()
+        }
+        val idToUse = if (transaction.id.isNotBlank()) transaction.id else docRef.id
+        val finalTransaction = transaction.copy(id = idToUse)
+
         firestore.runTransaction { firestoreTransaction ->
-            val docRef = if (transaction.id.isNotBlank()) {
-                firestore.collection(OldBatteryTransaction.COLLECTION_NAME).document(transaction.id)
-            } else {
-                firestore.collection(OldBatteryTransaction.COLLECTION_NAME).document()
-            }
-            val idToUse = if (transaction.id.isNotBlank()) transaction.id else docRef.id
-            val finalTransaction = transaction.copy(id = idToUse)
-            
-            // 1. All Reads
-            val scrapWhRef = firestore.collection(com.batterysales.data.models.ScrapWarehouse.COLLECTION_NAME)
-                .whereEqualTo("parentWarehouseId", transaction.warehouseId)
-                .limit(1)
-            
             // Note: Query in transaction requires knowing the document ID.
             // We'll perform the sync after the transaction if we can't get the ID here,
             // but ideally we should update the model to store the scrapWarehouseId directly.
@@ -46,6 +41,7 @@ class OldBatteryRepository @Inject constructor(
             firestoreTransaction.set(docRef, finalTransaction)
         }.await()
         syncScrapWarehouse(transaction.warehouseId)
+        return idToUse
     }
 
     suspend fun updateTransaction(transaction: OldBatteryTransaction) {

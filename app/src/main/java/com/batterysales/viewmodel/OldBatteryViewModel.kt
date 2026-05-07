@@ -291,14 +291,15 @@ class OldBatteryViewModel @Inject constructor(
                     notes = "بيع بطاريات قديمة",
                     createdByUserName = currentUser?.displayName ?: ""
                 )
-                repository.addTransaction(transaction)
+                val transId = repository.addTransaction(transaction)
 
                 // Add to Treasury
                 val treasuryTransaction = Transaction(
                     type = TransactionType.INCOME,
                     amount = amount,
                     description = "بيع بطاريات قديمة (سكراب): $quantity حبة",
-                    relatedId = null // Manual income in treasury
+                    warehouseId = finalWarehouseId,
+                    relatedId = transId
                 )
                 accountingRepository.addTransaction(treasuryTransaction)
             } catch (e: Exception) {
