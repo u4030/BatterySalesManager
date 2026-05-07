@@ -259,13 +259,6 @@ class ReportsViewModel @Inject constructor(
                 // Run only once per session to avoid redundant Firestore reads
                 if (!isMigrationRun) {
                     stockEntryRepository.migrateInvoiceDates()
-                    
-                    // Migrate Scrap Warehouses
-                    val warehouses = warehouseRepository.getWarehousesOnce()
-                    warehouses.forEach { wh ->
-                        oldBatteryRepository.syncScrapWarehouse(wh.id)
-                    }
-                    
                     isMigrationRun = true
                 }
             } catch (e: Exception) {
