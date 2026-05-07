@@ -316,31 +316,31 @@ class ReportsViewModel @Inject constructor(
     fun loadScrapReport() {
         viewModelScope.launch {
             _isScrapLoading.value = true
-            val user = userRepository.getCurrentUser()
-            val seller = user?.role == "seller"
-            
-            val scrapWhRef = firestore.collection(ScrapWarehouse.COLLECTION_NAME)
-            val snapshot = scrapWhRef.get().await()
-            val allScrapWh = snapshot.documents.mapNotNull { it.toObject(ScrapWarehouse::class.java)?.copy(id = it.id) }
-                .filter { it.isActive }
-            
-            if (seller) {
-                val myScrapWh = allScrapWh.find { it.parentWarehouseId == user?.warehouseId }
-                if (myScrapWh != null) {
-                    _oldBatterySummary.value = Pair(myScrapWh.totalQuantity, myScrapWh.totalAmperes)
-                    _scrapWarehouses.value = listOf(myScrapWh)
+            try {
+                val summary = oldBatteryRepository.getStockSummary()
+                _oldBatterySummary.value = summary
+
+                val user = userRepository.getCurrentUser()
+                val seller = user?.role == "seller"
+
+                val scrapWhRef = firestore.collection(ScrapWarehouse.COLLECTION_NAME)
+                val snapshot = scrapWhRef.get().await()
+                val allScrapWh = snapshot.documents.mapNotNull { it.toObject(ScrapWarehouse::class.java)?.copy(id = it.id) }
+                    .filter { it.isActive }
+
+                if (seller) {
+                    val myScrapWh = allScrapWh.find { it.parentWarehouseId == user?.warehouseId }
+                    if (myScrapWh != null) {
+                        _scrapWarehouses.value = listOf(myScrapWh)
+                    } else {
+                        _scrapWarehouses.value = emptyList()
+                    }
                 } else {
-                    _oldBatterySummary.value = Pair(0, 0.0)
-                    _scrapWarehouses.value = emptyList()
+                    _scrapWarehouses.value = allScrapWh.sortedBy { it.name }
                 }
-            } else {
-                val totalQty = allScrapWh.sumOf { it.totalQuantity }
-                val totalAmps = allScrapWh.sumOf { it.totalAmperes }
-                _oldBatterySummary.value = Pair(totalQty, totalAmps)
-                _scrapWarehouses.value = allScrapWh.sortedBy { it.name }
+            } finally {
+                _isScrapLoading.value = false
             }
-            
-            _isScrapLoading.value = false
         }
     }
 
@@ -498,8 +498,11 @@ class ReportsViewModel @Inject constructor(
                             var currentPaid = 0.0
                             var currentPaper = 0.0
                             linkedBills.forEach { state ->
+                                // المبلغ الورقي (التغطية)
                                 val takeP = minOf(state.remainingPaper, (cost - currentPaper).coerceAtLeast(0.0))
+                                // المبلغ النقدي (المسدد فعلياً)
                                 val takeC = minOf(state.remainingCash, (cost - currentPaid).coerceAtLeast(0.0))
+
                                 state.remainingPaper -= takeP
                                 state.remainingCash -= takeC
                                 currentPaid += takeC
@@ -512,6 +515,7 @@ class ReportsViewModel @Inject constructor(
                             )
                         }
 
+                        // تجميع الفائض من المرتجعات والنقدي للربط التلقائي
                         var globalReturns = purchaseOrders.filter { it.entry.totalCost < 0 }.sumOf { -it.entry.totalCost }
 
                         val processedOrders = manualAdjustedOrders.map { po ->
@@ -520,14 +524,15 @@ class ReportsViewModel @Inject constructor(
                             var currentPaper = po.totalLinkedAmount
                             val autoRefs = mutableListOf<String>()
 
-                            // أ. توزيع المرتجعات أولاً
+                            // أ. توزيع المرتجعات أولاً (كاش)
                             val takeReturns = minOf(globalReturns, (cost - currentPaid).coerceAtLeast(0.0))
                             globalReturns -= takeReturns
                             currentPaid += takeReturns
                             currentPaper = maxOf(currentPaper, currentPaid)
                             if (takeReturns > 0.001) autoRefs.add("خصم مرتجعات مواد: JD ${String.format("%.3f", takeReturns)}")
 
-                            // ب. توزيع الشيكات المتبقية (تلقائياً)
+                            // ب. توزيع الكاش المتبقي في السندات (تلقائياً)
+                            // ج. توزيع قيمة الشيكات الورقية (تلقائياً - للتغطية)
                             availableBills.forEach { state ->
                                 val remainingToPay = (cost - currentPaid).coerceAtLeast(0.0)
                                 val remainingToCover = (cost - currentPaper).coerceAtLeast(0.0)
@@ -535,7 +540,7 @@ class ReportsViewModel @Inject constructor(
                                 val takeC = minOf(state.remainingCash, remainingToPay)
                                 val takeP = minOf(state.remainingPaper, remainingToCover)
 
-                                if (takeP > 0.001) {
+                                if (takeP > 0.001 || takeC > 0.001) {
                                     state.remainingCash -= takeC
                                     state.remainingPaper -= takeP
                                     currentPaid += takeC
@@ -549,7 +554,12 @@ class ReportsViewModel @Inject constructor(
                                         BillType.VISA -> "فيزا"
                                         BillType.E_WALLET -> "محفظة"
                                     }
-                                    autoRefs.add("$typeStr: ${state.bill.referenceNumber} (ربط تلقائي)")
+
+                                    if (takeC > 0.001 && takeC >= takeP - 0.001) {
+                                        autoRefs.add("تسوية من رصيد نقدي ($typeStr: ${state.bill.referenceNumber})")
+                                    } else if (takeP > 0.001) {
+                                        autoRefs.add("$typeStr: ${state.bill.referenceNumber} (ربط تلقائي - تغطية)")
+                                    }
                                 }
                             }
 

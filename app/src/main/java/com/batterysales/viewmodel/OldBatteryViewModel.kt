@@ -195,8 +195,8 @@ class OldBatteryViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 repository.deleteTransaction(id)
-                // Sync with invoice is now less direct with Paging, 
-                // typically we'd fetch the transaction first if needed.
+                // Delete related treasury transaction
+                accountingRepository.deleteTransactionsByRelatedId(id)
             } catch (e: Exception) {
                 Log.e("OldBatteryViewModel", "Error deleting transaction", e)
             }
@@ -207,6 +207,15 @@ class OldBatteryViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 repository.updateTransaction(transaction)
+
+                // Sync with treasury if applicable
+                accountingRepository.updateTransactionByRelatedId(
+                    relatedId = transaction.id,
+                    newAmount = transaction.amount,
+                    newDescription = if (transaction.type == OldBatteryTransactionType.INTAKE)
+                        "تعديل: شراء بطاريات قديمة (سكراب): ${transaction.quantity} حبة"
+                    else "تعديل: بيع بطاريات قديمة (سكراب): ${transaction.quantity} حبة"
+                )
 
                 // Sync with invoice if applicable
                 transaction.invoiceId?.let { invoiceId ->
