@@ -55,11 +55,22 @@ class ProductRepository @Inject constructor(
         docRef.set(finalProduct).await()
     }
 
-    suspend fun updateProduct(product: Product) {
+    suspend fun updateProduct(product: Product, stockEntryRepository: StockEntryRepository? = null) {
         firestore.collection(Product.COLLECTION_NAME)
             .document(product.id)
             .set(product)
             .await()
+
+        // Sync denormalized names in variants if product name changed
+        stockEntryRepository?.let { repo ->
+            val variantsSnap = firestore.collection(com.batterysales.data.models.ProductVariant.COLLECTION_NAME)
+                .whereEqualTo("productId", product.id)
+                .get().await()
+
+            variantsSnap.documents.forEach { doc ->
+                repo.syncVariantStock(doc.id, product)
+            }
+        }
     }
 
     suspend fun deleteProduct(productId: String) {

@@ -14,6 +14,8 @@ data class ProductVariant(
     val minQuantity: Int = 0,
     val minQuantities: Map<String, Int> = emptyMap(),
     var specification: String = "",
+    val productName: String = "", // Denormalized for sorting
+    val productSpecification: String = "", // Denormalized for display
     val currentStock: Map<String, Int>? = null, // WarehouseId to Quantity. Null means migration needed.
     val weightedAverageCost: Double = 0.0, // Pre-calculated average cost for reports
     val createdAt: Date = Date(),

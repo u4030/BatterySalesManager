@@ -232,6 +232,7 @@ class ReportsViewModel @Inject constructor(
                 // Run only once per session to avoid redundant Firestore reads
                 if (!isMigrationRun) {
                     stockEntryRepository.migrateInvoiceDates()
+                    stockEntryRepository.migrateAllVariants(productRepository)
                     isMigrationRun = true
                 }
             } catch (e: Exception) {

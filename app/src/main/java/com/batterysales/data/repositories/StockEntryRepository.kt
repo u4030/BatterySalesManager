@@ -527,10 +527,26 @@ class StockEntryRepository @Inject constructor(
     }
 
     /**
+     * Comprehensive migration for all variants to populate denormalized fields.
+     */
+    suspend fun migrateAllVariants(productRepository: ProductRepository) {
+        val products = productRepository.getProductsOnce().associateBy { it.id }
+        val variantsSnap = firestore.collection(com.batterysales.data.models.ProductVariant.COLLECTION_NAME).get().await()
+
+        variantsSnap.documents.forEach { doc ->
+            val variant = doc.toObject(com.batterysales.data.models.ProductVariant::class.java)?.copy(id = doc.id)
+            if (variant != null) {
+                val product = products[variant.productId]
+                syncVariantStock(variant.id, product)
+            }
+        }
+    }
+
+    /**
      * Recalculates the current stock and average cost for a specific variant from all historical stock entries
      * and updates the ProductVariant's denormalized fields.
      */
-    suspend fun syncVariantStock(variantId: String) {
+    suspend fun syncVariantStock(variantId: String, product: com.batterysales.data.models.Product? = null) {
         val entries = firestore.collection(StockEntry.COLLECTION_NAME)
             .whereEqualTo("productVariantId", variantId)
             .whereEqualTo("status", "approved")
@@ -554,6 +570,11 @@ class StockEntryRepository @Inject constructor(
             "currentStock" to stockMap,
             "weightedAverageCost" to averageCost
         )
+
+        product?.let {
+            updates["productName"] = it.name
+            updates["productSpecification"] = it.specification
+        }
 
         firestore.collection(com.batterysales.data.models.ProductVariant.COLLECTION_NAME)
             .document(variantId)
