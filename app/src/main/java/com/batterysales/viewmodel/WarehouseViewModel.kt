@@ -2,6 +2,11 @@ package com.batterysales.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.paging.Pager
+import androidx.paging.PagingConfig
+import androidx.paging.PagingData
+import androidx.paging.cachedIn
+import androidx.paging.map
 import com.batterysales.data.models.Product
 import com.batterysales.data.models.ProductVariant
 import com.batterysales.data.models.Warehouse
@@ -36,6 +41,9 @@ class WarehouseViewModel @Inject constructor(
     private val _searchQuery = MutableStateFlow("")
     val searchQuery = _searchQuery.asStateFlow()
 
+    private val _selectedWarehouseId = MutableStateFlow<String?>(null)
+    val selectedWarehouseId = _selectedWarehouseId.asStateFlow()
+
     val currentUser = userRepository.getCurrentUserFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
@@ -43,80 +51,56 @@ class WarehouseViewModel @Inject constructor(
         warehouseRepository.getWarehouses(),
         currentUser
     ) { list, user ->
-        if (user?.role == com.batterysales.data.models.User.ROLE_SELLER && user.warehouseId != null) {
-            list.filter { it.id == user.warehouseId }
+        val active = list.filter { it.isActive }
+        val result = if (user?.role == com.batterysales.data.models.User.ROLE_SELLER && user.warehouseId != null) {
+            active.filter { it.id == user.warehouseId }
         } else {
-            list
+            active
         }
+
+        if (_selectedWarehouseId.value == null && result.isNotEmpty()) {
+            _selectedWarehouseId.value = result.first().id
+        }
+
+        result.sortedBy { it.name }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val stockLevels: StateFlow<List<WarehouseStockItem>> = combine(
-        productRepository.getProducts(),
-        productVariantRepository.getAllVariantsFlow(),
-        warehouseRepository.getWarehouses(),
-        stockEntryRepository.getAllStockEntriesFlow(),
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val stockLevels: Flow<PagingData<WarehouseStockItem>> = combine(
         currentUser,
-        _searchQuery
-    ) { args ->
-        args
-    }.flowOn(kotlinx.coroutines.Dispatchers.Default).map { args ->
-        val products = args[0] as List<Product>
-        val allVariants = args[1] as List<ProductVariant>
-        val allWarehouses = args[2] as List<Warehouse>
-        val allStockEntries = args[3] as List<com.batterysales.data.models.StockEntry>
-        val user = args[4] as com.batterysales.data.models.User?
-        val query = args[5] as String
-
+        _searchQuery,
+        _selectedWarehouseId
+    ) { user, query, whId ->
+        Triple(user, query, whId)
+    }.flatMapLatest { (user, query, whId) ->
         _isLoading.value = true
-        val activeProducts = products.filter { !it.archived }
-        val productMap = activeProducts.associateBy { it.id }
-        val activeVariants = allVariants.filter { !it.archived }
-        val activeVariantsMap = activeVariants.associateBy { it.id }
+        val targetWhId = if (user?.role == com.batterysales.data.models.User.ROLE_SELLER) user.warehouseId else whId
 
-        val stockMap = mutableMapOf<Pair<String, String>, Int>()
-        val approvedEntries = allStockEntries.filter { it.status == "approved" }
-
-        // Process all active variants in one pass to avoid leftovers or duplicates
-        for (variant in activeVariants) {
-            if (variant.currentStock != null) {
-                // Use denormalized stock
-                variant.currentStock.forEach { (warehouseId, quantity) ->
-                    if (user?.role == com.batterysales.data.models.User.ROLE_SELLER && warehouseId != user.warehouseId) return@forEach
-                    stockMap[Pair(variant.id, warehouseId)] = quantity
-                }
-            } else {
-                // Fallback to historical calculation for this specific variant
-                val variantEntries = approvedEntries.filter { it.productVariantId == variant.id }
-                val whGroups = variantEntries.groupBy { it.warehouseId }
-                whGroups.forEach { (whId, entries) ->
-                    if (user?.role == com.batterysales.data.models.User.ROLE_SELLER && whId != user.warehouseId) return@forEach
-                    stockMap[Pair(variant.id, whId)] = entries.sumOf { it.quantity - it.returnedQuantity }
-                }
+        Pager(PagingConfig(pageSize = 25)) {
+            com.batterysales.data.paging.VariantPagingSource(
+                firestore = com.google.firebase.firestore.FirebaseFirestore.getInstance(),
+                productRepository = productRepository,
+                searchQuery = query,
+                warehouseId = targetWhId,
+                onlyWithStock = true
+            )
+        }.flow.map { pagingData ->
+            val allWarehouses = warehouses.value
+            _isLoading.value = false
+            pagingData.map { item ->
+                WarehouseStockItem(
+                    product = item.product,
+                    variant = item.variant,
+                    warehouse = allWarehouses.find { it.id == item.warehouseQuantities.keys.firstOrNull() } ?: Warehouse(name = "Unknown"),
+                    quantity = item.totalQuantity
+                )
             }
-        }
+        }.cachedIn(viewModelScope)
+    }
 
-        val stockList = stockMap.mapNotNull { (key, quantity) ->
-            val variantId = key.first
-            val warehouseId = key.second
-            val variant = activeVariantsMap[variantId]
-            val warehouse = allWarehouses.find { it.id == warehouseId }
-            if (variant != null && warehouse != null) {
-                val product = productMap[variant.productId]
-                if (product != null && quantity > 0) {
-                    if (query.isNotBlank() && !product.name.contains(query, ignoreCase = true)) {
-                        return@mapNotNull null
-                    }
-                    WarehouseStockItem(product, variant, warehouse, quantity)
-                } else {
-                    null
-                }
-            } else {
-                null
-            }
-        }
-        _isLoading.value = false
-        stockList.sortedWith(compareByDescending<WarehouseStockItem> { it.warehouse.name }.thenBy { it.product.name }.thenBy { it.variant.capacity })
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    fun onWarehouseSelected(id: String) {
+        _selectedWarehouseId.value = id
+    }
 
     fun toggleWarehouseStatus(warehouse: Warehouse) {
         viewModelScope.launch {

@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import androidx.paging.compose.collectAsLazyPagingItems
 import com.batterysales.viewmodel.WarehouseViewModel
 import com.batterysales.ui.components.SharedHeader
 import com.batterysales.ui.components.HeaderIconButton
@@ -53,7 +54,7 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
             lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }
-    val stockLevels by viewModel.stockLevels.collectAsState()
+    val stockLevels = viewModel.stockLevels.collectAsLazyPagingItems()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val currentUser by viewModel.currentUser.collectAsState()
@@ -98,7 +99,7 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
                     }
                     HeaderIconButton(
                         icon = Icons.Default.Refresh,
-                        onClick = { /* Flow handled */ },
+                        onClick = { stockLevels.refresh() },
                         contentDescription = "Refresh"
                     )
                 }
@@ -160,7 +161,10 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
                                     warehouses.forEachIndexed { index, warehouse ->
                                         Tab(
                                             selected = selectedWarehouseTabIndex == index,
-                                            onClick = { selectedWarehouseTabIndex = index }
+                                            onClick = {
+                                                selectedWarehouseTabIndex = index
+                                                viewModel.onWarehouseSelected(warehouse.id)
+                                            }
                                         ) {
                                             Text(
                                                 warehouse.name,
@@ -177,7 +181,7 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
                     }
 
                     if (selectedTab == 0) {
-                        if (isLoading && stockLevels.isEmpty()) {
+                        if (stockLevels.loadState.refresh is androidx.paging.LoadState.Loading) {
                             item {
                                 Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                                     CircularProgressIndicator(color = accentColor)
@@ -185,13 +189,8 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
                             }
                         } else {
                             val currentWarehouse = warehouses.getOrNull(selectedWarehouseTabIndex)
-                            val filteredStock = if (currentWarehouse != null) {
-                                stockLevels.filter { it.warehouse.id == currentWarehouse.id }
-                            } else {
-                                stockLevels
-                            }
 
-                            if (filteredStock.isEmpty() && !isLoading) {
+                            if (stockLevels.itemCount == 0) {
                                 item {
                                     Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                                         Text("لا توجد منتجات في هذا المستودع", color = Color.Gray)
@@ -199,7 +198,12 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
                                 }
                             }
 
-                            items(filteredStock) { stockItem ->
+                            items(stockLevels.itemCount) { index ->
+                                val stockItem = stockLevels[index] ?: return@items
+
+                                // Local filter by warehouse tab (Paging might fetch across but we show relevant)
+                                if (currentWarehouse != null && stockItem.warehouse.id != currentWarehouse.id) return@items
+
                                 val threshold = stockItem.variant.minQuantities[stockItem.warehouse.id] ?: stockItem.variant.minQuantity
                                 val isLowStock = threshold > 0 && stockItem.quantity <= threshold
                                 val lowStockColor = Color(0xFFEF4444)
@@ -281,17 +285,22 @@ fun WarehouseScreen(navController: NavController, viewModel: WarehouseViewModel 
                     item { Spacer(modifier = Modifier.height(16.dp)) }
                 }
 
-                if (selectedTab == 0 && stockLevels.isNotEmpty()) {
+                if (selectedTab == 0 && stockLevels.itemCount > 0) {
                     com.batterysales.ui.components.SidebarAlphabetNavigation(
                         onLetterSelected = { letter ->
                             val currentWarehouse = warehouses.getOrNull(selectedWarehouseTabIndex)
-                            val filteredStock = if (currentWarehouse != null) {
-                                stockLevels.filter { it.warehouse.id == currentWarehouse.id }
-                            } else {
-                                stockLevels
+
+                            var index = -1
+                            for (i in 0 until stockLevels.itemCount) {
+                                val item = stockLevels[i]
+                                if (item != null && (currentWarehouse == null || item.warehouse.id == currentWarehouse.id)) {
+                                    if (item.product.name.trim().startsWith(letter.toString(), ignoreCase = true)) {
+                                        index = i
+                                        break
+                                    }
+                                }
                             }
 
-                            val index = filteredStock.indexOfFirst { it.product.name.trim().startsWith(letter.toString(), ignoreCase = true) }
                             if (index != -1) {
                                 scope.launch {
                                     listState.animateScrollToItem(index + 2) // Offset for SearchBar + Tabs

@@ -43,46 +43,23 @@ class BillViewModel @Inject constructor(
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val bills: Flow<PagingData<Bill>> = combine(
         _searchQuery,
-        _suppliers,
         refreshTrigger
-    ) { query, suppliers, _ ->
-        Pair(query, suppliers)
-    }.flatMapLatest { (query, suppliers) ->
-        val suppliersMap = suppliers.associateBy { it.id }
-        Pager(PagingConfig(pageSize = 20)) {
-            BillPagingSource(repository)
-        }.flow.map { pagingData ->
-            if (query.isBlank()) pagingData
-            else pagingData.filter { bill ->
-                val supplierName = suppliersMap[bill.supplierId]?.name ?: ""
-                bill.referenceNumber.contains(query, ignoreCase = true) ||
-                        supplierName.contains(query, ignoreCase = true) ||
-                        bill.description.contains(query, ignoreCase = true)
-            }
-        }.cachedIn(viewModelScope)
+    ) { query, _ ->
+        query
+    }.flatMapLatest { query ->
+        Pager(PagingConfig(pageSize = 25)) {
+            BillPagingSource(repository, query.ifBlank { null })
+        }.flow.cachedIn(viewModelScope)
     }
 
-    private val _allRecentPurchases = stockEntryRepository.getAllStockEntriesFlow()
-        .map { entries -> 
-            entries.filter { it.status == "approved" && it.totalCost > 0 }
-                .take(2000) 
-        }
-        .distinctUntilChanged()
-    
-    private val _linkedAmounts = repository.getAllBillsFlow()
-        .map { bills ->
-            bills.filter { it.relatedEntryId != null }
-                .groupBy { it.relatedEntryId!! }
-                .mapValues { entry -> entry.value.sumOf { it.amount } }
-        }
-        .distinctUntilChanged()
-    
-    val pendingPurchases: StateFlow<List<StockEntry>> = combine(
-        _allRecentPurchases,
-        _linkedAmounts
-    ) { entries, linkedAmounts ->
+    val pendingPurchases: StateFlow<List<StockEntry>> = flow {
+        // Optimization: Instead of broad listener, fetch recent approved purchases once
+        // and only when needed for adding a new bill.
+        val entries = stockEntryRepository.getRecentApprovedPurchases(limit = 100)
+        val linkedAmounts = repository.getLinkedAmounts() // Efficiently get linked sums
+
         val grouped = entries.groupBy { it.orderId.ifEmpty { it.id } }
-        grouped.mapNotNull { (key, group) ->
+        val result = grouped.mapNotNull { (key, group) ->
             val representative = group.first()
             val totalOrderCost = if (representative.grandTotalCost > 0) representative.grandTotalCost else group.sumOf { it.totalCost }
             val linkedAmount = linkedAmounts[key] ?: 0.0
@@ -97,7 +74,8 @@ class BillViewModel @Inject constructor(
                 null
             }
         }
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+        emit(result)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading = _isLoading.asStateFlow()

@@ -201,8 +201,8 @@ class InventoryPagingSource(
                             if (!hasActivity) return@async null
                         }
 
-                        // 2. Efficient Cost Calculation via targeted server-side aggregation
-                        val averageCost = stockEntryRepository.getWeightedAverageCost(variant.id, null) // Global average cost
+                        // 2. Efficient Cost Calculation using denormalized value
+                        val averageCost = variant.weightedAverageCost
 
                         InventoryReportItem(
                             product = finalProduct,

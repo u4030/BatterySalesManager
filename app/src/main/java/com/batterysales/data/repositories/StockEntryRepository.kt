@@ -28,10 +28,29 @@ class StockEntryRepository @Inject constructor(
             val finalEntry = stockEntry.copy(id = docRef.id)
             transaction.set(docRef, finalEntry)
 
-            if (finalEntry.status == "approved" && variant != null && variant.currentStock != null) {
-                val newStockMap = variant.currentStock.toMutableMap()
-                newStockMap[finalEntry.warehouseId] = (newStockMap[finalEntry.warehouseId] ?: 0) + (finalEntry.quantity - finalEntry.returnedQuantity)
-                transaction.update(variantRef, "currentStock", newStockMap)
+            if (finalEntry.status == "approved" && variant != null) {
+                val updates = mutableMapOf<String, Any>()
+
+                // Update Stock Map
+                variant.currentStock?.let {
+                    val newStockMap = it.toMutableMap()
+                    newStockMap[finalEntry.warehouseId] = (newStockMap[finalEntry.warehouseId] ?: 0) + (finalEntry.quantity - finalEntry.returnedQuantity)
+                    updates["currentStock"] = newStockMap
+                }
+
+                // Update Weighted Average Cost (Only on purchases)
+                if (finalEntry.quantity > 0) {
+                    val currentTotalCost = variant.weightedAverageCost * (variant.currentStock?.values?.sum() ?: 0)
+                    val newTotalQty = (variant.currentStock?.values?.sum() ?: 0) + finalEntry.quantity
+                    if (newTotalQty > 0) {
+                        val newAvgCost = (currentTotalCost + finalEntry.totalCost) / newTotalQty
+                        updates["weightedAverageCost"] = newAvgCost
+                    }
+                }
+
+                if (updates.isNotEmpty()) {
+                    transaction.update(variantRef, updates)
+                }
             }
         }.await()
     }
@@ -508,8 +527,8 @@ class StockEntryRepository @Inject constructor(
     }
 
     /**
-     * Recalculates the current stock for a specific variant from all historical stock entries
-     * and updates the ProductVariant's currentStock map.
+     * Recalculates the current stock and average cost for a specific variant from all historical stock entries
+     * and updates the ProductVariant's denormalized fields.
      */
     suspend fun syncVariantStock(variantId: String) {
         val entries = firestore.collection(StockEntry.COLLECTION_NAME)
@@ -525,9 +544,20 @@ class StockEntryRepository @Inject constructor(
             stockMap[entry.warehouseId] = current + (entry.quantity - entry.returnedQuantity)
         }
 
+        // Recalculate Weighted Average Cost
+        val purchaseEntries = entries.filter { it.quantity > 0 }
+        val sumTotalCost = purchaseEntries.sumOf { it.totalCost }
+        val grossPurchasedQty = purchaseEntries.sumOf { it.quantity }
+        val averageCost = if (grossPurchasedQty > 0) sumTotalCost / grossPurchasedQty else 0.0
+
+        val updates = mutableMapOf<String, Any>(
+            "currentStock" to stockMap,
+            "weightedAverageCost" to averageCost
+        )
+
         firestore.collection(com.batterysales.data.models.ProductVariant.COLLECTION_NAME)
             .document(variantId)
-            .update("currentStock", stockMap)
+            .update(updates)
             .await()
     }
 

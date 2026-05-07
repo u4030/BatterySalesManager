@@ -102,13 +102,22 @@ class BillRepository @Inject constructor(
     }
 
     suspend fun getBillsPaginated(
+        searchQuery: String? = null,
         lastDocument: DocumentSnapshot? = null,
         limit: Long = 20
     ): Pair<List<Bill>, DocumentSnapshot?> {
-        // Sorting by supplierId (ASC) and then dueDate (ASC) as requested
-        var query = firestore.collection(Bill.COLLECTION_NAME)
-            .orderBy("supplierId", Query.Direction.ASCENDING)
-            .orderBy("dueDate", Query.Direction.ASCENDING)
+        var query: Query = firestore.collection(Bill.COLLECTION_NAME)
+
+        if (!searchQuery.isNullOrBlank()) {
+            // Server-side search by referenceNumber (most common)
+            query = query.whereGreaterThanOrEqualTo("referenceNumber", searchQuery)
+                .whereLessThanOrEqualTo("referenceNumber", searchQuery + "\uf8ff")
+                .orderBy("referenceNumber", Query.Direction.ASCENDING)
+        } else {
+            // Default sorting by supplierId (ASC) and then dueDate (ASC)
+            query = query.orderBy("supplierId", Query.Direction.ASCENDING)
+                .orderBy("dueDate", Query.Direction.ASCENDING)
+        }
 
         if (lastDocument != null) {
             query = query.startAfter(lastDocument)

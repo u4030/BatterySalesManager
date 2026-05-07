@@ -7,7 +7,8 @@ import com.batterysales.data.repositories.BillRepository
 import com.google.firebase.firestore.DocumentSnapshot
 
 class BillPagingSource(
-    private val repository: BillRepository
+    private val repository: BillRepository,
+    private val searchQuery: String? = null
 ) : PagingSource<DocumentSnapshot, Bill>() {
 
     override fun getRefreshKey(state: PagingState<DocumentSnapshot, Bill>): DocumentSnapshot? = null
@@ -15,6 +16,7 @@ class BillPagingSource(
     override suspend fun load(params: LoadParams<DocumentSnapshot>): LoadResult<DocumentSnapshot, Bill> {
         return try {
             val result = repository.getBillsPaginated(
+                searchQuery = searchQuery,
                 lastDocument = params.key,
                 limit = params.loadSize.toLong()
             )
