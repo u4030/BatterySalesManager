@@ -128,8 +128,12 @@ class StockEntryRepository @Inject constructor(
         awaitClose { listenerRegistration.remove() }
     }
 
-    suspend fun getAllStockEntries(): List<StockEntry> {
+    /**
+     * Warning: Fetches the ENTIRE collection. Use targeted methods or pagination where possible.
+     */
+    suspend fun getAllStockEntries(limit: Long = 10000): List<StockEntry> {
         val snapshot = firestore.collection(StockEntry.COLLECTION_NAME)
+            .limit(limit)
             .get()
             .await()
         return snapshot.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
@@ -487,6 +491,20 @@ class StockEntryRepository @Inject constructor(
 
         val snapshot = query.aggregate(AggregateField.sum("totalCost")).get(AggregateSource.SERVER).await()
         return snapshot.getDouble(AggregateField.sum("totalCost")) ?: 0.0
+    }
+
+    suspend fun getEntriesBySuppliers(supplierIds: List<String>): List<StockEntry> {
+        if (supplierIds.isEmpty()) return emptyList()
+        val all = mutableListOf<StockEntry>()
+        // Firestore whereIn limit is 30
+        supplierIds.chunked(30).forEach { chunk ->
+            val snap = firestore.collection(StockEntry.COLLECTION_NAME)
+                .whereIn("supplierId", chunk)
+                .whereEqualTo("status", "approved")
+                .get().await()
+            all.addAll(snap.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) })
+        }
+        return all
     }
 
     /**

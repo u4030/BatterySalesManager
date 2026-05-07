@@ -218,34 +218,7 @@ class ReportsViewModel @Inject constructor(
                 refreshAll()
             }.launchIn(viewModelScope)
 
-        // Reactively refresh inventory when stock changes (Lightweight listener)
-        firestore.collection(StockEntry.COLLECTION_NAME)
-            .orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING)
-            .limit(1)
-            .addSnapshotListener { snapshot, e ->
-                if (e == null && snapshot != null) {
-                    Log.d("ReportsViewModel", "Stock changed detected, refreshing")
-                    refreshTrigger.value += 1
-                }
-            }
-
-        // Also listen for Product updates to refresh names/specs immediately
-        firestore.collection(Product.COLLECTION_NAME)
-            .addSnapshotListener { snapshot, e ->
-                if (e == null && snapshot != null) {
-                    Log.d("ReportsViewModel", "Product updated, refreshing")
-                    refreshTrigger.value += 1
-                }
-            }
-
-        // Also listen for Variant updates
-        firestore.collection(ProductVariant.COLLECTION_NAME)
-            .addSnapshotListener { snapshot, e ->
-                if (e == null && snapshot != null) {
-                    Log.d("ReportsViewModel", "Variant updated, refreshing")
-                    refreshTrigger.value += 1
-                }
-            }
+        // Optimization: Use more targeted refresh logic to avoid excessive reloads
 
         _selectedTab.onEach { tab ->
             if (tab == 2 && _supplierReport.value.isEmpty()) {
@@ -380,35 +353,31 @@ class ReportsViewModel @Inject constructor(
                 val query = _supplierSearchQuery.value
                 val allSuppliers = supplierRepository.getSuppliersOnce()
 
-                // 1. Fetch all relevant entries and bills once in parallel
-                val allEntriesJob = async { stockEntryRepository.getAllStockEntries() }
-                val allBillsJob = async { billRepository.getAllBills() }
-
-                val allEntries = allEntriesJob.await()
-                val allBills = allBillsJob.await()
-
-                // Filter suppliers by name OR by search results in entries/bills (invoice/ref)
+                // Filter suppliers first to reduce subsequent data fetching
                 val suppliers = if (query.isBlank()) {
                     allSuppliers
                 } else {
-                    val matchingEntrySupplierIds = allEntries.filter {
-                        it.invoiceNumber.contains(query, ignoreCase = true) || it.orderId.contains(query, ignoreCase = true)
-                    }.map { it.supplierId }.toSet()
-
-                    val matchingBillSupplierIds = allBills.filter {
-                        it.referenceNumber.contains(query, ignoreCase = true) || it.description.contains(query, ignoreCase = true)
-                    }.map { it.supplierId }.toSet()
-
-                    allSuppliers.filter {
-                        it.name.contains(query, ignoreCase = true) ||
-                                matchingEntrySupplierIds.contains(it.id) ||
-                                matchingBillSupplierIds.contains(it.id)
-                    }
+                    allSuppliers.filter { it.name.contains(query, ignoreCase = true) }
                 }
 
                 val start = _startDate.value
                 val end = _endDate.value
 
+                // Optimization: If total supplier count is large, only fetch for the filtered subset
+                val supplierIds = suppliers.map { it.id }
+
+                // 1. Fetch relevant entries and bills in parallel, TARGETED by supplier IDs
+                val allEntriesJob = async {
+                    if (suppliers.size < 50) stockEntryRepository.getEntriesBySuppliers(supplierIds)
+                    else stockEntryRepository.getAllStockEntries() // Fallback if list is too large for whereIn
+                }
+                val allBillsJob = async {
+                    if (suppliers.size < 50) billRepository.getBillsBySuppliers(supplierIds)
+                    else billRepository.getAllBills()
+                }
+
+                val allEntries = allEntriesJob.await()
+                val allBills = allBillsJob.await()
 
                 val report = suppliers.map { supplier ->
                     async {

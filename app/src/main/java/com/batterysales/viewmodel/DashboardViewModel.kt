@@ -71,100 +71,77 @@ class DashboardViewModel @Inject constructor(
         loadDashboardData()
     }
 
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     private fun loadDashboardData() {
+        // Optimization: Use a refresh trigger instead of broad listeners for large collections (StockEntry, Payment)
+        val statsTrigger = MutableStateFlow(0)
+
         combine(
             warehouseRepository.getWarehouses(),
             userRepository.getCurrentUserFlow(),
             billRepository.getAllBillsFlow(),
             productVariantRepository.getAllVariantsFlow(),
             productRepository.getProducts(),
-            stockEntryRepository.getPendingEntriesFlow(),
-            paymentRepository.getAllPaymentsFlow(),
-            stockEntryRepository.getAllStockEntriesFlow(),
-            approvalRepository.getPendingRequestsFlow()
+            approvalRepository.getPendingRequestsFlow(),
+            statsTrigger
         ) { array ->
-            val warehouses = array[0] as List<com.batterysales.data.models.Warehouse>
-            val user = array[1] as com.batterysales.data.models.User?
-            val bills = array[2] as List<com.batterysales.data.models.Bill>
-            val variants = array[3] as List<ProductVariant>
-            val products = array[4] as List<com.batterysales.data.models.Product>
-            val pendingEntries = array[5] as List<StockEntry>
-            val allPayments = array[6] as List<com.batterysales.data.models.Payment>
-            val allStockEntries = array[7] as List<StockEntry>
-            val pendingRequests = array[8] as List<com.batterysales.data.models.ApprovalRequest>
+            array
+        }.flatMapLatest { array ->
+            flow {
+                val warehouses = array[0] as List<com.batterysales.data.models.Warehouse>
+                val user = array[1] as com.batterysales.data.models.User?
+                val bills = array[2] as List<com.batterysales.data.models.Bill>
+                val variants = array[3] as List<ProductVariant>
+                val products = array[4] as List<com.batterysales.data.models.Product>
+                val pendingRequests = array[5] as List<com.batterysales.data.models.ApprovalRequest>
 
-            val isAdmin = user?.role == "admin"
-            val userWarehouseId = user?.warehouseId
+                val isAdmin = user?.role == "admin"
+                val userWarehouseId = user?.warehouseId
 
-            // 1. Pending Approvals Count (Stock Entries + Product Requests)
-            val pendingCount = pendingEntries.size + pendingRequests.size
+                // 1. Pending Approvals Count (Efficient server-side count)
+                val pendingEntriesCount = stockEntryRepository.getPendingCount()
+                val pendingCount = pendingEntriesCount + pendingRequests.size
 
-            // 2. Upcoming Bills
-            val today = Calendar.getInstance().apply {
-                set(Calendar.HOUR_OF_DAY, 0)
-                set(Calendar.MINUTE, 0)
-                set(Calendar.SECOND, 0)
-                set(Calendar.MILLISECOND, 0)
-            }
-            val nextWeek = Calendar.getInstance().apply {
-                add(Calendar.DAY_OF_YEAR, 7)
-                set(Calendar.HOUR_OF_DAY, 23)
-                set(Calendar.MINUTE, 59)
-                set(Calendar.SECOND, 59)
-                set(Calendar.MILLISECOND, 999)
-            }
-            val upcoming = bills.filter {
-                it.status != BillStatus.PAID &&
-                        !it.dueDate.after(nextWeek.time)
-            }.sortedBy { it.dueDate }
-
-            // 3. Today's Collections (Reactive from Flow)
-            val calendar = Calendar.getInstance()
-            calendar.set(Calendar.HOUR_OF_DAY, 0)
-            calendar.set(Calendar.MINUTE, 0)
-            calendar.set(Calendar.SECOND, 0)
-            calendar.set(Calendar.MILLISECOND, 0)
-            val startOfToday = calendar.time
-
-            val relevantWarehouses = if (isAdmin) warehouses
-            else warehouses.filter { it.id == userWarehouseId && it.isActive }
-
-            val warehouseStatsList = relevantWarehouses.map { warehouse ->
-                val warehousePayments = allPayments.filter {
-                    it.warehouseId == warehouse.id && (it.timestamp.after(startOfToday) || it.timestamp.equals(startOfToday))
+                // 2. Upcoming Bills
+                val today = Calendar.getInstance().apply {
+                    set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
                 }
-                val collection = warehousePayments.sumOf { it.amount }
-                val count = warehousePayments.map { it.invoiceId }.distinct().size
+                val nextWeek = Calendar.getInstance().apply {
+                    add(Calendar.DAY_OF_YEAR, 7)
+                    set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59); set(Calendar.MILLISECOND, 999)
+                }
+                val upcoming = bills.filter {
+                    it.status != BillStatus.PAID && !it.dueDate.after(nextWeek.time)
+                }.sortedBy { it.dueDate }
 
-                WarehouseStats(
-                    warehouseId = warehouse.id,
-                    warehouseName = warehouse.name,
-                    todayCollection = collection,
-                    todayCollectionCount = count
-                )
-            }.filter { if (isAdmin) it.todayCollection > 0 || it.todayCollectionCount > 0 else true }
+                // 3. Today's Collections (Efficient server-side sum aggregation per warehouse)
+                val startOfToday = today.time.time
+                val relevantWarehouses = if (isAdmin) warehouses
+                else warehouses.filter { it.id == userWarehouseId && it.isActive }
 
-            // 4. Low Stock Notifications
+                val warehouseStatsList = relevantWarehouses.map { warehouse ->
+                    // Calculate today's collection using aggregation instead of fetching all documents
+                    val (collection, count) = paymentRepository.getTodayStats(warehouse.id, startOfToday)
+
+                    WarehouseStats(
+                        warehouseId = warehouse.id,
+                        warehouseName = warehouse.name,
+                        todayCollection = collection,
+                        todayCollectionCount = count
+                    )
+                }.filter { if (isAdmin) it.todayCollection > 0 || it.todayCollectionCount > 0 else true }
+
+            // 4. Low Stock Notifications (Using currentStock map in Variant - NO TRANSACTION HISTORY NEEDED)
             val pMap = products.associateBy { it.id }
-
             val lowStockItems = mutableListOf<LowStockItem>()
             val activeVariants = variants.filter { !it.archived }
-
-            val approvedEntries = allStockEntries.filter { it.status == "approved" }
-            val entriesByVariant = approvedEntries.groupBy { it.productVariantId }
 
             for (variant in activeVariants) {
                 val targetWarehouses = if (isAdmin) warehouses.filter { it.isActive }
                 else warehouses.filter { it.id == userWarehouseId && it.isActive }
 
                 for (warehouse in targetWarehouses) {
-                    val currentQty = if (variant.currentStock != null) {
-                        variant.currentStock[warehouse.id] ?: 0
-                    } else {
-                        val whEntries = entriesByVariant[variant.id]?.filter { it.warehouseId == warehouse.id } ?: emptyList()
-                        whEntries.sumOf { it.quantity - it.returnedQuantity }
-                    }
-                    
+                    val currentQty = variant.currentStock?.get(warehouse.id) ?: 0
                     val threshold = variant.minQuantities[warehouse.id] ?: variant.minQuantity
 
                     if (threshold > 0 && currentQty <= threshold) {
@@ -230,14 +207,17 @@ class DashboardViewModel @Inject constructor(
                 )
             }
 
-            DashboardUiState(
-                pendingApprovalsCount = pendingCount,
-                lowStockVariants = emptyList(),
-                upcomingBills = upcoming,
-                warehouseStats = warehouseStatsList,
-                notifications = allNotifications,
-                isLoading = false
-            )
+                emit(
+                    DashboardUiState(
+                        pendingApprovalsCount = pendingCount,
+                        lowStockVariants = emptyList(),
+                        upcomingBills = upcoming,
+                        warehouseStats = warehouseStatsList,
+                        notifications = allNotifications,
+                        isLoading = false
+                    )
+                )
+            }
         }.onEach { state ->
             _uiState.value = state
         }.launchIn(viewModelScope)

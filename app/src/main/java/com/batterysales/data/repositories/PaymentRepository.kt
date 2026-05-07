@@ -88,4 +88,25 @@ class PaymentRepository @Inject constructor(
         val snapshot = query.get().await()
         return snapshot.documents.mapNotNull { it.getString("invoiceId") }.distinct().size
     }
+
+    /**
+     * Efficiently fetches daily collection stats using server-side aggregation.
+     */
+    suspend fun getTodayStats(warehouseId: String, startOfDayTimestamp: Long): Pair<Double, Int> {
+        val startDate = java.util.Date(startOfDayTimestamp)
+        var query: Query = firestore.collection(Payment.COLLECTION_NAME)
+            .whereEqualTo("warehouseId", warehouseId)
+            .whereGreaterThanOrEqualTo("timestamp", startDate)
+
+        // Calculate sum
+        val sumSnap = query.aggregate(AggregateField.sum("amount")).get(AggregateSource.SERVER).await()
+        val totalAmount = sumSnap.getDouble(AggregateField.sum("amount")) ?: 0.0
+
+        // Calculate distinct count (Still requires fetching if distinct ID count is needed,
+        // but for Dashboard a simple count of unique invoice payment events is often sufficient)
+        val countSnap = query.get().await()
+        val uniqueInvoices = countSnap.documents.mapNotNull { it.getString("invoiceId") }.distinct().size
+
+        return Pair(totalAmount, uniqueInvoices)
+    }
 }

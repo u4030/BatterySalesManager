@@ -133,6 +133,18 @@ class BillRepository @Inject constructor(
         return snapshot.getDouble(AggregateField.sum("paidAmount")) ?: 0.0
     }
 
+    suspend fun getBillsBySuppliers(supplierIds: List<String>): List<Bill> {
+        if (supplierIds.isEmpty()) return emptyList()
+        val all = mutableListOf<Bill>()
+        supplierIds.chunked(30).forEach { chunk ->
+            val snap = firestore.collection(Bill.COLLECTION_NAME)
+                .whereIn("supplierId", chunk)
+                .get().await()
+            all.addAll(snap.documents.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) })
+        }
+        return all
+    }
+
     suspend fun updateBill(bill: Bill) {
         val updates = mutableMapOf<String, Any>(
             "description" to bill.description,
