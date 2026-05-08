@@ -35,6 +35,25 @@ data class SalesUiState(
     val isFinished: Boolean = false
 )
 
+private data class SalesFormData(
+    val product: Product?,
+    val variant: ProductVariant?,
+    val warehouse: Warehouse?,
+    val qty: String,
+    val price: String,
+    val oldQty: String,
+    val oldAmps: String,
+    val oldVal: String,
+    val payMethod: String
+)
+
+private data class SalesStatus(
+    val error: String?,
+    val loading: Boolean,
+    val submitting: Boolean,
+    val finished: Boolean
+)
+
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class SalesViewModel @Inject constructor(
@@ -64,29 +83,37 @@ class SalesViewModel @Inject constructor(
     private val _isSubmitting = MutableStateFlow(false)
     private val _isFinished = MutableStateFlow(false)
 
-    private var allStockEntries: List<StockEntry> = emptyList()
     private var currentUser: User? = null
 
+    @Suppress("UNCHECKED_CAST")
+    private val formData = combine(
+        _selectedProduct, _selectedVariant, _selectedWarehouse,
+        _quantity, _sellingPrice, _oldBatteriesQuantity,
+        _oldBatteriesTotalAmps, _oldBatteriesValue, _paymentMethod
+    ) { args ->
+        SalesFormData(
+            args[0] as Product?, args[1] as ProductVariant?, args[2] as Warehouse?,
+            args[3] as String, args[4] as String, args[5] as String,
+            args[6] as String, args[7] as String, args[8] as String
+        )
+    }
+
+    private val statusData = combine(
+        _errorMessage, _isLoading, _isSubmitting, _isFinished
+    ) { err, load, sub, fin ->
+        SalesStatus(err, load, sub, fin)
+    }
+
+    @Suppress("UNCHECKED_CAST")
     val uiState: StateFlow<SalesUiState> = combine(
         productRepository.getProducts(),
         warehouseRepository.getWarehouses(),
         userRepository.getCurrentUserFlow(),
-        _selectedProduct,
-        _selectedVariant,
-        _selectedWarehouse,
-        _quantity,
-        _sellingPrice,
-        _oldBatteriesQuantity,
-        _oldBatteriesTotalAmps,
-        _oldBatteriesValue,
-        _paymentMethod,
-        _errorMessage,
-        _isLoading,
-        _isSubmitting,
-        _isFinished,
         productVariantRepository.getAllVariantsFlow(),
+        formData,
+        statusData,
         _selectedProduct.flatMapLatest { product ->
-            if (product == null) flowOf(emptyList())
+            if (product == null) flowOf(emptyList<ProductVariant>())
             else productVariantRepository.getVariantsForProductFlow(product.id)
                 .map { variants -> variants.filter { !it.archived }.sortedBy { it.capacity } }
         }
@@ -94,54 +121,38 @@ class SalesViewModel @Inject constructor(
         val products = args[0] as List<Product>
         val warehouses = args[1] as List<Warehouse>
         val user = args[2] as User?
-        val selectedProduct = args[4] as Product?
-        val selectedVariant = args[5] as ProductVariant?
-        val selectedWarehouse = args[6] as Warehouse?
-        val quantity = args[7] as String
-        val sellingPrice = args[8] as String
-        val oldBatteriesQuantity = args[9] as String
-        val oldBatteriesTotalAmps = args[10] as String
-        val oldBatteriesValue = args[11] as String
-        val paymentMethod = args[12] as String
-        val errorMessage = args[13] as String?
-        val isLoading = args[14] as Boolean
-        val isSubmitting = args[15] as Boolean
-        val isFinished = args[16] as Boolean
-        val allVariants = args[17] as List<ProductVariant>
-        val variants = args[18] as List<ProductVariant>
+        val allVariants = args[3] as List<ProductVariant>
+        val form = args[4] as SalesFormData
+        val status = args[5] as SalesStatus
+        val productVariants = args[6] as List<ProductVariant>
 
         currentUser = user
 
         val stockMap = mutableMapOf<Pair<String, String>, Int>()
-
-        // Use denormalized currentStock as the absolute ground truth.
-        // It is updated in transactions and is the most reliable source for high-volume data.
         allVariants.forEach { variant ->
             variant.currentStock?.forEach { (warehouseId, qty) ->
                 stockMap[Pair(variant.id, warehouseId)] = qty
             }
         }
 
-        // Final sync of selected items with the reactive versions from the flow
-        val activeSelectedProduct = products.find { it.id == selectedProduct?.id } ?: selectedProduct
-        val activeSelectedVariant = allVariants.find { it.id == selectedVariant?.id } ?: selectedVariant
+        val activeSelectedProduct = products.find { it.id == form.product?.id } ?: form.product
+        val activeSelectedVariant = allVariants.find { it.id == form.variant?.id } ?: form.variant
 
         val isSeller = user?.role == User.ROLE_SELLER
         val autoSelectedWarehouse = if (isSeller) {
             warehouses.find { it.id == user?.warehouseId }
         } else {
-            selectedWarehouse
+            form.warehouse
         }
 
         val filteredProducts = if (isSeller && user?.warehouseId != null) {
-            // Filter products based on absolute currentStock, not just the limited entries flow!
             val availableVariantIds = allVariants.filter { v ->
                 val qty = v.currentStock?.get(user.warehouseId) ?: 0
                 qty > 0
             }.map { it.id }.toSet()
 
             val availableProductIds = allVariants.filter { availableVariantIds.contains(it.id) }.map { it.productId }.toSet()
-            products.filter { !it.archived && (availableProductIds.contains(it.id) || it.id == selectedProduct?.id) }
+            products.filter { !it.archived && (availableProductIds.contains(it.id) || it.id == form.product?.id) }
                 .sortedBy { it.name }
         } else {
             products.filter { !it.archived }
@@ -150,30 +161,29 @@ class SalesViewModel @Inject constructor(
 
         SalesUiState(
             products = filteredProducts,
-            variants = variants,
+            variants = productVariants,
             warehouses = warehouses.filter { it.isActive },
             stockLevels = stockMap,
             selectedProduct = activeSelectedProduct,
             selectedVariant = activeSelectedVariant,
             selectedWarehouse = autoSelectedWarehouse,
-            quantity = quantity,
-            sellingPrice = sellingPrice,
-            oldBatteriesQuantity = oldBatteriesQuantity,
-            oldBatteriesTotalAmps = oldBatteriesTotalAmps,
-            oldBatteriesValue = oldBatteriesValue,
-            paymentMethod = paymentMethod,
+            quantity = form.qty,
+            sellingPrice = form.price,
+            oldBatteriesQuantity = form.oldQty,
+            oldBatteriesTotalAmps = form.oldAmps,
+            oldBatteriesValue = form.oldVal,
+            paymentMethod = form.payMethod,
             isWarehouseFixed = isSeller,
             userRole = user?.role ?: "",
-            isLoading = isLoading,
-            isSubmitting = isSubmitting,
-            errorMessage = errorMessage,
-            isFinished = isFinished
+            isLoading = status.loading,
+            isSubmitting = status.submitting,
+            errorMessage = status.error,
+            isFinished = status.finished
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SalesUiState(isLoading = true))
 
     fun onProductSelected(product: Product) {
         _selectedProduct.value = product
-        // Reset variant and price when product changes, unless it's the SAME product (barcode scan might re-trigger)
         if (_selectedVariant.value?.productId != product.id) {
             _selectedVariant.value = null
             _sellingPrice.value = ""
@@ -223,7 +233,6 @@ class SalesViewModel @Inject constructor(
         val qty = state.quantity.toIntOrNull() ?: 0
         val price = state.sellingPrice.toDoubleOrNull() ?: 0.0
 
-        // Explicit Field Validation
         if (product == null || variant == null || warehouse == null) {
             _errorMessage.value = "الرجاء اختيار المنتج والصنف والمستودع"
             return
@@ -259,8 +268,7 @@ class SalesViewModel @Inject constructor(
                     return@launch
                 }
 
-                // Optimization: Calculate weighted average cost via targeted server-side aggregation
-                val weightedAverageCost = stockEntryRepository.getWeightedAverageCost(variant.id, warehouse.id)
+                val weightedAverageCost = variant.weightedAverageCost
 
                 val total = qty * price
                 val oldBatteriesVal = state.oldBatteriesValue.toDoubleOrNull() ?: 0.0
@@ -373,7 +381,6 @@ class SalesViewModel @Inject constructor(
                 if (variant != null) {
                     val product = productRepository.getProduct(variant.productId)
                     if (product != null) {
-                        // Set product first, then variant
                         _selectedProduct.value = product
                         _selectedVariant.value = variant
                         _sellingPrice.value = if (variant.sellingPrice > 0.0) variant.sellingPrice.toString() else ""

@@ -557,56 +557,110 @@ class StockEntryRepository @Inject constructor(
      * Comprehensive migration for all variants to populate denormalized fields.
      */
     suspend fun migrateAllVariants(productRepository: ProductRepository, supplierRepository: SupplierRepository, billRepository: BillRepository) {
+        android.util.Log.d("Migration", "Starting fast migration...")
         val products = productRepository.getProductsOnce().associateBy { it.id }
         val variantsSnap = firestore.collection(com.batterysales.data.models.ProductVariant.COLLECTION_NAME).get().await()
-
-        variantsSnap.documents.forEach { doc ->
-            val variant = doc.toObject(com.batterysales.data.models.ProductVariant::class.java)?.copy(id = doc.id)
-            if (variant != null) {
-                val product = products[variant.productId]
-                syncVariantStock(variant.id, product)
-            }
-        }
-
-        // Migrate Suppliers
-        val suppliers = supplierRepository.getSuppliersOnce()
-        val allEntries = getAllStockEntries(limit = 20000)
+        val allEntries = getAllStockEntries(limit = 30000)
         val allBills = billRepository.getAllBills()
 
-        suppliers.forEach { supplier ->
-            val supplierEntries = allEntries.filter { it.supplierId == supplier.id && it.status == "approved" }
-            val supplierBills = allBills.filter { it.supplierId == supplier.id }
+        val entriesByVariant = allEntries.filter { it.status == "approved" }.groupBy { it.productVariantId }
 
-            val debit = supplierEntries.filter { it.getNetCost() > 0 }.sumOf { it.getNetCost() }
-            val returnCredit = supplierEntries.filter { it.getNetCost() < 0 }.sumOf { -it.getNetCost() }
-            val paymentCredit = supplierBills.sumOf { it.paidAmount }
+        // 1. Migrate Variants in batches
+        variantsSnap.documents.chunked(500).forEach { chunk ->
+            val batch = firestore.batch()
+            chunk.forEach { doc ->
+                val variant = doc.toObject(com.batterysales.data.models.ProductVariant::class.java)?.copy(id = doc.id) ?: return@forEach
+                val product = products[variant.productId]
+                val entries = entriesByVariant[variant.id] ?: emptyList()
 
-            val totalCredit = returnCredit + paymentCredit
+                val stockMap = mutableMapOf<String, Int>()
+                entries.forEach { entry ->
+                    val current = stockMap[entry.warehouseId] ?: 0
+                    stockMap[entry.warehouseId] = current + (entry.quantity - entry.returnedQuantity)
+                }
 
-            firestore.collection("suppliers").document(supplier.id).update(mapOf(
-                "totalDebit" to debit,
-                "totalCredit" to totalCredit,
-                "currentBalance" to (debit - totalCredit)
-            ))
+                val purchaseEntries = entries.filter { it.quantity > 0 }
+                val sumTotalCost = purchaseEntries.sumOf { it.totalCost }
+                val grossPurchasedQty = purchaseEntries.sumOf { it.quantity }
+                val averageCost = if (grossPurchasedQty > 0) sumTotalCost / grossPurchasedQty else 0.0
+
+                val updates = mutableMapOf<String, Any>(
+                    "currentStock" to stockMap,
+                    "weightedAverageCost" to averageCost,
+                    "updatedAt" to java.util.Date()
+                )
+                product?.let {
+                    updates["productName"] = it.name
+                    updates["productSpecification"] = it.specification
+                }
+                // Use set with merge to ensure fields are created if missing
+                batch.set(doc.reference, updates, com.google.firebase.firestore.SetOptions.merge())
+            }
+            batch.commit().await()
         }
 
-        // Initialize Global Stats
+        // 2. Migrate Suppliers in batches
+        val suppliers = supplierRepository.getSuppliersOnce()
+        suppliers.chunked(500).forEach { chunk ->
+            val batch = firestore.batch()
+            chunk.forEach { supplier ->
+                val supplierEntries = allEntries.filter { (it.supplierId == supplier.id || it.supplier == supplier.name) && it.status == "approved" }
+                val supplierBills = allBills.filter { it.supplierId == supplier.id }
+
+                val debit = supplierEntries.filter { it.getNetCost() > 0 }.sumOf { it.getNetCost() }
+                val returnCredit = supplierEntries.filter { it.getNetCost() < 0 }.sumOf { -it.getNetCost() }
+                val paymentCredit = supplierBills.sumOf { it.paidAmount }
+                val totalCredit = returnCredit + paymentCredit
+
+                batch.update(firestore.collection("suppliers").document(supplier.id), mapOf(
+                    "totalDebit" to debit,
+                    "totalCredit" to totalCredit,
+                    "currentBalance" to (debit - totalCredit)
+                ))
+            }
+            batch.commit().await()
+        }
+
+        // 3. Initialize Global Stats
+        val totalSupplierDebt = suppliers.sumOf { s ->
+            val supplierEntries = allEntries.filter { (it.supplierId == s.id || it.supplier == s.name) && it.status == "approved" }
+            val supplierBills = allBills.filter { it.supplierId == s.id }
+            supplierEntries.sumOf { it.getNetCost() } - supplierBills.sumOf { it.paidAmount }
+        }
+
         val totalInvValue = variantsSnap.documents.mapNotNull { it.toObject(com.batterysales.data.models.ProductVariant::class.java) }
             .sumOf { (it.currentStock?.values?.sum() ?: 0) * it.weightedAverageCost }
         val totalInvQty = variantsSnap.documents.mapNotNull { it.toObject(com.batterysales.data.models.ProductVariant::class.java) }
             .sumOf { it.currentStock?.values?.sum() ?: 0 }
-            val totalDebt = suppliers.sumOf { s ->
-                val supplierEntries = allEntries.filter { it.supplierId == s.id && it.status == "approved" }
-                val supplierBills = allBills.filter { it.supplierId == s.id }
-            supplierEntries.sumOf { it.getNetCost() } - supplierBills.sumOf { it.paidAmount }
-        }
+
+        // Fetch other stats separately to avoid dependency loops
+        val customerDebtSnap = firestore.collection(com.batterysales.data.models.Invoice.COLLECTION_NAME)
+            .whereEqualTo("status", "pending")
+            .aggregate(com.google.firebase.firestore.AggregateField.sum("remainingAmount"))
+            .get(com.google.firebase.firestore.AggregateSource.SERVER).await()
+        val totalCustomerDebt = customerDebtSnap.getDouble(com.google.firebase.firestore.AggregateField.sum("remainingAmount")) ?: 0.0
+
+        val cashIncomeSnap = firestore.collection(com.batterysales.data.models.Transaction.COLLECTION_NAME)
+            .whereEqualTo("paymentMethod", "cash")
+            .whereIn("type", listOf(com.batterysales.data.models.TransactionType.INCOME.name, com.batterysales.data.models.TransactionType.PAYMENT.name))
+            .aggregate(com.google.firebase.firestore.AggregateField.sum("amount")).get(com.google.firebase.firestore.AggregateSource.SERVER).await()
+        val totalCashIncome = cashIncomeSnap.getDouble(com.google.firebase.firestore.AggregateField.sum("amount")) ?: 0.0
+
+        val cashExpenseSnap = firestore.collection(com.batterysales.data.models.Transaction.COLLECTION_NAME)
+            .whereEqualTo("paymentMethod", "cash")
+            .whereIn("type", listOf(com.batterysales.data.models.TransactionType.EXPENSE.name, com.batterysales.data.models.TransactionType.REFUND.name))
+            .aggregate(com.google.firebase.firestore.AggregateField.sum("amount")).get(com.google.firebase.firestore.AggregateSource.SERVER).await()
+        val totalCashExpense = cashExpenseSnap.getDouble(com.google.firebase.firestore.AggregateField.sum("amount")) ?: 0.0
 
         firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
             .set(com.batterysales.data.models.SystemStats(
-                totalSupplierDebt = totalDebt,
+                totalSupplierDebt = totalSupplierDebt,
+                totalCustomerDebt = totalCustomerDebt,
                 totalInventoryValue = totalInvValue,
-                totalInventoryQuantity = totalInvQty
+                totalInventoryQuantity = totalInvQty,
+                totalCashBalance = totalCashIncome - totalCashExpense
             ))
+        android.util.Log.d("Migration", "Fast migration finished successfully")
     }
 
     /**

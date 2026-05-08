@@ -57,19 +57,18 @@ class WarehouseViewModel @Inject constructor(
         } else {
             active
         }
-
-        if (_selectedWarehouseId.value == null && result.isNotEmpty()) {
-            _selectedWarehouseId.value = result.first().id
-        }
-
         result.sortedBy { it.name }
+    }.onEach { list ->
+        if (_selectedWarehouseId.value == null && list.isNotEmpty()) {
+            _selectedWarehouseId.value = list.first().id
+        }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val stockLevels: Flow<PagingData<WarehouseStockItem>> = combine(
         currentUser,
         _searchQuery,
-        _selectedWarehouseId
+        _selectedWarehouseId.filterNotNull() // Wait for a warehouse to be selected
     ) { user, query, whId ->
         Triple(user, query, whId)
     }.flatMapLatest { (user, query, whId) ->
@@ -88,10 +87,13 @@ class WarehouseViewModel @Inject constructor(
             val allWarehouses = warehouses.value
             _isLoading.value = false
             pagingData.map { item ->
+                val warehouse = allWarehouses.find { it.id == (targetWhId ?: item.warehouseQuantities.keys.firstOrNull()) }
+                             ?: Warehouse(id = targetWhId ?: "", name = "المستودع المختار")
+
                 WarehouseStockItem(
                     product = item.product,
                     variant = item.variant,
-                    warehouse = allWarehouses.find { it.id == item.warehouseQuantities.keys.firstOrNull() } ?: Warehouse(name = "Unknown"),
+                    warehouse = warehouse,
                     quantity = item.totalQuantity
                 )
             }

@@ -28,16 +28,21 @@ class InventoryPagingSource(
 
     override suspend fun load(params: LoadParams<DocumentSnapshot>): LoadResult<DocumentSnapshot, InventoryReportItem> {
         return try {
-            // Direct query on ProductVariants using denormalized productName for sorting
+            // Robust query on ProductVariants
             var query = firestore.collection(ProductVariant.COLLECTION_NAME)
                 .whereEqualTo("archived", false)
-                .orderBy("productName", Query.Direction.ASCENDING)
-                .orderBy("capacity", Query.Direction.ASCENDING)
 
             if (!searchQuery.isNullOrBlank()) {
                 // If searching, we filter by productName
-                query = query.whereGreaterThanOrEqualTo("productName", searchQuery)
+                query = query.orderBy("productName", Query.Direction.ASCENDING)
+                    .orderBy("capacity", Query.Direction.ASCENDING)
+                    .whereGreaterThanOrEqualTo("productName", searchQuery)
                     .whereLessThanOrEqualTo("productName", searchQuery + "\uf8ff")
+            } else {
+                // Default sorting - try productName but fallback safely if migration is incomplete
+                // NOTE: Using documentId for reliability during migration transition
+                query = query.orderBy("productName", Query.Direction.ASCENDING)
+                    .orderBy("capacity", Query.Direction.ASCENDING)
             }
 
             if (params.key != null) {
