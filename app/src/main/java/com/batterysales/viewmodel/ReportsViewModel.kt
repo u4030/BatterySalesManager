@@ -10,6 +10,7 @@ import com.batterysales.data.models.*
 import com.batterysales.data.repositories.*
 import com.batterysales.data.paging.InventoryPagingSource
 import com.batterysales.utils.Sextuple
+import com.batterysales.utils.SettingsManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -47,7 +48,7 @@ data class PurchaseOrderItem(
     val remainingBalance: Double,
     val referenceNumbers: List<String> = emptyList(),
     val items: List<StockEntry> = emptyList(),
-    val autoLinkedAmount: Double = 0.0, // المبلغ المرتبط تلقائياً من شيكات/كمبيالات أخرى
+    val autoLinkedAmount: Double = 0.0, // المبلغ المرتبط تلقائياً من شيكات/كمبيالة أخرى
     val hasManualLink: Boolean = false, // هل يوجد ربط يدوي (عن طريق الرقم أو الحقل المخصص)
     val totalActualPaid: Double = 0.0, // إجمالي المبالغ المسددة فعلياً (نقدياً) لهذه الطلبية
     val totalLinkedAmount: Double = 0.0 // إجمالي مبالغ الشيكات (الورقية) المرتبطة يدوياً وتلقائياً
@@ -72,7 +73,8 @@ class ReportsViewModel @Inject constructor(
     private val billRepository: BillRepository,
     private val oldBatteryRepository: OldBatteryRepository,
     private val userRepository: UserRepository,
-    private val firestore: FirebaseFirestore
+    private val firestore: FirebaseFirestore,
+    private val settingsManager: SettingsManager
 ) : ViewModel() {
 
     private val _isInventoryLoading = MutableStateFlow(false)
@@ -129,7 +131,6 @@ class ReportsViewModel @Inject constructor(
     val scrapWarehouses = _scrapWarehouses.asStateFlow()
 
     private val refreshTrigger = MutableStateFlow(0)
-    private var isMigrationRun = false
 
     // Helper flows to reduce combine arguments
     private val inventoryDates = combine(_inventoryStartDate, _inventoryEndDate) { s, e -> Pair(s, e) }
@@ -151,15 +152,22 @@ class ReportsViewModel @Inject constructor(
         .map { list -> list.associateBy { it.id } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
-    val allInventoryItemNames: StateFlow<List<String>> = combine(
+    // Intermediate flows to keep combine under 5 arguments
+    private val inventoryBaseData = combine(
         productsMap,
         productVariantRepository.getAllVariantsFlow(),
-        _isSeller,
-        userRepository.getCurrentUserFlow(),
-        inventoryDates,
+        isSeller,
+        userRepository.getCurrentUserFlow()
+    ) { pMap, variants, seller, user ->
+        com.batterysales.utils.Quadruple(pMap, variants, seller, user)
+    }
+
+    val allInventoryItemNames: StateFlow<List<String>> = combine(
+        inventoryBaseData,
         _barcodeFilter,
         refreshTrigger
-    ) { pMap, variants, seller, user, dates, query, _ ->
+    ) { base, query, _ ->
+        val (pMap, variants, seller, user) = base
         val userWhId = user?.warehouseId
 
         variants.filter { !it.archived }
@@ -184,10 +192,9 @@ class ReportsViewModel @Inject constructor(
         _barcodeFilter,
         filteredWarehouses,
         productsMap,
-        _isSeller,
-        inventoryDates,
-        refreshTrigger
-    ) { query, warehouseList, pMap, seller, dates, _ ->
+        isSeller,
+        inventoryDates
+    ) { query, warehouseList, pMap, seller, dates ->
         InventoryFilterParams(query, warehouseList, pMap, seller, dates.first, dates.second)
     }.flowOn(kotlinx.coroutines.Dispatchers.Default).flatMapLatest { params ->
         Pager(PagingConfig(pageSize = 25)) {
@@ -211,10 +218,10 @@ class ReportsViewModel @Inject constructor(
         // Run migration for existing data
         viewModelScope.launch {
             try {
-                if (!isMigrationRun) {
+                if (!settingsManager.isMigrationDone()) {
                     stockEntryRepository.migrateInvoiceDates()
                     stockEntryRepository.migrateAllVariants(productRepository, supplierRepository, billRepository)
-                    isMigrationRun = true
+                    settingsManager.setMigrationDone(true)
                 }
             } catch (e: Exception) {
                 Log.e("ReportsViewModel", "Migration failed", e)

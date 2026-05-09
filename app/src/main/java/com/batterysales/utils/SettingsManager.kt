@@ -37,4 +37,12 @@ class SettingsManager @Inject constructor(
         prefs.edit().putBoolean("scale_input_text", scale).apply()
         _scaleInputText.value = scale
     }
+
+    fun isMigrationDone(): Boolean {
+        return prefs.getBoolean("is_migration_done", false)
+    }
+
+    fun setMigrationDone(done: Boolean) {
+        prefs.edit().putBoolean("is_migration_done", done).apply()
+    }
 }

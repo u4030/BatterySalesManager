@@ -16,7 +16,7 @@ import kotlinx.coroutines.tasks.await
 class InventoryPagingSource(
     private val firestore: FirebaseFirestore,
     private val stockEntryRepository: StockEntryRepository,
-    private val productsMap: Map<String, Product>, // Legacy, kept for compatibility if needed
+    private val productsMap: Map<String, Product>,
     private val warehouseList: List<Warehouse>,
     private val searchQuery: String?,
     private val isSeller: Boolean = false,
@@ -32,15 +32,18 @@ class InventoryPagingSource(
             var query = firestore.collection(ProductVariant.COLLECTION_NAME)
                 .whereEqualTo("archived", false)
 
+            val isBarcodeSearch = !searchQuery.isNullOrBlank() && searchQuery.all { it.isDigit() }
+
             if (!searchQuery.isNullOrBlank()) {
-                // If searching, we filter by productName
-                query = query.orderBy("productName", Query.Direction.ASCENDING)
-                    .orderBy("capacity", Query.Direction.ASCENDING)
-                    .whereGreaterThanOrEqualTo("productName", searchQuery)
-                    .whereLessThanOrEqualTo("productName", searchQuery + "\uf8ff")
+                if (isBarcodeSearch) {
+                    query = query.whereEqualTo("barcode", searchQuery)
+                } else {
+                    query = query.orderBy("productName", Query.Direction.ASCENDING)
+                        .orderBy("capacity", Query.Direction.ASCENDING)
+                        .whereGreaterThanOrEqualTo("productName", searchQuery)
+                        .whereLessThanOrEqualTo("productName", searchQuery + "\uf8ff")
+                }
             } else {
-                // Default sorting - try productName but fallback safely if migration is incomplete
-                // NOTE: Using documentId for reliability during migration transition
                 query = query.orderBy("productName", Query.Direction.ASCENDING)
                     .orderBy("capacity", Query.Direction.ASCENDING)
             }
@@ -61,7 +64,7 @@ class InventoryPagingSource(
                         val filteredWhStock = whStock.filter { warehouseIds.contains(it.key) }
                         val totalQty = filteredWhStock.values.sum()
 
-                        // Date filtering logic (still requires one efficient count query per item ONLY if date filter is active)
+                        // Date filtering logic
                         if (startDate != null && endDate != null) {
                             val start = com.batterysales.utils.DateUtils.getStartOfDay(startDate)
                             val end = com.batterysales.utils.DateUtils.getEndOfDay(endDate)
@@ -71,8 +74,12 @@ class InventoryPagingSource(
 
                         if (isSeller && totalQty <= 0) return@async null
 
+                        // Fallback for names if denormalization hasn't run yet
+                        val pName = variant.productName.ifEmpty { productsMap[variant.productId]?.name ?: "منتج غير معروف" }
+                        val pSpec = variant.productSpecification.ifEmpty { productsMap[variant.productId]?.specification ?: "" }
+
                         InventoryReportItem(
-                            product = Product(id = variant.productId, name = variant.productName, specification = variant.productSpecification),
+                            product = Product(id = variant.productId, name = pName, specification = pSpec),
                             variant = variant,
                             warehouseQuantities = filteredWhStock,
                             totalQuantity = totalQty,
