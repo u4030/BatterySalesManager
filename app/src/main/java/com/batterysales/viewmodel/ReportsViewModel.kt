@@ -9,7 +9,6 @@ import androidx.paging.cachedIn
 import com.batterysales.data.models.*
 import com.batterysales.data.repositories.*
 import com.batterysales.data.paging.InventoryPagingSource
-import com.batterysales.utils.Sextuple
 import com.batterysales.utils.SettingsManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
@@ -48,10 +47,10 @@ data class PurchaseOrderItem(
     val remainingBalance: Double,
     val referenceNumbers: List<String> = emptyList(),
     val items: List<StockEntry> = emptyList(),
-    val autoLinkedAmount: Double = 0.0, // المبلغ المرتبط تلقائياً من شيكات/كمبيالة أخرى
-    val hasManualLink: Boolean = false, // هل يوجد ربط يدوي (عن طريق الرقم أو الحقل المخصص)
-    val totalActualPaid: Double = 0.0, // إجمالي المبالغ المسددة فعلياً (نقدياً) لهذه الطلبية
-    val totalLinkedAmount: Double = 0.0 // إجمالي مبالغ الشيكات (الورقية) المرتبطة يدوياً وتلقائياً
+    val autoLinkedAmount: Double = 0.0,
+    val hasManualLink: Boolean = false,
+    val totalActualPaid: Double = 0.0,
+    val totalLinkedAmount: Double = 0.0
 )
 
 private data class InventoryFilterParams(
@@ -60,7 +59,8 @@ private data class InventoryFilterParams(
     val products: Map<String, Product>,
     val seller: Boolean,
     val start: Long?,
-    val end: Long?
+    val end: Long?,
+    val trigger: Int
 )
 
 @HiltViewModel
@@ -86,7 +86,6 @@ class ReportsViewModel @Inject constructor(
     private val _isScrapLoading = MutableStateFlow(false)
     val isScrapLoading = _isScrapLoading.asStateFlow()
 
-    // Aggregate loading state
     val isLoading = combine(_isInventoryLoading, _isSupplierLoading, _isScrapLoading) { i, s, sc ->
         i || s || sc
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
@@ -132,15 +131,12 @@ class ReportsViewModel @Inject constructor(
 
     private val refreshTrigger = MutableStateFlow(0)
 
-    // Helper flows to reduce combine arguments
-    private val inventoryDates = combine(_inventoryStartDate, _inventoryEndDate) { s, e -> Pair(s, e) }
-
     val warehouses: StateFlow<List<Warehouse>> = warehouseRepository.getWarehouses()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val filteredWarehouses: StateFlow<List<Warehouse>> = combine(
         warehouses,
-        isSeller,
+        _isSeller,
         userRepository.getCurrentUserFlow()
     ) { allWh, seller, user ->
         val active = allWh.filter { it.isActive }
@@ -152,22 +148,20 @@ class ReportsViewModel @Inject constructor(
         .map { list -> list.associateBy { it.id } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
-    // Intermediate flows to keep combine under 5 arguments
-    private val inventoryBaseData = combine(
+    val allInventoryItemNames: StateFlow<List<String>> = combine(
         productsMap,
         productVariantRepository.getAllVariantsFlow(),
-        isSeller,
-        userRepository.getCurrentUserFlow()
-    ) { pMap, variants, seller, user ->
-        com.batterysales.utils.Quadruple(pMap, variants, seller, user)
-    }
-
-    val allInventoryItemNames: StateFlow<List<String>> = combine(
-        inventoryBaseData,
+        _isSeller,
+        userRepository.getCurrentUserFlow(),
         _barcodeFilter,
         refreshTrigger
-    ) { base, query, _ ->
-        val (pMap, variants, seller, user) = base
+    ) { args ->
+        val pMap = args[0] as Map<String, Product>
+        val variants = args[1] as List<ProductVariant>
+        val seller = args[2] as Boolean
+        val user = args[3] as User?
+        val query = args[4] as String?
+
         val userWhId = user?.warehouseId
 
         variants.filter { !it.archived }
@@ -188,14 +182,24 @@ class ReportsViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Suppress("UNCHECKED_CAST")
     val inventoryReport: Flow<PagingData<InventoryReportItem>> = combine(
         _barcodeFilter,
         filteredWarehouses,
         productsMap,
-        isSeller,
-        inventoryDates
-    ) { query, warehouseList, pMap, seller, dates ->
-        InventoryFilterParams(query, warehouseList, pMap, seller, dates.first, dates.second)
+        _isSeller,
+        _inventoryStartDate,
+        _inventoryEndDate,
+        refreshTrigger
+    ) { args ->
+        val query = args[0] as String?
+        val warehouseList = args[1] as List<Warehouse>
+        val pMap = args[2] as Map<String, Product>
+        val seller = args[3] as Boolean
+        val start = args[4] as Long?
+        val end = args[5] as Long?
+        val trigger = args[6] as Int
+        InventoryFilterParams(query, warehouseList, pMap, seller, start, end, trigger)
     }.flowOn(kotlinx.coroutines.Dispatchers.Default).flatMapLatest { params ->
         Pager(PagingConfig(pageSize = 25)) {
             InventoryPagingSource(firestore, stockEntryRepository, params.products, params.warehouses, params.query, params.seller, params.start, params.end)
@@ -215,7 +219,6 @@ class ReportsViewModel @Inject constructor(
             }
         }.launchIn(viewModelScope)
 
-        // Run migration for existing data
         viewModelScope.launch {
             try {
                 if (!settingsManager.isMigrationDone()) {
