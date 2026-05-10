@@ -451,15 +451,16 @@ class StockEntryRepository @Inject constructor(
 
     suspend fun getEntriesBySuppliers(supplierIds: List<String>): List<StockEntry> {
         if (supplierIds.isEmpty()) return emptyList()
-        val all = mutableListOf<StockEntry>()
-        supplierIds.chunked(30).forEach { chunk ->
+        val allEntries = mutableListOf<StockEntry>()
+        val chunks = supplierIds.chunked(30)
+        for (chunk in chunks) {
             val snap = firestore.collection(StockEntry.COLLECTION_NAME)
                 .whereIn("supplierId", chunk)
-                .whereEqualTo("status", "approved")
-                .get().await()
-            all.addAll(snap.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) })
+                .get()
+                .await()
+            allEntries.addAll(snap.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) })
         }
-        return all
+        return allEntries
     }
 
     suspend fun migrateInvoiceDates() {

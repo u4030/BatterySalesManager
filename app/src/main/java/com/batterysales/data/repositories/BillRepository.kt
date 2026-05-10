@@ -2,6 +2,7 @@ package com.batterysales.data.repositories
 
 import com.batterysales.data.models.Bill
 import com.batterysales.data.models.BillStatus
+import com.batterysales.data.models.BillType
 import com.google.firebase.firestore.AggregateField
 import com.google.firebase.firestore.AggregateSource
 import com.google.firebase.firestore.DocumentSnapshot
@@ -343,13 +344,15 @@ class BillRepository @Inject constructor(
     }
 
     suspend fun getLinkedAmounts(): Map<String, Double> {
-        val snapshot = firestore.collection(Bill.COLLECTION_NAME)
-            .whereNotEqualTo("relatedEntryId", null)
-            .get()
-            .await()
-        val bills = snapshot.documents.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) }
-        return bills.groupBy { it.relatedEntryId!! }
-            .mapValues { entry -> entry.value.sumOf { it.amount } }
+        val snapshot = firestore.collection(Bill.COLLECTION_NAME).get().await()
+        val bills = snapshot.documents.mapNotNull { it.toObject(Bill::class.java) }
+        val manual = bills.filter { it.relatedEntryId != null }.groupBy { it.relatedEntryId!! }.mapValues { (_, group) -> group.sumOf { it.amount } }
+        val auto = mutableMapOf<String, Double>()
+        bills.forEach { bill ->
+            bill.autoAllocations.forEach { (id, amount) -> auto[id] = (auto[id] ?: 0.0) + amount }
+        }
+        val result = manual.toMutableMap()
+        auto.forEach { (id, amount) -> result[id] = (result[id] ?: 0.0) + amount }
+        return result
     }
-
 }

@@ -2,7 +2,9 @@ package com.batterysales.di
 
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.storage.FirebaseStorage
+import com.google.firebase.firestore.FirebaseFirestoreSettings
+import com.google.firebase.firestore.MemoryCacheSettings
+import com.google.firebase.firestore.PersistentCacheSettings
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -21,19 +23,15 @@ object FirebaseModule {
 
     @Provides
     @Singleton
-    fun provideFirebaseFirestore(): FirebaseFirestore {
+    fun provideFirestore(): FirebaseFirestore {
         val firestore = FirebaseFirestore.getInstance()
-        val settings = com.google.firebase.firestore.firestoreSettings {
-            // Enable local cache for instant visibility
-            setLocalCacheSettings(com.google.firebase.firestore.PersistentCacheSettings.newBuilder().build())
-        }
-        firestore.firestoreSettings = settings
-        return firestore
-    }
 
-    @Provides
-    @Singleton
-    fun provideFirebaseStorage(): FirebaseStorage {
-        return FirebaseStorage.getInstance()
+        // Enable Offline Persistence for faster UI and lower quota usage
+        val settings = FirebaseFirestoreSettings.Builder()
+            .setLocalCacheSettings(PersistentCacheSettings.newBuilder().build())
+            .build()
+        firestore.firestoreSettings = settings
+
+        return firestore
     }
 }

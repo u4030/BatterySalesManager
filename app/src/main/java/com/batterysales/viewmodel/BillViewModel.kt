@@ -61,10 +61,10 @@ class BillViewModel @Inject constructor(
         val grouped = entries.groupBy { it.orderId.ifEmpty { it.id } }
         val result = grouped.mapNotNull { (key, group) ->
             val representative = group.first()
-            val totalOrderCost = if (representative.grandTotalCost > 0) representative.grandTotalCost else group.sumOf { it.totalCost }
+            val totalOrderCost = if (representative.grandTotalCost > 0) representative.grandTotalCost else group.sumOf { it.getNetCost() }
             val linkedAmount = linkedAmounts[key] ?: 0.0
             
-            if (linkedAmount < totalOrderCost - 0.001) {
+            if (linkedAmount < (totalOrderCost - 0.001)) {
                 representative.copy(
                     id = key,
                     totalCost = totalOrderCost - linkedAmount,
