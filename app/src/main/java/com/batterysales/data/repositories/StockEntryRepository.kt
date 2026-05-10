@@ -475,20 +475,44 @@ class StockEntryRepository @Inject constructor(
         val snapshot = firestore.collection(StockEntry.COLLECTION_NAME).get().await()
         val suppliersSnap = firestore.collection("suppliers").get().await()
         val suppliersMap = suppliersSnap.documents.associate { (it.getString("name") ?: "").trim().lowercase() to it.id }
-        val documentsToUpdate = snapshot.documents.filter { !it.contains("invoiceDate") || !it.contains("totalCost") || (it.getDouble("totalCost") ?: 0.0) == 0.0 || (it.getString("supplierId") ?: "").isEmpty() }
+
+        val documentsToUpdate = snapshot.documents.filter { doc ->
+            val hasRemaining = doc.contains("remainingBalance")
+            val hasSettled = doc.contains("isSettled")
+            !doc.contains("invoiceDate") || !doc.contains("totalCost") ||
+            (doc.getDouble("totalCost") ?: 0.0) == 0.0 ||
+            (doc.getString("supplierId") ?: "").isEmpty() ||
+            !hasRemaining || !hasSettled
+        }
+
         if (documentsToUpdate.isEmpty()) return
+
         documentsToUpdate.chunked(500).forEach { chunk ->
             val batch = firestore.batch()
             chunk.forEach { doc ->
                 val entry = doc.toObject(StockEntry::class.java) ?: return@forEach
                 val updates = mutableMapOf<String, Any>()
+
                 if (!doc.contains("invoiceDate")) updates["invoiceDate"] = entry.timestamp
-                if (!doc.contains("totalCost") || (doc.getDouble("totalCost") ?: 0.0) == 0.0) updates["totalCost"] = entry.quantity * entry.costPrice
+
+                val cost = if (!doc.contains("totalCost") || (doc.getDouble("totalCost") ?: 0.0) == 0.0)
+                            entry.quantity * entry.costPrice else entry.totalCost
+                if (!doc.contains("totalCost")) updates["totalCost"] = cost
+
                 val currentId = doc.getString("supplierId") ?: ""
                 if (currentId.isEmpty()) {
                     val name = (doc.getString("supplier") ?: "").trim().lowercase()
                     if (name.isNotEmpty() && suppliersMap.containsKey(name)) updates["supplierId"] = suppliersMap[name]!!
                 }
+
+                // Initialize Incremental FIFO fields for legacy records
+                if (!doc.contains("remainingBalance")) {
+                    updates["remainingBalance"] = if (cost < 0) 0.0 else cost
+                }
+                if (!doc.contains("isSettled")) {
+                    updates["isSettled"] = (cost < 0)
+                }
+
                 if (updates.isNotEmpty()) batch.update(doc.reference, updates)
             }
             batch.commit().await()

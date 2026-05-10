@@ -122,43 +122,44 @@ class ReportsViewModel @Inject constructor(
 
     private val refreshTrigger = MutableStateFlow(0)
 
-    // For Sidebar Navigation
-    @Suppress("UNCHECKED_CAST")
-    val allInventoryItemNames: StateFlow<List<String>> = combine(
-        productRepository.getProducts(),
-        productVariantRepository.getAllVariantsFlow(),
-        _isSeller,
-        userRepository.getCurrentUserFlow(),
-        _inventoryStartDate,
-        _inventoryEndDate,
-        _barcodeFilter,
-        refreshTrigger
-    ) { args ->
-        val products = args[0] as List<Product>
-        val variants = args[1] as List<ProductVariant>
-        val seller = args[2] as Boolean
-        val user = args[3] as User?
-        val query = args[6] as String?
+    // For Sidebar Navigation (Optimized: One-time fetch triggered by refresh)
+    private val _allInventoryItemNames = MutableStateFlow<List<String>>(emptyList())
+    val allInventoryItemNames = _allInventoryItemNames.asStateFlow()
 
-        val pMap = products.filter { !it.archived }.associateBy { it.id }
-        val userWhId = user?.warehouseId
+    private fun updateSidebarNames() {
+        viewModelScope.launch {
+            try {
+                val products = productRepository.getProductsOnce()
+                val variants = productVariantRepository.getAllVariants()
+                val user = userRepository.getCurrentUser()
+                val seller = user?.role == com.batterysales.data.models.User.ROLE_SELLER
+                val userWhId = user?.warehouseId
+                val query = _barcodeFilter.value
 
-        variants.filter { !it.archived }
-            .filter { v -> pMap.containsKey(v.productId) }
-            .filter { v ->
-                if (!seller || userWhId == null) true
-                else (v.currentStock?.get(userWhId) ?: 0) > 0
+                val pMap = products.filter { !it.archived }.associateBy { it.id }
+
+                val names = variants.filter { !it.archived }
+                    .filter { v -> pMap.containsKey(v.productId) }
+                    .filter { v ->
+                        if (!seller || userWhId == null) true
+                        else (v.currentStock?.get(userWhId) ?: 0) > 0
+                    }
+                    .filter { v ->
+                        if (query.isNullOrBlank()) true
+                        else {
+                            val pName = pMap[v.productId]?.name ?: ""
+                            pName.contains(query, ignoreCase = true) || v.barcode == query
+                        }
+                    }
+                    .sortedWith(compareBy<ProductVariant> { pMap[it.productId]?.name ?: "" }.thenBy { it.capacity })
+                    .map { v -> pMap[v.productId]?.name ?: "" }
+
+                _allInventoryItemNames.value = names
+            } catch (e: Exception) {
+                Log.e("ReportsViewModel", "Error updating sidebar", e)
             }
-            .filter { v ->
-                if (query.isNullOrBlank()) true
-                else {
-                    val pName = pMap[v.productId]?.name ?: ""
-                    pName.contains(query, ignoreCase = true) || v.barcode == query
-                }
-            }
-            .sortedWith(compareBy<ProductVariant> { pMap[it.productId]?.name ?: "" }.thenBy { it.capacity })
-            .map { v -> pMap[v.productId]?.name ?: "" }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        }
+    }
 
     val warehouses: StateFlow<List<Warehouse>> = warehouseRepository.getWarehouses()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -238,6 +239,7 @@ class ReportsViewModel @Inject constructor(
         loadInventoryReport(reset = true)
         loadScrapReport()
         loadSupplierReport()
+        updateSidebarNames()
     }
 
     fun onBarcodeScanned(barcode: String?) {
@@ -402,7 +404,14 @@ class ReportsViewModel @Inject constructor(
 
                             // Use denormalized remainingBalance if available, otherwise calculate
                             val totalOrderCost = group.sumOf { it.getNetCost() }
-                            val effectiveBalance = representative.remainingBalance ?: totalOrderCost
+
+                            // Legacy fallback: if remainingBalance is null and isSettled is false, use totalOrderCost
+                            // but if isSettled is true, balance must be 0.
+                            val effectiveBalance = when {
+                                representative.isSettled -> 0.0
+                                representative.remainingBalance != null -> representative.remainingBalance
+                                else -> totalOrderCost
+                            }
 
                             val manualLinkedBills: List<Bill> = supplierBills.filter { bill: Bill ->
                                 val ref = bill.referenceNumber.trim()
