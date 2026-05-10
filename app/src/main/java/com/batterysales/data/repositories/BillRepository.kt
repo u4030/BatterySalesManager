@@ -3,6 +3,8 @@ package com.batterysales.data.repositories
 import com.batterysales.data.models.Bill
 import com.batterysales.data.models.BillStatus
 import com.batterysales.data.models.BillType
+import com.batterysales.data.models.StockEntry
+import com.batterysales.data.models.Supplier
 import com.google.firebase.firestore.AggregateField
 import com.google.firebase.firestore.AggregateSource
 import com.google.firebase.firestore.DocumentSnapshot
@@ -50,7 +52,22 @@ class BillRepository @Inject constructor(
         val docRef = if (bill.id.isNotEmpty()) firestore.collection(Bill.COLLECTION_NAME).document(bill.id)
                     else firestore.collection(Bill.COLLECTION_NAME).document()
         val finalBill = bill.copy(id = docRef.id, createdAt = Date(), updatedAt = Date())
-        docRef.set(finalBill).await()
+
+        firestore.runTransaction { transaction ->
+            transaction.set(docRef, finalBill)
+
+            // Update Supplier Denormalized Totals (Credit only on creation/payment)
+            if (finalBill.supplierId.isNotEmpty()) {
+                val supplierRef = firestore.collection("suppliers").document(finalBill.supplierId)
+                // Add the paid amount directly to unallocated pool for FIFO
+                if (finalBill.paidAmount > 0) {
+                    transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(finalBill.paidAmount))
+                    transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-finalBill.paidAmount))
+                    transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(finalBill.paidAmount))
+                }
+            }
+        }.await()
+
         return docRef.id
     }
 
@@ -98,6 +115,8 @@ class BillRepository @Inject constructor(
                 val supplierRef = firestore.collection("suppliers").document(bill.supplierId)
                 transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(paymentAmount))
                 transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-paymentAmount))
+                // Add to unallocated pool for FIFO processing
+                transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(paymentAmount))
             }
 
             // Update Global System Stats
@@ -186,152 +205,66 @@ class BillRepository @Inject constructor(
     }
 
     /**
-     * يقوم بتوزيع مبالغ الشيكات والكمبيالات غير المرتبطة على فواتير المشتريات غير المسددة
-     * بنظام الأقدم فالأقدم (FIFO)
+     * Optimized Incremental FIFO:
+     * Uses the supplier's 'unallocatedCredit' pool to settle only 'isSettled = false' orders.
      */
     suspend fun autoLinkBillsForSupplier(supplierId: String, resetDate: Date? = null) {
         if (supplierId.isEmpty()) return
 
-        // Get supplier name to match legacy entries
-        val supplierDoc = firestore.collection("suppliers").document(supplierId).get().await()
-        val supplierName = (supplierDoc.getString("name") ?: "").trim().lowercase()
-
-        // 1. جلب كافة فواتير المشتريات المعتمدة للمورد
-        val allEntries = firestore.collection(com.batterysales.data.models.StockEntry.COLLECTION_NAME)
-            .whereEqualTo("status", "approved")
-            .get()
-            .await()
-            .documents.mapNotNull { it.toObject(com.batterysales.data.models.StockEntry::class.java)?.copy(id = it.id) }
-
-        val rawStockEntries = allEntries.filter { entry ->
-            val matchId = entry.supplierId == supplierId
-            val matchName = entry.supplier.trim().lowercase() == supplierName
-            (matchId || matchName) && (resetDate == null || !entry.getEffectiveDate().before(resetDate))
-        }
-
-        // توحيد أرقام الفواتير للقيود التي تتشارك نفس معرف الطلبية
-        val orderToInvoiceMap = rawStockEntries.filter { it.invoiceNumber.trim().isNotEmpty() && it.orderId.trim().isNotEmpty() }
-            .associate { it.orderId.trim() to it.invoiceNumber.trim() }
-        
-        val stockEntries = rawStockEntries.map { entry ->
-            val orderKey = entry.orderId.trim()
-            if (entry.invoiceNumber.trim().isEmpty() && orderKey.isNotEmpty() && orderToInvoiceMap.containsKey(orderKey)) {
-                entry.copy(invoiceNumber = orderToInvoiceMap[orderKey]!!)
-            } else entry
-        }
-
-        // تجميع الفواتير حسب رقم الفاتورة أولاً، ثم معرف الطلبية، ثم المعرف الفريد
-        val orders = stockEntries.groupBy { it.invoiceNumber.trim().ifEmpty { it.orderId.trim().ifEmpty { it.id } } }
-            .map { (key, group) ->
-                val totalCost = group.sumOf { it.getNetCost() }
-                val effectiveDate = group.minOf { it.getEffectiveDate() }
-                val sortingTimestamp = group.minOf { it.timestamp }
-                key to Triple(totalCost, effectiveDate, sortingTimestamp)
-            }
-            .sortedWith(compareBy<Pair<String, Triple<Double, Date, Date>>> { it.second.second }
-                .thenBy { it.second.third }
-                .thenBy { it.first }) // الترتيب حسب الأقدم
-
-        // 2. جلب كافة الشيكات والكمبيالات للمورد
-        val allBills = firestore.collection(Bill.COLLECTION_NAME)
+        // Perform read query outside transaction (Transactions don't support queries in Android SDK)
+        val ordersQuery = firestore.collection(StockEntry.COLLECTION_NAME)
             .whereEqualTo("supplierId", supplierId)
-            .get()
-            .await()
-            .documents.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) }
-            .filter { resetDate == null || !it.createdAt.before(resetDate) }
+            .whereEqualTo("status", "approved")
+            .whereEqualTo("isSettled", false)
+            .orderBy("invoiceDate", Query.Direction.ASCENDING)
+            .orderBy("timestamp", Query.Direction.ASCENDING)
+            .limit(20)
 
-        // فصل الروابط اليدوية لحساب المبالغ المتبقية في الفواتير
-        // نعتبر الربط يدوياً إذا كان الحقل relatedEntryId معبأ أو إذا كان رقم المرجع يطابق رقم الفاتورة
-        val manualLinks = mutableMapOf<String, Double>()
-        
-        // خريطة لربط كل قيد فريد بالمجموعة (الفاتورة) التي ينتمي إليها
-        val entryToOrderMap = stockEntries.associate { it.id to it.invoiceNumber.trim().ifEmpty { it.orderId.trim().ifEmpty { it.id } } }
+        val orderSnapshots = ordersQuery.get().await()
+        if (orderSnapshots.isEmpty) return
 
-        allBills.forEach { bill ->
-            if (bill.relatedEntryId != null) {
-                // إذا كان القيد المرتبط ينتمي لمجموعة، نربط المبلغ بالمجموعة كاملة
-                val targetId = entryToOrderMap[bill.relatedEntryId] ?: bill.relatedEntryId
-                val current = manualLinks.getOrDefault(targetId, 0.0)
-                manualLinks[targetId] = current + bill.amount
-            } else if (bill.referenceNumber.isNotEmpty()) {
-                val ref = bill.referenceNumber.trim()
-                // البحث عن فاتورة تطابق رقم المرجع (المرجع قد يكون رقم فاتورة أو معرف طلبية)
-                orders.find { it.first == ref }?.let { (orderId, _) ->
-                    val current = manualLinks.getOrDefault(orderId, 0.0)
-                    manualLinks[orderId] = current + bill.amount
-                }
-            }
-        }
-
-        // حساب الميزان المتبقي لكل فاتورة (إجمالي التكلفة - الروابط اليدوية)
-        val orderBalances = orders.map { (id, data) ->
-            val (totalCost, _, _) = data
-            id to (totalCost - (manualLinks[id] ?: 0.0))
-        }.filter { it.second > 0.001 }.toMutableList()
-
-        // 3. تحديد الشيكات المتاحة للربط التلقائي (غير مرتبطة يدوياً وغير مسددة كلياً)
-        // نستثني أيضاً الشيكات التي تم اعتبارها مرتبطة يدوياً عبر رقم المرجع
-        val manualLinkedBillIds = allBills.filter { bill ->
-            bill.relatedEntryId != null || 
-            (bill.referenceNumber.isNotEmpty() && orders.any { it.first == bill.referenceNumber.trim() })
-        }.map { it.id }.toSet()
-
-        val availableBills = allBills.filter { !manualLinkedBillIds.contains(it.id) }
-            .sortedBy { it.createdAt } // ربط الشيكات الأقدم أولاً
-
-        // 4. تنفيذ خوارزمية FIFO لتوزيع المبالغ
-        val billUpdates = mutableMapOf<String, Pair<List<String>, Map<String, Double>>>()
-
-        for (bill in availableBills) {
-            var billRemainingAmount = bill.amount
-            val linkedIds = mutableListOf<String>()
-            val allocations = mutableMapOf<String, Double>()
-
-            if (billRemainingAmount <= 0) {
-                billUpdates[bill.id] = emptyList<String>() to emptyMap<String, Double>()
-                continue
-            }
-
-            val iterator = orderBalances.iterator()
-            while (iterator.hasNext() && billRemainingAmount > 0.001) {
-                val orderBalanceEntry = iterator.next()
-                val orderId = orderBalanceEntry.first
-                var currentOrderBalance = orderBalanceEntry.second
-
-                val allocation = minOf(billRemainingAmount, currentOrderBalance)
-                
-                if (allocation > 0.001) {
-                    linkedIds.add(orderId)
-                    allocations[orderId] = allocation
-                    billRemainingAmount -= allocation
-                    currentOrderBalance -= allocation
-                    
-                    // تحديث الرصيد المتبقي للفاتورة في القائمة
-                    val index = orderBalances.indexOfFirst { it.first == orderId }
-                    if (index != -1) {
-                        orderBalances[index] = orderId to currentOrderBalance
-                    }
-                }
-            }
-            billUpdates[bill.id] = linkedIds to allocations
-        }
-
-        // 5. تحديث قاعدة البيانات بالروابط الجديدة
         firestore.runTransaction { transaction ->
-            // نقوم بمسح الروابط التلقائية القديمة للشيكات التي أصبحت الآن مرتبطة يدوياً
-            manualLinkedBillIds.forEach { billId ->
-                val docRef = firestore.collection(Bill.COLLECTION_NAME).document(billId)
-                transaction.update(docRef, "autoLinkedEntryIds", emptyList<String>())
-                transaction.update(docRef, "autoAllocations", emptyMap<String, Double>())
+            // 1. Get Supplier's Unallocated Credit
+            val supplierRef = firestore.collection("suppliers").document(supplierId)
+            val supplierSnap = transaction.get(supplierRef)
+            val supplier = supplierSnap.toObject(Supplier::class.java)
+
+            var unallocatedPool = supplier?.unallocatedCredit ?: 0.0
+            if (unallocatedPool <= 0.001) return@runTransaction
+
+            // 2. Process FIFO for the fetched orders
+            orderSnapshots.documents.forEach { doc ->
+                if (unallocatedPool <= 0.001) return@forEach
+
+                val order = doc.toObject(StockEntry::class.java)?.copy(id = doc.id) ?: return@forEach
+                if (order.totalCost <= 0) return@forEach
+
+                val currentBalance = order.remainingBalance ?: order.getNetCost()
+                if (currentBalance <= 0.001) {
+                    transaction.update(doc.reference, "isSettled", true)
+                    return@forEach
+                }
+
+                val allocation = minOf(unallocatedPool, currentBalance)
+                val newBalance = currentBalance - allocation
+                unallocatedPool -= allocation
+
+                val notes = order.settlementNotes.toMutableList()
+                if (allocation > 0.001) {
+                    notes.add("تسوية تلقائية من الرصيد: JD ${String.format("%.3f", allocation)}")
+                }
+
+                val updates = mutableMapOf<String, Any>(
+                    "remainingBalance" to newBalance,
+                    "isSettled" to (newBalance <= 0.001),
+                    "settlementNotes" to notes.distinct()
+                )
+
+                transaction.update(doc.reference, updates)
             }
 
-            billUpdates.forEach { (billId, data) ->
-                val (ids, allocations) = data
-                val docRef = firestore.collection(Bill.COLLECTION_NAME).document(billId)
-                transaction.update(docRef, "autoLinkedEntryIds", ids)
-                transaction.update(docRef, "autoAllocations", allocations)
-                transaction.update(docRef, "updatedAt", Date())
-            }
+            // 3. Update the supplier pool
+            transaction.update(supplierRef, "unallocatedCredit", unallocatedPool)
         }.await()
     }
 

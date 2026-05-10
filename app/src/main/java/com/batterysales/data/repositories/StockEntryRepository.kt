@@ -60,10 +60,18 @@ class StockEntryRepository @Inject constructor(
                         // Purchase: Increase Debit
                         transaction.update(supplierRef, "totalDebit", com.google.firebase.firestore.FieldValue.increment(cost))
                         transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(cost))
+
+                        // Initialize remainingBalance for new purchase
+                        transaction.update(docRef, "remainingBalance", cost)
                     } else if (cost < 0) {
-                        // Return: Increase Credit (represented as negative cost in entries)
+                        // Return: Increase Credit and add to Unallocated Pool
                         transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(-cost))
                         transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(cost))
+                        transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(-cost))
+
+                        // Returns are settled by default
+                        transaction.update(docRef, "isSettled", true)
+                        transaction.update(docRef, "remainingBalance", 0.0)
                     }
                 }
 

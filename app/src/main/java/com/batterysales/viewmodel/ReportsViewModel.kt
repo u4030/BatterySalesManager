@@ -365,10 +365,6 @@ class ReportsViewModel @Inject constructor(
                         val adjustedStart = start?.let { com.batterysales.utils.DateUtils.getStartOfDay(it) }
                         val adjustedEnd = end?.let { com.batterysales.utils.DateUtils.getEndOfDay(it) }
 
-                        val displayDebit = if (start == null && end == null) supplier.totalDebit else 0.0
-                        val displayCredit = if (start == null && end == null) supplier.totalCredit else 0.0
-                        val displayBalance = if (start == null && end == null) supplier.currentBalance else 0.0
-
                         val rawSupplierEntries: List<StockEntry> = allEntries.filter { entry: StockEntry ->
                             val matchId = entry.supplierId.isNotEmpty() && entry.supplierId == supplier.id
                             val matchName = entry.supplier.isNotBlank() &&
@@ -403,7 +399,10 @@ class ReportsViewModel @Inject constructor(
                             val group: List<StockEntry> = entryTuple.value
                             val key: String = entryTuple.key
                             val representative: StockEntry = group.first()
+
+                            // Use denormalized remainingBalance if available, otherwise calculate
                             val totalOrderCost = group.sumOf { it.getNetCost() }
+                            val effectiveBalance = representative.remainingBalance ?: totalOrderCost
 
                             val manualLinkedBills: List<Bill> = supplierBills.filter { bill: Bill ->
                                 val ref = bill.referenceNumber.trim()
@@ -419,9 +418,9 @@ class ReportsViewModel @Inject constructor(
                             val manualPaid = manualLinkedBills.sumOf { it.paidAmount }
                             val manualPaper = manualLinkedBills.sumOf { it.amount }
 
-                            val refs: List<String> = manualLinkedBills.filter { bill: Bill ->
+                            val refs: MutableList<String> = (manualLinkedBills.filter { bill ->
                                 bill.referenceNumber.isNotEmpty()
-                            }.map { bill: Bill ->
+                            }.map { bill ->
                                 val typeStr = when (bill.billType) {
                                     BillType.CHECK -> "شيك"
                                     BillType.BILL -> "كمبيالة"
@@ -431,126 +430,31 @@ class ReportsViewModel @Inject constructor(
                                     BillType.E_WALLET -> "محفظة"
                                 }
                                 "$typeStr: ${bill.referenceNumber}${if(bill.status != BillStatus.PAID) " (غير مسدد)" else ""}"
-                            }.distinct()
+                            }.distinct()).toMutableList()
+
+                            // Add automated notes stored in DB
+                            refs.addAll(representative.settlementNotes)
 
                             PurchaseOrderItem(
                                 entry = representative.copy(totalCost = totalOrderCost),
                                 linkedPaidAmount = manualPaid,
-                                remainingBalance = totalOrderCost,
-                                referenceNumbers = refs,
+                                remainingBalance = effectiveBalance,
+                                referenceNumbers = refs.distinct(),
                                 items = group,
                                 hasManualLink = manualLinkedBills.isNotEmpty(),
-                                totalActualPaid = manualPaid,
-                                totalLinkedAmount = manualPaper
+                                totalActualPaid = totalOrderCost - effectiveBalance,
+                                totalLinkedAmount = maxOf(manualPaper, totalOrderCost - effectiveBalance)
                             )
                         }
 
                         val positiveOrders: List<PurchaseOrderItem> = purchaseOrders.filter { it.entry.totalCost > 0 }
-                            .sortedWith(compareBy<PurchaseOrderItem> { it.entry.getEffectiveDate() }.thenBy { it.entry.timestamp })
+                            .sortedWith(compareByDescending<PurchaseOrderItem> { it.entry.getEffectiveDate() }.thenByDescending { it.entry.timestamp })
 
-                        data class BillFIFOState(
-                            val bill: Bill,
-                            var remainingPaper: Double,
-                            var remainingCash: Double
-                        )
+                        val totalDebit = if (start == null && end == null) supplier.totalDebit else positiveOrders.sumOf { it.entry.totalCost }
+                        val totalCredit = if (start == null && end == null) supplier.totalCredit else (supplierBills.sumOf { it.paidAmount } + purchaseOrders.filter { it.entry.totalCost < 0 }.sumOf { -it.entry.totalCost })
+                        val balance = if (start == null && end == null) supplier.currentBalance else (totalDebit - totalCredit)
 
-                        val availableBills: List<BillFIFOState> = supplierBills.sortedBy { it.createdAt }.map {
-                            BillFIFOState(it, it.amount, it.paidAmount)
-                        }
-
-                        val manualAdjustedOrders: List<PurchaseOrderItem> = positiveOrders.map { po: PurchaseOrderItem ->
-                            val cost = po.entry.totalCost
-                            val key = po.entry.invoiceNumber.trim().ifEmpty { po.entry.orderId.trim().ifEmpty { po.entry.id } }
-                            val orderIds: Set<String> = po.items.map { it.id }.toSet()
-
-                            val linkedBills = availableBills.filter { state: BillFIFOState ->
-                                val ref = state.bill.referenceNumber.trim()
-                                state.bill.relatedEntryId == key ||
-                                ref == key ||
-                                (ref.isNotEmpty() && (ref == po.entry.invoiceNumber.trim() || ref == po.entry.id)) ||
-                                orderIds.contains(state.bill.relatedEntryId)
-                            }
-
-                            var currentPaid = 0.0
-                            var currentPaper = 0.0
-                            linkedBills.forEach { state: BillFIFOState ->
-                                val takeP = minOf(state.remainingPaper, (cost - currentPaper).coerceAtLeast(0.0))
-                                val takeC = minOf(state.remainingCash, (cost - currentPaid).coerceAtLeast(0.0))
-
-                                state.remainingPaper -= takeP
-                                state.remainingCash -= takeC
-                                currentPaid += takeC
-                                currentPaper += takeP
-                            }
-
-                            po.copy(
-                                totalActualPaid = currentPaid,
-                                totalLinkedAmount = maxOf(currentPaid, currentPaper)
-                            )
-                        }
-
-                        var globalReturns = purchaseOrders.filter { it.entry.totalCost < 0 }.sumOf { -it.entry.totalCost }
-
-                        val processedOrders: List<PurchaseOrderItem> = manualAdjustedOrders.map { po: PurchaseOrderItem ->
-                            val cost = po.entry.totalCost
-                            var currentPaid = po.totalActualPaid
-                            var currentPaper = po.totalLinkedAmount
-                            val autoRefs = mutableListOf<String>()
-
-                            val takeReturns = minOf(globalReturns, (cost - currentPaid).coerceAtLeast(0.0))
-                            globalReturns -= takeReturns
-                            currentPaid += takeReturns
-                            currentPaper = maxOf(currentPaper, currentPaid)
-                            if (takeReturns > 0.001) autoRefs.add("خصم مرتجعات مواد: JD ${String.format("%.3f", takeReturns)}")
-
-                            availableBills.forEach { state: BillFIFOState ->
-                                val remainingToPay = (cost - currentPaid).coerceAtLeast(0.0)
-                                val remainingToCover = (cost - currentPaper).coerceAtLeast(0.0)
-
-                                val takeC = minOf(state.remainingCash, remainingToPay)
-                                val takeP = minOf(state.remainingPaper, remainingToCover)
-
-                                if (takeP > 0.001 || takeC > 0.001) {
-                                    state.remainingCash -= takeC
-                                    state.remainingPaper -= takeP
-                                    currentPaid += takeC
-                                    currentPaper += takeP
-
-                                    val typeStr = when (state.bill.billType) {
-                                        BillType.CHECK -> "شيك"
-                                        BillType.BILL -> "كمبيالة"
-                                        BillType.TRANSFER -> "تحويل"
-                                        BillType.CASH -> "نقدي"
-                                        BillType.VISA -> "فيزا"
-                                        BillType.E_WALLET -> "محفظة"
-                                    }
-
-                                    if (takeC > 0.001 && takeC >= takeP - 0.001) {
-                                        autoRefs.add("تسوية من رصيد نقدي ($typeStr: ${state.bill.referenceNumber})")
-                                    } else if (takeP > 0.001) {
-                                        autoRefs.add("$typeStr: ${state.bill.referenceNumber} (ربط تلقائي - تغطية)")
-                                    }
-                                }
-                            }
-
-                            po.copy(
-                                totalActualPaid = currentPaid,
-                                remainingBalance = (cost - currentPaid).coerceAtLeast(0.0),
-                                totalLinkedAmount = currentPaper,
-                                autoLinkedAmount = currentPaper - po.totalLinkedAmount,
-                                referenceNumbers = (po.referenceNumbers + autoRefs).distinct()
-                            )
-                        }.sortedWith(compareByDescending<PurchaseOrderItem> { it.entry.getEffectiveDate() }.thenByDescending { it.entry.timestamp })
-
-                        val calcDebit = positiveOrders.sumOf { it.entry.totalCost }
-                        val calcCredit = supplierBills.sumOf { it.paidAmount } + purchaseOrders.filter { it.entry.totalCost < 0 }.sumOf { -it.entry.totalCost }
-                        val calcBalance = calcDebit - calcCredit
-
-                        val totalDebit = if (start == null && end == null && displayDebit > 0) displayDebit else calcDebit
-                        val totalCredit = if (start == null && end == null && displayCredit > 0) displayCredit else calcCredit
-                        val balance = if (start == null && end == null && (displayDebit > 0 || displayCredit > 0)) displayBalance else calcBalance
-
-                        val finalOrdersForDisplay: List<PurchaseOrderItem> = processedOrders.filter { po: PurchaseOrderItem ->
+                        val finalOrdersForDisplay: List<PurchaseOrderItem> = positiveOrders.filter { po: PurchaseOrderItem ->
                             (adjustedStart == null || po.entry.getEffectiveDate().time >= adjustedStart) &&
                                     (adjustedEnd == null || po.entry.getEffectiveDate().time <= adjustedEnd)
                         }
