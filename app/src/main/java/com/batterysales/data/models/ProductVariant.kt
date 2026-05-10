@@ -1,5 +1,6 @@
 package com.batterysales.data.models
 
+import com.google.firebase.firestore.Exclude
 import java.util.Date
 
 /**
@@ -26,8 +27,10 @@ data class ProductVariant(
         const val COLLECTION_NAME = "product_variants"
     }
 
+    @Exclude
     fun isValid(): Boolean = productId.isNotBlank() && capacity > 0
 
+    @Exclude
     fun getValidationError(): String? {
         return when {
             productId.isBlank() -> "معرف المنتج الأساسي مطلوب"
