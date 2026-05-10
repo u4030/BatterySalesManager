@@ -131,7 +131,10 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                         actions = {
                             HeaderIconButton(
                                 icon = Icons.Default.Refresh,
-                                onClick = { viewModel.refreshAll() },
+                                onClick = {
+                                    viewModel.refreshAll()
+                                    pagingItems.refresh()
+                                },
                                 contentDescription = "Refresh"
                             )
                         }
@@ -190,9 +193,40 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                                 InventoryReportControls(viewModel)
                             }
 
+                            val loadState = pagingItems.loadState.refresh
+                            if (loadState is androidx.paging.LoadState.Error) {
+                                item {
+                                    Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Text("حدث خطأ أثناء تحميل البيانات", color = MaterialTheme.colorScheme.error)
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            Button(onClick = { pagingItems.retry() }) {
+                                                Text("إعادة المحاولة")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
                             if (pagingItems.itemCount > 0 && !currentTabLoading) {
                                 item {
                                     GrandTotalCard(totalQuantity = grandTotalQuantity, isSeller = isSeller)
+                                }
+                            }
+
+                            if (pagingItems.itemCount == 0 && !currentTabLoading && loadState !is androidx.paging.LoadState.Error) {
+                                item {
+                                    Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Icon(Icons.Default.Inventory, contentDescription = null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+                                            Spacer(modifier = Modifier.height(16.dp))
+                                            Text("لا يوجد بيانات في المخزون حالياً", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            TextButton(onClick = { viewModel.refreshAll(); pagingItems.refresh() }) {
+                                                Text("تحديث القائمة")
+                                            }
+                                        }
+                                    }
                                 }
                             }
 
@@ -720,7 +754,7 @@ fun SupplierReportControls(viewModel: ReportsViewModel) {
             onClick = { showDatePicker = true },
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            colors = CardDefaults.cardColors(MaterialTheme.colorScheme.surface),
             border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
         ) {
             Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {

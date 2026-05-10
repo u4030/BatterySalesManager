@@ -6,6 +6,7 @@ import com.batterysales.data.models.*
 import com.batterysales.data.repositories.StockEntryRepository
 import com.batterysales.viewmodel.InventoryReportItem
 import com.google.firebase.firestore.DocumentSnapshot
+import com.google.firebase.firestore.FieldPath
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import kotlinx.coroutines.async
@@ -28,9 +29,7 @@ class InventoryPagingSource(
 
     override suspend fun load(params: LoadParams<DocumentSnapshot>): LoadResult<DocumentSnapshot, InventoryReportItem> {
         return try {
-            // Base query.
-            // IMPORTANT: Removed whereEqualTo("archived", false) to include legacy documents missing the field.
-            // Sorting by productId and capacity to ensure visibility of documents missing "productName".
+            // BASE QUERY: documentId is 100% reliable for paginated visibility.
             var query: Query = firestore.collection(ProductVariant.COLLECTION_NAME)
 
             val isBarcodeSearch = !searchQuery.isNullOrBlank() && searchQuery.all { it.isDigit() }
@@ -39,17 +38,13 @@ class InventoryPagingSource(
                 if (isBarcodeSearch) {
                     query = query.whereEqualTo("barcode", searchQuery)
                 } else {
-                    // If searching by name, we MUST use productName sort for Firestore inequality filter.
-                    // This means pre-migration items won't appear in name-searched results until migrated.
+                    // Search by Name: Requires index on productName.
                     query = query.orderBy("productName", Query.Direction.ASCENDING)
-                        .orderBy("capacity", Query.Direction.ASCENDING)
                         .whereGreaterThanOrEqualTo("productName", searchQuery)
                         .whereLessThanOrEqualTo("productName", searchQuery + "\uf8ff")
                 }
             } else {
-                // DEFAULT SORT: Use productId to ensure ALL records are visible (including legacy).
-                query = query.orderBy("productId", Query.Direction.ASCENDING)
-                    .orderBy("capacity", Query.Direction.ASCENDING)
+                query = query.orderBy(FieldPath.documentId(), Query.Direction.ASCENDING)
             }
 
             if (params.key != null) {
@@ -57,42 +52,59 @@ class InventoryPagingSource(
             }
 
             val snapshot = query.limit(params.loadSize.toLong()).get().await()
-            val variants = snapshot.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }
+            val variants = snapshot.documents.mapNotNull { doc ->
+                try {
+                    doc.toObject(ProductVariant::class.java)?.copy(id = doc.id)
+                } catch (e: Exception) {
+                    null
+                }
+            }
             val lastDoc = snapshot.documents.lastOrNull()
 
             val data = coroutineScope {
                 variants.map { variant ->
                     async {
-                        // Filter archived in-memory to handle legacy missing fields
+                        // MEMORY FILTER: Treat missing/null archived as false
                         if (variant.archived) return@async null
 
                         val warehouseIds = warehouseList.map { it.id }.toSet()
 
-                        // Fallback for stock if currentStock is null (migration in progress)
-                        val whStock = if (variant.currentStock != null) {
-                            variant.currentStock.filter { warehouseIds.contains(it.key) }
-                        } else {
-                            // On-the-fly calculation for visible warehouses
-                            warehouseList.associate { wh ->
-                                wh.id to stockEntryRepository.getVariantQuantity(variant.id, wh.id)
+                        // STOCK CALCULATION: Robust fallback
+                        val whStock = try {
+                            if (variant.currentStock != null) {
+                                variant.currentStock.filter { warehouseIds.contains(it.key) }
+                            } else {
+                                if (warehouseList.isEmpty()) {
+                                    emptyMap<String, Int>()
+                                } else {
+                                    warehouseList.associate { wh ->
+                                        wh.id to stockEntryRepository.getVariantQuantity(variant.id, wh.id)
+                                    }
+                                }
                             }
+                        } catch (e: Exception) {
+                            emptyMap<String, Int>()
                         }
 
                         val totalQty = whStock.values.sum()
 
-                        // Date filtering logic
+                        // DATE FILTERING:
                         if (startDate != null && endDate != null) {
                             val start = com.batterysales.utils.DateUtils.getStartOfDay(startDate)
                             val end = com.batterysales.utils.DateUtils.getEndOfDay(endDate)
-                            val hasActivity = stockEntryRepository.hasActivityInRange(variant.id, start, end)
+                            val hasActivity = try {
+                                stockEntryRepository.hasActivityInRange(variant.id, start, end)
+                            } catch (e: Exception) {
+                                true
+                            }
                             if (!hasActivity) return@async null
                         }
 
                         if (isSeller && totalQty <= 0) return@async null
 
-                        // Fallback for names if denormalization hasn't run yet
-                        val pName = variant.productName.ifEmpty { productsMap[variant.productId]?.name ?: "منتج غير معروف" }
-                        val pSpec = variant.productSpecification.ifEmpty { productsMap[variant.productId]?.specification ?: "" }
+                        // FALLBACK FOR NAMES:
+                        val pName = variant.productName?.takeIf { it.isNotEmpty() } ?: productsMap[variant.productId]?.name ?: "منتج غير معروف"
+                        val pSpec = variant.productSpecification?.takeIf { it.isNotEmpty() } ?: productsMap[variant.productId]?.specification ?: ""
 
                         InventoryReportItem(
                             product = Product(id = variant.productId, name = pName, specification = pSpec),

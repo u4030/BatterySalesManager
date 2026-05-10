@@ -93,17 +93,17 @@ class ReportsViewModel @Inject constructor(
     private val _barcodeFilter = MutableStateFlow<String?>(null)
     val barcodeFilter = _barcodeFilter.asStateFlow()
 
-    private val _startDate = MutableStateFlow<Long?>(null)
-    val startDate = _startDate.asStateFlow()
-
-    private val _endDate = MutableStateFlow<Long?>(null)
-    val endDate = _endDate.asStateFlow()
-
     private val _inventoryStartDate = MutableStateFlow<Long?>(null)
     val inventoryStartDate = _inventoryStartDate.asStateFlow()
 
     private val _inventoryEndDate = MutableStateFlow<Long?>(null)
     val inventoryEndDate = _inventoryEndDate.asStateFlow()
+
+    private val _startDate = MutableStateFlow<Long?>(null)
+    val startDate = _startDate.asStateFlow()
+
+    private val _endDate = MutableStateFlow<Long?>(null)
+    val endDate = _endDate.asStateFlow()
 
     private val _isSeller = MutableStateFlow(false)
     val isSeller = _isSeller.asStateFlow()
@@ -156,7 +156,9 @@ class ReportsViewModel @Inject constructor(
         _barcodeFilter,
         refreshTrigger
     ) { args ->
+        @Suppress("UNCHECKED_CAST")
         val pMap = args[0] as Map<String, Product>
+        @Suppress("UNCHECKED_CAST")
         val variants = args[1] as List<ProductVariant>
         val seller = args[2] as Boolean
         val user = args[3] as User?
@@ -192,14 +194,15 @@ class ReportsViewModel @Inject constructor(
         _inventoryEndDate,
         refreshTrigger
     ) { args ->
-        val query = args[0] as String?
-        val warehouseList = args[1] as List<Warehouse>
-        val pMap = args[2] as Map<String, Product>
-        val seller = args[3] as Boolean
-        val start = args[4] as Long?
-        val end = args[5] as Long?
-        val trigger = args[6] as Int
-        InventoryFilterParams(query, warehouseList, pMap, seller, start, end, trigger)
+        InventoryFilterParams(
+            query = args[0] as String?,
+            warehouses = args[1] as List<Warehouse>,
+            products = args[2] as Map<String, Product>,
+            seller = args[3] as Boolean,
+            start = args[4] as Long?,
+            end = args[5] as Long?,
+            trigger = args[6] as Int
+        )
     }.flowOn(kotlinx.coroutines.Dispatchers.Default).flatMapLatest { params ->
         Pager(PagingConfig(pageSize = 25)) {
             InventoryPagingSource(firestore, stockEntryRepository, params.products, params.warehouses, params.query, params.seller, params.start, params.end)
@@ -360,8 +363,8 @@ class ReportsViewModel @Inject constructor(
                 val allEntriesJob = async { stockEntryRepository.getEntriesBySuppliers(supplierIds) }
                 val allBillsJob = async { billRepository.getBillsBySuppliers(supplierIds) }
 
-                val allEntries = allEntriesJob.await()
-                val allBills = allBillsJob.await()
+                val allEntries: List<StockEntry> = allEntriesJob.await()
+                val allBills: List<Bill> = allBillsJob.await()
 
                 val report = suppliers.map { supplier ->
                     async {
@@ -372,7 +375,7 @@ class ReportsViewModel @Inject constructor(
                         val displayCredit = if (start == null && end == null) supplier.totalCredit else 0.0
                         val displayBalance = if (start == null && end == null) supplier.currentBalance else 0.0
 
-                        val rawSupplierEntries = allEntries.filter { entry ->
+                        val rawSupplierEntries = allEntries.filter { entry: StockEntry ->
                             val matchId = entry.supplierId.isNotEmpty() && entry.supplierId == supplier.id
                             val matchName = entry.supplier.isNotBlank() &&
                                     (entry.supplier.trim().equals(supplier.name.trim(), ignoreCase = true) ||
@@ -386,14 +389,14 @@ class ReportsViewModel @Inject constructor(
                         val orderToInvoiceMap = rawSupplierEntries.filter { it.invoiceNumber.trim().isNotEmpty() && it.orderId.trim().isNotEmpty() }
                             .associate { it.orderId.trim() to it.invoiceNumber.trim() }
                         
-                        val supplierEntries = rawSupplierEntries.map { entry ->
+                        val supplierEntries = rawSupplierEntries.map { entry: StockEntry ->
                             val orderKey = entry.orderId.trim()
                             if (entry.invoiceNumber.trim().isEmpty() && orderKey.isNotEmpty() && orderToInvoiceMap.containsKey(orderKey)) {
                                 entry.copy(invoiceNumber = orderToInvoiceMap[orderKey]!!)
                             } else entry
                         }
 
-                        val supplierBills = allBills.filter { bill ->
+                        val supplierBills = allBills.filter { bill: Bill ->
                             bill.supplierId == supplier.id &&
                                     (supplier.resetDate == null || !bill.createdAt.before(supplier.resetDate))
                         }
@@ -401,7 +404,7 @@ class ReportsViewModel @Inject constructor(
                         val groupedEntries = supplierEntries
                             .groupBy { it.invoiceNumber.trim().ifEmpty { it.orderId.trim().ifEmpty { it.id } } }
 
-                        val purchaseOrders = groupedEntries.map { (key, group) ->
+                        val purchaseOrders = groupedEntries.map { (key: String, group: List<StockEntry>) ->
                             val representative = group.first()
                             val totalOrderCost = group.sumOf { it.getNetCost() }
 
@@ -411,7 +414,7 @@ class ReportsViewModel @Inject constructor(
                                 ref == key || 
                                 (ref.isNotEmpty() && (ref == representative.invoiceNumber.trim() || ref == representative.id)) ||
                                 group.any { entry -> 
-                                    entry.id == bill.relatedEntryId || 
+                                    (entry.id == bill.relatedEntryId) ||
                                     (ref.isNotEmpty() && ref == entry.invoiceNumber.trim()) 
                                 }
                             }.distinctBy { it.id }
@@ -468,7 +471,7 @@ class ReportsViewModel @Inject constructor(
                                 state.bill.relatedEntryId == key ||
                                 ref == key ||
                                 (ref.isNotEmpty() && (ref == po.entry.invoiceNumber.trim() || ref == po.entry.id)) ||
-                                orderIds.contains(state.bill.relatedEntryId)
+                                orderIds.contains(state.bill.relatedEntryId ?: "")
                             }
 
                             var currentPaid = 0.0
@@ -537,7 +540,7 @@ class ReportsViewModel @Inject constructor(
                                 totalActualPaid = currentPaid,
                                 remainingBalance = (cost - currentPaid).coerceAtLeast(0.0),
                                 totalLinkedAmount = currentPaper,
-                                autoLinkedAmount = currentPaper - po.totalLinkedAmount,
+                                autoLinkedAmount = (currentPaper - po.totalLinkedAmount).coerceAtLeast(0.0),
                                 referenceNumbers = (po.referenceNumbers + autoRefs).distinct()
                             )
                         }.sortedWith(compareByDescending<PurchaseOrderItem> { it.entry.getEffectiveDate() }.thenByDescending { it.entry.timestamp })
@@ -550,15 +553,17 @@ class ReportsViewModel @Inject constructor(
                         val totalCredit = if (start == null && end == null && displayCredit > 0) displayCredit else calcCredit
                         val balance = if (start == null && end == null && (displayDebit > 0 || displayCredit > 0)) displayBalance else calcBalance
 
-                        val finalOrdersForDisplay = processedOrders.filter { po ->
+                        val finalOrdersForDisplay = processedOrders.filter { po: PurchaseOrderItem ->
                             (adjustedStart == null || po.entry.getEffectiveDate().time >= adjustedStart) &&
                                     (adjustedEnd == null || po.entry.getEffectiveDate().time <= adjustedEnd)
                         }
 
-                        val (obligated, regular) = finalOrdersForDisplay.partition { po ->
+                        val partitioning = finalOrdersForDisplay.partition { po: PurchaseOrderItem ->
                             val isFullyCovered = po.totalLinkedAmount >= po.entry.totalCost - 0.001
                             po.hasManualLink || isFullyCovered
                         }
+                        val obligated = partitioning.first
+                        val regular = partitioning.second
 
                         val targetProgress = if (supplier.yearlyTarget > 0) totalDebit / supplier.yearlyTarget else 0.0
 
