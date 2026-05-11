@@ -16,7 +16,7 @@ import kotlinx.coroutines.tasks.await
 class InventoryPagingSource(
     private val firestore: FirebaseFirestore,
     private val stockEntryRepository: StockEntryRepository,
-    private val productsMap: Map<String, Product>, // Legacy, kept for compatibility if needed
+    private val productsMap: Map<String, Product>,
     private val warehouseList: List<Warehouse>,
     private val searchQuery: String?,
     private val isSeller: Boolean = false,
@@ -33,14 +33,12 @@ class InventoryPagingSource(
                 .whereEqualTo("archived", false)
 
             if (!searchQuery.isNullOrBlank()) {
-                // If searching, we filter by productName
                 query = query.orderBy("productName", Query.Direction.ASCENDING)
                     .orderBy("capacity", Query.Direction.ASCENDING)
                     .whereGreaterThanOrEqualTo("productName", searchQuery)
                     .whereLessThanOrEqualTo("productName", searchQuery + "\uf8ff")
             } else {
-                // Default sorting - try productName but fallback safely if migration is incomplete
-                // NOTE: Using documentId for reliability during migration transition
+                // Optimized sort using productName (denormalized)
                 query = query.orderBy("productName", Query.Direction.ASCENDING)
                     .orderBy("capacity", Query.Direction.ASCENDING)
             }
@@ -56,12 +54,25 @@ class InventoryPagingSource(
             val data = coroutineScope {
                 variants.map { variant ->
                     async {
-                        val whStock = variant.currentStock ?: emptyMap()
+                        // High Performance: Use currentStock map
+                        // Fallback: If currentStock is null (migration pending), calculate on-the-fly for THIS document only
                         val warehouseIds = warehouseList.map { it.id }.toSet()
-                        val filteredWhStock = whStock.filter { warehouseIds.contains(it.key) }
-                        val totalQty = filteredWhStock.values.sum()
 
-                        // Date filtering logic (still requires one efficient count query per item ONLY if date filter is active)
+                        val whStock = if (variant.currentStock != null) {
+                            variant.currentStock.filter { warehouseIds.contains(it.key) }
+                        } else {
+                            // Target calculation fallback to guarantee data visibility
+                            val calculatedStock = mutableMapOf<String, Int>()
+                            warehouseIds.forEach { wid ->
+                                val qty = stockEntryRepository.getVariantQuantity(variant.id, wid)
+                                if (qty != 0) calculatedStock[wid] = qty
+                            }
+                            calculatedStock
+                        }
+
+                        val totalQty = whStock.values.sum()
+
+                        // Date filtering
                         if (startDate != null && endDate != null) {
                             val start = com.batterysales.utils.DateUtils.getStartOfDay(startDate)
                             val end = com.batterysales.utils.DateUtils.getEndOfDay(endDate)
@@ -74,7 +85,7 @@ class InventoryPagingSource(
                         InventoryReportItem(
                             product = Product(id = variant.productId, name = variant.productName ?: "", specification = variant.productSpecification ?: ""),
                             variant = variant,
-                            warehouseQuantities = filteredWhStock,
+                            warehouseQuantities = whStock,
                             totalQuantity = totalQty,
                             averageCost = variant.weightedAverageCost,
                             totalCostValue = totalQty * variant.weightedAverageCost
@@ -89,7 +100,7 @@ class InventoryPagingSource(
                 nextKey = if (snapshot.size() < params.loadSize) null else lastDoc
             )
         } catch (e: Exception) {
-            android.util.Log.e("InventoryPagingSource", "Zero-Logic Load error", e)
+            android.util.Log.e("InventoryPagingSource", "Load error", e)
             LoadResult.Error(e)
         }
     }
