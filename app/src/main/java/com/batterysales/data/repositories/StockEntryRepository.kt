@@ -312,6 +312,8 @@ class StockEntryRepository @Inject constructor(
             val variantRefs = variantIds.associateWith { firestore.collection(com.batterysales.data.models.ProductVariant.COLLECTION_NAME).document(it) }
             val variantSnapshots = variantRefs.mapValues { (_, ref) -> transaction.get(ref) }
 
+            val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
+
             // 2. Writes
             transaction.set(docRef, entry)
 
@@ -322,7 +324,16 @@ class StockEntryRepository @Inject constructor(
                 val currentStockMap = variant?.currentStock ?: emptyMap()
                 val stockMap = updatedVariantsStock.getOrPut(oldEntry.productVariantId) { currentStockMap.toMutableMap() }
                 val current = stockMap[oldEntry.warehouseId] ?: 0
-                stockMap[oldEntry.warehouseId] = current - (oldEntry.quantity - oldEntry.returnedQuantity)
+                val netQty = (oldEntry.quantity - oldEntry.returnedQuantity)
+                stockMap[oldEntry.warehouseId] = current - netQty
+
+                // Reverse stats
+                val cost = oldEntry.getNetCost()
+                transaction.update(statsRef, mapOf(
+                    "totalInventoryQuantity" to com.google.firebase.firestore.FieldValue.increment(-netQty.toLong()),
+                    "totalInventoryValue" to com.google.firebase.firestore.FieldValue.increment(-cost),
+                    "totalSupplierDebt" to com.google.firebase.firestore.FieldValue.increment(-cost)
+                ))
             }
 
             if (entry.status == "approved") {
@@ -330,7 +341,16 @@ class StockEntryRepository @Inject constructor(
                 val currentStockMap = initialVariant?.currentStock ?: emptyMap()
                 val stockMap = updatedVariantsStock.getOrPut(entry.productVariantId) { currentStockMap.toMutableMap() }
                 val current = stockMap[entry.warehouseId] ?: 0
-                stockMap[entry.warehouseId] = current + (entry.quantity - entry.returnedQuantity)
+                val netQty = (entry.quantity - entry.returnedQuantity)
+                stockMap[entry.warehouseId] = current + netQty
+
+                // Add stats
+                val cost = entry.getNetCost()
+                transaction.update(statsRef, mapOf(
+                    "totalInventoryQuantity" to com.google.firebase.firestore.FieldValue.increment(netQty.toLong()),
+                    "totalInventoryValue" to com.google.firebase.firestore.FieldValue.increment(cost),
+                    "totalSupplierDebt" to com.google.firebase.firestore.FieldValue.increment(cost)
+                ))
             }
 
             // Apply all accumulated updates
@@ -357,6 +377,30 @@ class StockEntryRepository @Inject constructor(
                 val newStockMap = currentStockMap.toMutableMap()
                 newStockMap[oldEntry.warehouseId] = (newStockMap[oldEntry.warehouseId] ?: 0) - (oldEntry.quantity - oldEntry.returnedQuantity)
                 transaction.update(variantRef, "currentStock", newStockMap)
+
+                // Reverse Global Stats and Supplier totals if applicable
+                val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
+                val cost = oldEntry.getNetCost()
+                val qty = oldEntry.quantity - oldEntry.returnedQuantity
+
+                transaction.update(statsRef, mapOf(
+                    "totalInventoryQuantity" to com.google.firebase.firestore.FieldValue.increment(-qty.toLong()),
+                    "totalInventoryValue" to com.google.firebase.firestore.FieldValue.increment(-cost),
+                    "totalSupplierDebt" to com.google.firebase.firestore.FieldValue.increment(-cost),
+                    "updatedAt" to java.util.Date()
+                ))
+
+                if (oldEntry.supplierId.isNotEmpty()) {
+                    val supplierRef = firestore.collection("suppliers").document(oldEntry.supplierId)
+                    if (cost > 0) {
+                        transaction.update(supplierRef, "totalDebit", com.google.firebase.firestore.FieldValue.increment(-cost))
+                        transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-cost))
+                    } else if (cost < 0) {
+                        transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(cost))
+                        transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-cost))
+                        transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(cost))
+                    }
+                }
             }
         }.await()
     }

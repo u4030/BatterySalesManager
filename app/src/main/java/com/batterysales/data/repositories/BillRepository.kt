@@ -205,26 +205,34 @@ class BillRepository @Inject constructor(
     }
 
     /**
-     * Optimized Incremental FIFO:
-     * Uses the supplier's 'unallocatedCredit' pool to settle only 'isSettled = false' orders.
+     * Refactored Incremental FIFO for Grouped Orders:
+     * Treats grouped StockEntries (Invoices) as single entities to ensure accurate balance tracking.
      */
     suspend fun autoLinkBillsForSupplier(supplierId: String, resetDate: Date? = null) {
         if (supplierId.isEmpty()) return
 
-        // Perform read query outside transaction (Transactions don't support queries in Android SDK)
+        // 1. Get ALL unsettled entries for this supplier to group them correctly
+        // (Efficiency: we only get unsettled ones, still better than full history)
         val ordersQuery = firestore.collection(StockEntry.COLLECTION_NAME)
             .whereEqualTo("supplierId", supplierId)
             .whereEqualTo("status", "approved")
             .whereEqualTo("isSettled", false)
             .orderBy("invoiceDate", Query.Direction.ASCENDING)
             .orderBy("timestamp", Query.Direction.ASCENDING)
-            .limit(20)
 
-        val orderSnapshots = ordersQuery.get().await()
-        if (orderSnapshots.isEmpty) return
+        val entrySnapshots = ordersQuery.get().await()
+        if (entrySnapshots.isEmpty) return
+
+        val allEntries = entrySnapshots.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
+
+        // Group entries by Invoice/OrderId
+        val groupedEntries = allEntries.groupBy { it.invoiceNumber.trim().ifEmpty { it.orderId.trim().ifEmpty { it.id } } }
+
+        // Order groups by effective date
+        val orderedGroups = groupedEntries.values.sortedBy { it.first().getEffectiveDate() }
 
         firestore.runTransaction { transaction ->
-            // 1. Get Supplier's Unallocated Credit
+            // 2. Get Supplier's Unallocated Credit
             val supplierRef = firestore.collection("suppliers").document(supplierId)
             val supplierSnap = transaction.get(supplierRef)
             val supplier = supplierSnap.toObject(Supplier::class.java)
@@ -232,38 +240,44 @@ class BillRepository @Inject constructor(
             var unallocatedPool = supplier?.unallocatedCredit ?: 0.0
             if (unallocatedPool <= 0.001) return@runTransaction
 
-            // 2. Process FIFO for the fetched orders
-            orderSnapshots.documents.forEach { doc ->
+            // 3. Process FIFO per GROUP
+            orderedGroups.forEach { group ->
                 if (unallocatedPool <= 0.001) return@forEach
 
-                val order = doc.toObject(StockEntry::class.java)?.copy(id = doc.id) ?: return@forEach
-                if (order.totalCost <= 0) return@forEach
+                val representative = group.first()
+                val groupTotalCost = group.sumOf { it.getNetCost() }
 
-                val currentBalance = order.remainingBalance ?: order.getNetCost()
-                if (currentBalance <= 0.001) {
-                    transaction.update(doc.reference, "isSettled", true)
+                // Track remaining balance for the entire group
+                // Note: In denormalized mode, remainingBalance is stored on EVERY document in the group
+                // to make reports easier, but it represents the ENTIRE group balance.
+                val currentGroupBalance = representative.remainingBalance ?: groupTotalCost
+                if (currentGroupBalance <= 0.001) {
+                    group.forEach { doc -> transaction.update(firestore.collection(StockEntry.COLLECTION_NAME).document(doc.id), "isSettled", true) }
                     return@forEach
                 }
 
-                val allocation = minOf(unallocatedPool, currentBalance)
-                val newBalance = currentBalance - allocation
+                val allocation = minOf(unallocatedPool, currentGroupBalance)
+                val newGroupBalance = currentGroupBalance - allocation
                 unallocatedPool -= allocation
 
-                val notes = order.settlementNotes.toMutableList()
+                val notes = representative.settlementNotes.toMutableList()
                 if (allocation > 0.001) {
-                    notes.add("تسوية تلقائية من الرصيد: JD ${String.format("%.3f", allocation)}")
+                    notes.add("تسوية تلقائية: JD ${String.format("%.3f", allocation)}")
                 }
 
                 val updates = mutableMapOf<String, Any>(
-                    "remainingBalance" to newBalance,
-                    "isSettled" to (newBalance <= 0.001),
+                    "remainingBalance" to newGroupBalance,
+                    "isSettled" to (newGroupBalance <= 0.001),
                     "settlementNotes" to notes.distinct()
                 )
 
-                transaction.update(doc.reference, updates)
+                // Apply update to ALL documents in the group to keep them synchronized
+                group.forEach { doc ->
+                    transaction.update(firestore.collection(StockEntry.COLLECTION_NAME).document(doc.id), updates)
+                }
             }
 
-            // 3. Update the supplier pool
+            // 4. Update the supplier pool
             transaction.update(supplierRef, "unallocatedCredit", unallocatedPool)
         }.await()
     }

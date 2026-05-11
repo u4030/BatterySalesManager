@@ -53,6 +53,13 @@ fun AppNavigation(navController: NavHostController) {
         composable("approvals") { ApprovalsScreen(navController) }
         composable("suppliers") { SupplierManagementScreen(navController) }
         composable(
+            route = "supplier_details/{supplierId}",
+            arguments = listOf(navArgument("supplierId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val supplierId = backStackEntry.arguments?.getString("supplierId") ?: ""
+            SupplierDetailsScreen(supplierId = supplierId, navController = navController)
+        }
+        composable(
             route = "product_ledger/{variantId}/{productName}/{variantCapacity}/{variantSpecification}?warehouseId={warehouseId}",
             arguments = listOf(
                 navArgument("variantId") { type = NavType.StringType },
