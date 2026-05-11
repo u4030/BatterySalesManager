@@ -24,56 +24,121 @@ class OldBatteryRepository @Inject constructor(
             }
     }
 
-    suspend fun addTransaction(transaction: OldBatteryTransaction) {
+    suspend fun addTransaction(transaction: OldBatteryTransaction): String {
+        val docRef = if (transaction.id.isNotBlank()) {
+            firestore.collection(OldBatteryTransaction.COLLECTION_NAME).document(transaction.id)
+        } else {
+            firestore.collection(OldBatteryTransaction.COLLECTION_NAME).document()
+        }
+        val idToUse = if (transaction.id.isNotBlank()) transaction.id else docRef.id
+        val finalTransaction = transaction.copy(id = idToUse)
+
         firestore.runTransaction { firestoreTransaction ->
-            val docRef = if (transaction.id.isNotBlank()) {
-                firestore.collection(OldBatteryTransaction.COLLECTION_NAME).document(transaction.id)
-            } else {
-                firestore.collection(OldBatteryTransaction.COLLECTION_NAME).document()
-            }
-            val idToUse = if (transaction.id.isNotBlank()) transaction.id else docRef.id
-            val finalTransaction = transaction.copy(id = idToUse)
-            
-            // 1. All Reads
-            val scrapWhRef = firestore.collection(com.batterysales.data.models.ScrapWarehouse.COLLECTION_NAME)
-                .whereEqualTo("parentWarehouseId", transaction.warehouseId)
-                .limit(1)
-            
-            // Note: Query in transaction requires knowing the document ID.
-            // We'll perform the sync after the transaction if we can't get the ID here,
-            // but ideally we should update the model to store the scrapWarehouseId directly.
-            // For now, we'll use a safer approach: execute addition and then use a helper to sync.
             firestoreTransaction.set(docRef, finalTransaction)
         }.await()
-        syncScrapWarehouse(transaction.warehouseId)
+
+        // Update ScrapWarehouse totals incrementally to save quota
+        updateScrapWarehouseTotals(
+            parentWarehouseId = transaction.warehouseId,
+            quantityDelta = when (transaction.type) {
+                OldBatteryTransactionType.INTAKE -> transaction.quantity
+                OldBatteryTransactionType.SALE -> -transaction.quantity
+                OldBatteryTransactionType.ADJUSTMENT -> transaction.quantity
+            },
+            amperesDelta = when (transaction.type) {
+                OldBatteryTransactionType.INTAKE -> transaction.totalAmperes
+                OldBatteryTransactionType.SALE -> -transaction.totalAmperes
+                OldBatteryTransactionType.ADJUSTMENT -> transaction.totalAmperes
+            }
+        )
+        return idToUse
     }
 
     suspend fun updateTransaction(transaction: OldBatteryTransaction) {
-        // Fetch old transaction to calculate diff
         val oldDoc = firestore.collection(OldBatteryTransaction.COLLECTION_NAME).document(transaction.id).get().await()
         val oldTrans = oldDoc.toObject(OldBatteryTransaction::class.java)
+
+        if (oldTrans != null) {
+            // 1. Revert old totals
+            updateScrapWarehouseTotals(
+                parentWarehouseId = oldTrans.warehouseId,
+                quantityDelta = when (oldTrans.type) {
+                    OldBatteryTransactionType.INTAKE -> -oldTrans.quantity
+                    OldBatteryTransactionType.SALE -> oldTrans.quantity
+                    OldBatteryTransactionType.ADJUSTMENT -> -oldTrans.quantity
+                },
+                amperesDelta = when (oldTrans.type) {
+                    OldBatteryTransactionType.INTAKE -> -oldTrans.totalAmperes
+                    OldBatteryTransactionType.SALE -> oldTrans.totalAmperes
+                    OldBatteryTransactionType.ADJUSTMENT -> -oldTrans.totalAmperes
+                }
+            )
+        }
 
         firestore.collection(OldBatteryTransaction.COLLECTION_NAME)
             .document(transaction.id)
             .set(transaction)
             .await()
         
-        syncScrapWarehouse(transaction.warehouseId)
-        if (oldTrans != null && oldTrans.warehouseId != transaction.warehouseId) {
-            syncScrapWarehouse(oldTrans.warehouseId)
-        }
+        // 2. Apply new totals
+        updateScrapWarehouseTotals(
+            parentWarehouseId = transaction.warehouseId,
+            quantityDelta = when (transaction.type) {
+                OldBatteryTransactionType.INTAKE -> transaction.quantity
+                OldBatteryTransactionType.SALE -> -transaction.quantity
+                OldBatteryTransactionType.ADJUSTMENT -> transaction.quantity
+            },
+            amperesDelta = when (transaction.type) {
+                OldBatteryTransactionType.INTAKE -> transaction.totalAmperes
+                OldBatteryTransactionType.SALE -> -transaction.totalAmperes
+                OldBatteryTransactionType.ADJUSTMENT -> transaction.totalAmperes
+            }
+        )
     }
 
     suspend fun deleteTransaction(id: String) {
         val oldDoc = firestore.collection(OldBatteryTransaction.COLLECTION_NAME).document(id).get().await()
         val oldTrans = oldDoc.toObject(OldBatteryTransaction::class.java)
 
+        if (oldTrans != null) {
+            updateScrapWarehouseTotals(
+                parentWarehouseId = oldTrans.warehouseId,
+                quantityDelta = when (oldTrans.type) {
+                    OldBatteryTransactionType.INTAKE -> -oldTrans.quantity
+                    OldBatteryTransactionType.SALE -> oldTrans.quantity
+                    OldBatteryTransactionType.ADJUSTMENT -> -oldTrans.quantity
+                },
+                amperesDelta = when (oldTrans.type) {
+                    OldBatteryTransactionType.INTAKE -> -oldTrans.totalAmperes
+                    OldBatteryTransactionType.SALE -> oldTrans.totalAmperes
+                    OldBatteryTransactionType.ADJUSTMENT -> -oldTrans.totalAmperes
+                }
+            )
+        }
+
         firestore.collection(OldBatteryTransaction.COLLECTION_NAME)
             .document(id)
             .delete()
             .await()
+    }
+
+    private suspend fun updateScrapWarehouseTotals(parentWarehouseId: String, quantityDelta: Int, amperesDelta: Double) {
+        if (quantityDelta == 0 && Math.abs(amperesDelta) < 0.001) return
+
+        val snapshot = firestore.collection(com.batterysales.data.models.ScrapWarehouse.COLLECTION_NAME)
+            .whereEqualTo("parentWarehouseId", parentWarehouseId)
+            .get()
+            .await()
         
-        oldTrans?.let { syncScrapWarehouse(it.warehouseId) }
+        if (snapshot.isEmpty) {
+            syncScrapWarehouse(parentWarehouseId)
+        } else {
+            val docRef = snapshot.documents.first().reference
+            firestore.runTransaction { transaction ->
+                transaction.update(docRef, "totalQuantity", com.google.firebase.firestore.FieldValue.increment(quantityDelta.toLong()))
+                transaction.update(docRef, "totalAmperes", com.google.firebase.firestore.FieldValue.increment(amperesDelta))
+            }.await()
+        }
     }
 
     /**
@@ -120,46 +185,39 @@ class OldBatteryRepository @Inject constructor(
         batch.commit().await()
     }
 
+    /**
+     * Optimized summary retrieval from pre-calculated ScrapWarehouse documents.
+     */
     suspend fun getStockSummary(warehouseId: String? = null): Pair<Int, Double> {
+        if (warehouseId != null) {
+            val snap = firestore.collection(com.batterysales.data.models.ScrapWarehouse.COLLECTION_NAME)
+                .whereEqualTo("parentWarehouseId", warehouseId)
+                .limit(1).get().await()
+            val scrapWh = snap.documents.firstOrNull()?.toObject(com.batterysales.data.models.ScrapWarehouse::class.java)
+            if (scrapWh != null) return Pair(scrapWh.totalQuantity, scrapWh.totalAmperes)
+        } else {
+            val snap = firestore.collection(com.batterysales.data.models.ScrapWarehouse.COLLECTION_NAME).get().await()
+            val list = snap.documents.mapNotNull { it.toObject(com.batterysales.data.models.ScrapWarehouse::class.java) }
+            if (list.isNotEmpty()) return Pair(list.sumOf { it.totalQuantity }, list.sumOf { it.totalAmperes })
+        }
+
+        // Deep fallback only if summary document is missing
         var baseQuery: Query = firestore.collection(OldBatteryTransaction.COLLECTION_NAME)
         if (warehouseId != null) {
             baseQuery = baseQuery.whereEqualTo("warehouseId", warehouseId)
         }
 
-        // Aggregate INTAKE
-        val intakeQuery = baseQuery.whereEqualTo("type", OldBatteryTransactionType.INTAKE.name)
-        val intakeSnap = intakeQuery.aggregate(
-            AggregateField.sum("quantity"),
-            AggregateField.sum("totalAmperes")
-        ).get(AggregateSource.SERVER).await()
+        val intakeSnap = baseQuery.whereEqualTo("type", OldBatteryTransactionType.INTAKE.name)
+            .aggregate(AggregateField.sum("quantity"), AggregateField.sum("totalAmperes")).get(AggregateSource.SERVER).await()
+        val saleSnap = baseQuery.whereEqualTo("type", OldBatteryTransactionType.SALE.name)
+            .aggregate(AggregateField.sum("quantity"), AggregateField.sum("totalAmperes")).get(AggregateSource.SERVER).await()
+        val adjSnap = baseQuery.whereEqualTo("type", OldBatteryTransactionType.ADJUSTMENT.name)
+            .aggregate(AggregateField.sum("quantity"), AggregateField.sum("totalAmperes")).get(AggregateSource.SERVER).await()
 
-        // Aggregate SALE
-        val saleQuery = baseQuery.whereEqualTo("type", OldBatteryTransactionType.SALE.name)
-        val saleSnap = saleQuery.aggregate(
-            AggregateField.sum("quantity"),
-            AggregateField.sum("totalAmperes")
-        ).get(AggregateSource.SERVER).await()
+        val totalQty = (intakeSnap.getLong(AggregateField.sum("quantity")) ?: 0) - (saleSnap.getLong(AggregateField.sum("quantity")) ?: 0) + (adjSnap.getLong(AggregateField.sum("quantity")) ?: 0)
+        val totalAmps = (intakeSnap.getDouble(AggregateField.sum("totalAmperes")) ?: 0.0) - (saleSnap.getDouble(AggregateField.sum("totalAmperes")) ?: 0.0) + (adjSnap.getDouble(AggregateField.sum("totalAmperes")) ?: 0.0)
 
-        // Aggregate ADJUSTMENT
-        val adjQuery = baseQuery.whereEqualTo("type", OldBatteryTransactionType.ADJUSTMENT.name)
-        val adjSnap = adjQuery.aggregate(
-            AggregateField.sum("quantity"),
-            AggregateField.sum("totalAmperes")
-        ).get(AggregateSource.SERVER).await()
-
-        val intakeQty = intakeSnap.getLong(AggregateField.sum("quantity"))?.toInt() ?: 0
-        val intakeAmps = intakeSnap.getDouble(AggregateField.sum("totalAmperes")) ?: 0.0
-
-        val saleQty = saleSnap.getLong(AggregateField.sum("quantity"))?.toInt() ?: 0
-        val saleAmps = saleSnap.getDouble(AggregateField.sum("totalAmperes")) ?: 0.0
-
-        val adjQty = adjSnap.getLong(AggregateField.sum("quantity"))?.toInt() ?: 0
-        val adjAmps = adjSnap.getDouble(AggregateField.sum("totalAmperes")) ?: 0.0
-
-        val totalQty = intakeQty - saleQty + adjQty
-        val totalAmps = intakeAmps - saleAmps + adjAmps
-
-        return Pair(totalQty, totalAmps)
+        return Pair(totalQty.toInt(), totalAmps)
     }
 
     suspend fun getTransactionsPaginated(

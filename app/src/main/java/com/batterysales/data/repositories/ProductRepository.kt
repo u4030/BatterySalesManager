@@ -12,8 +12,12 @@ class ProductRepository @Inject constructor(
     private val firestore: FirebaseFirestore
 ) {
 
-    fun getProducts(): Flow<List<Product>> = callbackFlow {
+    /**
+     * Warning: Broad listener. Use targeted queries or pagination for large lists.
+     */
+    fun getProducts(limit: Long = 1000): Flow<List<Product>> = callbackFlow {
         val listenerRegistration = firestore.collection(Product.COLLECTION_NAME)
+            .limit(limit)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     close(error)
@@ -27,13 +31,13 @@ class ProductRepository @Inject constructor(
         awaitClose { listenerRegistration.remove() }
     }
 
-    suspend fun getProductsOnce(): List<Product> {
-        val snapshot = firestore.collection(Product.COLLECTION_NAME).get().await()
+    suspend fun getProductsOnce(limit: Long = 1000): List<Product> {
+        val snapshot = firestore.collection(Product.COLLECTION_NAME).limit(limit).get().await()
         return snapshot.documents.mapNotNull { it.toObject(Product::class.java)?.copy(id = it.id) }
     }
 
-    suspend fun getAllProducts(): List<Product> {
-        val snapshot = firestore.collection(Product.COLLECTION_NAME).get().await()
+    suspend fun getAllProducts(limit: Long = 1000): List<Product> {
+        val snapshot = firestore.collection(Product.COLLECTION_NAME).limit(limit).get().await()
         return snapshot.documents.mapNotNull { it.toObject(Product::class.java)?.copy(id = it.id) }
     }
 
@@ -51,11 +55,22 @@ class ProductRepository @Inject constructor(
         docRef.set(finalProduct).await()
     }
 
-    suspend fun updateProduct(product: Product) {
+    suspend fun updateProduct(product: Product, stockEntryRepository: StockEntryRepository? = null) {
         firestore.collection(Product.COLLECTION_NAME)
             .document(product.id)
             .set(product)
             .await()
+
+        // Sync denormalized names in variants if product name changed
+        stockEntryRepository?.let { repo ->
+            val variantsSnap = firestore.collection(com.batterysales.data.models.ProductVariant.COLLECTION_NAME)
+                .whereEqualTo("productId", product.id)
+                .get().await()
+
+            variantsSnap.documents.forEach { doc ->
+                repo.syncVariantStock(doc.id, product)
+            }
+        }
     }
 
     suspend fun deleteProduct(productId: String) {

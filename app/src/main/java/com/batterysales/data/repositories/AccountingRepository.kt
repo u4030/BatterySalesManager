@@ -22,8 +22,12 @@ class AccountingRepository @Inject constructor(
         return snapshot.documents.mapNotNull { it.toObject(Transaction::class.java)?.copy(id = it.id) }
     }
 
-    suspend fun getAllExpenses(): List<Expense> {
+    /**
+     * Warning: Fetches the ENTIRE collection.
+     */
+    suspend fun getAllExpenses(limit: Long = 1000): List<Expense> {
         val snapshot = firestore.collection(Expense.COLLECTION_NAME)
+            .limit(limit)
             .get()
             .await()
         return snapshot.documents.mapNotNull { it.toObject(Expense::class.java)?.copy(id = it.id) }
@@ -125,7 +129,21 @@ class AccountingRepository @Inject constructor(
         val docRef = if (transaction.id.isEmpty()) firestore.collection(Transaction.COLLECTION_NAME).document()
         else firestore.collection(Transaction.COLLECTION_NAME).document(transaction.id)
         val finalTransaction = transaction.copy(id = docRef.id)
-        docRef.set(finalTransaction).await()
+
+        firestore.runTransaction { transactionOp ->
+            transactionOp.set(docRef, finalTransaction)
+
+            // Update Global Cash Balance
+            if (finalTransaction.paymentMethod == "cash") {
+                val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
+                val change = when (finalTransaction.type) {
+                    TransactionType.INCOME, TransactionType.PAYMENT -> finalTransaction.amount
+                    TransactionType.EXPENSE, TransactionType.REFUND -> -finalTransaction.amount
+                }
+                transactionOp.update(statsRef, "totalCashBalance", com.google.firebase.firestore.FieldValue.increment(change))
+            }
+        }.await()
+
         return docRef.id
     }
 
@@ -158,13 +176,47 @@ class AccountingRepository @Inject constructor(
             batch.set(expenseRef, finalExpense)
             batch.set(transactionRef, transaction)
         }.await()
+
+        // Update Stats (Global Cash)
+        if (transaction.paymentMethod == "cash") {
+            firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
+                .update("totalCashBalance", com.google.firebase.firestore.FieldValue.increment(-transaction.amount))
+                .await()
+        }
     }
 
     suspend fun updateTransaction(transaction: Transaction) {
-        val batch = firestore.batch()
         val docRef = firestore.collection(Transaction.COLLECTION_NAME).document(transaction.id)
-        batch.set(docRef, transaction)
 
+        firestore.runTransaction { transactionOp ->
+            val oldDoc = transactionOp.get(docRef)
+            val oldTrans = oldDoc.toObject(Transaction::class.java)
+
+            transactionOp.set(docRef, transaction)
+
+            // Update Global Cash Balance
+            val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
+
+            // 1. Reverse old
+            if (oldTrans != null && oldTrans.paymentMethod == "cash") {
+                val oldChange = when (oldTrans.type) {
+                    TransactionType.INCOME, TransactionType.PAYMENT -> -oldTrans.amount
+                    TransactionType.EXPENSE, TransactionType.REFUND -> oldTrans.amount
+                }
+                transactionOp.update(statsRef, "totalCashBalance", com.google.firebase.firestore.FieldValue.increment(oldChange))
+            }
+
+            // 2. Apply new
+            if (transaction.paymentMethod == "cash") {
+                val newChange = when (transaction.type) {
+                    TransactionType.INCOME, TransactionType.PAYMENT -> transaction.amount
+                    TransactionType.EXPENSE, TransactionType.REFUND -> -transaction.amount
+                }
+                transactionOp.update(statsRef, "totalCashBalance", com.google.firebase.firestore.FieldValue.increment(newChange))
+            }
+        }.await()
+
+        val batch = firestore.batch()
         // If this transaction has a relatedId, or is pointed to by another transaction via relatedId, sync them.
         // For simple transfers, we sync amount and part of description if they are linked.
         val relatedId = transaction.relatedId
@@ -191,30 +243,40 @@ class AccountingRepository @Inject constructor(
     }
 
     suspend fun deleteTransaction(transactionId: String) {
-        val batch = firestore.batch()
         val docRef = firestore.collection(Transaction.COLLECTION_NAME).document(transactionId)
 
-        // Get the transaction to check for relatedId
-        val doc = docRef.get().await()
-        if (doc.exists()) {
+        val relatedId = firestore.runTransaction { transactionOp ->
+            val doc = transactionOp.get(docRef)
             val trans = doc.toObject(Transaction::class.java)
-            val relatedId = trans?.relatedId
+            val relId = trans?.relatedId
 
-            batch.delete(docRef)
+            transactionOp.delete(docRef)
 
-            // Delete the counterpart if it exists
-            if (relatedId != null) {
-                batch.delete(firestore.collection(Transaction.COLLECTION_NAME).document(relatedId))
+            // Update Global Cash Balance
+            if (trans != null && trans.paymentMethod == "cash") {
+                val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
+                val change = when (trans.type) {
+                    TransactionType.INCOME, TransactionType.PAYMENT -> -trans.amount
+                    TransactionType.EXPENSE, TransactionType.REFUND -> trans.amount
+                }
+                transactionOp.update(statsRef, "totalCashBalance", com.google.firebase.firestore.FieldValue.increment(change))
             }
+            relId
+        }.await()
 
-            // Also delete any transaction that points TO this one
-            val pointingSnap = firestore.collection(Transaction.COLLECTION_NAME)
-                .whereEqualTo("relatedId", transactionId)
-                .get().await()
+        val batch = firestore.batch()
+        // Delete the counterpart if it exists
+        if (relatedId != null) {
+            batch.delete(firestore.collection(Transaction.COLLECTION_NAME).document(relatedId))
+        }
 
-            pointingSnap.documents.forEach { pointingDoc ->
-                batch.delete(pointingDoc.reference)
-            }
+        // Also delete any transaction that points TO this one
+        val pointingSnap = firestore.collection(Transaction.COLLECTION_NAME)
+            .whereEqualTo("relatedId", transactionId)
+            .get().await()
+
+        pointingSnap.documents.forEach { pointingDoc ->
+            batch.delete(pointingDoc.reference)
         }
 
         batch.commit().await()

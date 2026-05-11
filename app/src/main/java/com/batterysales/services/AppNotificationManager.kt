@@ -36,7 +36,7 @@ class AppNotificationManager @Inject constructor(
     private var pendingEntriesListener: com.google.firebase.firestore.ListenerRegistration? = null
     private var pendingRequestsListener: com.google.firebase.firestore.ListenerRegistration? = null
     private var upcomingBillsListener: com.google.firebase.firestore.ListenerRegistration? = null
-    private var lowStockJob: kotlinx.coroutines.Job? = null
+    private var lowStockListener: com.google.firebase.firestore.ListenerRegistration? = null
 
     fun startListening() {
         if (isInitialized) return
@@ -49,14 +49,14 @@ class AppNotificationManager @Inject constructor(
                 pendingEntriesListener?.remove()
                 pendingRequestsListener?.remove()
                 upcomingBillsListener?.remove()
-                lowStockJob?.cancel()
+                lowStockListener?.remove()
 
                 if (user != null) {
                     setupRealtimeListeners(user)
                     if (user.role != User.ROLE_SELLER) {
                         setupUpcomingBillsListener()
                     }
-                    setupLowStockListener()
+                    setupTargetedLowStockListener()
                 } else {
                     notifiedLowStockKeys.clear()
                     notifiedBillIds.clear()
@@ -200,39 +200,35 @@ class AppNotificationManager @Inject constructor(
         }
     }
 
-    private fun setupLowStockListener() {
-        lowStockJob?.cancel()
+    /**
+     * Improved Targeted Low Stock Listener:
+     * Listens for ALL document changes in StockEntry and checks every affected variant.
+     */
+    private fun setupTargetedLowStockListener() {
+        lowStockListener?.remove()
 
-        // Setup a listener for NEW Stock Entries to trigger targeted low stock checks
-        // This avoids periodic full-database scans while maintaining near real-time accuracy.
         var isFirstSnapshot = true
-        lowStockJob = firestore.collection(StockEntry.COLLECTION_NAME)
+        lowStockListener = firestore.collection(StockEntry.COLLECTION_NAME)
             .orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING)
-            .limit(1)
+            .limit(10) // Limit to 10 for snapshot startup efficiency
             .addSnapshotListener { snapshot, e ->
                 if (e != null) return@addSnapshotListener
+                if (snapshot == null) return@addSnapshotListener
 
                 if (isFirstSnapshot) {
                     isFirstSnapshot = false
-                    // Perform initial check on startup
-                    scope.launch { performFullLowStockCheck(isStartup = true) }
                     return@addSnapshotListener
                 }
 
-                // If not first snapshot and no error, a new stock movement happened
-                // We perform a full check to ensure no missed notifications,
-                // but only after a slight debounce to handle batches.
-                scope.launch {
-                    delay(2000)
-                    performFullLowStockCheck(isStartup = false)
-                }
-            }.let { registration ->
-                // Return a job that removes the listener when cancelled
-                scope.launch {
-                    try {
-                        kotlinx.coroutines.awaitCancellation()
-                    } finally {
-                        registration.remove()
+                snapshot.documentChanges.forEach { change ->
+                    if (change.type == com.google.firebase.firestore.DocumentChange.Type.ADDED) {
+                        val entry = change.document.toObject(StockEntry::class.java)
+                        // Verify approval status before notifying
+                        if (entry.status == StockEntry.STATUS_APPROVED) {
+                            scope.launch {
+                                checkVariantLowStock(entry.productVariantId, entry.warehouseId)
+                            }
+                        }
                     }
                 }
             }
@@ -246,12 +242,8 @@ class AppNotificationManager @Inject constructor(
             val threshold = variant.minQuantities[warehouseId] ?: variant.minQuantity
             if (threshold <= 0) return
 
-            val qty = if (variant.currentStock != null) {
-                variant.currentStock[warehouseId] ?: 0
-            } else {
-                val whSummary = stockEntryRepository.getVariantSummary(variantId, warehouseId)
-                whSummary.first
-            }
+            // Use denormalized currentStock map
+            val qty = variant.currentStock?.get(warehouseId) ?: 0
 
             val key = "$variantId:$warehouseId"
             if (qty <= threshold) {
@@ -266,75 +258,10 @@ class AppNotificationManager @Inject constructor(
                     notifiedLowStockKeys.add(key)
                 }
             } else {
-                // Reset notification if stock is replenished
                 notifiedLowStockKeys.remove(key)
             }
         } catch (e: Exception) {
             Log.e("AppNotificationManager", "Error checking targeted low stock", e)
-        }
-    }
-
-    private suspend fun performFullLowStockCheck(isStartup: Boolean) {
-        try {
-            val user = userRepository.getCurrentUser() ?: return
-            val isAdmin = user.role == User.ROLE_ADMIN
-            val userWhId = user.warehouseId
-
-            val allVariants = productVariantRepository.getAllVariants().filter { !it.archived }
-            val allWarehouses = warehouseRepository.getWarehousesOnce()
-            val productsMap = productRepository.getProductsOnce().associateBy { it.id }
-
-            val lowStockMessages = mutableListOf<String>()
-
-            for (variant in allVariants) {
-                val targetWarehouses = if (isAdmin) allWarehouses 
-                                       else allWarehouses.filter { it.id == userWhId }
-
-                for (warehouse in targetWarehouses) {
-                    val threshold = variant.minQuantities[warehouse.id] ?: variant.minQuantity
-                    if (threshold <= 0) continue
-
-                    val qty = variant.currentStock?.get(warehouse.id) ?: 0
-
-                    val key = "${variant.id}:${warehouse.id}"
-                    if (qty <= threshold) {
-                        if (!notifiedLowStockKeys.contains(key)) {
-                            val product = productsMap[variant.productId]
-                            val message = "${product?.name ?: ""} (${variant.capacity}A): $qty قطعة في ${warehouse.name}"
-                            
-                            if (isStartup) {
-                                lowStockMessages.add(message)
-                            } else {
-                                NotificationHelper.showNotification(
-                                    context,
-                                    "مخزون منخفض: ${product?.name ?: ""}",
-                                    "السعة: ${variant.capacity}A | الكمية المتبقية: $qty (الحد: $threshold) في ${warehouse.name}"
-                                )
-                            }
-                            notifiedLowStockKeys.add(key)
-                        }
-                    } else {
-                        notifiedLowStockKeys.remove(key)
-                    }
-                }
-            }
-
-            if (isStartup && lowStockMessages.isNotEmpty()) {
-                val summary = if (lowStockMessages.size > 3) {
-                    "${lowStockMessages.take(3).joinToString("\n")}\n... و ${lowStockMessages.size - 3} أصناف أخرى"
-                } else {
-                    lowStockMessages.joinToString("\n")
-                }
-                
-                NotificationHelper.showNotification(
-                    context,
-                    "تنبيه المخزون المنخفض (${lowStockMessages.size} أصناف)",
-                    summary,
-                    playSound = false
-                )
-            }
-        } catch (e: Exception) {
-            Log.e("AppNotificationManager", "Error in full low stock check", e)
         }
     }
 }

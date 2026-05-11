@@ -1,5 +1,6 @@
 package com.batterysales.data.models
 
+import com.google.firebase.firestore.Exclude
 import java.util.Date
 
 /**
@@ -18,8 +19,10 @@ data class Product(
         const val COLLECTION_NAME = "products"
     }
 
+    @Exclude
     fun isValid(): Boolean = name.isNotBlank()
 
+    @Exclude
     fun getValidationError(): String? {
         return if (name.isBlank()) "اسم المنتج مطلوب" else null
     }

@@ -34,9 +34,13 @@ class InvoiceRepository @Inject constructor(
         return snapshot.toObject(Invoice::class.java)?.copy(id = snapshot.id)
     }
 
-    fun getAllInvoices(): Flow<List<Invoice>> = callbackFlow {
+    /**
+     * Warning: Dangerous broad listener. Use getInvoicesPaginated instead.
+     */
+    fun getAllInvoices(limit: Long = 1000): Flow<List<Invoice>> = callbackFlow {
         val listenerRegistration = firestore.collection(Invoice.COLLECTION_NAME)
             .orderBy("createdAt", Query.Direction.DESCENDING)
+            .limit(limit)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     close(error)
@@ -105,9 +109,6 @@ class InvoiceRepository @Inject constructor(
             val isNumeric = searchQuery.all { it.isDigit() }
             val searchField = when {
                 isNumeric && searchQuery.length >= 3 -> "customerPhone"
-                // If it contains letters, it might be customerName or invoiceNumber
-                // invoiceNumber is usually like "INV-..." or numeric-ish. 
-                // Let's check for customerName if it contains Arabic or is just text.
                 searchQuery.any { it in '\u0600'..'\u06FF' } -> "customerName"
                 else -> "invoiceNumber"
             }
@@ -152,20 +153,34 @@ class InvoiceRepository @Inject constructor(
                 transaction.get(firestore.collection(com.batterysales.data.models.ProductVariant.COLLECTION_NAME).document(vid))
             }
 
+            val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
+            val invoiceRef = firestore.collection(Invoice.COLLECTION_NAME).document(invoiceId)
+            val invoiceSnap = transaction.get(invoiceRef)
+            val invoice = invoiceSnap.toObject(Invoice::class.java)
+
             // 2. All Writes
-            // 2.1 Update variants
-            val variantUpdates = mutableMapOf<String, MutableMap<String, Int>>()
+            // 2.1 Update variants and system stats
+            var totalValueToReverse = 0.0
+            var totalQtyToReverse = 0
+
             approvedEntries.forEach { entry ->
                 val variant = variantSnapshots[entry.productVariantId]?.toObject(com.batterysales.data.models.ProductVariant::class.java)
                 if (variant != null && variant.currentStock != null) {
-                    val stockMap = variantUpdates.getOrPut(entry.productVariantId) { variant.currentStock.toMutableMap() }
-                    val current = stockMap[entry.warehouseId] ?: 0
-                    stockMap[entry.warehouseId] = current - (entry.quantity)
+                    val stockMap = variant.currentStock.toMutableMap()
+                    stockMap[entry.warehouseId] = (stockMap[entry.warehouseId] ?: 0) - (entry.quantity)
+                    transaction.update(variantSnapshots[entry.productVariantId]!!.reference, "currentStock", stockMap)
+
+                    totalValueToReverse += (entry.quantity * variant.weightedAverageCost)
+                    totalQtyToReverse += entry.quantity
                 }
             }
 
-            variantUpdates.forEach { (vid, newMap) ->
-                transaction.update(firestore.collection(com.batterysales.data.models.ProductVariant.COLLECTION_NAME).document(vid), "currentStock", newMap)
+            if (invoice != null) {
+                transaction.update(statsRef, mapOf(
+                    "totalInventoryQuantity" to com.google.firebase.firestore.FieldValue.increment(-totalQtyToReverse.toLong()),
+                    "totalInventoryValue" to com.google.firebase.firestore.FieldValue.increment(-totalValueToReverse),
+                    "totalCustomerDebt" to com.google.firebase.firestore.FieldValue.increment(-invoice.remainingAmount)
+                ))
             }
 
             // 2.2 Delete associated payments
@@ -175,7 +190,7 @@ class InvoiceRepository @Inject constructor(
             stockEntries.documents.forEach { transaction.delete(it.reference) }
 
             // 2.4 Delete the invoice itself
-            transaction.delete(firestore.collection(Invoice.COLLECTION_NAME).document(invoiceId))
+            transaction.delete(invoiceRef)
         }.await()
     }
 
@@ -190,20 +205,17 @@ class InvoiceRepository @Inject constructor(
         val finalInvoice = invoice.copy(id = invoiceRef.id, createdAt = Date(), updatedAt = Date())
 
         firestore.runTransaction { transaction ->
-            // 1. All Reads must happen before all writes
+            // 1. All Reads
             val variantRef = firestore.collection(com.batterysales.data.models.ProductVariant.COLLECTION_NAME).document(stockEntry.productVariantId)
             val variant = transaction.get(variantRef).toObject(com.batterysales.data.models.ProductVariant::class.java)
 
             // 2. All Writes
-            // 2.1 Create Invoice
             transaction.set(invoiceRef, finalInvoice)
 
-            // 2.2 Create Stock Entry
             val stockRef = firestore.collection(com.batterysales.data.models.StockEntry.COLLECTION_NAME).document()
             val finalStockEntry = stockEntry.copy(id = stockRef.id, invoiceId = finalInvoice.id)
             transaction.set(stockRef, finalStockEntry)
 
-            // 2.3 Update denormalized stock in ProductVariant
             if (variant != null && variant.currentStock != null) {
                 val newStockMap = variant.currentStock.toMutableMap()
                 val currentQty = newStockMap[finalStockEntry.warehouseId] ?: 0
@@ -211,30 +223,121 @@ class InvoiceRepository @Inject constructor(
                 transaction.update(variantRef, "currentStock", newStockMap)
             }
 
-            // 3. Create Payment (if any)
+            val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
+            val qty = stockEntry.quantity - stockEntry.returnedQuantity
+            val valueChange = qty * (variant?.weightedAverageCost ?: 0.0)
+            val customerDebtChange = invoice.remainingAmount
+
+            transaction.update(statsRef, mapOf(
+                "totalInventoryQuantity" to com.google.firebase.firestore.FieldValue.increment(qty.toLong()),
+                "totalInventoryValue" to com.google.firebase.firestore.FieldValue.increment(valueChange),
+                "totalCustomerDebt" to com.google.firebase.firestore.FieldValue.increment(customerDebtChange),
+                "updatedAt" to java.util.Date()
+            ))
+
             if (payment != null) {
                 val paymentRef = firestore.collection(com.batterysales.data.models.Payment.COLLECTION_NAME).document()
                 transaction.set(paymentRef, payment.copy(id = paymentRef.id, invoiceId = finalInvoice.id))
             }
 
-            // 4. Create Treasury Transaction (if any)
             if (treasuryTransaction != null) {
                 val treasuryRef = firestore.collection(com.batterysales.data.models.Transaction.COLLECTION_NAME).document()
                 transaction.set(treasuryRef, treasuryTransaction.copy(id = treasuryRef.id, relatedId = finalInvoice.id))
             }
 
-            // 5. Create Old Battery Transaction (if any)
             if (oldBatteryTransaction != null) {
                 val scrapRef = firestore.collection(com.batterysales.data.models.OldBatteryTransaction.COLLECTION_NAME).document()
                 transaction.set(scrapRef, oldBatteryTransaction.copy(id = scrapRef.id, invoiceId = finalInvoice.id))
             }
         }.await()
 
-        // Sync scrap warehouse if needed
         if (oldBatteryTransaction != null) {
             oldBatteryRepository.syncScrapWarehouse(oldBatteryTransaction.warehouseId)
         }
 
         return finalInvoice.id
+    }
+
+    suspend fun addPayment(invoiceId: String, payment: Payment) {
+        val invoiceRef = firestore.collection(Invoice.COLLECTION_NAME).document(invoiceId)
+        firestore.runTransaction { transaction ->
+            val invoiceSnap = transaction.get(invoiceRef)
+            val invoice = invoiceSnap.toObject(Invoice::class.java) ?: return@runTransaction
+
+            val paymentRef = firestore.collection(Payment.COLLECTION_NAME).document()
+            transaction.set(paymentRef, payment.copy(id = paymentRef.id, invoiceId = invoiceId))
+
+            val newTotalPaid = invoice.paidAmount + payment.amount
+            val newRemaining = invoice.totalAmount - newTotalPaid
+            val newStatus = if (newRemaining <= 0.001) "paid" else "pending"
+
+            transaction.update(invoiceRef, mapOf(
+                "paidAmount" to newTotalPaid,
+                "remainingAmount" to newRemaining,
+                "status" to newStatus,
+                "updatedAt" to Date()
+            ))
+
+            // Update System Stats
+            val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
+            transaction.update(statsRef, "totalCustomerDebt", com.google.firebase.firestore.FieldValue.increment(-payment.amount))
+        }.await()
+    }
+
+    suspend fun updatePayment(payment: Payment) {
+        val invoiceRef = firestore.collection(Invoice.COLLECTION_NAME).document(payment.invoiceId)
+        firestore.runTransaction { transaction ->
+            val invoiceSnap = transaction.get(invoiceRef)
+            val invoice = invoiceSnap.toObject(Invoice::class.java) ?: return@runTransaction
+
+            val paymentRef = firestore.collection(Payment.COLLECTION_NAME).document(payment.id)
+            val oldPayment = transaction.get(paymentRef).toObject(Payment::class.java) ?: return@runTransaction
+
+            val diff = payment.amount - oldPayment.amount
+            transaction.set(paymentRef, payment)
+
+            val newTotalPaid = invoice.paidAmount + diff
+            val newRemaining = invoice.totalAmount - newTotalPaid
+            val newStatus = if (newRemaining <= 0.001) "paid" else "pending"
+
+            transaction.update(invoiceRef, mapOf(
+                "paidAmount" to newTotalPaid,
+                "remainingAmount" to newRemaining,
+                "status" to newStatus,
+                "updatedAt" to Date()
+            ))
+
+            // Update System Stats
+            val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
+            transaction.update(statsRef, "totalCustomerDebt", com.google.firebase.firestore.FieldValue.increment(-diff))
+        }.await()
+    }
+
+    suspend fun deletePayment(paymentId: String, invoiceId: String) {
+        val invoiceRef = firestore.collection(Invoice.COLLECTION_NAME).document(invoiceId)
+        firestore.runTransaction { transaction ->
+            val invoiceSnap = transaction.get(invoiceRef)
+            val invoice = invoiceSnap.toObject(Invoice::class.java) ?: return@runTransaction
+
+            val paymentRef = firestore.collection(Payment.COLLECTION_NAME).document(paymentId)
+            val oldPayment = transaction.get(paymentRef).toObject(Payment::class.java) ?: return@runTransaction
+
+            transaction.delete(paymentRef)
+
+            val newTotalPaid = invoice.paidAmount - oldPayment.amount
+            val newRemaining = invoice.totalAmount - newTotalPaid
+            val newStatus = if (newRemaining <= 0.001) "paid" else "pending"
+
+            transaction.update(invoiceRef, mapOf(
+                "paidAmount" to newTotalPaid,
+                "remainingAmount" to newRemaining,
+                "status" to newStatus,
+                "updatedAt" to Date()
+            ))
+
+            // Update System Stats
+            val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
+            transaction.update(statsRef, "totalCustomerDebt", com.google.firebase.firestore.FieldValue.increment(oldPayment.amount))
+        }.await()
     }
 }

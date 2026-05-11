@@ -2,162 +2,114 @@ package com.batterysales.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.batterysales.data.models.Product
+import androidx.paging.*
 import com.batterysales.data.models.ProductVariant
 import com.batterysales.data.models.Warehouse
-import com.batterysales.data.repositories.ProductRepository
+import com.batterysales.data.models.User
 import com.batterysales.data.repositories.ProductVariantRepository
-import com.batterysales.data.repositories.StockEntryRepository
 import com.batterysales.data.repositories.WarehouseRepository
+import com.batterysales.data.repositories.UserRepository
+import com.batterysales.data.repositories.StockEntryRepository
+import com.batterysales.data.paging.VariantPagingSource
+import com.google.firebase.firestore.FirebaseFirestore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-data class WarehouseStockItem(
-    val product: Product,
-    val variant: ProductVariant,
-    val warehouse: Warehouse,
-    val quantity: Int
+data class WarehouseUiState(
+    val warehouses: List<Warehouse> = emptyList(),
+    val selectedWarehouseId: String = "",
+    val isAdmin: Boolean = false,
+    val searchQuery: String = "",
+    val isLoading: Boolean = true
 )
 
 @HiltViewModel
 class WarehouseViewModel @Inject constructor(
-    private val productRepository: ProductRepository,
-    private val productVariantRepository: ProductVariantRepository,
+    private val variantRepository: ProductVariantRepository,
     private val warehouseRepository: WarehouseRepository,
+    private val userRepository: UserRepository,
     private val stockEntryRepository: StockEntryRepository,
-    private val userRepository: com.batterysales.data.repositories.UserRepository
+    private val firestore: FirebaseFirestore
 ) : ViewModel() {
 
-    private val _isLoading = MutableStateFlow(true)
-    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+    private val _uiState = MutableStateFlow(WarehouseUiState())
+    val uiState: StateFlow<WarehouseUiState> = _uiState.asStateFlow()
 
-    private val _searchQuery = MutableStateFlow("")
-    val searchQuery = _searchQuery.asStateFlow()
+    private val searchQuery = MutableStateFlow("")
 
-    val currentUser = userRepository.getCurrentUserFlow()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
-
-    val warehouses: StateFlow<List<Warehouse>> = combine(
-        warehouseRepository.getWarehouses(),
-        currentUser
-    ) { list, user ->
-        if (user?.role == com.batterysales.data.models.User.ROLE_SELLER && user.warehouseId != null) {
-            list.filter { it.id == user.warehouseId }
-        } else {
-            list
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val variants: Flow<PagingData<ProductVariant>> = searchQuery
+        .debounce(300)
+        .flatMapLatest { query ->
+            Pager(PagingConfig(pageSize = 25)) {
+                VariantPagingSource(firestore, query.ifBlank { null })
+            }.flow.cachedIn(viewModelScope)
         }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val stockLevels: StateFlow<List<WarehouseStockItem>> = combine(
-        productRepository.getProducts(),
-        productVariantRepository.getAllVariantsFlow(),
-        warehouseRepository.getWarehouses(),
-        stockEntryRepository.getAllStockEntriesFlow(),
-        currentUser,
-        _searchQuery
-    ) { args ->
-        args
-    }.flowOn(kotlinx.coroutines.Dispatchers.Default).map { args ->
-        val products = args[0] as List<Product>
-        val allVariants = args[1] as List<ProductVariant>
-        val allWarehouses = args[2] as List<Warehouse>
-        val allStockEntries = args[3] as List<com.batterysales.data.models.StockEntry>
-        val user = args[4] as com.batterysales.data.models.User?
-        val query = args[5] as String
+    init {
+        loadInitialData()
+    }
 
-        _isLoading.value = true
-        val activeProducts = products.filter { !it.archived }
-        val productMap = activeProducts.associateBy { it.id }
-        val activeVariants = allVariants.filter { !it.archived }
-        val activeVariantsMap = activeVariants.associateBy { it.id }
-
-        val stockMap = mutableMapOf<Pair<String, String>, Int>()
-        val approvedEntries = allStockEntries.filter { it.status == "approved" }
-
-        // Process all active variants in one pass to avoid leftovers or duplicates
-        for (variant in activeVariants) {
-            if (variant.currentStock != null) {
-                // Use denormalized stock
-                variant.currentStock.forEach { (warehouseId, quantity) ->
-                    if (user?.role == com.batterysales.data.models.User.ROLE_SELLER && warehouseId != user.warehouseId) return@forEach
-                    stockMap[Pair(variant.id, warehouseId)] = quantity
-                }
-            } else {
-                // Fallback to historical calculation for this specific variant
-                val variantEntries = approvedEntries.filter { it.productVariantId == variant.id }
-                val whGroups = variantEntries.groupBy { it.warehouseId }
-                whGroups.forEach { (whId, entries) ->
-                    if (user?.role == com.batterysales.data.models.User.ROLE_SELLER && whId != user.warehouseId) return@forEach
-                    stockMap[Pair(variant.id, whId)] = entries.sumOf { it.quantity - it.returnedQuantity }
-                }
+    private fun loadInitialData() {
+        userRepository.getCurrentUserFlow().onEach { user ->
+            val isAdmin = user?.role == User.ROLE_ADMIN
+            warehouseRepository.getWarehouses().take(1).collect { allWh ->
+                val filteredWh = if (isAdmin) allWh else allWh.filter { it.id == user?.warehouseId }
+                _uiState.update { it.copy(
+                    warehouses = filteredWh,
+                    isAdmin = isAdmin,
+                    selectedWarehouseId = if (isAdmin) (filteredWh.firstOrNull()?.id ?: "") else user?.warehouseId ?: "",
+                    isLoading = false
+                ) }
             }
-        }
+        }.launchIn(viewModelScope)
+    }
 
-        val stockList = stockMap.mapNotNull { (key, quantity) ->
-            val variantId = key.first
-            val warehouseId = key.second
-            val variant = activeVariantsMap[variantId]
-            val warehouse = allWarehouses.find { it.id == warehouseId }
-            if (variant != null && warehouse != null) {
-                val product = productMap[variant.productId]
-                if (product != null && quantity > 0) {
-                    if (query.isNotBlank() && !product.name.contains(query, ignoreCase = true)) {
-                        return@mapNotNull null
-                    }
-                    WarehouseStockItem(product, variant, warehouse, quantity)
-                } else {
-                    null
-                }
-            } else {
-                null
-            }
-        }
-        _isLoading.value = false
-        stockList.sortedWith(compareByDescending<WarehouseStockItem> { it.warehouse.name }.thenBy { it.product.name }.thenBy { it.variant.capacity })
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    fun onWarehouseSelected(id: String) {
+        _uiState.update { it.copy(selectedWarehouseId = id) }
+    }
 
-    fun toggleWarehouseStatus(warehouse: Warehouse) {
+    fun onSearchQueryChanged(query: String) {
+        _uiState.update { it.copy(searchQuery = query) }
+        searchQuery.value = query
+    }
+
+    fun addWarehouse(name: String, location: String, isMain: Boolean = false) {
         viewModelScope.launch {
-            warehouseRepository.updateWarehouse(warehouse.copy(isActive = !warehouse.isActive))
+            _uiState.update { it.copy(isLoading = true) }
+            try {
+                val warehouse = Warehouse(name = name, location = location, isMain = isMain)
+                warehouseRepository.addWarehouse(warehouse)
+                loadInitialData()
+            } finally {
+                _uiState.update { it.copy(isLoading = false) }
+            }
         }
     }
 
-    fun toggleMainWarehouse(warehouse: Warehouse) {
+    fun updateWarehouse(warehouse: Warehouse) {
         viewModelScope.launch {
-            val isCurrentlyMain = warehouse.isMain
-            if (!isCurrentlyMain) {
-                // Ensure only one is main
-                val all = warehouseRepository.getWarehousesOnce()
-                all.forEach { 
-                    if (it.isMain) warehouseRepository.updateWarehouse(it.copy(isMain = false))
-                }
+            _uiState.update { it.copy(isLoading = true) }
+            try {
+                warehouseRepository.updateWarehouse(warehouse)
+                loadInitialData()
+            } finally {
+                _uiState.update { it.copy(isLoading = false) }
             }
-            warehouseRepository.updateWarehouse(warehouse.copy(isMain = !isCurrentlyMain))
-        }
-    }
-
-    fun addWarehouse(name: String, location: String, isMain: Boolean) {
-        viewModelScope.launch {
-            if (isMain) {
-                val all = warehouseRepository.getWarehousesOnce()
-                all.forEach { 
-                    if (it.isMain) warehouseRepository.updateWarehouse(it.copy(isMain = false))
-                }
-            }
-            val warehouse = Warehouse(name = name, location = location, isMain = isMain)
-            warehouseRepository.addWarehouse(warehouse)
         }
     }
 
     fun deleteWarehouse(warehouseId: String) {
         viewModelScope.launch {
-            warehouseRepository.deleteWarehouse(warehouseId)
+            _uiState.update { it.copy(isLoading = true) }
+            try {
+                warehouseRepository.deleteWarehouse(warehouseId)
+                loadInitialData()
+            } finally {
+                _uiState.update { it.copy(isLoading = false) }
+            }
         }
-    }
-
-    fun onSearchQueryChanged(query: String) {
-        _searchQuery.value = query
     }
 }
