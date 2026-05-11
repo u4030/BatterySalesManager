@@ -20,7 +20,6 @@ data class StockTransferUiState(
     val products: List<Product> = emptyList(),
     val variants: List<ProductVariant> = emptyList(),
     val warehouses: List<Warehouse> = emptyList(),
-    val stockLevels: Map<Pair<String, String>, Int> = emptyMap(),
     val selectedProduct: Product? = null,
     val selectedVariant: ProductVariant? = null,
     val sourceWarehouse: Warehouse? = null,
@@ -29,6 +28,7 @@ data class StockTransferUiState(
     val isSourceWarehouseFixed: Boolean = false,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
+    val isSubmitting: Boolean = false,
     val isFinished: Boolean = false
 )
 
@@ -47,63 +47,49 @@ class StockTransferViewModel @Inject constructor(
     private var currentUser: com.batterysales.data.models.User? = null
 
     init {
+        loadInitialData()
+    }
+
+    private fun loadInitialData() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
-            val user = userRepository.getCurrentUser()
-            currentUser = user
+            try {
+                val user = userRepository.getCurrentUser()
+                currentUser = user
 
-            combine(
-                productRepository.getProducts(),
-                warehouseRepository.getWarehouses(),
-                productVariantRepository.getAllVariantsFlow(),
-                stockEntryRepository.getAllStockEntriesFlow()
-            ) { products, warehouses, variants, stockEntries ->
-                val stockMap = mutableMapOf<Pair<String, String>, Int>()
-                val approvedEntries = stockEntries.filter { it.status == "approved" }
-                val entriesByVariant = approvedEntries.groupBy { it.productVariantId }
-
-                variants.forEach { variant ->
-                    if (variant.currentStock != null) {
-                        variant.currentStock.forEach { (warehouseId, qty) ->
-                            stockMap[Pair(variant.id, warehouseId)] = qty
-                        }
-                    } else {
-                        // Fallback
-                        val variantEntries = entriesByVariant[variant.id] ?: emptyList()
-                        warehouses.forEach { wh ->
-                            val qty = variantEntries.filter { it.warehouseId == wh.id }.sumOf { it.quantity - it.returnedQuantity }
-                            stockMap[Pair(variant.id, wh.id)] = qty
-                        }
-                    }
-                }
+                // Use one-time fetches for setup to avoid continuous background reads
+                val products = productRepository.getProductsOnce().filter { !it.archived }.sortedBy { it.name }
+                val warehouses = warehouseRepository.getWarehousesOnce().filter { it.isActive }
 
                 _uiState.update {
                     it.copy(
-                        products = products.filter { p -> !p.archived }.sortedBy { it.name },
-                        warehouses = warehouses.filter { w -> w.isActive },
-                        sourceWarehouse = if (user?.role == "seller") warehouses.find { w -> w.id == user.warehouseId } else it.sourceWarehouse,
+                        products = products,
+                        warehouses = warehouses,
+                        sourceWarehouse = if (user?.role == "seller") warehouses.find { w -> w.id == user.warehouseId } else null,
                         isSourceWarehouseFixed = user?.role == "seller",
-                        stockLevels = stockMap,
                         isLoading = false
                     )
                 }
-            }.collect()
+            } catch (e: Exception) {
+                Log.e("StockTransferVM", "Init error", e)
+                _uiState.update { it.copy(isLoading = false, errorMessage = "خطأ في تحميل البيانات") }
+            }
         }
     }
 
     fun onProductSelected(product: Product) {
         viewModelScope.launch {
             _uiState.update { it.copy(selectedProduct = product, selectedVariant = null, variants = emptyList(), isLoading = true, quantity = "") }
-            productVariantRepository.getVariantsForProductFlow(product.id)
-                .map { variants -> variants.filter { !it.archived }.sortedBy { it.capacity } }
-                .onEach { variants ->
-                    _uiState.update { it.copy(variants = variants, isLoading = false) }
-                }
-                .catch { e ->
-                    Log.e("StockTransferVM", "Error fetching variants", e)
-                    _uiState.update { it.copy(errorMessage = "Failed to fetch variants", isLoading = false) }
-                }
-                .collect()
+            try {
+                // Targeted fetch for product variants
+                val variants = productVariantRepository.getVariantsForProduct(product.id)
+                    .filter { !it.archived }
+                    .sortedBy { it.capacity }
+                _uiState.update { it.copy(variants = variants, isLoading = false) }
+            } catch (e: Exception) {
+                Log.e("StockTransferVM", "Error fetching variants", e)
+                _uiState.update { it.copy(errorMessage = "فشل تحميل السعات", isLoading = false) }
+            }
         }
     }
 
@@ -111,8 +97,9 @@ class StockTransferViewModel @Inject constructor(
         _uiState.update { it.copy(selectedVariant = variant) }
     }
 
-    fun getStockForVariant(variantId: String, warehouseId: String): Int {
-        return _uiState.value.stockLevels[Pair(variantId, warehouseId)] ?: 0
+    fun getStockForVariant(variant: ProductVariant?, warehouseId: String?): Int {
+        if (variant == null || warehouseId == null) return 0
+        return variant.currentStock?.get(warehouseId) ?: 0
     }
 
     fun onSourceWarehouseSelected(warehouse: Warehouse) {
@@ -145,10 +132,16 @@ class StockTransferViewModel @Inject constructor(
                 return@launch
             }
 
-            _uiState.update { it.copy(isLoading = true) }
+            val available = getStockForVariant(variant, source.id)
+            if (qty > available) {
+                _uiState.update { it.copy(errorMessage = "الكمية المطلوبة أكبر من المتوفر في المستودع ($available)") }
+                return@launch
+            }
+
+            _uiState.update { it.copy(isSubmitting = true) }
             try {
                 if (!source.isActive || !dest.isActive) {
-                    _uiState.update { it.copy(errorMessage = "عذراً، أحد المستودعات المختارة متوقف حالياً ولا يمكن إجراء عمليات عليه.", isLoading = false) }
+                    _uiState.update { it.copy(errorMessage = "عذراً، أحد المستودعات المختارة متوقف حالياً.", isSubmitting = false) }
                     return@launch
                 }
 
@@ -163,10 +156,10 @@ class StockTransferViewModel @Inject constructor(
                     createdBy = currentUser?.id ?: "",
                     createdByUserName = currentUser?.displayName ?: ""
                 )
-                _uiState.update { it.copy(isFinished = true) }
+                _uiState.update { it.copy(isFinished = true, isSubmitting = false) }
             } catch (e: Exception) {
-                Log.e("StockTransferVM", "Error transferring stock", e)
-                _uiState.update { it.copy(errorMessage = "Failed to transfer stock: ${e.message}", isLoading = false) }
+                Log.e("StockTransferVM", "Transfer error", e)
+                _uiState.update { it.copy(errorMessage = "فشل النقل: ${e.message}", isSubmitting = false) }
             }
         }
     }
@@ -177,16 +170,24 @@ class StockTransferViewModel @Inject constructor(
 
     fun onBarcodeScanned(barcode: String) {
         viewModelScope.launch {
-            val allVariants = productVariantRepository.getAllVariants()
-            val variant = allVariants.find { it.barcode == barcode && !it.archived }
-            if (variant != null) {
-                val product = productRepository.getProduct(variant.productId)
-                if (product != null) {
-                    onProductSelected(product)
-                    onVariantSelected(variant)
+            _uiState.update { it.copy(isLoading = true) }
+            try {
+                // High Performance: Directly fetch variant by barcode (one-time fetch)
+                val variant = productVariantRepository.getVariantByBarcode(barcode)
+                if (variant != null && !variant.archived) {
+                    val product = productRepository.getProduct(variant.productId)
+                    if (product != null) {
+                        onProductSelected(product)
+                        onVariantSelected(variant)
+                    } else {
+                        _uiState.update { it.copy(isLoading = false, errorMessage = "المنتج غير موجود") }
+                    }
+                } else {
+                    _uiState.update { it.copy(isLoading = false, errorMessage = "لم يتم العثور على الباركود") }
                 }
-            } else {
-                _uiState.update { it.copy(errorMessage = "لم يتم العثور على منتج بهذا الباركود") }
+            } catch (e: Exception) {
+                Log.e("StockTransferVM", "Barcode error", e)
+                _uiState.update { it.copy(isLoading = false, errorMessage = "خطأ في البحث") }
             }
         }
     }

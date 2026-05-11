@@ -7,18 +7,16 @@ import com.batterysales.data.repositories.StockEntryRepository
 import com.batterysales.viewmodel.InventoryReportItem
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Query
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.tasks.await
 
-import com.batterysales.viewmodel.ReportsViewModel
-import kotlinx.coroutines.sync.withPermit
-
 class InventoryPagingSource(
     private val firestore: FirebaseFirestore,
     private val stockEntryRepository: StockEntryRepository,
-    private val productsMap: Map<String, Product>,
+    private val productsMap: Map<String, Product>, 
     private val warehouseList: List<Warehouse>,
     private val searchQuery: String?,
     private val isSeller: Boolean = false,
@@ -28,205 +26,78 @@ class InventoryPagingSource(
 
     override fun getRefreshKey(state: PagingState<DocumentSnapshot, InventoryReportItem>): DocumentSnapshot? = null
 
-    private fun getProduct(productId: String, list: List<Product>, map: Map<String, Product>): Product? {
-        return list.find { it.id == productId } ?: map[productId]
-    }
-
     override suspend fun load(params: LoadParams<DocumentSnapshot>): LoadResult<DocumentSnapshot, InventoryReportItem> {
         return try {
-            val variants = mutableListOf<ProductVariant>()
-            val products = mutableListOf<Product>()
-            var lastDoc: DocumentSnapshot? = null
+            // Robust query on ProductVariants
+            var query = firestore.collection(ProductVariant.COLLECTION_NAME)
+                .whereEqualTo("archived", false)
 
-            var rawFetchedSize = 0
-            coroutineScope {
-            if (searchQuery != null && searchQuery.isNotBlank()) {
-                // If this is the FIRST page, try barcode and invoice lookup
-                if (params.key == null) {
-                    // 1. Barcode lookup
-                    val barcodeSnap = firestore.collection(ProductVariant.COLLECTION_NAME)
-                        .whereEqualTo("barcode", searchQuery)
-                        .get().await()
-
-                    val foundBarcodeVariants = barcodeSnap.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }.filter { !it.archived }
-                    variants.addAll(foundBarcodeVariants)
-
-                    // 2. Invoice/Reference Number lookup in StockEntry
-                    val entrySnap = firestore.collection(StockEntry.COLLECTION_NAME)
-                        .whereEqualTo("invoiceNumber", searchQuery)
-                        .get().await()
-                    
-                    val invoiceVariantIds = entrySnap.documents.mapNotNull { it.getString("productVariantId") }.distinct()
-                        .filter { vid -> variants.none { it.id == vid } }
-                    
-                    if (invoiceVariantIds.isNotEmpty()) {
-                        val invoiceVariants = invoiceVariantIds.chunked(30).flatMap { ids ->
-                            firestore.collection(ProductVariant.COLLECTION_NAME)
-                                .whereIn(com.google.firebase.firestore.FieldPath.documentId(), ids)
-                                .get().await().documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }
-                        }.filter { !it.archived }
-                        variants.addAll(invoiceVariants)
-                    }
-
-                    // Fetch missing products for all found variants
-                    val allProductIds = variants.map { it.productId }.distinct()
-                    allProductIds.forEach { pid ->
-                        if (products.none { it.id == pid }) {
-                            productsMap[pid]?.let { products.add(it) } ?: run {
-                                val doc = firestore.collection(Product.COLLECTION_NAME).document(pid).get().await()
-                                doc.toObject(Product::class.java)?.copy(id = doc.id)?.let { products.add(it) }
-                            }
-                        }
-                    }
-                }
-
-                // Also search by name (Combined search)
-                var query = firestore.collection(Product.COLLECTION_NAME)
-                    .orderBy("name")
-                    .whereGreaterThanOrEqualTo("name", searchQuery)
-                    .whereLessThanOrEqualTo("name", searchQuery + "\uf8ff")
-
-                if (params.key != null) {
-                    query = query.startAfter(params.key!!)
-                }
-
-                val snapshot = query.limit(params.loadSize.toLong()).get().await()
-                rawFetchedSize = snapshot.size()
-                val fetchedProducts = snapshot.documents.mapNotNull { it.toObject(Product::class.java)?.copy(id = it.id) }
-                    .filter { !it.archived }
-
-                // Add name-matched products, avoiding duplicates from barcode search
-                fetchedProducts.forEach { fp ->
-                    if (products.none { it.id == fp.id }) {
-                        products.add(fp)
-                    }
-                }
-                lastDoc = snapshot.documents.lastOrNull()
-
-                // Fetch variants for name-matched products in bulk
-                if (fetchedProducts.isNotEmpty()) {
-                    val productIds = fetchedProducts.map { it.id }
-                    val variantJobs = productIds.chunked(30).map { ids ->
-                        async {
-                            firestore.collection(ProductVariant.COLLECTION_NAME)
-                                .whereIn("productId", ids)
-                                .get()
-                                .await()
-                        }
-                    }
-                    val snapshots = variantJobs.awaitAll()
-                    snapshots.forEach { snap ->
-                        val pVariants = snap.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }.filter { !it.archived }
-                        pVariants.forEach { pv ->
-                            if (variants.none { it.id == pv.id }) {
-                                variants.add(pv)
-                            }
-                        }
-                    }
-                }
-                
-                // Final sort for the result page
-                val sortedVariants = variants.sortedWith(compareBy<ProductVariant> { getProduct(it.productId, products, productsMap)?.name ?: "" }.thenBy { it.capacity })
-                variants.clear()
-                variants.addAll(sortedVariants)
-
+            if (!searchQuery.isNullOrBlank()) {
+                query = query.orderBy("productName", Query.Direction.ASCENDING)
+                    .orderBy("capacity", Query.Direction.ASCENDING)
+                    .whereGreaterThanOrEqualTo("productName", searchQuery)
+                    .whereLessThanOrEqualTo("productName", searchQuery + "\uf8ff")
             } else {
-                var query = firestore.collection(Product.COLLECTION_NAME)
-                    .orderBy("name", com.google.firebase.firestore.Query.Direction.ASCENDING)
-
-                if (params.key != null) {
-                    query = query.startAfter(params.key!!)
-                }
-
-                val snapshot = query.limit(params.loadSize.toLong()).get().await()
-                rawFetchedSize = snapshot.size()
-                val fetchedProducts = snapshot.documents.mapNotNull { it.toObject(Product::class.java)?.copy(id = it.id) }
-                    .filter { !it.archived } // Filter in memory to avoid index requirements and missing field issues
-
-                products.addAll(fetchedProducts)
-                lastDoc = snapshot.documents.lastOrNull()
-
-                // Fetch variants for all products in bulk
-                if (fetchedProducts.isNotEmpty()) {
-                    val productIds = fetchedProducts.map { it.id }
-                    val variantJobs = productIds.chunked(30).map { ids ->
-                        async {
-                            firestore.collection(ProductVariant.COLLECTION_NAME)
-                                .whereIn("productId", ids)
-                                .get()
-                                .await()
-                        }
-                    }
-                    val snapshots = variantJobs.awaitAll()
-                    val allFetchedVariants = snapshots.flatMap { snap ->
-                        snap.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }
-                    }.filter { !it.archived }
-                    
-                    variants.addAll(allFetchedVariants)
-                }
-                
-                // Final sort for the result page
-                val sortedVariants = variants.sortedWith(compareBy<ProductVariant> { getProduct(it.productId, products, productsMap)?.name ?: "" }.thenBy { it.capacity })
-                variants.clear()
-                variants.addAll(sortedVariants)
+                // Optimized sort using productName (denormalized)
+                query = query.orderBy("productName", Query.Direction.ASCENDING)
+                    .orderBy("capacity", Query.Direction.ASCENDING)
             }
+
+            if (params.key != null) {
+                query = query.startAfter(params.key!!)
             }
+
+            val snapshot = query.limit(params.loadSize.toLong()).get().await()
+            val variants = snapshot.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }
+            val lastDoc = snapshot.documents.lastOrNull()
 
             val data = coroutineScope {
-                val variantIds = variants.map { it.id }
-                val allEntriesMap = stockEntryRepository.getEntriesForVariants(variantIds)
-
-                variants.mapNotNull { variant ->
-                    val entries = allEntriesMap[variant.id] ?: emptyList()
-                    
-                    // Filter by date if applicable
-                    if (startDate != null && endDate != null) {
-                        val start = com.batterysales.utils.DateUtils.getStartOfDay(startDate)
-                        val end = com.batterysales.utils.DateUtils.getEndOfDay(endDate)
-                        val hasActivity = entries.any { it.timestamp.time in start..end }
-                        if (!hasActivity) return@mapNotNull null
-                    }
-
+                variants.map { variant ->
                     async {
-                        val finalProduct = getProduct(variant.productId, products, productsMap) ?: Product(name = "Unknown")
+                        // High Performance: Use currentStock map
+                        // Fallback: If currentStock is null (migration pending), calculate on-the-fly for THIS document only
                         val warehouseIds = warehouseList.map { it.id }.toSet()
-                        val entries = allEntriesMap[variant.id] ?: emptyList()
-
-                        val (whQuantities, totalQty) = if (variant.currentStock != null) {
-                            val filtered = variant.currentStock.filter { warehouseIds.contains(it.key) }
-                            filtered to filtered.values.sum()
+                        
+                        val whStock = if (variant.currentStock != null) {
+                            variant.currentStock.filter { warehouseIds.contains(it.key) }
                         } else {
-                            // Fallback to calculation
-                            val quantities = warehouseList.associate { wh ->
-                                wh.id to stockEntryRepository.calculateSummary(entries.filter { it.warehouseId == wh.id }).first
+                            // Target calculation fallback to guarantee data visibility
+                            val calculatedStock = mutableMapOf<String, Int>()
+                            warehouseIds.forEach { wid ->
+                                val qty = stockEntryRepository.getVariantQuantity(variant.id, wid)
+                                if (qty != 0) calculatedStock[wid] = qty
                             }
-                            quantities to stockEntryRepository.calculateSummary(if (warehouseList.isNotEmpty()) entries.filter { warehouseIds.contains(it.warehouseId) } else entries).first
+                            calculatedStock
+                        }
+                        
+                        val totalQty = whStock.values.sum()
+
+                        // Date filtering
+                        if (startDate != null && endDate != null) {
+                            val start = com.batterysales.utils.DateUtils.getStartOfDay(startDate)
+                            val end = com.batterysales.utils.DateUtils.getEndOfDay(endDate)
+                            val hasActivity = stockEntryRepository.hasActivityInRange(variant.id, start, end)
+                            if (!hasActivity) return@async null
                         }
 
-                        // For cost, we still need entries (weighted average calculation)
-                        val relevantEntries = if (warehouseList.isNotEmpty()) {
-                            entries.filter { warehouseIds.contains(it.warehouseId) }
-                        } else {
-                            entries
-                        }
-                        val summary = stockEntryRepository.calculateSummary(relevantEntries)
+                        if (isSeller && totalQty <= 0) return@async null
 
                         InventoryReportItem(
-                            product = finalProduct,
+                            product = Product(id = variant.productId, name = variant.productName ?: "", specification = variant.productSpecification ?: ""),
                             variant = variant,
-                            warehouseQuantities = whQuantities,
+                            warehouseQuantities = whStock,
                             totalQuantity = totalQty,
-                            averageCost = summary.second,
-                            totalCostValue = totalQty * summary.second
+                            averageCost = variant.weightedAverageCost,
+                            totalCostValue = totalQty * variant.weightedAverageCost
                         )
                     }
-                }.awaitAll().filter { !isSeller || it.totalQuantity > 0 }
+                }.awaitAll().filterNotNull()
             }
 
             LoadResult.Page(
                 data = data,
                 prevKey = null,
-                nextKey = if (rawFetchedSize < params.loadSize) null else lastDoc
+                nextKey = if (snapshot.size() < params.loadSize) null else lastDoc
             )
         } catch (e: Exception) {
             android.util.Log.e("InventoryPagingSource", "Load error", e)

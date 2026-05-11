@@ -218,11 +218,9 @@ class AccountingViewModel @Inject constructor(
                 coroutineScope {
                     val balanceJob = async { repository.getCurrentBalance(warehouseId, paymentMethod, end) }
                     val totalExpensesJob = async { repository.getTotalExpenses(warehouseId, paymentMethod, start, end) }
-                    val expensesJob = async { repository.getAllExpenses() }
 
                     _balance.value = balanceJob.await()
                     _totalExpenses.value = totalExpensesJob.await()
-                    _expenses.value = expensesJob.await()
                 }
             } catch (e: Exception) {
                 if (e !is kotlinx.coroutines.CancellationException) {

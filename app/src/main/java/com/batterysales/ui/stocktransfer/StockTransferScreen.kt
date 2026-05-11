@@ -65,72 +65,9 @@ fun StockTransferScreen(
     val bgColor = MaterialTheme.colorScheme.background
     val cardBgColor = MaterialTheme.colorScheme.surface
     val accentColor = Color(0xFFFB8C00)
-    val headerGradient = Brush.verticalGradient(
-        colors = listOf(Color(0xFFE53935), Color(0xFFFB8C00))
-    )
 
     Scaffold(
-        containerColor = bgColor,
-        bottomBar = {
-            NavigationBar(
-                containerColor = cardBgColor,
-                contentColor = Color.White,
-                tonalElevation = 0.dp
-            ) {
-                NavigationBarItem(
-                    selected = false,
-                    onClick = { navController.navigate("dashboard") { popUpTo("dashboard") { inclusive = true } } },
-                    icon = { Icon(Icons.Default.Home, contentDescription = null) },
-                    label = { Text("الرئيسية") },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = Color(0xFFFACC15),
-                        selectedTextColor = Color(0xFFFACC15),
-                        unselectedIconColor = Color.Gray,
-                        unselectedTextColor = Color.Gray,
-                        indicatorColor = Color.Transparent
-                    )
-                )
-                NavigationBarItem(
-                    selected = false,
-                    onClick = { navController.navigate("product_management") },
-                    icon = { Icon(Icons.Default.Inventory2, contentDescription = null) },
-                    label = { Text("المنتجات") },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = Color(0xFFFACC15),
-                        selectedTextColor = Color(0xFFFACC15),
-                        unselectedIconColor = Color.Gray,
-                        unselectedTextColor = Color.Gray,
-                        indicatorColor = Color.Transparent
-                    )
-                )
-                NavigationBarItem(
-                    selected = false,
-                    onClick = { navController.navigate("sales") },
-                    icon = { Icon(Icons.Default.ShoppingCart, contentDescription = null) },
-                    label = { Text("المبيعات") },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = Color(0xFFFACC15),
-                        selectedTextColor = Color(0xFFFACC15),
-                        unselectedIconColor = Color.Gray,
-                        unselectedTextColor = Color.Gray,
-                        indicatorColor = Color.Transparent
-                    )
-                )
-                NavigationBarItem(
-                    selected = false,
-                    onClick = { navController.navigate("settings") },
-                    icon = { Icon(Icons.Default.Settings, contentDescription = null) },
-                    label = { Text("الإعدادات") },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = Color(0xFFFACC15),
-                        selectedTextColor = Color(0xFFFACC15),
-                        unselectedIconColor = Color.Gray,
-                        unselectedTextColor = Color.Gray,
-                        indicatorColor = Color.Transparent
-                    )
-                )
-            }
-        }
+        containerColor = bgColor
     )
     { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize().imePadding()) {
@@ -189,7 +126,7 @@ fun StockTransferScreen(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Default.Inventory2, contentDescription = null, tint = accentColor, modifier = Modifier.size(20.dp))
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("تفاصيل المنتج", color = Color.White, fontWeight = FontWeight.Bold)
+                                Text("تفاصيل المنتج", fontWeight = FontWeight.Bold)
                             }
                             
                             Dropdown(
@@ -225,7 +162,7 @@ fun StockTransferScreen(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Default.CompareArrows, contentDescription = null, tint = accentColor, modifier = Modifier.size(20.dp))
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("المستودعات", color = Color.White, fontWeight = FontWeight.Bold)
+                                Text("المستودعات", fontWeight = FontWeight.Bold)
                             }
 
                             Dropdown(
@@ -248,12 +185,12 @@ fun StockTransferScreen(
                 }
 
                 item {
-                    val availableQty = uiState.selectedVariant?.let { uiState.stockLevels[Pair(it.id, uiState.sourceWarehouse?.id ?: "")] ?: 0 } ?: 0
+                    val availableQty = viewModel.getStockForVariant(uiState.selectedVariant, uiState.sourceWarehouse?.id)
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(24.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF2E1505)),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF5D4037))
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.1f)),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
                     ) {
                         Row(
                             modifier = Modifier.padding(20.dp).fillMaxWidth(),
@@ -261,8 +198,8 @@ fun StockTransferScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column {
-                                Text("المخزون المتاح", color = Color.White.copy(alpha = 0.6f), fontSize = 14.sp)
-                                Text("في مستودع المصدر", color = Color.White.copy(alpha = 0.4f), fontSize = 11.sp)
+                                Text("المخزون المتاح", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+                                Text("في مستودع المصدر", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 11.sp)
                             }
                             Text("$availableQty", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = accentColor)
                         }
@@ -295,7 +232,7 @@ fun StockTransferScreen(
                         modifier = Modifier.fillMaxWidth().height(56.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = accentColor),
                         shape = RoundedCornerShape(16.dp),
-                        enabled = uiState.selectedVariant != null && uiState.sourceWarehouse != null && uiState.destinationWarehouse != null && uiState.quantity.isNotBlank()
+                        enabled = uiState.selectedVariant != null && uiState.sourceWarehouse != null && uiState.destinationWarehouse != null && uiState.quantity.isNotBlank() && !uiState.isSubmitting
                     ) {
                         Text("بدء عملية الترحيل", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     }

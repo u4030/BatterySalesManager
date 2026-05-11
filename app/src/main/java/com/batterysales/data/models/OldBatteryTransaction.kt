@@ -9,7 +9,7 @@ data class OldBatteryTransaction(
     val warehouseId: String = "",
     val totalAmperes: Double = 0.0,
     val type: OldBatteryTransactionType = OldBatteryTransactionType.INTAKE, // INTAKE (from customer) or SALE (sold to recycler)
-    val amount: Double = 0.0, // Only for SALE type
+    val amount: Double = 0.0, // Purchase price (INTAKE) or Sale price (SALE)
     val date: Date = Date(),
     val notes: String = "",
     val createdByUserName: String = ""

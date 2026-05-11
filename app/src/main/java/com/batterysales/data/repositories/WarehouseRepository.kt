@@ -14,6 +14,7 @@ class WarehouseRepository @Inject constructor(
 
     fun getWarehouses(): Flow<List<Warehouse>> = callbackFlow {
         val listenerRegistration = firestore.collection(Warehouse.COLLECTION_NAME)
+            .limit(100) // Safety limit for warehouses
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     close(error)
@@ -28,7 +29,7 @@ class WarehouseRepository @Inject constructor(
     }
 
     suspend fun getWarehousesOnce(): List<Warehouse> {
-        val snapshot = firestore.collection(Warehouse.COLLECTION_NAME).get().await()
+        val snapshot = firestore.collection(Warehouse.COLLECTION_NAME).limit(100).get().await()
         return snapshot.documents.mapNotNull { it.toObject(Warehouse::class.java)?.copy(id = it.id) }
     }
 

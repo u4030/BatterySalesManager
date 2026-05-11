@@ -26,7 +26,10 @@ data class StockEntry(
     val createdBy: String = "",
     val createdByUserName: String = "",
     val returnedQuantity: Int = 0,
-    val returnDate: Date? = null
+    val returnDate: Date? = null,
+    val remainingBalance: Double? = null, // المتبقي من قيمة الطلبية (بعد الكاش والمرتجعات)
+    val isSettled: Boolean = false, // هل الطلبية مسددة بالكامل؟
+    val settlementNotes: List<String> = emptyList() // ملاحظات التسوية (أرقام الشيكات، المرتجعات، إلخ)
 ) {
     /**
      * Calculates the net impact of this entry on stock levels.

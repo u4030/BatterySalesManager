@@ -4,8 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.paging.compose.collectAsLazyPagingItems
@@ -49,7 +47,6 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hiltViewModel()) {
-    val billViewModel: com.batterysales.viewmodel.BillViewModel = hiltViewModel()
     val keyboardController = com.batterysales.ui.components.LocalCustomKeyboardController.current
     val pagingItems = viewModel.inventoryReport.collectAsLazyPagingItems()
     val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
@@ -84,9 +81,6 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
 
     val bgColor = MaterialTheme.colorScheme.background
     val accentColor = Color(0xFFFB8C00)
-    val headerGradient = androidx.compose.ui.graphics.Brush.verticalGradient(
-        colors = listOf(Color(0xFFE53935), Color(0xFFFB8C00))
-    )
 
     if (showScanner) {
         androidx.compose.ui.window.Dialog(
@@ -131,7 +125,10 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                         actions = {
                             HeaderIconButton(
                                 icon = Icons.Default.Refresh,
-                                onClick = { viewModel.refreshAll() },
+                                onClick = { 
+                                    viewModel.refreshAll()
+                                    if (selectedTab == 0) pagingItems.refresh()
+                                },
                                 contentDescription = "Refresh"
                             )
                         }
@@ -177,7 +174,7 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                     else -> false
                 }
 
-                if (currentTabLoading && (selectedTab != 0 || pagingItems.itemCount == 0)) {
+                if (currentTabLoading && (selectedTab != 0 || pagingItems.itemCount == 0) && (selectedTab != 2 || supplierItems.isEmpty())) {
                     item {
                         Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator(color = accentColor)
@@ -190,9 +187,40 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                                 InventoryReportControls(viewModel)
                             }
 
+                            val loadState = pagingItems.loadState.refresh
+                            if (loadState is androidx.paging.LoadState.Error) {
+                                item {
+                                    Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Text("حدث خطأ أثناء تحميل البيانات", color = MaterialTheme.colorScheme.error)
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            Button(onClick = { pagingItems.retry() }) {
+                                                Text("إعادة المحاولة")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
                             if (pagingItems.itemCount > 0 && !currentTabLoading) {
                                 item {
                                     GrandTotalCard(totalQuantity = grandTotalQuantity, isSeller = isSeller)
+                                }
+                            }
+
+                            if (pagingItems.itemCount == 0 && !currentTabLoading && loadState !is androidx.paging.LoadState.Error) {
+                                item {
+                                    Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Icon(Icons.Default.Inventory, contentDescription = null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+                                            Spacer(modifier = Modifier.height(16.dp))
+                                            Text("لا يوجد بيانات في المخزون حالياً", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            TextButton(onClick = { viewModel.refreshAll(); pagingItems.refresh() }) {
+                                                Text("تحديث القائمة")
+                                            }
+                                        }
+                                    }
                                 }
                             }
 
@@ -236,7 +264,7 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                         }
                         2 -> {
                             if (!isSeller) {
-                                supplierReportSectionRedesigned(this, viewModel, supplierItems, billViewModel, navController)
+                                supplierReportSectionRedesigned(this, viewModel, supplierItems, navController)
                             }
                         }
                     }
@@ -623,7 +651,6 @@ private fun supplierReportSectionRedesigned(
     scope: androidx.compose.foundation.lazy.LazyListScope,
     viewModel: ReportsViewModel,
     supplierItems: List<com.batterysales.viewmodel.SupplierReportItem>,
-    billViewModel: com.batterysales.viewmodel.BillViewModel,
     navController: NavController
 ) {
     scope.item {
@@ -658,40 +685,55 @@ private fun supplierReportSectionRedesigned(
         }
     }
 
-    // Group 1: Suppliers with Balance > 0
-    val suppliersWithBalance = supplierItems.filter { it.balance > 0.001 }
-    if (suppliersWithBalance.isNotEmpty()) {
+    if (supplierItems.isEmpty()) {
         scope.item {
-            Text(
-                "موردين بانتظار تسديد ذمم:",
-                modifier = Modifier.padding(16.dp),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFFEF4444)
-            )
+            Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                Text("لا يوجد موردين حالياً", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
-        scope.items(suppliersWithBalance) { item ->
+    } else {
+        scope.items(supplierItems) { item ->
             Box(modifier = Modifier.padding(horizontal = 16.dp)) {
-                SupplierCardRedesigned(item, navController)
+                SupplierSummaryCard(item, onClick = {
+                    navController.navigate("supplier_details/${item.supplier.id}")
+                })
             }
         }
     }
+}
 
-    // Group 2: Settled Suppliers
-    val settledSuppliers = supplierItems.filter { it.balance <= 0.001 }
-    if (settledSuppliers.isNotEmpty()) {
-        scope.item {
-            Text(
-                "موردين مسددين:",
-                modifier = Modifier.padding(16.dp),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF10B981)
-            )
-        }
-        scope.items(settledSuppliers) { item ->
-            Box(modifier = Modifier.padding(horizontal = 16.dp)) {
-                SupplierCardRedesigned(item, navController)
+@Composable
+fun SupplierSummaryCard(
+    item: com.batterysales.viewmodel.SupplierReportItem,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(item.supplier.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+            }
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("مدين (مشتريات)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("JD ${String.format("%.3f", item.totalDebit)}", fontWeight = FontWeight.Bold, color = Color(0xFFFB8C00))
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("دائن (مسدد)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("JD ${String.format("%.3f", item.totalCredit)}", fontWeight = FontWeight.Bold, color = Color(0xFF10B981))
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("المتبقي", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("JD ${String.format("%.3f", item.balance)}", fontWeight = FontWeight.ExtraBold, color = if (item.balance > 0) Color(0xFFEF4444) else Color(0xFF10B981))
+                }
             }
         }
     }
@@ -711,7 +753,7 @@ fun SupplierReportControls(viewModel: ReportsViewModel) {
         CustomKeyboardTextField(
             value = searchQuery,
             onValueChange = { viewModel.onSupplierSearchQueryChanged(it) },
-            label = "بحث باسم المورد أو رقم المرجع...",
+            label = "بحث باسم المورد...",
             modifier = Modifier.fillMaxWidth(),
             onSearch = { /* Search is reactive, just hide keyboard */ }
         )
@@ -720,7 +762,7 @@ fun SupplierReportControls(viewModel: ReportsViewModel) {
             onClick = { showDatePicker = true },
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            colors = CardDefaults.cardColors(MaterialTheme.colorScheme.surface),
             border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
         ) {
             Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -745,166 +787,6 @@ fun SupplierReportControls(viewModel: ReportsViewModel) {
                 showDatePicker = false
             }
         )
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-fun SupplierCardRedesigned(
-    item: com.batterysales.viewmodel.SupplierReportItem,
-    navController: NavController
-) {
-    var expanded by remember { mutableStateOf(false) }
-    val context = androidx.compose.ui.platform.LocalContext.current
-
-    Card(
-        modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(modifier = Modifier.padding(20.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text(item.supplier.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(
-                        onClick = { com.batterysales.utils.PrintUtils.printSupplierReport(context, item) },
-                        modifier = Modifier.size(36.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), CircleShape)
-                    ) {
-                        Icon(Icons.Default.Print, contentDescription = "طباعة", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    IconButton(
-                        onClick = { com.batterysales.utils.PrintUtils.shareSupplierReport(context, item) },
-                        modifier = Modifier.size(36.dp).background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.1f), CircleShape)
-                    ) {
-                        Icon(Icons.Default.Share, contentDescription = "مشاركة", tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(18.dp))
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    IconButton(onClick = { expanded = !expanded }, modifier = Modifier.size(24.dp)) {
-                        Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, contentDescription = null)
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                InfoBadge(label = "مدين", value = "JD ${String.format("%.3f", item.totalDebit)}", color = Color(0xFFFB8C00))
-                InfoBadge(label = "دائن", value = "JD ${String.format("%.3f", item.totalCredit)}", color = Color(0xFF10B981))
-                InfoBadge(label = "المتبقي", value = "JD ${String.format("%.3f", item.balance)}", color = if (item.balance > 0) Color(0xFFEF4444) else Color(0xFF10B981))
-            }
-
-            if (expanded) {
-                var selectedSubTab by remember { mutableStateOf(0) }
-                val dateFormatter = java.text.SimpleDateFormat("yyyy/MM/dd hh:mm a", java.util.Locale.getDefault())
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    TabItem(
-                        title = "غير مسددة",
-                        isSelected = selectedSubTab == 0,
-                        onClick = { selectedSubTab = 0 },
-                        modifier = Modifier.weight(1f)
-                    )
-                    TabItem(
-                        title = "مسددة",
-                        isSelected = selectedSubTab == 1,
-                        onClick = { selectedSubTab = 1 },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                val currentRegularOrders = if (selectedSubTab == 0) {
-                    item.regularOrders.filter { it.totalActualPaid < it.entry.totalCost - 0.001 }
-                } else {
-                    item.regularOrders.filter { it.totalActualPaid >= it.entry.totalCost - 0.001 }
-                }
-
-                val currentObligatedOrders = if (selectedSubTab == 0) {
-                    item.obligatedOrders.filter { it.totalActualPaid < it.entry.totalCost - 0.001 }
-                } else {
-                    item.obligatedOrders.filter { it.totalActualPaid >= it.entry.totalCost - 0.001 }
-                }
-
-                if (currentRegularOrders.isNotEmpty()) {
-                    Text("طلبيات شراء (نقدية/رصيد):", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(12.dp))
-                    currentRegularOrders.forEach { po ->
-                        PurchaseOrderCard(po, dateFormatter, navController)
-                    }
-                }
-
-                if (currentObligatedOrders.isNotEmpty()) {
-                    if (currentRegularOrders.isNotEmpty()) Spacer(modifier = Modifier.height(16.dp))
-
-                    var obligatedExpanded by remember { mutableStateOf(false) }
-
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFFEF4444).copy(alpha = 0.05f)),
-                        shape = RoundedCornerShape(16.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.2f))
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().clickable { obligatedExpanded = !obligatedExpanded },
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    "طلبيات مرتبطة بشيكات/كمبيالات (${currentObligatedOrders.size})",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFFEF4444)
-                                )
-                                Icon(
-                                    if (obligatedExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                                    contentDescription = null,
-                                    tint = Color(0xFFEF4444)
-                                )
-                            }
-
-                            if (obligatedExpanded) {
-                                Spacer(modifier = Modifier.height(12.dp))
-                                currentObligatedOrders.forEach { po ->
-                                    PurchaseOrderCard(po, dateFormatter, navController)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if (currentRegularOrders.isEmpty() && currentObligatedOrders.isEmpty()) {
-                    Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                        Text("لا يوجد طلبات في هذا القسم", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
-
-            if (item.supplier.yearlyTarget > 0) {
-                Spacer(modifier = Modifier.height(20.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
-                    Text("الهدف السنوي: JD ${String.format("%.3f", item.supplier.yearlyTarget)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("${(item.targetProgress * 100).toInt()}%", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                LinearProgressIndicator(
-                    progress = item.targetProgress.toFloat().coerceIn(0f, 1f),
-                    modifier = Modifier.fillMaxWidth().height(6.dp),
-                    color = if (item.targetProgress >= 1.0) Color(0xFF10B981) else MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f),
-                    strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
-                )
-            }
-        }
     }
 }
 
@@ -961,28 +843,6 @@ fun PurchaseOrderCard(
                 )
             }
 
-            if (po.autoLinkedAmount > 0.001) {
-                val isFullyCovered = po.totalLinkedAmount >= po.entry.totalCost - 0.001
-                Surface(
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.05f),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = if (isFullyCovered) 
-                                "مغطاة بالكامل من شيكات غير مرتبطة" 
-                            else 
-                                "مغطاة جزئياً بمبلغ JD ${String.format("%.3f", po.totalLinkedAmount)} من شيكات مرتبطة",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-            }
-
-
             if (po.referenceNumbers.isNotEmpty()) {
                 HorizontalDivider(modifier = Modifier.alpha(0.1f))
                 Row(verticalAlignment = Alignment.Top) {
@@ -1013,9 +873,7 @@ fun PurchaseOrderCard(
                             .fillMaxWidth()
                             .padding(vertical = 4.dp)
                             .clickable {
-                                // Navigate to ledger with invoice search
                                 navController.navigate("product_ledger/${entry.productVariantId}/${entry.productName}/${entry.capacity}/no_spec")
-                                // Note: We should ideally pass invoiceNumber to search but need ViewModel support
                             },
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                         shape = RoundedCornerShape(8.dp),

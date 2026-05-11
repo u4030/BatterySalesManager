@@ -241,8 +241,8 @@ fun OldBatteryLedgerScreen(
             isSeller = isSeller,
             userWarehouseId = userWarehouseId,
             onDismiss = { showAddDialog = false },
-            onConfirm = { qty, amps, notes, whId ->
-                viewModel.addManualIntake(qty, amps, notes, whId)
+            onConfirm = { qty, amps, price, notes, whId ->
+                viewModel.addManualIntake(qty, amps, price, notes, whId)
                 showAddDialog = false
             }
         )
@@ -255,8 +255,8 @@ fun OldBatteryLedgerScreen(
             isSeller = isSeller,
             userWarehouseId = userWarehouseId,
             onDismiss = { showEditDialog = null },
-            onConfirm = { qty, amps, notes, whId ->
-                viewModel.updateTransaction(showEditDialog!!.copy(quantity = qty, totalAmperes = amps, notes = notes, warehouseId = whId))
+            onConfirm = { qty, amps, price, notes, whId ->
+                viewModel.updateTransaction(showEditDialog!!.copy(quantity = qty, totalAmperes = amps, amount = price, notes = notes, warehouseId = whId))
                 showEditDialog = null
             }
         )
@@ -383,11 +383,11 @@ fun OldBatteryTransactionCard(
                             fontWeight = FontWeight.Medium
                         )
                     }
-                    if (!isIntake) {
+                    if (transaction.amount > 0) {
                         Text(
                             text = "JD ${String.format("%,.3f", transaction.amount)}",
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF10B981),
+                            color = if (isIntake) Color(0xFFEF4444) else Color(0xFF10B981),
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
@@ -448,15 +448,17 @@ fun AddEditOldBatteryDialog(
     isSeller: Boolean,
     userWarehouseId: String?,
     onDismiss: () -> Unit,
-    onConfirm: (Int, Double, String, String) -> Unit
+    onConfirm: (Int, Double, Double, String, String) -> Unit
 ) {
     var qty by remember { mutableStateOf(transaction?.quantity?.toString() ?: "") }
     var amps by remember { mutableStateOf(transaction?.totalAmperes?.toString() ?: "") }
+    var price by remember { mutableStateOf(transaction?.amount?.toString() ?: "") }
     var notes by remember { mutableStateOf(transaction?.notes ?: "") }
+    var errorMsg by remember { mutableStateOf<String?>(null) }
     
-    // Default to user warehouse if seller, or existing transaction warehouse, or first warehouse
+    // Default to user warehouse if seller, or existing transaction warehouse, or NONE for admin to force selection
     val initialWH = if (isSeller) userWarehouseId ?: "" 
-                   else transaction?.warehouseId ?: (if (scrapWarehouses.isNotEmpty()) scrapWarehouses[0].parentWarehouseId else "")
+                   else transaction?.warehouseId ?: ""
                    
     var selectedWarehouseId by remember { mutableStateOf(initialWH) }
 
@@ -469,7 +471,7 @@ fun AddEditOldBatteryDialog(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 if (scrapWarehouses.size > 1 && !isSeller) {
-                    Text("المستودع:", style = MaterialTheme.typography.titleSmall)
+                    Text("المستودع (إلزامي):", style = MaterialTheme.typography.titleSmall, color = if (selectedWarehouseId.isEmpty()) Color.Red else MaterialTheme.colorScheme.onSurface)
                     androidx.compose.foundation.lazy.LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.fillMaxWidth()
@@ -500,10 +502,21 @@ fun AddEditOldBatteryDialog(
                     keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
                 )
                 com.batterysales.ui.components.CustomKeyboardTextField(
+                    value = price,
+                    onValueChange = { price = it },
+                    label = "المبلغ المدفوع (اختياري)",
+                    keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
+                )
+                com.batterysales.ui.components.CustomKeyboardTextField(
                     value = notes,
                     onValueChange = { notes = it },
                     label = "ملاحظات"
                 )
+                
+                errorMsg?.let {
+                    Text(it, color = Color.Red, style = MaterialTheme.typography.bodySmall)
+                }
+                
                 Spacer(modifier = Modifier.height(com.batterysales.ui.components.LocalCustomKeyboardController.current.keyboardHeight.value))
             }
         },
@@ -511,7 +524,18 @@ fun AddEditOldBatteryDialog(
             Button(onClick = {
                 val q = qty.toIntOrNull() ?: 0
                 val a = amps.toDoubleOrNull() ?: 0.0
-                if (q > 0 && selectedWarehouseId.isNotEmpty()) onConfirm(q, a, notes, selectedWarehouseId)
+                val p = price.toDoubleOrNull() ?: 0.0
+                
+                if (selectedWarehouseId.isEmpty()) {
+                    errorMsg = "الرجاء تحديد المستودع أولاً"
+                    return@Button
+                }
+                if (q <= 0) {
+                    errorMsg = "الرجاء إدخال كمية صحيحة"
+                    return@Button
+                }
+                
+                onConfirm(q, a, p, notes, selectedWarehouseId)
             }) { Text("موافق") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }

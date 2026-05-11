@@ -106,9 +106,10 @@ class OldBatteryViewModel @Inject constructor(
                     _scrapWarehouses.value = filtered
 
                     if (user?.role == "admin" && _selectedWarehouseId.value == null) {
+                        // For admin, don't pre-select a warehouse to force manual selection in dialogs
+                        // But load initial data from first available if needed for summary
                         filtered.firstOrNull()?.let {
-                            _selectedWarehouseId.value = it.parentWarehouseId
-                            loadTransactions(reset = true, warehouseId = it.parentWarehouseId)
+                            loadTransactions(reset = true, warehouseId = null) // Load all for admin view initially
                         }
                     } else if (user?.role == "seller") {
                         _selectedWarehouseId.value = user.warehouseId
@@ -194,8 +195,8 @@ class OldBatteryViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 repository.deleteTransaction(id)
-                // Sync with invoice is now less direct with Paging, 
-                // typically we'd fetch the transaction first if needed.
+                // Delete related treasury transaction
+                accountingRepository.deleteTransactionsByRelatedId(id)
             } catch (e: Exception) {
                 Log.e("OldBatteryViewModel", "Error deleting transaction", e)
             }
@@ -206,6 +207,15 @@ class OldBatteryViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 repository.updateTransaction(transaction)
+
+                // Sync with treasury if applicable
+                accountingRepository.updateTransactionByRelatedId(
+                    relatedId = transaction.id,
+                    newAmount = transaction.amount,
+                    newDescription = if (transaction.type == OldBatteryTransactionType.INTAKE)
+                        "تعديل: شراء بطاريات قديمة (سكراب): ${transaction.quantity} حبة"
+                    else "تعديل: بيع بطاريات قديمة (سكراب): ${transaction.quantity} حبة"
+                )
 
                 // Sync with invoice if applicable
                 transaction.invoiceId?.let { invoiceId ->
@@ -238,7 +248,7 @@ class OldBatteryViewModel @Inject constructor(
         invoiceRepository.updateInvoice(updatedInvoice)
     }
 
-    fun addManualIntake(quantity: Int, totalAmperes: Double, notes: String, warehouseId: String) {
+    fun addManualIntake(quantity: Int, totalAmperes: Double, amount: Double, notes: String, warehouseId: String) {
         viewModelScope.launch {
             try {
                 // Enforce seller warehouse if applicable
@@ -248,12 +258,26 @@ class OldBatteryViewModel @Inject constructor(
                     quantity = quantity,
                     warehouseId = finalWarehouseId,
                     totalAmperes = totalAmperes,
+                    amount = amount,
                     type = com.batterysales.data.models.OldBatteryTransactionType.INTAKE,
                     date = java.util.Date(),
                     notes = notes,
                     createdByUserName = currentUser?.displayName ?: ""
                 )
-                repository.addTransaction(transaction)
+                val transId = repository.addTransaction(transaction)
+
+                // Add to Treasury as EXPENSE if amount > 0
+                if (amount > 0.001) {
+                    val treasuryTransaction = Transaction(
+                        type = TransactionType.EXPENSE,
+                        amount = amount,
+                        description = "شراء بطاريات قديمة (سكراب): $quantity حبة",
+                        warehouseId = finalWarehouseId,
+                        relatedId = transId,
+                        paymentMethod = "cash"
+                    )
+                    accountingRepository.addTransaction(treasuryTransaction)
+                }
             } catch (e: Exception) {
                 Log.e("OldBatteryViewModel", "Error adding manual intake", e)
             }
@@ -276,14 +300,15 @@ class OldBatteryViewModel @Inject constructor(
                     notes = "بيع بطاريات قديمة",
                     createdByUserName = currentUser?.displayName ?: ""
                 )
-                repository.addTransaction(transaction)
+                val transId = repository.addTransaction(transaction)
 
                 // Add to Treasury
                 val treasuryTransaction = Transaction(
                     type = TransactionType.INCOME,
                     amount = amount,
                     description = "بيع بطاريات قديمة (سكراب): $quantity حبة",
-                    relatedId = null // Manual income in treasury
+                    warehouseId = finalWarehouseId,
+                    relatedId = transId
                 )
                 accountingRepository.addTransaction(treasuryTransaction)
             } catch (e: Exception) {
