@@ -457,17 +457,38 @@ class StockEntryRepository @Inject constructor(
             .filter { it.totalCost > 0 }
     }
 
-    suspend fun getEntriesBySuppliers(supplierIds: List<String>): List<StockEntry> {
-        if (supplierIds.isEmpty()) return emptyList()
+    suspend fun getEntriesBySuppliers(supplierIds: List<String>, supplierNames: List<String> = emptyList()): List<StockEntry> {
+        if (supplierIds.isEmpty() && supplierNames.isEmpty()) return emptyList()
         val allEntries = mutableListOf<StockEntry>()
-        val chunks = supplierIds.chunked(30)
-        for (chunk in chunks) {
-            val snap = firestore.collection(StockEntry.COLLECTION_NAME)
-                .whereIn("supplierId", chunk)
-                .get()
-                .await()
-            allEntries.addAll(snap.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) })
+
+        // Fetch by ID
+        if (supplierIds.isNotEmpty()) {
+            supplierIds.chunked(30).forEach { chunk ->
+                val snap = firestore.collection(StockEntry.COLLECTION_NAME)
+                    .whereIn("supplierId", chunk)
+                    .get()
+                    .await()
+                allEntries.addAll(snap.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) })
+            }
         }
+
+        // Fetch by Name (for legacy data without IDs)
+        if (supplierNames.isNotEmpty()) {
+            supplierNames.chunked(30).forEach { chunk ->
+                val snap = firestore.collection(StockEntry.COLLECTION_NAME)
+                    .whereIn("supplier", chunk)
+                    .get()
+                    .await()
+
+                // Add only if not already added by ID to avoid duplicates
+                val existingIds = allEntries.map { it.id }.toSet()
+                val legacyEntries = snap.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
+                    .filter { !existingIds.contains(it.id) }
+
+                allEntries.addAll(legacyEntries)
+            }
+        }
+
         return allEntries
     }
 

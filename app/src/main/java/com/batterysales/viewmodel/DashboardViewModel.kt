@@ -135,11 +135,13 @@ class DashboardViewModel @Inject constructor(
 
                         val upcoming = if (user.role == User.ROLE_SELLER) emptyList()
                         else {
+                            // Firestore doesn't allow inequality filters on different fields (status and dueDate) in one query.
+                            // We fetch unpaid bills and filter by date locally for robustness.
                             firestore.collection(Bill.COLLECTION_NAME)
                                 .whereNotEqualTo("status", BillStatus.PAID)
-                                .whereLessThanOrEqualTo("dueDate", nextWeek.time)
                                 .get().await()
                                 .documents.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) }
+                                .filter { it.dueDate != null && !it.dueDate.after(nextWeek.time) }
                                 .sortedBy { it.dueDate }
                         }
 

@@ -219,8 +219,11 @@ class ReportsViewModel @Inject constructor(
         // Run migration for existing data
         viewModelScope.launch {
             try {
+                // Always try to run migrateInvoiceDates to catch up on any missing fields (like remainingBalance)
+                // for new data entered during the transition, but keep migrateAllVariants guarded.
+                stockEntryRepository.migrateInvoiceDates()
+
                 if (!settingsManager.isMigrationDone()) {
-                    stockEntryRepository.migrateInvoiceDates()
                     stockEntryRepository.migrateAllVariants(productRepository, supplierRepository, billRepository)
                     settingsManager.setMigrationDone(true)
                 }
@@ -355,8 +358,9 @@ class ReportsViewModel @Inject constructor(
                 val start = _startDate.value
                 val end = _endDate.value
                 val supplierIds = suppliers.map { it.id }
+                val supplierNames = suppliers.map { it.name }
 
-                val allEntriesJob = async { stockEntryRepository.getEntriesBySuppliers(supplierIds) }
+                val allEntriesJob = async { stockEntryRepository.getEntriesBySuppliers(supplierIds, supplierNames) }
                 val allBillsJob = async { billRepository.getBillsBySuppliers(supplierIds) }
 
                 val allEntries: List<StockEntry> = allEntriesJob.await()
