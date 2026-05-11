@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.batterysales.ui.components.InfoBadge
@@ -167,7 +168,7 @@ fun SupplierDetailsScreen(
 
                         if (currentObligatedOrders.isNotEmpty()) {
                             Spacer(modifier = Modifier.height(16.dp))
-                            Text("طلبيات مرتبطة بالتزامات:", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = Color(0xFFEF4444))
+                            Text("طلبيات مرتبطة بالتزامات (شيكات/كمبيالات):", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = Color(0xFFEF4444))
                             Spacer(modifier = Modifier.height(12.dp))
                             currentObligatedOrders.forEach { po ->
                                 PurchaseOrderCard(po, dateFormatter, navController)

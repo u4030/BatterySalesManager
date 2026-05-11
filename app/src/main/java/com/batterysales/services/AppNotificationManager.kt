@@ -201,9 +201,8 @@ class AppNotificationManager @Inject constructor(
     }
 
     /**
-     * Optimized Targeted Low Stock Listener:
-     * Instead of periodic full-scans, this listens for RECENT Stock Entries
-     * and checks only the specific variant affected.
+     * Improved Targeted Low Stock Listener:
+     * Listens for ALL document changes in StockEntry and checks every affected variant.
      */
     private fun setupTargetedLowStockListener() {
         lowStockListener?.remove()
@@ -211,24 +210,22 @@ class AppNotificationManager @Inject constructor(
         var isFirstSnapshot = true
         lowStockListener = firestore.collection(StockEntry.COLLECTION_NAME)
             .orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING)
-            .limit(1)
+            .limit(10) // Limit to 10 for snapshot startup efficiency
             .addSnapshotListener { snapshot, e ->
                 if (e != null) return@addSnapshotListener
                 if (snapshot == null) return@addSnapshotListener
 
                 if (isFirstSnapshot) {
                     isFirstSnapshot = false
-                    // Optionally trigger a one-time check on startup if needed,
-                    // but we prefer efficiency.
                     return@addSnapshotListener
                 }
 
                 snapshot.documentChanges.forEach { change ->
                     if (change.type == com.google.firebase.firestore.DocumentChange.Type.ADDED) {
                         val entry = change.document.toObject(StockEntry::class.java)
+                        // Verify approval status before notifying
                         if (entry.status == StockEntry.STATUS_APPROVED) {
                             scope.launch {
-                                // Check ONLY the affected variant in the affected warehouse
                                 checkVariantLowStock(entry.productVariantId, entry.warehouseId)
                             }
                         }
@@ -239,14 +236,13 @@ class AppNotificationManager @Inject constructor(
 
     private suspend fun checkVariantLowStock(variantId: String, warehouseId: String) {
         try {
-            // Efficiency: Fetch variant directly (cached by Firestore usually)
             val variant = productVariantRepository.getVariant(variantId) ?: return
             if (variant.archived) return
 
             val threshold = variant.minQuantities[warehouseId] ?: variant.minQuantity
             if (threshold <= 0) return
 
-            // Use denormalized currentStock map (The ground truth)
+            // Use denormalized currentStock map
             val qty = variant.currentStock?.get(warehouseId) ?: 0
 
             val key = "$variantId:$warehouseId"
@@ -262,7 +258,6 @@ class AppNotificationManager @Inject constructor(
                     notifiedLowStockKeys.add(key)
                 }
             } else {
-                // Reset notification if stock is replenished
                 notifiedLowStockKeys.remove(key)
             }
         } catch (e: Exception) {
