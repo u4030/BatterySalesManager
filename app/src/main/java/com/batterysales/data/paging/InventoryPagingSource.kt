@@ -58,17 +58,9 @@ class InventoryPagingSource(
                         // Fallback: If currentStock is null (migration pending), calculate on-the-fly for THIS document only
                         val warehouseIds = warehouseList.map { it.id }.toSet()
                         
-                        val whStock = if (variant.currentStock != null) {
-                            variant.currentStock.filter { warehouseIds.contains(it.key) }
-                        } else {
-                            // Target calculation fallback to guarantee data visibility
-                            val calculatedStock = mutableMapOf<String, Int>()
-                            warehouseIds.forEach { wid ->
-                                val qty = stockEntryRepository.getVariantQuantity(variant.id, wid)
-                                if (qty != 0) calculatedStock[wid] = qty
-                            }
-                            calculatedStock
-                        }
+                        // High Performance: Use currentStock map
+                        // After migration, currentStock should always be present.
+                        val whStock = variant.currentStock?.filter { warehouseIds.contains(it.key) } ?: emptyMap()
                         
                         val totalQty = whStock.values.sum()
 

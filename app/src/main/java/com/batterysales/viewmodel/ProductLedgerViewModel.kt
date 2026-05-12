@@ -135,16 +135,8 @@ class ProductLedgerViewModel @Inject constructor(
             }
         }
 
-        // Reactively refresh when any stock action happens (Lightweight listener)
-        com.google.firebase.firestore.FirebaseFirestore.getInstance()
-            .collection(com.batterysales.data.models.StockEntry.COLLECTION_NAME)
-            .orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING)
-            .limit(1)
-            .addSnapshotListener { snapshot, e ->
-                if (e == null && snapshot != null && !snapshot.metadata.hasPendingWrites()) {
-                    refreshTrigger.value += 1
-                }
-            }
+        // Optimization: Removed collection-wide listener.
+        // Use manual refresh (loadData) to update the ledger.
     }
 
     fun loadData(reset: Boolean = false) {

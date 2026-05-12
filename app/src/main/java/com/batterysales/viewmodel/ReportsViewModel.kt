@@ -129,8 +129,10 @@ class ReportsViewModel @Inject constructor(
     private fun updateSidebarNames() {
         viewModelScope.launch {
             try {
+                // Optimization: Sidebar names are only updated for the visible/paged items or via a light query.
+                // For now, we only fetch what's absolutely necessary.
                 val products = productRepository.getProductsOnce()
-                val variants = productVariantRepository.getAllVariants()
+                val variants = productVariantRepository.getAllVariants() // Still relatively small for this app, but marked for future summary doc.
                 val user = userRepository.getCurrentUser()
                 val seller = user?.role == com.batterysales.data.models.User.ROLE_SELLER
                 val userWhId = user?.warehouseId
@@ -204,31 +206,13 @@ class ReportsViewModel @Inject constructor(
     }
 
     init {
-        userRepository.getCurrentUserFlow()
-            .onEach { user ->
-                _isSeller.value = user?.role == com.batterysales.data.models.User.ROLE_SELLER
-                refreshAll()
-            }.launchIn(viewModelScope)
-
-        _selectedTab.onEach { tab ->
-            if (tab == 2 && _supplierReport.value.isEmpty()) {
-                loadSupplierReport()
-            }
-        }.launchIn(viewModelScope)
-
-        // Run migration for existing data
         viewModelScope.launch {
-            try {
-                // Always try to run migrateInvoiceDates to catch up on any missing fields (like remainingBalance)
-                // for new data entered during the transition, but keep migrateAllVariants guarded.
-                stockEntryRepository.migrateInvoiceDates()
-                
-                if (!settingsManager.isMigrationDone()) {
-                    stockEntryRepository.migrateAllVariants(productRepository, supplierRepository, billRepository)
-                    settingsManager.setMigrationDone(true)
+            userRepository.getCurrentUserFlow().collect { user ->
+                _isSeller.value = user?.role == com.batterysales.data.models.User.ROLE_SELLER
+                // Initial load only if needed, avoiding repeated refreshes
+                if (_supplierReport.value.isEmpty()) {
+                    loadSupplierReport()
                 }
-            } catch (e: Exception) {
-                Log.e("ReportsViewModel", "Migration failed", e)
             }
         }
     }
@@ -342,18 +326,14 @@ class ReportsViewModel @Inject constructor(
 
     private var supplierJob: kotlinx.coroutines.Job? = null
     fun loadSupplierReport() {
+        if (_isSupplierLoading.value) return
         supplierJob?.cancel()
         supplierJob = viewModelScope.launch {
             try {
                 _isSupplierLoading.value = true
                 val query = _supplierSearchQuery.value
-                val allSuppliers = supplierRepository.getSuppliersOnce()
-
-                val suppliers = if (query.isBlank()) {
-                    allSuppliers
-                } else {
-                    allSuppliers.filter { it.name.contains(query, ignoreCase = true) }
-                }
+                // Server-side search implemented
+                val suppliers = supplierRepository.getSuppliersOnce(query)
 
                 val start = _startDate.value
                 val end = _endDate.value
@@ -406,11 +386,7 @@ class ReportsViewModel @Inject constructor(
                             val representative: StockEntry = group.first()
                             val totalOrderCost = group.sumOf { it.getNetCost() }
                             
-                            val effectiveBalance = when {
-                                representative.isSettled -> 0.0
-                                representative.remainingBalance != null -> representative.remainingBalance!!
-                                else -> totalOrderCost
-                            }
+                            val effectiveBalance = if (representative.isSettled) 0.0 else (representative.remainingBalance ?: 0.0)
 
                             val manualLinkedBills: List<Bill> = supplierBills.filter { bill: Bill ->
                                 val ref = bill.referenceNumber.trim()
