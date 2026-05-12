@@ -24,29 +24,34 @@ import com.batterysales.ui.components.SharedHeader
 import com.batterysales.ui.components.HeaderIconButton
 import com.batterysales.ui.components.TabItem
 import com.batterysales.viewmodel.ReportsViewModel
+import com.batterysales.ui.components.AppDateRangePickerDialog
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SupplierDetailsScreen(
     supplierId: String,
     navController: NavController,
     viewModel: ReportsViewModel = hiltViewModel()
 ) {
-    val supplierReportItems by viewModel.supplierReport.collectAsState()
-    val supplierItem = supplierReportItems.find { it.supplier.id == supplierId }
+    val supplierItem by viewModel.selectedSupplierReport.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
     val isSupplierLoading by viewModel.isSupplierLoading.collectAsState()
+    val startDate by viewModel.startDate.collectAsState()
+    val endDate by viewModel.endDate.collectAsState()
 
-    // Trigger report loading for this specific supplier if not already loaded
+    var showDatePicker by remember { mutableStateOf(false) }
+    val dateRangePickerState = rememberDateRangePickerState()
+    val dateFormatterShort = java.text.SimpleDateFormat("yyyy/MM/dd", java.util.Locale.getDefault())
+
+    // Trigger targeted loading for this specific supplier
     LaunchedEffect(supplierId) {
-        if (supplierReportItems.isEmpty()) {
-            viewModel.loadSupplierReport()
-        }
+        viewModel.onSupplierSelected(supplierId)
     }
 
     Scaffold(
         topBar = {
             SharedHeader(
-                title = supplierItem?.supplier?.name ?: "تفاصيل المورد",
+                title = supplierItem?.supplier?.name ?: "تحميل التقرير...",
                 onBackClick = { navController.popBackStack() },
                 actions = {
                     if (supplierItem != null) {
@@ -80,6 +85,28 @@ fun SupplierDetailsScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                // Date Filter Card
+                item {
+                    Card(
+                        onClick = { showDatePicker = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+                    ) {
+                        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.DateRange, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Column {
+                                Text("الفترة الزمنية للتقرير", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                val startStr = startDate?.let { dateFormatterShort.format(java.util.Date(it)) } ?: "البداية"
+                                val endStr = endDate?.let { dateFormatterShort.format(java.util.Date(it)) } ?: "النهاية"
+                                Text("$startStr - $endStr", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+
                 // Financial Summary
                 item {
                     Card(
@@ -179,5 +206,16 @@ fun SupplierDetailsScreen(
                 }
             }
         }
+    }
+
+    if (showDatePicker) {
+        com.batterysales.ui.components.AppDateRangePickerDialog(
+            state = dateRangePickerState,
+            onDismiss = { showDatePicker = false },
+            onConfirm = {
+                viewModel.onDateRangeSelected(dateRangePickerState.selectedStartDateMillis, dateRangePickerState.selectedEndDateMillis)
+                showDatePicker = false
+            }
+        )
     }
 }

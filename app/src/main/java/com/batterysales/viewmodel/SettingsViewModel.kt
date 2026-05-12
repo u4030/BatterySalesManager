@@ -4,12 +4,15 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.batterysales.utils.SettingsManager
 import com.batterysales.data.repositories.*
+import com.batterysales.data.models.*
 import android.util.Log
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
+import java.util.*
 import javax.inject.Inject
 
 @HiltViewModel
@@ -17,6 +20,8 @@ class SettingsViewModel @Inject constructor(
     private val settingsManager: SettingsManager,
     private val stockEntryRepository: StockEntryRepository,
     private val productRepository: ProductRepository,
+    private val productVariantRepository: ProductVariantRepository,
+    private val warehouseRepository: WarehouseRepository,
     private val supplierRepository: SupplierRepository,
     private val billRepository: BillRepository
 ) : ViewModel() {
@@ -26,6 +31,9 @@ class SettingsViewModel @Inject constructor(
 
     private val _isMigrating = MutableStateFlow(false)
     val isMigrating = _isMigrating.asStateFlow()
+
+    private val _summaryStatus = MutableStateFlow<Map<String, Boolean>>(emptyMap())
+    val summaryStatus = _summaryStatus.asStateFlow()
 
     val fontSizeScale: StateFlow<Float> = settingsManager.fontSizeScale
     val isBold: StateFlow<Boolean> = settingsManager.isBold
@@ -73,6 +81,28 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    init {
+        checkSummariesStatus()
+    }
+
+    private fun checkSummariesStatus() {
+        viewModelScope.launch {
+            try {
+                val firestore = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                val summaries = listOf("inventory_global", "suppliers_overview")
+                val status = mutableMapOf<String, Boolean>()
+
+                summaries.forEach { id ->
+                    val snap = firestore.collection("summaries").document(id).get().await()
+                    status[id] = snap.exists()
+                }
+                _summaryStatus.value = status
+            } catch (e: Exception) {
+                Log.e("SettingsViewModel", "Error checking summary status", e)
+            }
+        }
+    }
+
     fun clearMigrationStatus() {
         _migrationStatus.value = null
     }
@@ -88,7 +118,7 @@ class SettingsViewModel @Inject constructor(
         val globalItems = mutableMapOf<String, InventorySummaryItem>()
         val warehouseItems = mutableMapOf<String, MutableMap<String, InventorySummaryItem>>()
 
-        variants.forEach { variant ->
+        variants.forEach { variant: ProductVariant ->
             val productName = products.find { it.id == variant.productId }?.name ?: "Unknown"
 
             val globalItem = InventorySummaryItem(
@@ -103,7 +133,9 @@ class SettingsViewModel @Inject constructor(
             )
             globalItems[variant.id] = globalItem
 
-            variant.currentStock?.forEach { (whId, qty) ->
+            variant.currentStock?.forEach { entry: Map.Entry<String, Int> ->
+                val whId = entry.key
+                val qty = entry.value
                 val whMap = warehouseItems.getOrPut(whId) { mutableMapOf() }
                 whMap[variant.id] = globalItem.copy(currentStock = qty)
             }
@@ -115,7 +147,9 @@ class SettingsViewModel @Inject constructor(
             .set(InventorySummary(id = "inventory_global", items = globalItems)).await()
 
         // Save Warehouses
-        warehouseItems.forEach { (whId, items) ->
+        warehouseItems.forEach { entry: Map.Entry<String, MutableMap<String, InventorySummaryItem>> ->
+            val whId = entry.key
+            val items = entry.value
             com.google.firebase.firestore.FirebaseFirestore.getInstance()
                 .collection("summaries").document("inventory_wh_$whId")
                 .set(InventorySummary(id = "inventory_wh_$whId", warehouseId = whId, items = items)).await()

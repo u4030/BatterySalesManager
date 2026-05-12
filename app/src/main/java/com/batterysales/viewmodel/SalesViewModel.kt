@@ -65,17 +65,19 @@ class SalesViewModel @Inject constructor(
                 val isSeller = user?.role == User.ROLE_SELLER
                 val userWarehouseId = user?.warehouseId
 
-                // --- ELITE STRATEGY: Single Read for Inventory ---
+                // Fetch Summary
                 cachedInventorySummary = summaryRepository.getInventorySummary(if (isSeller) userWarehouseId else null)
                 val warehouses = warehouseRepository.getWarehousesOnce()
                 val products = productRepository.getProductsOnce()
 
+                // Fallback: If summary is empty (first time), allow loading products from collection
                 val summaryItems = cachedInventorySummary?.items?.values ?: emptyList()
                 val availableProductIds = summaryItems.filter { it.currentStock > 0 }.map { it.productId }.toSet()
 
-                val filteredProducts = if (isSeller) {
+                val filteredProducts = if (isSeller && availableProductIds.isNotEmpty()) {
                     products.filter { !it.archived && availableProductIds.contains(it.id) }
                 } else {
+                    // Fallback to showing all active products if summary is empty
                     products.filter { !it.archived }
                 }
 
@@ -97,35 +99,67 @@ class SalesViewModel @Inject constructor(
     }
 
     fun onProductSelected(product: Product) {
-        // --- ELITE STRATEGY: Get variants from pre-loaded summary map ---
-        val summaryItems = cachedInventorySummary?.items?.values ?: emptyList()
-        val variantsForProduct = summaryItems.filter { it.productId == product.id }
-            .map { item ->
-                ProductVariant(
-                    id = item.variantId,
-                    productId = item.productId,
-                    capacity = item.capacity,
-                    barcode = item.barcode,
-                    sellingPrice = item.sellingPrice,
-                    weightedAverageCost = item.weightedAverageCost,
-                    productName = item.productName,
-                    currentStock = mapOf((cachedInventorySummary?.warehouseId ?: "global") to item.currentStock)
-                )
-            }.sortedBy { it.capacity }
-
-        val newStockMap = _uiState.value.stockLevels.toMutableMap()
-        variantsForProduct.forEach { v ->
-            newStockMap[Pair(v.id, cachedInventorySummary?.warehouseId ?: "global")] = v.currentStock?.values?.first() ?: 0
+        viewModelScope.launch {
+            loadVariantsForProduct(product)
         }
+    }
 
-        _uiState.update {
-            it.copy(
-                selectedProduct = product,
-                selectedVariant = null,
-                sellingPrice = "",
-                variants = variantsForProduct,
-                stockLevels = newStockMap
-            )
+    private suspend fun loadVariantsForProduct(product: Product, targetVariantId: String? = null) {
+        try {
+            _uiState.update { it.copy(isLoading = true, selectedProduct = product, selectedVariant = if (targetVariantId != null) it.selectedVariant else null) }
+
+            // --- ELITE STRATEGY with Fallback ---
+            val summaryItems = cachedInventorySummary?.items?.values ?: emptyList()
+            var variantsForProduct = summaryItems.filter { it.productId == product.id }
+                .map { item ->
+                    ProductVariant(
+                        id = item.variantId,
+                        productId = item.productId,
+                        capacity = item.capacity,
+                        barcode = item.barcode,
+                        sellingPrice = item.sellingPrice,
+                        weightedAverageCost = item.weightedAverageCost,
+                        productName = item.productName,
+                        currentStock = mapOf((cachedInventorySummary?.warehouseId ?: "global") to item.currentStock)
+                    )
+                }.sortedBy { it.capacity }
+
+            // Fallback: If cache has NO variants for this product, fetch from main collection once
+            if (variantsForProduct.isEmpty()) {
+                variantsForProduct = productVariantRepository.getVariantsForProduct(product.id)
+                    .filter { !it.archived }
+                    .sortedBy { it.capacity }
+            }
+
+            val userWhId = currentUser?.warehouseId
+            val filteredVariants = if (currentUser?.role == User.ROLE_SELLER && userWhId != null) {
+                variantsForProduct.filter { (it.currentStock?.get(userWhId) ?: 0) > 0 || variantsForProduct.size <= 2 }
+            } else {
+                variantsForProduct
+            }
+
+            val newStockMap = _uiState.value.stockLevels.toMutableMap()
+            filteredVariants.forEach { v ->
+                val whId = cachedInventorySummary?.warehouseId ?: userWhId ?: "global"
+                // If it came from DB, it has a full stock map. If from summary, it has one key.
+                val qty = v.currentStock?.get(whId) ?: 0
+                newStockMap[Pair(v.id, whId)] = qty
+            }
+
+            val selectedVar = if (targetVariantId != null) filteredVariants.find { it.id == targetVariantId } else null
+
+            _uiState.update {
+                it.copy(
+                    variants = filteredVariants,
+                    stockLevels = newStockMap,
+                    selectedVariant = selectedVar ?: it.selectedVariant,
+                    sellingPrice = selectedVar?.let { sv -> if (sv.sellingPrice > 0.0) sv.sellingPrice.toString() else "" } ?: it.sellingPrice,
+                    isLoading = false
+                )
+            }
+        } catch (e: Exception) {
+            Log.e("SalesViewModel", "Error loading variants", e)
+            _uiState.update { it.copy(isLoading = false, errorMessage = "فشل تحميل السعات") }
         }
     }
 
@@ -307,17 +341,34 @@ class SalesViewModel @Inject constructor(
     }
 
     fun findProductByBarcode(barcode: String) {
-        // --- ELITE STRATEGY: Search in pre-loaded summary cache (ZERO Firestore Reads) ---
-        val item = cachedInventorySummary?.items?.values?.find { it.barcode == barcode }
-        if (item != null) {
-            val product = _uiState.value.products.find { it.id == item.productId }
-            if (product != null) {
-                onProductSelected(product)
-                val variant = _uiState.value.variants.find { it.id == item.variantId }
-                if (variant != null) onVariantSelected(variant)
-                return
+        viewModelScope.launch {
+            // --- ELITE STRATEGY Search with Fallback ---
+            val item = cachedInventorySummary?.items?.values?.find { it.barcode == barcode }
+            if (item != null) {
+                val product = _uiState.value.products.find { it.id == item.productId }
+                if (product != null) {
+                    loadVariantsForProduct(product, targetVariantId = item.variantId)
+                    return@launch
+                }
+            }
+
+            // If not in cache, try direct DB search
+            try {
+                _uiState.update { it.copy(isLoading = true) }
+                val variant = productVariantRepository.getVariantByBarcode(barcode)
+                if (variant != null) {
+                    val product = productRepository.getProduct(variant.productId)
+                    if (product != null) {
+                        loadVariantsForProduct(product, targetVariantId = variant.id)
+                    } else {
+                        _uiState.update { it.copy(errorMessage = "المنتج المرتبط بهذا الباركود غير موجود", isLoading = false) }
+                    }
+                } else {
+                    _uiState.update { it.copy(errorMessage = "لم يتم العثور على منتج بهذا الباركود محلياً أو في السحابة", isLoading = false) }
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "خطأ أثناء البحث عن الباركود", isLoading = false) }
             }
         }
-        _uiState.update { it.copy(errorMessage = "لم يتم العثور على منتج بهذا الباركود محلياً") }
     }
 }

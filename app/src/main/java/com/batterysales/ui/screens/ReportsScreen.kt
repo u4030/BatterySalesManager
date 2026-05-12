@@ -24,6 +24,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.batterysales.data.models.Warehouse
 import com.batterysales.data.models.ScrapWarehouse
+import com.batterysales.data.models.SupplierSummaryItem
 import com.batterysales.ui.components.BarcodeScanner
 import com.batterysales.ui.components.InfoBadge
 import com.batterysales.viewmodel.InventoryReportItem
@@ -63,7 +64,7 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
         }
     }
     val grandTotalQuantity by viewModel.grandTotalInventoryQuantity.collectAsState()
-    val supplierItems by viewModel.supplierReport.collectAsState()
+    val supplierOverviewList by viewModel.suppliersOverviewList.collectAsState()
     val isSeller by viewModel.isSeller.collectAsState()
     val warehouses by viewModel.filteredWarehouses.collectAsState()
     val oldBatterySummary by viewModel.oldBatterySummary.collectAsState()
@@ -174,7 +175,7 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                     else -> false
                 }
 
-                if (currentTabLoading && (selectedTab != 0 || pagingItems.itemCount == 0) && (selectedTab != 2 || supplierItems.isEmpty())) {
+                if (currentTabLoading && (selectedTab != 0 || pagingItems.itemCount == 0) && (selectedTab != 2 || supplierOverviewList.isEmpty())) {
                     item {
                         Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator(color = accentColor)
@@ -264,7 +265,7 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                         }
                         2 -> {
                             if (!isSeller) {
-                                supplierReportSectionRedesigned(this, viewModel, supplierItems, navController)
+                                supplierReportSectionRedesigned(this, viewModel, supplierOverviewList, navController)
                             }
                         }
                     }
@@ -650,14 +651,14 @@ fun OldBatteryReportSectionRedesigned(
 private fun supplierReportSectionRedesigned(
     scope: androidx.compose.foundation.lazy.LazyListScope,
     viewModel: ReportsViewModel,
-    supplierItems: List<com.batterysales.viewmodel.SupplierReportItem>,
+    supplierItems: List<SupplierSummaryItem>,
     navController: NavController
 ) {
     scope.item {
         SupplierReportControls(viewModel)
     }
 
-    val totalSuppliersDebit = supplierItems.sumOf { it.balance }
+    val totalSuppliersDebit = supplierItems.sumOf { it.currentBalance }
     scope.item {
         Card(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
@@ -695,7 +696,7 @@ private fun supplierReportSectionRedesigned(
         scope.items(supplierItems) { item ->
             Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                 SupplierSummaryCard(item, onClick = {
-                    navController.navigate("supplier_details/${item.supplier.id}")
+                    navController.navigate("supplier_details/${item.supplierId}")
                 })
             }
         }
@@ -704,7 +705,7 @@ private fun supplierReportSectionRedesigned(
 
 @Composable
 fun SupplierSummaryCard(
-    item: com.batterysales.viewmodel.SupplierReportItem,
+    item: SupplierSummaryItem,
     onClick: () -> Unit
 ) {
     Card(
@@ -715,7 +716,7 @@ fun SupplierSummaryCard(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text(item.supplier.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(item.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
             }
             
@@ -732,7 +733,7 @@ fun SupplierSummaryCard(
                 }
                 Column(modifier = Modifier.weight(1f)) {
                     Text("المتبقي", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("JD ${String.format("%.3f", item.balance)}", fontWeight = FontWeight.ExtraBold, color = if (item.balance > 0) Color(0xFFEF4444) else Color(0xFF10B981))
+                    Text("JD ${String.format("%.3f", item.currentBalance)}", fontWeight = FontWeight.ExtraBold, color = if (item.currentBalance > 0) Color(0xFFEF4444) else Color(0xFF10B981))
                 }
             }
         }
@@ -742,12 +743,7 @@ fun SupplierSummaryCard(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SupplierReportControls(viewModel: ReportsViewModel) {
-    val startDate by viewModel.startDate.collectAsState()
-    val endDate by viewModel.endDate.collectAsState()
     val searchQuery by viewModel.supplierSearchQuery.collectAsState()
-    var showDatePicker by remember { mutableStateOf(false) }
-    val dateRangePickerState = rememberDateRangePickerState()
-    val dateFormatter = java.text.SimpleDateFormat("yyyy/MM/dd", java.util.Locale.getDefault())
 
     Column(modifier = Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         CustomKeyboardTextField(
@@ -756,36 +752,6 @@ fun SupplierReportControls(viewModel: ReportsViewModel) {
             label = "بحث باسم المورد...",
             modifier = Modifier.fillMaxWidth(),
             onSearch = { /* Search is reactive, just hide keyboard */ }
-        )
-
-        Card(
-            onClick = { showDatePicker = true },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(MaterialTheme.colorScheme.surface),
-            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
-        ) {
-            Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.DateRange, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                Spacer(modifier = Modifier.width(16.dp))
-                Column {
-                    Text("الفترة الزمنية", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    val startStr = startDate?.let { dateFormatter.format(java.util.Date(it)) } ?: "البداية"
-                    val endStr = endDate?.let { dateFormatter.format(java.util.Date(it)) } ?: "النهاية"
-                    Text("$startStr - $endStr", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                }
-            }
-        }
-    }
-
-    if (showDatePicker) {
-        com.batterysales.ui.components.AppDateRangePickerDialog(
-            state = dateRangePickerState,
-            onDismiss = { showDatePicker = false },
-            onConfirm = {
-                viewModel.onDateRangeSelected(dateRangePickerState.selectedStartDateMillis, dateRangePickerState.selectedEndDateMillis)
-                showDatePicker = false
-            }
         )
     }
 }
