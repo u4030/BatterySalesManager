@@ -27,6 +27,7 @@ data class SalesUiState(
     val paymentMethod: String = "cash",
     val isWarehouseFixed: Boolean = false,
     val userRole: String = "",
+    val userWarehouseId: String = "",
     val isLoading: Boolean = false,
     val isSubmitting: Boolean = false,
     val errorMessage: String? = null,
@@ -63,7 +64,7 @@ class SalesViewModel @Inject constructor(
                 currentUser = user
 
                 val isSeller = user?.role == User.ROLE_SELLER
-                val userWarehouseId = user?.warehouseId
+                val userWarehouseId = user?.warehouseId ?: ""
 
                 // Fetch Summary
                 cachedInventorySummary = summaryRepository.getInventorySummary(if (isSeller) userWarehouseId else null)
@@ -77,7 +78,6 @@ class SalesViewModel @Inject constructor(
                 val filteredProducts = if (isSeller && availableProductIds.isNotEmpty()) {
                     products.filter { !it.archived && availableProductIds.contains(it.id) }
                 } else {
-                    // Fallback to showing all active products if summary is empty
                     products.filter { !it.archived }
                 }
 
@@ -88,6 +88,7 @@ class SalesViewModel @Inject constructor(
                         selectedWarehouse = if (isSeller) warehouses.find { w -> w.id == userWarehouseId } else null,
                         isWarehouseFixed = isSeller,
                         userRole = user?.role ?: "",
+                        userWarehouseId = userWarehouseId,
                         isLoading = false
                     )
                 }
@@ -124,17 +125,16 @@ class SalesViewModel @Inject constructor(
                     )
                 }.sortedBy { it.capacity }
 
-            // Fallback: If cache has NO variants for this product, fetch from main collection once
             if (variantsForProduct.isEmpty()) {
                 variantsForProduct = productVariantRepository.getVariantsForProduct(product.id)
                     .filter { !it.archived }
                     .sortedBy { it.capacity }
             }
 
-            val userWhId = currentUser?.warehouseId
-            val selectedWhId = _uiState.value.selectedWarehouse?.id ?: userWhId ?: "global"
+            val userWhId = currentUser?.warehouseId ?: ""
+            val selectedWhId = _uiState.value.selectedWarehouse?.id ?: userWhId.ifEmpty { "global" }
 
-            val filteredVariants = if (currentUser?.role == User.ROLE_SELLER && userWhId != null) {
+            val filteredVariants = if (currentUser?.role == User.ROLE_SELLER && userWhId.isNotEmpty()) {
                 variantsForProduct.filter { (it.currentStock?.get(userWhId) ?: 0) > 0 || variantsForProduct.size <= 2 }
             } else {
                 variantsForProduct
@@ -142,7 +142,7 @@ class SalesViewModel @Inject constructor(
 
             val newStockMap = _uiState.value.stockLevels.toMutableMap()
             filteredVariants.forEach { v ->
-                // IMPORTANT: We must map the stock to the CURRENT selected warehouse or user warehouse
+                // Map the stock to the CORRECT key that the UI expects
                 val qty = v.currentStock?.get(selectedWhId) ?: v.currentStock?.get("global") ?: 0
                 newStockMap[Pair(v.id, selectedWhId)] = qty
             }
@@ -175,7 +175,6 @@ class SalesViewModel @Inject constructor(
 
     fun onWarehouseSelected(warehouse: Warehouse) {
         _uiState.update { it.copy(selectedWarehouse = warehouse) }
-        // Refresh stock levels for the new warehouse
         val state = uiState.value
         state.selectedProduct?.let { product ->
             viewModelScope.launch {
@@ -350,7 +349,6 @@ class SalesViewModel @Inject constructor(
 
     fun findProductByBarcode(barcode: String) {
         viewModelScope.launch {
-            // --- ELITE STRATEGY Search with Fallback ---
             val item = cachedInventorySummary?.items?.values?.find { it.barcode == barcode }
             if (item != null) {
                 val product = _uiState.value.products.find { it.id == item.productId }
@@ -360,7 +358,6 @@ class SalesViewModel @Inject constructor(
                 }
             }
 
-            // If not in cache, try direct DB search
             try {
                 _uiState.update { it.copy(isLoading = true) }
                 val variant = productVariantRepository.getVariantByBarcode(barcode)

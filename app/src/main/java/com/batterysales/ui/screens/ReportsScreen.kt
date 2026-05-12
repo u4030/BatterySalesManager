@@ -672,7 +672,7 @@ private fun supplierReportSectionRedesigned(
                     modifier = Modifier.padding(vertical = 4.dp)
                 )
                 Text(
-                    "JD ${String.format("%.3f", totalSuppliersDebit)}",
+                    "JD ${String.format("%.3f", totalSuppliersDebt)}",
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFFEF4444),
                     style = MaterialTheme.typography.titleLarge,

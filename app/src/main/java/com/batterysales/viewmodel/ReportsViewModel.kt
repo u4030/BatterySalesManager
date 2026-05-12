@@ -283,17 +283,26 @@ class ReportsViewModel @Inject constructor(
             try {
                 _isSupplierLoading.value = true
                 val query = _supplierSearchQuery.value
+
+                // Try summary first
                 val overview = summaryRepository.getSuppliersOverview()
                 val suppliersMap = overview?.suppliers ?: emptyMap()
 
-                val filtered = if (query.isNotBlank()) {
+                var filtered = if (query.isNotBlank()) {
                     suppliersMap.values.filter { it.name.contains(query, ignoreCase = true) }
                 } else {
                     suppliersMap.values.toList()
                 }.sortedBy { it.name }
 
-                if (filtered.isEmpty() && query.isBlank()) {
-                    val fallback = supplierRepository.getSuppliersOnce()
+                // --- FALLBACK Logic ---
+                // If summary is empty OR search query returned nothing from summary, try cloud fallback
+                if (filtered.isEmpty()) {
+                    val fallback = if (query.isNotBlank()) {
+                        supplierRepository.getSuppliersOnce(query)
+                    } else {
+                        supplierRepository.getSuppliersOnce()
+                    }
+
                     _suppliersOverviewList.value = fallback.map { s ->
                         SupplierSummaryItem(s.id, s.name, s.currentBalance, s.totalDebit, s.totalCredit)
                     }

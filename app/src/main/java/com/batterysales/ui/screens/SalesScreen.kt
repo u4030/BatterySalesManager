@@ -162,7 +162,7 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
                             )
 
                             val availableQty = uiState.selectedVariant?.let {
-                                val whId = uiState.selectedWarehouse?.id ?: (if (uiState.userRole == "seller") "" else "global")
+                                val whId = uiState.selectedWarehouse?.id ?: uiState.userWarehouseId.ifEmpty { "global" }
                                 uiState.stockLevels[Pair(it.id, whId)] ?: 0
                             } ?: 0
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
