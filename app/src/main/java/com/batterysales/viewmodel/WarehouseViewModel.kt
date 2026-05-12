@@ -53,18 +53,19 @@ class WarehouseViewModel @Inject constructor(
     }
 
     private fun loadInitialData() {
-        userRepository.getCurrentUserFlow().onEach { user ->
+        viewModelScope.launch {
+            val user = userRepository.getCurrentUser()
             val isAdmin = user?.role == User.ROLE_ADMIN
-            warehouseRepository.getWarehouses().take(1).collect { allWh ->
-                val filteredWh = if (isAdmin) allWh else allWh.filter { it.id == user?.warehouseId }
-                _uiState.update { it.copy(
-                    warehouses = filteredWh,
-                    isAdmin = isAdmin,
-                    selectedWarehouseId = if (isAdmin) (filteredWh.firstOrNull()?.id ?: "") else user?.warehouseId ?: "",
-                    isLoading = false
-                ) }
-            }
-        }.launchIn(viewModelScope)
+            val allWh = warehouseRepository.getWarehousesOnce()
+
+            val filteredWh = if (isAdmin) allWh else allWh.filter { it.id == user?.warehouseId }
+            _uiState.update { it.copy(
+                warehouses = filteredWh,
+                isAdmin = isAdmin,
+                selectedWarehouseId = if (isAdmin) (filteredWh.firstOrNull()?.id ?: "") else user?.warehouseId ?: "",
+                isLoading = false
+            ) }
+        }
     }
 
     fun onWarehouseSelected(id: String) {

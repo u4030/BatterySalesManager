@@ -20,6 +20,7 @@ import com.google.firebase.firestore.AggregateField
 import com.google.firebase.firestore.AggregateSource
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
+import java.util.Date
 import javax.inject.Inject
 
 data class InventoryReportItem(
@@ -122,39 +123,29 @@ class ReportsViewModel @Inject constructor(
 
     private val refreshTrigger = MutableStateFlow(0)
 
-    // For Sidebar Navigation (Optimized: One-time fetch triggered by refresh)
+    // For Sidebar Navigation
     private val _allInventoryItemNames = MutableStateFlow<List<String>>(emptyList())
     val allInventoryItemNames = _allInventoryItemNames.asStateFlow()
 
     private fun updateSidebarNames() {
+        if (_selectedTab.value != 0) return
         viewModelScope.launch {
             try {
-                // Optimization: Sidebar names are only updated for the visible/paged items or via a light query.
-                // For now, we only fetch what's absolutely necessary.
-                val products = productRepository.getProductsOnce()
-                val variants = productVariantRepository.getAllVariants() // Still relatively small for this app, but marked for future summary doc.
-                val user = userRepository.getCurrentUser()
-                val seller = user?.role == com.batterysales.data.models.User.ROLE_SELLER
-                val userWhId = user?.warehouseId
+                // Optimization: Don't fetch ALL variants anymore.
+                // Derive names from the current filtered ProductsMap, which is already in memory.
+                val pMap = _productsMap.value
                 val query = _barcodeFilter.value
 
-                val pMap = products.filter { !it.archived }.associateBy { it.id }
-
-                val names = variants.filter { !it.archived }
-                    .filter { v -> pMap.containsKey(v.productId) }
-                    .filter { v ->
-                        if (!seller || userWhId == null) true
-                        else (v.currentStock?.get(userWhId) ?: 0) > 0
-                    }
-                    .filter { v ->
+                val names = pMap.values.asSequence()
+                    .filter { !it.archived }
+                    .filter { p ->
                         if (query.isNullOrBlank()) true
-                        else {
-                            val pName = pMap[v.productId]?.name ?: ""
-                            pName.contains(query, ignoreCase = true) || v.barcode == query
-                        }
+                        else p.name.contains(query, ignoreCase = true)
                     }
-                    .sortedWith(compareBy<ProductVariant> { pMap[it.productId]?.name ?: "" }.thenBy { it.capacity })
-                    .map { v -> pMap[v.productId]?.name ?: "" }
+                    .map { it.name }
+                    .distinct()
+                    .sorted()
+                    .toList()
                 
                 _allInventoryItemNames.value = names
             } catch (e: Exception) {
@@ -163,11 +154,9 @@ class ReportsViewModel @Inject constructor(
         }
     }
 
-    val warehouses: StateFlow<List<Warehouse>> = warehouseRepository.getWarehouses()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
+    private val _warehouses = MutableStateFlow<List<Warehouse>>(emptyList())
     val filteredWarehouses: StateFlow<List<Warehouse>> = combine(
-        warehouses,
+        _warehouses,
         isSeller,
         userRepository.getCurrentUserFlow()
     ) { allWh, seller, user ->
@@ -176,21 +165,25 @@ class ReportsViewModel @Inject constructor(
         result.sortedBy { it.name }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val productsMap: StateFlow<Map<String, Product>> = productRepository.getProducts()
-        .map { list -> list.associateBy { it.id } }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+    private val _productsMap = MutableStateFlow<Map<String, Product>>(emptyMap())
+    val productsMap = _productsMap.asStateFlow()
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     @Suppress("UNCHECKED_CAST")
     val inventoryReport: Flow<PagingData<InventoryReportItem>> = combine(
         barcodeFilter,
         filteredWarehouses,
-        productsMap,
+        _productsMap,
         _isSeller,
         _inventoryStartDate,
         _inventoryEndDate,
-        refreshTrigger
+        refreshTrigger,
+        selectedTab
     ) { args ->
+        val tab = args[7] as Int
+        if (tab != 0) { // Only load if on Inventory Tab
+            return@combine null
+        }
         Sextuple(
             args[0] as String?,
             args[1] as List<Warehouse>,
@@ -199,7 +192,7 @@ class ReportsViewModel @Inject constructor(
             args[4] as Long?,
             args[5] as Long?
         )
-    }.flowOn(kotlinx.coroutines.Dispatchers.Default).flatMapLatest { (query, warehouseList, pMap, seller, start, end) ->
+    }.filterNotNull().flowOn(kotlinx.coroutines.Dispatchers.Default).flatMapLatest { (query, warehouseList, pMap, seller, start, end) ->
         Pager(PagingConfig(pageSize = 25)) {
             InventoryPagingSource(firestore, stockEntryRepository, pMap, warehouseList, query, seller, start, end)
         }.flow.cachedIn(viewModelScope)
@@ -207,38 +200,64 @@ class ReportsViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            userRepository.getCurrentUserFlow().collect { user ->
-                _isSeller.value = user?.role == com.batterysales.data.models.User.ROLE_SELLER
+            val user = userRepository.getCurrentUser()
+            _isSeller.value = user?.role == com.batterysales.data.models.User.ROLE_SELLER
 
-                // Run Migration if not done (only for admins)
-                if (user?.role == "admin" && !settingsManager.isMigrationDone()) {
-                    try {
-                        stockEntryRepository.migrateStockEntries()
-                        stockEntryRepository.migrateAllVariants(productRepository, supplierRepository, billRepository)
-                        settingsManager.setMigrationDone(true)
-                    } catch (e: Exception) {
-                        Log.e("ReportsViewModel", "Migration failed", e)
-                    }
-                }
+            // One-time load for reference data
+            loadReferenceData()
 
-                // Initial load only if needed, avoiding repeated refreshes
-                if (_supplierReport.value.isEmpty()) {
-                    loadSupplierReport()
+            // Migration is now manual via SettingsViewModel
+
+            // Initial load for active tab
+            when(_selectedTab.value) {
+                0 -> {
+                    loadInventoryReport(reset = true)
+                    updateSidebarNames()
                 }
+                1 -> loadSupplierReport()
+                2 -> loadScrapReport()
             }
+        }
+
+        // React to tab changes
+        _selectedTab.onEach { tab ->
+            when(tab) {
+                0 -> if (_allInventoryItemNames.value.isEmpty()) { loadInventoryReport(reset = true); updateSidebarNames() }
+                1 -> if (_supplierReport.value.isEmpty()) loadSupplierReport()
+                2 -> if (_scrapWarehouses.value.isEmpty()) loadScrapReport()
+            }
+        }.launchIn(viewModelScope)
+    }
+
+    private suspend fun loadReferenceData() {
+        try {
+            val wh = warehouseRepository.getWarehousesOnce()
+            val prod = productRepository.getProductsOnce().associateBy { it.id }
+            _warehouses.value = wh
+            _productsMap.value = prod
+        } catch (e: Exception) {
+            Log.e("ReportsViewModel", "Error loading reference data", e)
         }
     }
 
     fun onTabSelected(index: Int) {
         _selectedTab.value = index
+        if (index == 0 && _allInventoryItemNames.value.isEmpty()) updateSidebarNames()
     }
 
     fun refreshAll() {
         refreshTrigger.value += 1
-        loadInventoryReport(reset = true)
-        loadScrapReport()
-        loadSupplierReport()
-        updateSidebarNames()
+        viewModelScope.launch {
+            loadReferenceData()
+            when(_selectedTab.value) {
+                0 -> {
+                    loadInventoryReport(reset = true)
+                    updateSidebarNames()
+                }
+                1 -> loadSupplierReport()
+                2 -> loadScrapReport()
+            }
+        }
     }
 
     fun onBarcodeScanned(barcode: String?) {
