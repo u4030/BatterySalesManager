@@ -16,7 +16,8 @@ import javax.inject.Inject
 
 class InvoiceRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
-    private val oldBatteryRepository: OldBatteryRepository
+    private val oldBatteryRepository: OldBatteryRepository,
+    private val summaryRepository: SummaryRepository
 ) {
 
     suspend fun createInvoice(invoice: Invoice): Invoice {
@@ -221,6 +222,16 @@ class InvoiceRepository @Inject constructor(
                 val currentQty = newStockMap[finalStockEntry.warehouseId] ?: 0
                 newStockMap[finalStockEntry.warehouseId] = currentQty + (finalStockEntry.quantity - finalStockEntry.returnedQuantity)
                 transaction.update(variantRef, "currentStock", newStockMap)
+
+                // --- Update Summaries ---
+                summaryRepository.updateInventorySummary(
+                    transaction = transaction,
+                    warehouseId = finalStockEntry.warehouseId,
+                    variantId = finalStockEntry.productVariantId,
+                    variant = variant,
+                    qtyChange = finalStockEntry.quantity - finalStockEntry.returnedQuantity,
+                    costChange = (finalStockEntry.quantity - finalStockEntry.returnedQuantity) * variant.weightedAverageCost
+                )
             }
 
             val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)

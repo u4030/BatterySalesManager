@@ -6,7 +6,6 @@ import com.batterysales.data.models.*
 import com.batterysales.data.repositories.*
 import android.util.Log
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.Date
@@ -39,11 +38,9 @@ class SalesViewModel @Inject constructor(
     private val productRepository: ProductRepository,
     private val productVariantRepository: ProductVariantRepository,
     private val warehouseRepository: WarehouseRepository,
-    private val stockEntryRepository: StockEntryRepository,
+    private val summaryRepository: SummaryRepository,
     private val invoiceRepository: InvoiceRepository,
-    private val paymentRepository: PaymentRepository,
     private val userRepository: UserRepository,
-    private val accountingRepository: AccountingRepository,
     private val oldBatteryRepository: OldBatteryRepository,
     private val networkHelper: com.batterysales.utils.NetworkHelper
 ) : ViewModel() {
@@ -52,6 +49,7 @@ class SalesViewModel @Inject constructor(
     val uiState: StateFlow<SalesUiState> = _uiState.asStateFlow()
 
     private var currentUser: User? = null
+    private var cachedInventorySummary: InventorySummary? = null
 
     init {
         loadInitialData()
@@ -64,19 +62,18 @@ class SalesViewModel @Inject constructor(
                 val user = userRepository.getCurrentUser()
                 currentUser = user
 
-                val products = productRepository.getProductsOnce()
-                val warehouses = warehouseRepository.getWarehousesOnce()
-
                 val isSeller = user?.role == User.ROLE_SELLER
                 val userWarehouseId = user?.warehouseId
 
-                val filteredProducts = if (isSeller && userWarehouseId != null) {
-                    // One-time check for products that have stock in user warehouse
-                    // We fetch all variants once to determine availability
-                    val allVariants = productVariantRepository.getAllVariants()
-                    val availableProductIds = allVariants.filter { (it.currentStock?.get(userWarehouseId) ?: 0) > 0 }
-                        .map { it.productId }.toSet()
+                // --- ELITE STRATEGY: Single Read for Inventory ---
+                cachedInventorySummary = summaryRepository.getInventorySummary(if (isSeller) userWarehouseId else null)
+                val warehouses = warehouseRepository.getWarehousesOnce()
+                val products = productRepository.getProductsOnce()
 
+                val summaryItems = cachedInventorySummary?.items?.values ?: emptyList()
+                val availableProductIds = summaryItems.filter { it.currentStock > 0 }.map { it.productId }.toSet()
+
+                val filteredProducts = if (isSeller) {
                     products.filter { !it.archived && availableProductIds.contains(it.id) }
                 } else {
                     products.filter { !it.archived }
@@ -100,40 +97,35 @@ class SalesViewModel @Inject constructor(
     }
 
     fun onProductSelected(product: Product) {
-        viewModelScope.launch {
-            try {
-                _uiState.update { it.copy(isLoading = true, selectedProduct = product, selectedVariant = null, sellingPrice = "") }
+        // --- ELITE STRATEGY: Get variants from pre-loaded summary map ---
+        val summaryItems = cachedInventorySummary?.items?.values ?: emptyList()
+        val variantsForProduct = summaryItems.filter { it.productId == product.id }
+            .map { item ->
+                ProductVariant(
+                    id = item.variantId,
+                    productId = item.productId,
+                    capacity = item.capacity,
+                    barcode = item.barcode,
+                    sellingPrice = item.sellingPrice,
+                    weightedAverageCost = item.weightedAverageCost,
+                    productName = item.productName,
+                    currentStock = mapOf((cachedInventorySummary?.warehouseId ?: "global") to item.currentStock)
+                )
+            }.sortedBy { it.capacity }
 
-                val variants = productVariantRepository.getVariantsForProduct(product.id)
-                    .filter { !it.archived }
-                    .sortedBy { it.capacity }
+        val newStockMap = _uiState.value.stockLevels.toMutableMap()
+        variantsForProduct.forEach { v ->
+            newStockMap[Pair(v.id, cachedInventorySummary?.warehouseId ?: "global")] = v.currentStock?.values?.first() ?: 0
+        }
 
-                val userWhId = currentUser?.warehouseId
-                val filteredVariants = if (currentUser?.role == User.ROLE_SELLER && userWhId != null) {
-                    variants.filter { (it.currentStock?.get(userWhId) ?: 0) > 0 }
-                } else {
-                    variants
-                }
-
-                // Update stock levels map for these specific variants
-                val newStockMap = _uiState.value.stockLevels.toMutableMap()
-                filteredVariants.forEach { variant ->
-                    variant.currentStock?.forEach { (whId, qty) ->
-                        newStockMap[Pair(variant.id, whId)] = qty
-                    }
-                }
-
-                _uiState.update {
-                    it.copy(
-                        variants = filteredVariants,
-                        stockLevels = newStockMap,
-                        isLoading = false
-                    )
-                }
-            } catch (e: Exception) {
-                Log.e("SalesViewModel", "Error loading variants", e)
-                _uiState.update { it.copy(isLoading = false, errorMessage = "فشل تحميل السعات") }
-            }
+        _uiState.update {
+            it.copy(
+                selectedProduct = product,
+                selectedVariant = null,
+                sellingPrice = "",
+                variants = variantsForProduct,
+                stockLevels = newStockMap
+            )
         }
     }
 
@@ -315,25 +307,17 @@ class SalesViewModel @Inject constructor(
     }
 
     fun findProductByBarcode(barcode: String) {
-        viewModelScope.launch {
-            try {
-                _uiState.update { it.copy(isLoading = true) }
-                val variant = productVariantRepository.getVariantByBarcode(barcode)
-                if (variant != null) {
-                    val product = productRepository.getProduct(variant.productId)
-                    if (product != null) {
-                        onProductSelected(product)
-                        onVariantSelected(variant)
-                    } else {
-                        _uiState.update { it.copy(errorMessage = "المنتج المرتبط بهذا الباركود غير موجود", isLoading = false) }
-                    }
-                } else {
-                    _uiState.update { it.copy(errorMessage = "لم يتم العثور على منتج بهذا الباركود: $barcode", isLoading = false) }
-                }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = "خطأ أثناء البحث عن الباركود", isLoading = false) }
-                Log.e("SalesViewModel", "Barcode error", e)
+        // --- ELITE STRATEGY: Search in pre-loaded summary cache (ZERO Firestore Reads) ---
+        val item = cachedInventorySummary?.items?.values?.find { it.barcode == barcode }
+        if (item != null) {
+            val product = _uiState.value.products.find { it.id == item.productId }
+            if (product != null) {
+                onProductSelected(product)
+                val variant = _uiState.value.variants.find { it.id == item.variantId }
+                if (variant != null) onVariantSelected(variant)
+                return
             }
         }
+        _uiState.update { it.copy(errorMessage = "لم يتم العثور على منتج بهذا الباركود محلياً") }
     }
 }

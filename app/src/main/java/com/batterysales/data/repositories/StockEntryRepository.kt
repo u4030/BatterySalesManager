@@ -15,7 +15,8 @@ import java.util.*
 import javax.inject.Inject
 
 class StockEntryRepository @Inject constructor(
-    private val firestore: FirebaseFirestore
+    private val firestore: FirebaseFirestore,
+    private val summaryRepository: SummaryRepository
 ) {
 
     suspend fun addStockEntry(stockEntry: StockEntry) {
@@ -72,6 +73,18 @@ class StockEntryRepository @Inject constructor(
                     transaction.update(variantRef, variantUpdates)
                 }
 
+                // --- Update Summaries ---
+                summaryRepository.updateInventorySummary(
+                    transaction = transaction,
+                    warehouseId = finalEntry.warehouseId,
+                    variantId = finalEntry.productVariantId,
+                    variant = variant.copy(
+                        weightedAverageCost = variantUpdates["weightedAverageCost"] as? Double ?: variant.weightedAverageCost
+                    ),
+                    qtyChange = finalEntry.quantity - finalEntry.returnedQuantity,
+                    costChange = finalEntry.getNetCost()
+                )
+
                 // --- Update Supplier Denormalized Totals ---
                 if (finalEntry.supplierId.isNotEmpty()) {
                     val supplierRef = firestore.collection("suppliers").document(finalEntry.supplierId)
@@ -80,12 +93,14 @@ class StockEntryRepository @Inject constructor(
                         transaction.update(supplierRef, "totalDebit", com.google.firebase.firestore.FieldValue.increment(cost))
                         transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(cost))
                         transaction.update(docRef, "remainingBalance", cost)
+                        summaryRepository.updateSupplierOverview(transaction, finalEntry.supplierId, variant.productName ?: "", debitChange = cost)
                     } else if (cost < 0) {
                         transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(-cost))
                         transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(cost))
                         transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(-cost))
                         transaction.update(docRef, "isSettled", true)
                         transaction.update(docRef, "remainingBalance", 0.0)
+                        summaryRepository.updateSupplierOverview(transaction, finalEntry.supplierId, variant.productName ?: "", creditChange = -cost)
                     }
                 }
 

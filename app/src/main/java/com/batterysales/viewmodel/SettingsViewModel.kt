@@ -54,10 +54,13 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 _isMigrating.value = true
-                _migrationStatus.value = "جاري ترحيل البيانات... يرجى عدم إغلاق التطبيق"
+                _migrationStatus.value = "جاري ترحيل البيانات وإعادة بناء الملخصات... يرجى عدم إغلاق التطبيق"
 
                 stockEntryRepository.migrateStockEntries()
                 stockEntryRepository.migrateAllVariants(productRepository, supplierRepository, billRepository)
+
+                // Rebuild Summaries from scratch
+                rebuildAllSummaries()
 
                 settingsManager.setMigrationDone(true)
                 _migrationStatus.value = "تم ترحيل البيانات بنجاح"
@@ -72,5 +75,64 @@ class SettingsViewModel @Inject constructor(
 
     fun clearMigrationStatus() {
         _migrationStatus.value = null
+    }
+
+    private suspend fun rebuildAllSummaries() {
+        // This is a heavy operation to initialize the new Summary-First system
+        val products = productRepository.getProductsOnce()
+        val variants = productVariantRepository.getAllVariants()
+        val warehouses = warehouseRepository.getWarehousesOnce()
+        val suppliers = supplierRepository.getSuppliersOnce()
+
+        // 1. Rebuild Inventory Summaries
+        val globalItems = mutableMapOf<String, InventorySummaryItem>()
+        val warehouseItems = mutableMapOf<String, MutableMap<String, InventorySummaryItem>>()
+
+        variants.forEach { variant ->
+            val productName = products.find { it.id == variant.productId }?.name ?: "Unknown"
+
+            val globalItem = InventorySummaryItem(
+                variantId = variant.id,
+                productId = variant.productId,
+                productName = productName,
+                capacity = variant.capacity,
+                barcode = variant.barcode,
+                currentStock = variant.currentStock?.values?.sum() ?: 0,
+                weightedAverageCost = variant.weightedAverageCost,
+                sellingPrice = variant.sellingPrice
+            )
+            globalItems[variant.id] = globalItem
+
+            variant.currentStock?.forEach { (whId, qty) ->
+                val whMap = warehouseItems.getOrPut(whId) { mutableMapOf() }
+                whMap[variant.id] = globalItem.copy(currentStock = qty)
+            }
+        }
+
+        // Save Global
+        com.google.firebase.firestore.FirebaseFirestore.getInstance()
+            .collection("summaries").document("inventory_global")
+            .set(InventorySummary(id = "inventory_global", items = globalItems)).await()
+
+        // Save Warehouses
+        warehouseItems.forEach { (whId, items) ->
+            com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                .collection("summaries").document("inventory_wh_$whId")
+                .set(InventorySummary(id = "inventory_wh_$whId", warehouseId = whId, items = items)).await()
+        }
+
+        // 2. Rebuild Suppliers Overview
+        val supplierItems = suppliers.associate { s ->
+            s.id to SupplierSummaryItem(
+                supplierId = s.id,
+                name = s.name,
+                currentBalance = s.currentBalance,
+                totalDebit = s.totalDebit,
+                totalCredit = s.totalCredit
+            )
+        }
+        com.google.firebase.firestore.FirebaseFirestore.getInstance()
+            .collection("summaries").document("suppliers_overview")
+            .set(SuppliersOverview(suppliers = supplierItems)).await()
     }
 }

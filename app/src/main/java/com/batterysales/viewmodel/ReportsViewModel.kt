@@ -61,6 +61,7 @@ class ReportsViewModel @Inject constructor(
     private val warehouseRepository: WarehouseRepository,
     private val stockEntryRepository: StockEntryRepository,
     private val supplierRepository: SupplierRepository,
+    private val summaryRepository: SummaryRepository,
     private val billRepository: BillRepository,
     private val oldBatteryRepository: OldBatteryRepository,
     private val userRepository: UserRepository,
@@ -131,8 +132,7 @@ class ReportsViewModel @Inject constructor(
         if (_selectedTab.value != 0) return
         viewModelScope.launch {
             try {
-                // Optimization: Don't fetch ALL variants anymore.
-                // Derive names from the current filtered ProductsMap, which is already in memory.
+                // --- ELITE STRATEGY: Get names from pre-loaded summary map ---
                 val pMap = _productsMap.value
                 val query = _barcodeFilter.value
 
@@ -205,8 +205,6 @@ class ReportsViewModel @Inject constructor(
 
             // One-time load for reference data
             loadReferenceData()
-
-            // Migration is now manual via SettingsViewModel
 
             // Initial load for active tab
             when(_selectedTab.value) {
@@ -363,48 +361,60 @@ class ReportsViewModel @Inject constructor(
             try {
                 _isSupplierLoading.value = true
                 val query = _supplierSearchQuery.value
-                // Server-side search implemented
-                val suppliers = supplierRepository.getSuppliersOnce(query)
+
+                // --- ELITE STRATEGY: Use Suppliers Overview Summary ---
+                val overview = summaryRepository.getSuppliersOverview()
+                val suppliersMap = overview?.suppliers ?: emptyMap()
+
+                val filteredSuppliers = if (query.isNotBlank()) {
+                    suppliersMap.values.filter { it.name.contains(query, ignoreCase = true) }
+                } else {
+                    suppliersMap.values
+                }.sortedBy { it.name }
+
+                // Note: Full FIFO report still needs StockEntries if cache is empty.
+                // In a future step, we'll implement report_cache fetching here.
 
                 val start = _startDate.value
                 val end = _endDate.value
-                val supplierIds = suppliers.map { it.id }
-                val supplierNames = suppliers.map { it.name }
+                val supplierIds = filteredSuppliers.map { it.supplierId }
 
-                val allEntriesJob = async { stockEntryRepository.getEntriesBySuppliers(supplierIds, supplierNames) }
+                val allEntriesJob = async { stockEntryRepository.getEntriesBySuppliers(supplierIds) }
                 val allBillsJob = async { billRepository.getBillsBySuppliers(supplierIds) }
 
                 val allEntries: List<StockEntry> = allEntriesJob.await()
                 val allBills: List<Bill> = allBillsJob.await()
 
-                val report = suppliers.map { supplier: Supplier ->
+                val report = filteredSuppliers.map { supplierItem ->
                     async {
+                        val supplier = supplierRepository.getSupplier(supplierItem.supplierId) ?: return@async null
+
+                        // --- ELITE STRATEGY: Try Cache First ---
+                        if (start == null && end == null) {
+                            val cache = summaryRepository.getSupplierReportCache(supplier.id)
+                            if (cache != null) {
+                                return@async SupplierReportItem(
+                                    supplier = supplier,
+                                    totalDebit = cache.totalDebit,
+                                    totalCredit = cache.totalCredit,
+                                    balance = cache.balance,
+                                    targetProgress = if (supplier.yearlyTarget > 0) cache.totalDebit / supplier.yearlyTarget else 0.0,
+                                    regularOrders = cache.regularOrders.map { it.toOrderItem() },
+                                    obligatedOrders = cache.obligatedOrders.map { it.toOrderItem() }
+                                )
+                            }
+                        }
+
                         val adjustedStart = start?.let { com.batterysales.utils.DateUtils.getStartOfDay(it) }
                         val adjustedEnd = end?.let { com.batterysales.utils.DateUtils.getEndOfDay(it) }
 
-                        val rawSupplierEntries: List<StockEntry> = allEntries.filter { entry: StockEntry ->
-                            val matchId = entry.supplierId.isNotEmpty() && entry.supplierId == supplier.id
-                            val matchName = entry.supplier.isNotBlank() &&
-                                    (entry.supplier.trim().equals(supplier.name.trim(), ignoreCase = true) ||
-                                            entry.supplier.trim().contains(supplier.name.trim(), ignoreCase = true))
-
-                            (matchId || matchName) &&
+                        val supplierEntries: List<StockEntry> = allEntries.filter { entry ->
+                            entry.supplierId == supplier.id &&
                                     entry.status == "approved" &&
                                     (supplier.resetDate == null || !entry.getEffectiveDate().before(supplier.resetDate))
                         }
 
-                        val orderToInvoiceMap: Map<String, String> = rawSupplierEntries
-                            .filter { it.invoiceNumber.trim().isNotEmpty() && it.orderId.trim().isNotEmpty() }
-                            .associate { it.orderId.trim() to it.invoiceNumber.trim() }
-                        
-                        val supplierEntries: List<StockEntry> = rawSupplierEntries.map { entry: StockEntry ->
-                            val orderKey = entry.orderId.trim()
-                            if (entry.invoiceNumber.trim().isEmpty() && orderKey.isNotEmpty() && orderToInvoiceMap.containsKey(orderKey)) {
-                                entry.copy(invoiceNumber = orderToInvoiceMap[orderKey]!!)
-                            } else entry
-                        }
-
-                        val supplierBills: List<Bill> = allBills.filter { bill: Bill ->
+                        val supplierBills: List<Bill> = allBills.filter { bill ->
                             bill.supplierId == supplier.id &&
                                     (supplier.resetDate == null || !bill.createdAt.before(supplier.resetDate))
                         }
@@ -412,48 +422,23 @@ class ReportsViewModel @Inject constructor(
                         val groupedEntries: Map<String, List<StockEntry>> = supplierEntries
                             .groupBy { it.invoiceNumber.trim().ifEmpty { it.orderId.trim().ifEmpty { it.id } } }
 
-                        // 1. Calculate Grouped Order Items with initial manual links and denormalized balances
                         val purchaseOrders: List<PurchaseOrderItem> = groupedEntries.map { (key, group) ->
                             val representative: StockEntry = group.first()
                             val totalOrderCost = group.sumOf { it.getNetCost() }
-                            
                             val effectiveBalance = if (representative.isSettled) 0.0 else (representative.remainingBalance ?: 0.0)
 
-                            val manualLinkedBills: List<Bill> = supplierBills.filter { bill: Bill ->
+                            val manualLinkedBills: List<Bill> = supplierBills.filter { bill ->
                                 val ref = bill.referenceNumber.trim()
-                                bill.relatedEntryId == key || 
-                                ref == key || 
-                                (ref.isNotEmpty() && (ref == representative.invoiceNumber.trim() || ref == representative.id)) ||
-                                group.any { entry: StockEntry -> 
-                                    entry.id == bill.relatedEntryId || 
-                                    (ref.isNotEmpty() && ref == entry.invoiceNumber.trim()) 
-                                }
+                                bill.relatedEntryId == key || ref == key || (ref.isNotEmpty() && ref == representative.invoiceNumber.trim())
                             }.distinctBy { it.id }
 
                             val manualPaid = manualLinkedBills.sumOf { it.paidAmount }
                             val manualPaper = manualLinkedBills.sumOf { it.amount }
 
-                            val refs: MutableList<String> = (manualLinkedBills.filter { bill ->
-                                bill.referenceNumber.isNotEmpty()
-                            }.map { bill ->
-                                val typeStr = when (bill.billType) {
-                                    BillType.CHECK -> "شيك"
-                                    BillType.BILL -> "كمبيالة"
-                                    BillType.TRANSFER -> "تحويل"
-                                    BillType.CASH -> "نقدي"
-                                    BillType.VISA -> "فيزا"
-                                    BillType.E_WALLET -> "محفظة"
-                                }
-                                "$typeStr: ${bill.referenceNumber}${if(bill.status != BillStatus.PAID) " (غير مسدد)" else ""}"
-                            }.distinct()).toMutableList()
-                            
-                            refs.addAll(representative.settlementNotes)
-
                             PurchaseOrderItem(
                                 entry = representative.copy(totalCost = totalOrderCost),
                                 linkedPaidAmount = manualPaid,
                                 remainingBalance = effectiveBalance,
-                                referenceNumbers = refs.distinct(),
                                 items = group,
                                 hasManualLink = manualLinkedBills.isNotEmpty(),
                                 totalActualPaid = totalOrderCost - effectiveBalance,
@@ -464,86 +449,41 @@ class ReportsViewModel @Inject constructor(
                         val positiveOrders: List<PurchaseOrderItem> = purchaseOrders.filter { it.entry.totalCost > 0 }
                             .sortedWith(compareBy<PurchaseOrderItem> { it.entry.getEffectiveDate() }.thenBy { it.entry.timestamp })
 
-                        // 2. FIFO PAPER LINKING (For coverage visualization and categorization)
-                        // This logic runs locally to fill the gap between denormalized balances (which handle cash)
-                        // and visual paper coverage (checks not yet cashed).
-                        
-                        val manualLinkedIds = supplierBills.mapNotNull { it.relatedEntryId }.toSet()
-                        val availableBillsForFIFO = supplierBills
-                            .filter { !manualLinkedIds.contains(it.id) }
-                            .sortedBy { it.createdAt }
-                            .map { it.copy() } // Local copy to track allocation
+                        val totalDebit = if (start == null && end == null) supplierItem.totalDebit else positiveOrders.sumOf { it.entry.totalCost }
+                        val totalCredit = if (start == null && end == null) supplierItem.totalCredit else (supplierBills.sumOf { it.paidAmount } + purchaseOrders.filter { it.entry.totalCost < 0 }.sumOf { -it.entry.totalCost })
+                        val balance = if (start == null && end == null) supplierItem.currentBalance else (totalDebit - totalCredit)
 
-                        data class BillState(val bill: Bill, var remainingAmount: Double)
-                        val billStates = availableBillsForFIFO.map { BillState(it, it.amount) }
-
-                        val processedOrders = positiveOrders.map { po ->
-                            val cost = po.entry.totalCost
-                            var currentPaper = po.totalLinkedAmount
-                            val autoRefs = mutableListOf<String>()
-
-                            billStates.forEach { state ->
-                                if (state.remainingAmount > 0.001 && currentPaper < cost - 0.001) {
-                                    val needed = (cost - currentPaper).coerceAtLeast(0.0)
-                                    val take = minOf(state.remainingAmount, needed)
-                                    
-                                    if (take > 0.001) {
-                                        state.remainingAmount -= take
-                                        currentPaper += take
-                                        
-                                        val typeStr = when (state.bill.billType) {
-                                            BillType.CHECK -> "شيك"
-                                            BillType.BILL -> "كمبيالة"
-                                            BillType.TRANSFER -> "تحويل"
-                                            BillType.CASH -> "نقدي"
-                                            BillType.VISA -> "فيزا"
-                                            BillType.E_WALLET -> "محفظة"
-                                        }
-                                        autoRefs.add("$typeStr: ${state.bill.referenceNumber} (ربط تلقائي)")
-                                    }
-                                }
-                            }
-
-                            po.copy(
-                                totalLinkedAmount = currentPaper,
-                                autoLinkedAmount = (currentPaper - po.totalLinkedAmount).coerceAtLeast(0.0),
-                                referenceNumbers = (po.referenceNumbers + autoRefs).distinct()
-                            )
-                        }.sortedWith(compareByDescending<PurchaseOrderItem> { it.entry.getEffectiveDate() }.thenByDescending { it.entry.timestamp })
-
-                        val totalDebit = if (start == null && end == null) supplier.totalDebit else positiveOrders.sumOf { it.entry.totalCost }
-                        val totalCredit = if (start == null && end == null) supplier.totalCredit else (supplierBills.sumOf { it.paidAmount } + purchaseOrders.filter { it.entry.totalCost < 0 }.sumOf { -it.entry.totalCost })
-                        val balance = if (start == null && end == null) supplier.currentBalance else (totalDebit - totalCredit)
-
-                        val finalOrdersForDisplay: List<PurchaseOrderItem> = processedOrders.filter { po: PurchaseOrderItem ->
+                        val finalOrdersForDisplay: List<PurchaseOrderItem> = positiveOrders.filter { po ->
                             (adjustedStart == null || po.entry.getEffectiveDate().time >= adjustedStart) &&
                                     (adjustedEnd == null || po.entry.getEffectiveDate().time <= adjustedEnd)
                         }
 
-                        val partitionedResult: Pair<List<PurchaseOrderItem>, List<PurchaseOrderItem>> = finalOrdersForDisplay.partition { po: PurchaseOrderItem ->
-                            val isFullyCovered = po.totalLinkedAmount >= po.entry.totalCost - 0.001
-                            po.hasManualLink || isFullyCovered
+                        val partitionedResult: Pair<List<PurchaseOrderItem>, List<PurchaseOrderItem>> = finalOrdersForDisplay.partition { po ->
+                            po.totalLinkedAmount >= po.entry.totalCost - 0.001
                         }
-                        val obligated = partitionedResult.first
-                        val regular = partitionedResult.second
 
-                        val targetProgress = if (supplier.yearlyTarget > 0) totalDebit / supplier.yearlyTarget else 0.0
-
-                        SupplierReportItem(
+                        val finalReportItem = SupplierReportItem(
                             supplier = supplier,
                             totalDebit = totalDebit,
                             totalCredit = totalCredit,
                             balance = balance,
-                            targetProgress = targetProgress,
-                            regularOrders = regular,
-                            obligatedOrders = obligated
+                            targetProgress = if (supplier.yearlyTarget > 0) totalDebit / supplier.yearlyTarget else 0.0,
+                            regularOrders = partitionedResult.second,
+                            obligatedOrders = partitionedResult.first
                         )
+
+                        // --- ELITE STRATEGY: Cache the result if this was a full history calculation ---
+                        if (start == null && end == null) {
+                            firestore.runTransaction { transaction ->
+                                summaryRepository.updateSupplierReportCache(transaction, supplier.id, finalReportItem)
+                            }.await()
+                        }
+
+                        finalReportItem
                     }
-                }.awaitAll()
+                }.awaitAll().filterNotNull()
 
                 _supplierReport.value = report
-                    .filter { it.totalDebit > 0 || it.totalCredit > 0 || query.isNotBlank() }
-                    .sortedBy { it.supplier.name }
             } catch (e: Exception) {
                 Log.e("ReportsViewModel", "Error loading supplier report", e)
             } finally {
@@ -551,4 +491,19 @@ class ReportsViewModel @Inject constructor(
             }
         }
     }
+}
+
+// Helper to reconstruct order item from cache map
+private fun Map<String, Any>.toOrderItem(): PurchaseOrderItem {
+    return PurchaseOrderItem(
+        entry = StockEntry(
+            id = this["id"] as? String ?: "",
+            totalCost = (this["totalCost"] as? Number)?.toDouble() ?: 0.0,
+            invoiceNumber = this["invoiceNumber"] as? String ?: "",
+            timestamp = this["timestamp"] as? Date ?: Date()
+        ),
+        linkedPaidAmount = 0.0,
+        remainingBalance = (this["remainingBalance"] as? Number)?.toDouble() ?: 0.0,
+        referenceNumbers = (this["referenceNumbers"] as? List<String>) ?: emptyList()
+    )
 }
