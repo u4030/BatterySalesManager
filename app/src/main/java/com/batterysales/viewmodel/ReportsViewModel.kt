@@ -104,7 +104,6 @@ class ReportsViewModel @Inject constructor(
     private val _supplierSearchQuery = MutableStateFlow("")
     val supplierSearchQuery = _supplierSearchQuery.asStateFlow()
 
-    // --- NEW: SELECTED SUPPLIER STATE ---
     private val _selectedSupplierId = MutableStateFlow<String?>(null)
     val selectedSupplierId = _selectedSupplierId.asStateFlow()
 
@@ -190,9 +189,7 @@ class ReportsViewModel @Inject constructor(
         selectedTab
     ) { args ->
         val tab = args[7] as Int
-        if (tab != 0) { // Only load if on Inventory Tab
-            return@combine null
-        }
+        if (tab != 0) return@combine null
         Sextuple(
             args[0] as String?,
             args[1] as List<Warehouse>,
@@ -212,26 +209,21 @@ class ReportsViewModel @Inject constructor(
             val user = userRepository.getCurrentUser()
             _isSeller.value = user?.role == com.batterysales.data.models.User.ROLE_SELLER
 
-            // One-time load for reference data
             loadReferenceData()
 
-            // Initial load for active tab
+            // TAB SYNC: 0=Inventory, 1=Scrap, 2=Suppliers
             when(_selectedTab.value) {
-                0 -> {
-                    loadInventoryReport(reset = true)
-                    updateSidebarNames()
-                }
-                1 -> loadSuppliersOverview()
-                2 -> loadScrapReport()
+                0 -> { loadInventoryReport(reset = true); updateSidebarNames() }
+                1 -> loadScrapReport()
+                2 -> loadSuppliersOverview()
             }
         }
 
-        // React to tab changes
         _selectedTab.onEach { tab ->
             when(tab) {
                 0 -> if (_allInventoryItemNames.value.isEmpty()) { loadInventoryReport(reset = true); updateSidebarNames() }
-                1 -> if (_suppliersOverviewList.value.isEmpty()) loadSuppliersOverview()
-                2 -> if (_scrapWarehouses.value.isEmpty()) loadScrapReport()
+                1 -> if (_scrapWarehouses.value.isEmpty()) loadScrapReport()
+                2 -> if (_suppliersOverviewList.value.isEmpty()) loadSuppliersOverview()
             }
         }.launchIn(viewModelScope)
     }
@@ -257,12 +249,9 @@ class ReportsViewModel @Inject constructor(
         viewModelScope.launch {
             loadReferenceData()
             when(_selectedTab.value) {
-                0 -> {
-                    loadInventoryReport(reset = true)
-                    updateSidebarNames()
-                }
-                1 -> loadSuppliersOverview()
-                2 -> loadScrapReport()
+                0 -> { loadInventoryReport(reset = true); updateSidebarNames() }
+                1 -> loadScrapReport()
+                2 -> loadSuppliersOverview()
             }
         }
     }
@@ -286,11 +275,9 @@ class ReportsViewModel @Inject constructor(
 
     fun onSupplierSearchQueryChanged(query: String) {
         _supplierSearchQuery.value = query
-        // Re-filter the local overview list
         loadSuppliersOverview()
     }
 
-    // --- ELITE STRATEGY: Load only the overview list ---
     fun loadSuppliersOverview() {
         viewModelScope.launch {
             try {
@@ -299,18 +286,19 @@ class ReportsViewModel @Inject constructor(
                 val overview = summaryRepository.getSuppliersOverview()
                 val suppliersMap = overview?.suppliers ?: emptyMap()
 
-                _suppliersOverviewList.value = if (query.isNotBlank()) {
+                val filtered = if (query.isNotBlank()) {
                     suppliersMap.values.filter { it.name.contains(query, ignoreCase = true) }
                 } else {
                     suppliersMap.values.toList()
                 }.sortedBy { it.name }
 
-                // Fallback: If summary is empty, fetch from main collection once
-                if (_suppliersOverviewList.value.isEmpty() && query.isBlank()) {
+                if (filtered.isEmpty() && query.isBlank()) {
                     val fallback = supplierRepository.getSuppliersOnce()
                     _suppliersOverviewList.value = fallback.map { s ->
                         SupplierSummaryItem(s.id, s.name, s.currentBalance, s.totalDebit, s.totalCredit)
                     }
+                } else {
+                    _suppliersOverviewList.value = filtered
                 }
             } finally {
                 _isSupplierLoading.value = false
@@ -318,7 +306,6 @@ class ReportsViewModel @Inject constructor(
         }
     }
 
-    // --- ELITE STRATEGY: Load detailed report ONLY for selected supplier ---
     fun onSupplierSelected(supplierId: String?) {
         _selectedSupplierId.value = supplierId
         if (supplierId != null) {
@@ -334,12 +321,10 @@ class ReportsViewModel @Inject constructor(
         supplierJob = viewModelScope.launch {
             try {
                 _isSupplierLoading.value = true
-
                 val start = _startDate.value
                 val end = _endDate.value
                 val supplier = supplierRepository.getSupplier(supplierId) ?: return@launch
 
-                // --- Try Cache First ---
                 if (start == null && end == null) {
                     val cache = summaryRepository.getSupplierReportCache(supplierId)
                     if (cache != null) {
@@ -357,10 +342,6 @@ class ReportsViewModel @Inject constructor(
                     }
                 }
 
-                // --- Standard Calculation (only for one supplier!) ---
-                val adjustedStart = start?.let { com.batterysales.utils.DateUtils.getStartOfDay(it) }
-                val adjustedEnd = end?.let { com.batterysales.utils.DateUtils.getEndOfDay(it) }
-
                 val allEntries = stockEntryRepository.getEntriesBySuppliers(listOf(supplierId))
                 val allBills = billRepository.getBillsBySuppliers(listOf(supplierId))
 
@@ -377,11 +358,11 @@ class ReportsViewModel @Inject constructor(
                     .groupBy { it.invoiceNumber.trim().ifEmpty { it.orderId.trim().ifEmpty { it.id } } }
 
                 val purchaseOrders: List<PurchaseOrderItem> = groupedEntries.map { (key, group) ->
-                    val representative: StockEntry = group.first()
+                    val representative = group.first()
                     val totalOrderCost = group.sumOf { it.getNetCost() }
                     val effectiveBalance = if (representative.isSettled) 0.0 else (representative.remainingBalance ?: 0.0)
 
-                    val manualLinkedBills: List<Bill> = supplierBills.filter { bill ->
+                    val manualLinkedBills = supplierBills.filter { bill ->
                         val ref = bill.referenceNumber.trim()
                         bill.relatedEntryId == key || ref == key || (ref.isNotEmpty() && ref == representative.invoiceNumber.trim())
                     }.distinctBy { it.id }
@@ -397,19 +378,22 @@ class ReportsViewModel @Inject constructor(
                     )
                 }
 
-                val positiveOrders: List<PurchaseOrderItem> = purchaseOrders.filter { it.entry.totalCost > 0 }
+                val positiveOrders = purchaseOrders.filter { it.entry.totalCost > 0 }
                     .sortedWith(compareBy<PurchaseOrderItem> { it.entry.getEffectiveDate() }.thenBy { it.entry.timestamp })
 
                 val totalDebit = if (start == null && end == null) supplier.totalDebit else positiveOrders.sumOf { it.entry.totalCost }
                 val totalCredit = if (start == null && end == null) supplier.totalCredit else (supplierBills.sumOf { it.paidAmount } + purchaseOrders.filter { it.entry.totalCost < 0 }.sumOf { -it.entry.totalCost })
                 val balance = if (start == null && end == null) supplier.currentBalance else (totalDebit - totalCredit)
 
-                val finalOrdersForDisplay: List<PurchaseOrderItem> = positiveOrders.filter { po ->
+                val adjustedStart = start?.let { com.batterysales.utils.DateUtils.getStartOfDay(it) }
+                val adjustedEnd = end?.let { com.batterysales.utils.DateUtils.getEndOfDay(it) }
+
+                val finalOrdersForDisplay = positiveOrders.filter { po ->
                     (adjustedStart == null || po.entry.getEffectiveDate().time >= adjustedStart) &&
                             (adjustedEnd == null || po.entry.getEffectiveDate().time <= adjustedEnd)
                 }
 
-                val partitionedResult: Pair<List<PurchaseOrderItem>, List<PurchaseOrderItem>> = finalOrdersForDisplay.partition { po ->
+                val partitionedResult = finalOrdersForDisplay.partition { po ->
                     po.totalLinkedAmount >= po.entry.totalCost - 0.001
                 }
 
@@ -512,7 +496,6 @@ class ReportsViewModel @Inject constructor(
     }
 }
 
-// Helper to reconstruct order item from cache map
 private fun Map<String, Any>.toOrderItem(): PurchaseOrderItem {
     return PurchaseOrderItem(
         entry = StockEntry(

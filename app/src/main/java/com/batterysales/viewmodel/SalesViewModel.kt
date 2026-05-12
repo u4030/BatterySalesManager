@@ -132,6 +132,8 @@ class SalesViewModel @Inject constructor(
             }
 
             val userWhId = currentUser?.warehouseId
+            val selectedWhId = _uiState.value.selectedWarehouse?.id ?: userWhId ?: "global"
+
             val filteredVariants = if (currentUser?.role == User.ROLE_SELLER && userWhId != null) {
                 variantsForProduct.filter { (it.currentStock?.get(userWhId) ?: 0) > 0 || variantsForProduct.size <= 2 }
             } else {
@@ -140,10 +142,9 @@ class SalesViewModel @Inject constructor(
 
             val newStockMap = _uiState.value.stockLevels.toMutableMap()
             filteredVariants.forEach { v ->
-                val whId = cachedInventorySummary?.warehouseId ?: userWhId ?: "global"
-                // If it came from DB, it has a full stock map. If from summary, it has one key.
-                val qty = v.currentStock?.get(whId) ?: 0
-                newStockMap[Pair(v.id, whId)] = qty
+                // IMPORTANT: We must map the stock to the CURRENT selected warehouse or user warehouse
+                val qty = v.currentStock?.get(selectedWhId) ?: v.currentStock?.get("global") ?: 0
+                newStockMap[Pair(v.id, selectedWhId)] = qty
             }
 
             val selectedVar = if (targetVariantId != null) filteredVariants.find { it.id == targetVariantId } else null
@@ -174,6 +175,13 @@ class SalesViewModel @Inject constructor(
 
     fun onWarehouseSelected(warehouse: Warehouse) {
         _uiState.update { it.copy(selectedWarehouse = warehouse) }
+        // Refresh stock levels for the new warehouse
+        val state = uiState.value
+        state.selectedProduct?.let { product ->
+            viewModelScope.launch {
+                loadVariantsForProduct(product, state.selectedVariant?.id)
+            }
+        }
     }
 
     fun onQuantityChanged(quantity: String) {

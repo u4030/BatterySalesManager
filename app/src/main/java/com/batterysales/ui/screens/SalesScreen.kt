@@ -161,7 +161,10 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
                                 icon = Icons.Default.Warehouse
                             )
 
-                            val availableQty = uiState.selectedVariant?.let { uiState.stockLevels[Pair(it.id, uiState.selectedWarehouse?.id ?: "")] ?: 0 } ?: 0
+                            val availableQty = uiState.selectedVariant?.let {
+                                val whId = uiState.selectedWarehouse?.id ?: (if (uiState.userRole == "seller") "" else "global")
+                                uiState.stockLevels[Pair(it.id, whId)] ?: 0
+                            } ?: 0
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                                 Text("الكمية المتاحة: ", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f), fontSize = 14.sp)
                                 Text("$availableQty", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 18.sp)

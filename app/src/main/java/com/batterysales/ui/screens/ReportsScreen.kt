@@ -136,7 +136,7 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                     )
 
                     Column(modifier = Modifier.padding(16.dp)) {
-                        // Styled Tabs
+                        // Styled Tabs: 0=Inventory, 1=Scrap, 2=Suppliers
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -171,11 +171,11 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                 val currentTabLoading = when(selectedTab) {
                     0 -> pagingItems.loadState.refresh is androidx.paging.LoadState.Loading || isInventoryLoading
                     1 -> isScrapLoading
-                    2 -> isSupplierLoading
+                    2 -> isSupplierLoading && supplierOverviewList.isEmpty() // Only show main loading if empty
                     else -> false
                 }
 
-                if (currentTabLoading && (selectedTab != 0 || pagingItems.itemCount == 0) && (selectedTab != 2 || supplierOverviewList.isEmpty())) {
+                if (currentTabLoading && (selectedTab != 0 || pagingItems.itemCount == 0)) {
                     item {
                         Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator(color = accentColor)
@@ -278,11 +278,8 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                         val index = allItemNames.indexOfFirst { it.trim().startsWith(letter.toString(), ignoreCase = true) }
                         if (index != -1) {
                             var offset = 0
-                            // 1. SharedHeader + Tabs
                             offset += 1
-                            // 2. InventoryReportControls (SearchBar + DatePicker)
                             offset += 1
-                            // 3. GrandTotalCard (only if displayed)
                             if (pagingItems.itemCount > 0) offset += 1
 
                             scope.launch {
@@ -332,7 +329,6 @@ fun InventoryReportControls(viewModel: ReportsViewModel) {
 
     var searchInput by remember { mutableStateOf("") }
 
-    // Sync local input with VM state when VM state changes externally (e.g. scanner)
     LaunchedEffect(barcodeFilter) {
         if (barcodeFilter != searchInput) {
             searchInput = barcodeFilter ?: ""
@@ -658,7 +654,7 @@ private fun supplierReportSectionRedesigned(
         SupplierReportControls(viewModel)
     }
 
-    val totalSuppliersDebit = supplierItems.sumOf { it.currentBalance }
+    val totalSuppliersDebt = supplierItems.sumOf { it.currentBalance }
     scope.item {
         Card(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
