@@ -139,17 +139,29 @@ class DashboardViewModel @Inject constructor(
                         .whereEqualTo("type", com.batterysales.data.models.SystemAlert.TYPE_LOW_STOCK)
                         .get().await()
 
-                    val lowStockItems = alertsSnap.documents.mapNotNull { doc ->
-                        val alert = doc.toObject(com.batterysales.data.models.SystemAlert::class.java) ?: return@mapNotNull null
-                        if (!isAdmin && alert.warehouseId != userWarehouseId) return@mapNotNull null
+                    val filteredAlerts = alertsSnap.documents.mapNotNull { it.toObject(com.batterysales.data.models.SystemAlert::class.java) }
+                        .filter { isAdmin || it.warehouseId == userWarehouseId }
+
+                    val variantIds = filteredAlerts.map { it.relatedId }.distinct()
+                    val variantsMap = if (variantIds.isEmpty()) emptyMap() else {
+                        variantIds.chunked(30).map { chunk ->
+                            firestore.collection(ProductVariant.COLLECTION_NAME)
+                                .whereIn(com.google.firebase.firestore.FieldPath.documentId(), chunk)
+                                .get().await()
+                                .documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }
+                        }.flatten().associateBy { it.id }
+                    }
+
+                    val lowStockItems = filteredAlerts.mapNotNull { alert ->
+                        val variant = variantsMap[alert.relatedId] ?: return@mapNotNull null
                         val whName = warehouses.find { it.id == alert.warehouseId }?.name ?: "مخزن غير معروف"
 
                         LowStockItem(
                             variantId = alert.relatedId,
-                            productName = alert.title.replace("مخزون منخفض: ", ""),
-                            capacity = 0,
-                            currentQuantity = 0,
-                            minQuantity = 0,
+                            productName = variant.productName ?: alert.title.replace("مخزون منخفض: ", ""),
+                            capacity = variant.capacity,
+                            currentQuantity = variant.currentStock?.get(alert.warehouseId) ?: 0,
+                            minQuantity = variant.minQuantities[alert.warehouseId] ?: variant.minQuantity,
                             warehouseName = whName
                         )
                     }

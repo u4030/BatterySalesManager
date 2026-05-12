@@ -209,6 +209,18 @@ class ReportsViewModel @Inject constructor(
         viewModelScope.launch {
             userRepository.getCurrentUserFlow().collect { user ->
                 _isSeller.value = user?.role == com.batterysales.data.models.User.ROLE_SELLER
+
+                // Run Migration if not done (only for admins)
+                if (user?.role == "admin" && !settingsManager.isMigrationDone()) {
+                    try {
+                        stockEntryRepository.migrateStockEntries()
+                        stockEntryRepository.migrateAllVariants(productRepository, supplierRepository, billRepository)
+                        settingsManager.setMigrationDone(true)
+                    } catch (e: Exception) {
+                        Log.e("ReportsViewModel", "Migration failed", e)
+                    }
+                }
+
                 // Initial load only if needed, avoiding repeated refreshes
                 if (_supplierReport.value.isEmpty()) {
                     loadSupplierReport()
