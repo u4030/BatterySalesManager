@@ -779,4 +779,12 @@ class StockEntryRepository @Inject constructor(
         return snapshot.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
             .filter { it.totalCost > 0 }
     }
+
+    suspend fun getEntriesForInvoice(invoiceId: String): List<StockEntry> {
+        val snapshot = firestore.collection(StockEntry.COLLECTION_NAME)
+            .whereEqualTo("invoiceId", invoiceId)
+            .get()
+            .await()
+        return snapshot.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
+    }
 }
