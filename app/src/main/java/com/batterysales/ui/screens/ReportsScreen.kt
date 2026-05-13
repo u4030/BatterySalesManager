@@ -60,7 +60,7 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
     val grandTotalQuantity by viewModel.grandTotalInventoryQuantity.collectAsState()
     val supplierOverviewList by viewModel.suppliersOverviewList.collectAsState()
     val isSeller by viewModel.isSeller.collectAsState()
-    val warehouses by viewModel.filteredWarehouses.collectAsState()
+    val filteredWarehouses by viewModel.filteredWarehouses.collectAsState(initial = emptyList<Warehouse>())
     val oldBatterySummary by viewModel.oldBatterySummary.collectAsState()
     val scrapWarehouses by viewModel.scrapWarehouses.collectAsState()
     val isInventoryLoading by viewModel.isInventoryLoading.collectAsState()
@@ -180,7 +180,7 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                                 Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                                     ReportItemCard(
                                         item = reportItem,
-                                        warehouses = warehouses,
+                                        warehouses = filteredWarehouses,
                                         isSeller = isSeller,
                                         onClick = {
                                             val capacityStr = reportItem.variant.capacity.toString()

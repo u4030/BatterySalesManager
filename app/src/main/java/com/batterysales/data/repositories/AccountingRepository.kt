@@ -142,7 +142,7 @@ class AccountingRepository @Inject constructor(
             // Update Summaries
             summaryRepository.updateFinancialStatus(
                 transaction = transactionOp,
-                warehouseId = finalTransaction.warehouseId,
+                warehouseId = finalTransaction.warehouseId ?: "",
                 cashChange = if (finalTransaction.paymentMethod == "cash") change else 0.0,
                 bankChange = if (finalTransaction.paymentMethod == "bank") change else 0.0
             )

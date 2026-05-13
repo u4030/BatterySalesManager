@@ -59,9 +59,18 @@ class BankViewModel @Inject constructor(
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val transactions: Flow<PagingData<BankTransaction>> = combine(
         _startDate, _endDate, _selectedTab, _searchQuery, refreshTrigger, _isDataLoaded
-    ) { start, end, tab, query, refresh, isLoaded ->
-        if (!isLoaded && query.isEmpty()) return@combine null
-        BankFilters(start, end, tab, query, refresh)
+    ) { args: Array<Any?> ->
+        val isLoaded = args[5] as Boolean
+        val query = args[3] as String
+
+        if (!isLoaded && query.isEmpty()) null
+        else BankFilters(
+            start = args[0] as? Long,
+            end = args[1] as? Long,
+            tab = args[2] as Int,
+            query = query,
+            refresh = args[4] as Int
+        )
     }
         .filterNotNull()
         .flatMapLatest { filters ->
@@ -80,7 +89,7 @@ class BankViewModel @Inject constructor(
     private data class BankFilters(val start: Long?, val end: Long?, val tab: Int, val query: String, val refresh: Int)
 
     init {
-        // Default to current year range but DON'T load list
+        // Default to current year range
         val cal = Calendar.getInstance()
         val year = cal.get(Calendar.YEAR)
         cal.set(year, Calendar.JANUARY, 1, 0, 0, 0)
@@ -88,7 +97,6 @@ class BankViewModel @Inject constructor(
         cal.set(year, Calendar.DECEMBER, 31, 23, 59, 59)
         _endDate.value = cal.timeInMillis
 
-        // --- ELITE STRATEGY: One read for balance ---
         viewModelScope.launch { loadBalancesFromSummary() }
     }
 
