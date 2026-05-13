@@ -2,14 +2,8 @@ package com.batterysales.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.paging.Pager
-import androidx.paging.PagingConfig
-import androidx.paging.PagingData
-import androidx.paging.cachedIn
 import com.batterysales.data.models.*
 import com.batterysales.data.repositories.*
-import com.batterysales.data.paging.InventoryPagingSource
-import com.batterysales.utils.Sextuple
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -78,7 +72,6 @@ class ReportsViewModel @Inject constructor(
     private val _isScrapLoading = MutableStateFlow(false)
     val isScrapLoading = _isScrapLoading.asStateFlow()
 
-    // Aggregate loading state
     val isLoading = combine(_isInventoryLoading, _isSupplierLoading, _isScrapLoading) { i, s, sc ->
         i || s || sc
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
@@ -113,14 +106,15 @@ class ReportsViewModel @Inject constructor(
     private val _suppliersOverviewList = MutableStateFlow<List<SupplierSummaryItem>>(emptyList())
     val suppliersOverviewList = _suppliersOverviewList.asStateFlow()
 
+    // --- NUCLEAR STRATEGY: List instead of Pager ---
+    private val _inventoryReportItems = MutableStateFlow<List<InventoryReportItem>>(emptyList())
+    val inventoryReportItems = _inventoryReportItems.asStateFlow()
+
     private val _grandTotalInventoryQuantity = MutableStateFlow(0)
     val grandTotalInventoryQuantity = _grandTotalInventoryQuantity.asStateFlow()
 
     private val _grandTotalInventoryValue = MutableStateFlow(0.0)
     val grandTotalInventoryValue = _grandTotalInventoryValue.asStateFlow()
-
-    private val _supplierReport = MutableStateFlow<List<SupplierReportItem>>(emptyList())
-    val supplierReport = _supplierReport.asStateFlow()
 
     private val _selectedTab = MutableStateFlow(0)
     val selectedTab = _selectedTab.asStateFlow()
@@ -137,83 +131,14 @@ class ReportsViewModel @Inject constructor(
     private val _allInventoryItemNames = MutableStateFlow<List<String>>(emptyList())
     val allInventoryItemNames = _allInventoryItemNames.asStateFlow()
 
-    private fun updateSidebarNames() {
-        if (_selectedTab.value != 0) return
-        viewModelScope.launch {
-            try {
-                val pMap = _productsMap.value
-                val query = _barcodeFilter.value
-
-                val names = pMap.values.asSequence()
-                    .filter { !it.archived }
-                    .filter { p ->
-                        if (query.isNullOrBlank()) true
-                        else p.name.contains(query, ignoreCase = true)
-                    }
-                    .map { it.name }
-                    .distinct()
-                    .sorted()
-                    .toList()
-                
-                _allInventoryItemNames.value = names
-            } catch (e: Exception) {
-                Log.e("ReportsViewModel", "Error updating sidebar", e)
-            }
-        }
-    }
-
-    private val _warehouses = MutableStateFlow<List<Warehouse>>(emptyList())
-    val filteredWarehouses: StateFlow<List<Warehouse>> = combine(
-        _warehouses,
-        isSeller,
-        userRepository.getCurrentUserFlow()
-    ) { allWh, seller, user ->
-        val active = allWh.filter { it.isActive }
-        val result = if (seller) active.filter { it.id == user?.warehouseId } else active
-        result.sortedBy { it.name }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    private val _productsMap = MutableStateFlow<Map<String, Product>>(emptyMap())
-    val productsMap = _productsMap.asStateFlow()
-
-    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    @Suppress("UNCHECKED_CAST")
-    val inventoryReport: Flow<PagingData<InventoryReportItem>> = combine(
-        barcodeFilter,
-        filteredWarehouses,
-        _productsMap,
-        _isSeller,
-        _inventoryStartDate,
-        _inventoryEndDate,
-        refreshTrigger,
-        selectedTab
-    ) { args ->
-        val tab = args[7] as Int
-        if (tab != 0) return@combine null
-        Sextuple(
-            args[0] as String?,
-            args[1] as List<Warehouse>,
-            args[2] as Map<String, Product>,
-            args[3] as Boolean,
-            args[4] as Long?,
-            args[5] as Long?
-        )
-    }.filterNotNull().flowOn(kotlinx.coroutines.Dispatchers.Default).flatMapLatest { (query, warehouseList, pMap, seller, start, end) ->
-        Pager(PagingConfig(pageSize = 25)) {
-            InventoryPagingSource(firestore, stockEntryRepository, pMap, warehouseList, query, seller, start, end)
-        }.flow.cachedIn(viewModelScope)
-    }
-
     init {
         viewModelScope.launch {
             val user = userRepository.getCurrentUser()
             _isSeller.value = user?.role == com.batterysales.data.models.User.ROLE_SELLER
 
-            loadReferenceData()
-
-            // TAB SYNC: 0=Inventory, 1=Scrap, 2=Suppliers
+            // Sync Tab Indices: 0=Inventory, 1=Scrap, 2=Suppliers
             when(_selectedTab.value) {
-                0 -> { loadInventoryReport(reset = true); updateSidebarNames() }
+                0 -> loadInventoryReport(reset = true)
                 1 -> loadScrapReport()
                 2 -> loadSuppliersOverview()
             }
@@ -221,35 +146,22 @@ class ReportsViewModel @Inject constructor(
 
         _selectedTab.onEach { tab ->
             when(tab) {
-                0 -> if (_allInventoryItemNames.value.isEmpty()) { loadInventoryReport(reset = true); updateSidebarNames() }
+                0 -> if (_inventoryReportItems.value.isEmpty()) loadInventoryReport(reset = true)
                 1 -> if (_scrapWarehouses.value.isEmpty()) loadScrapReport()
                 2 -> if (_suppliersOverviewList.value.isEmpty()) loadSuppliersOverview()
             }
         }.launchIn(viewModelScope)
     }
 
-    private suspend fun loadReferenceData() {
-        try {
-            val wh = warehouseRepository.getWarehousesOnce()
-            val prod = productRepository.getProductsOnce().associateBy { it.id }
-            _warehouses.value = wh
-            _productsMap.value = prod
-        } catch (e: Exception) {
-            Log.e("ReportsViewModel", "Error loading reference data", e)
-        }
-    }
-
     fun onTabSelected(index: Int) {
         _selectedTab.value = index
-        if (index == 0 && _allInventoryItemNames.value.isEmpty()) updateSidebarNames()
     }
 
     fun refreshAll() {
         refreshTrigger.value += 1
         viewModelScope.launch {
-            loadReferenceData()
             when(_selectedTab.value) {
-                0 -> { loadInventoryReport(reset = true); updateSidebarNames() }
+                0 -> loadInventoryReport(reset = true)
                 1 -> loadScrapReport()
                 2 -> loadSuppliersOverview()
             }
@@ -258,13 +170,13 @@ class ReportsViewModel @Inject constructor(
 
     fun onBarcodeScanned(barcode: String?) {
         _barcodeFilter.value = barcode
-        loadInventoryReport(reset = true)
+        loadInventoryReport(reset = false) // Just filter locally
     }
 
     fun onInventoryDateRangeSelected(start: Long?, end: Long?) {
         _inventoryStartDate.value = start
         _inventoryEndDate.value = end
-        loadInventoryReport(reset = true)
+        loadInventoryReport(reset = true) // Date filter needs a fresh scan or special logic
     }
 
     fun onDateRangeSelected(start: Long?, end: Long?) {
@@ -278,13 +190,56 @@ class ReportsViewModel @Inject constructor(
         loadSuppliersOverview()
     }
 
+    // --- NUCLEAR STRATEGY: Load ENTIRE inventory from ONE document ---
+    fun loadInventoryReport(reset: Boolean = false) {
+        viewModelScope.launch {
+            try {
+                _isInventoryLoading.value = true
+                val user = userRepository.getCurrentUser()
+                val seller = user?.role == "seller"
+                val whId = if (seller) user?.warehouseId else null
+
+                val summary = summaryRepository.getInventorySummary(whId)
+                if (summary == null) {
+                    _inventoryReportItems.value = emptyList()
+                    return@launch
+                }
+
+                val query = _barcodeFilter.value
+                val items = summary.items.values.asSequence()
+                    .filter { if (query.isNullOrBlank()) true else it.productName.contains(query, ignoreCase = true) || it.barcode == query }
+                    .filter { if (seller) it.currentStock > 0 else true }
+                    .map { item ->
+                        InventoryReportItem(
+                            product = Product(id = item.productId, name = item.productName),
+                            variant = ProductVariant(id = item.variantId, productId = item.productId, capacity = item.capacity, barcode = item.barcode, weightedAverageCost = item.weightedAverageCost, sellingPrice = item.sellingPrice),
+                            warehouseQuantities = if (whId != null) mapOf(whId to item.currentStock) else emptyMap(),
+                            totalQuantity = item.currentStock,
+                            averageCost = item.weightedAverageCost,
+                            totalCostValue = item.currentStock * item.weightedAverageCost
+                        )
+                    }
+                    .sortedBy { it.product.name }
+                    .toList()
+
+                _inventoryReportItems.value = items
+                _grandTotalInventoryQuantity.value = items.sumOf { it.totalQuantity }
+                _grandTotalInventoryValue.value = items.sumOf { it.totalCostValue }
+                _allInventoryItemNames.value = items.map { it.product.name }.distinct()
+
+            } catch (e: Exception) {
+                Log.e("ReportsViewModel", "Error loading nuclear inventory", e)
+            } finally {
+                _isInventoryLoading.value = false
+            }
+        }
+    }
+
     fun loadSuppliersOverview() {
         viewModelScope.launch {
             try {
                 _isSupplierLoading.value = true
                 val query = _supplierSearchQuery.value
-
-                // Try summary first
                 val overview = summaryRepository.getSuppliersOverview()
                 val suppliersMap = overview?.suppliers ?: emptyMap()
 
@@ -294,15 +249,8 @@ class ReportsViewModel @Inject constructor(
                     suppliersMap.values.toList()
                 }.sortedBy { it.name }
 
-                // --- FALLBACK Logic ---
-                // If summary is empty OR search query returned nothing from summary, try cloud fallback
                 if (filtered.isEmpty()) {
-                    val fallback = if (query.isNotBlank()) {
-                        supplierRepository.getSuppliersOnce(query)
-                    } else {
-                        supplierRepository.getSuppliersOnce()
-                    }
-
+                    val fallback = supplierRepository.getSuppliersOnce(query)
                     _suppliersOverviewList.value = fallback.map { s ->
                         SupplierSummaryItem(s.id, s.name, s.currentBalance, s.totalDebit, s.totalCredit)
                     }
@@ -427,48 +375,6 @@ class ReportsViewModel @Inject constructor(
                 Log.e("ReportsViewModel", "Error loading supplier report", e)
             } finally {
                 _isSupplierLoading.value = false
-            }
-        }
-    }
-
-    fun loadInventoryReport(reset: Boolean = false) {
-        if (reset) {
-            _grandTotalInventoryQuantity.value = 0
-            _grandTotalInventoryValue.value = 0.0
-
-            viewModelScope.launch {
-                _isInventoryLoading.value = true
-                try {
-                    val user = userRepository.getCurrentUser()
-                    val seller = user?.role == "seller"
-                    val targetWarehouseId = if (seller) user?.warehouseId else null
-
-                    if (targetWarehouseId == null) {
-                        val statsSnap = firestore.collection(SystemStats.COLLECTION_NAME).document(SystemStats.DOCUMENT_ID).get().await()
-                        val stats = statsSnap.toObject(SystemStats::class.java)
-                        if (stats != null) {
-                            _grandTotalInventoryQuantity.value = stats.totalInventoryQuantity
-                            _grandTotalInventoryValue.value = stats.totalInventoryValue
-                        }
-                    } else {
-                        var baseQuery = firestore.collection(StockEntry.COLLECTION_NAME)
-                            .whereEqualTo("status", "approved")
-                            .whereEqualTo("warehouseId", targetWarehouseId)
-
-                        val qtySnap = baseQuery.aggregate(
-                            AggregateField.sum("quantity"),
-                            AggregateField.sum("returnedQuantity")
-                        ).get(AggregateSource.SERVER).await()
-
-                        val totalQty = (qtySnap.getLong(AggregateField.sum("quantity")) ?: 0).toInt()
-                        val totalRet = (qtySnap.getLong(AggregateField.sum("returnedQuantity")) ?: 0).toInt()
-                        _grandTotalInventoryQuantity.value = totalQty - totalRet
-                    }
-                } catch (e: Exception) {
-                    Log.e("ReportsViewModel", "Error calculating grand total", e)
-                } finally {
-                    _isInventoryLoading.value = false
-                }
             }
         }
     }

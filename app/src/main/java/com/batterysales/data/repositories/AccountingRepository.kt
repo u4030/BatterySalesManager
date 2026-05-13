@@ -12,7 +12,8 @@ import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 
 class AccountingRepository @Inject constructor(
-    private val firestore: FirebaseFirestore
+    private val firestore: FirebaseFirestore,
+    private val summaryRepository: SummaryRepository
 ) {
 
     suspend fun getAllTransactions(): List<Transaction> {
@@ -133,13 +134,22 @@ class AccountingRepository @Inject constructor(
         firestore.runTransaction { transactionOp ->
             transactionOp.set(docRef, finalTransaction)
 
+            val change = when (finalTransaction.type) {
+                TransactionType.INCOME, TransactionType.PAYMENT -> finalTransaction.amount
+                TransactionType.EXPENSE, TransactionType.REFUND -> -finalTransaction.amount
+            }
+
+            // Update Summaries
+            summaryRepository.updateFinancialStatus(
+                transaction = transactionOp,
+                warehouseId = finalTransaction.warehouseId,
+                cashChange = if (finalTransaction.paymentMethod == "cash") change else 0.0,
+                bankChange = if (finalTransaction.paymentMethod == "bank") change else 0.0
+            )
+
             // Update Global Cash Balance
             if (finalTransaction.paymentMethod == "cash") {
                 val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
-                val change = when (finalTransaction.type) {
-                    TransactionType.INCOME, TransactionType.PAYMENT -> finalTransaction.amount
-                    TransactionType.EXPENSE, TransactionType.REFUND -> -finalTransaction.amount
-                }
                 transactionOp.update(statsRef, "totalCashBalance", com.google.firebase.firestore.FieldValue.increment(change))
             }
         }.await()

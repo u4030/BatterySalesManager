@@ -113,6 +113,7 @@ class SettingsViewModel @Inject constructor(
         val variants = productVariantRepository.getAllVariants()
         val warehouses = warehouseRepository.getWarehousesOnce()
         val suppliers = supplierRepository.getSuppliersOnce()
+        val accountingRepository = AccountingRepository(com.google.firebase.firestore.FirebaseFirestore.getInstance())
 
         // 1. Rebuild Inventory Summaries
         val globalItems = mutableMapOf<String, InventorySummaryItem>()
@@ -168,5 +169,33 @@ class SettingsViewModel @Inject constructor(
         com.google.firebase.firestore.FirebaseFirestore.getInstance()
             .collection("summaries").document("suppliers_overview")
             .set(SuppliersOverview(suppliers = supplierItems)).await()
+
+        // 3. Rebuild Financial Status
+        val warehouseBalances = warehouses.associate { wh ->
+            val cash = accountingRepository.getCurrentBalance(wh.id, "cash")
+            val bank = accountingRepository.getCurrentBalance(wh.id, "bank")
+            wh.id to WarehouseBalance(
+                warehouseId = wh.id,
+                cashBalance = cash,
+                bankBalance = bank
+            )
+        }
+
+        val globalCash = warehouseBalances.values.sumOf { it.cashBalance }
+        val globalBank = warehouseBalances.values.sumOf { it.bankBalance }
+
+        com.google.firebase.firestore.FirebaseFirestore.getInstance()
+            .collection("summaries").document("financial_status")
+            .set(FinancialStatus(
+                warehouseBalances = warehouseBalances,
+                globalCashBalance = globalCash,
+                globalBankBalance = globalBank,
+                lastUpdated = Date()
+            )).await()
+
+        // 4. Reset Sync Registry
+        com.google.firebase.firestore.FirebaseFirestore.getInstance()
+            .collection("summaries").document("sync_registry")
+            .set(SyncRegistry(lastModified = Date())).await()
     }
 }
