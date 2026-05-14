@@ -134,9 +134,10 @@ fun WarehouseScreen(
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                            elevation = CardDefaults.cardElevation(defaultElevation = if (isLowStock) 4.dp else 2.dp),
+                            border = if (isLowStock) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.error) else null,
                             colors = CardDefaults.cardColors(
-                                containerColor = if (isLowStock) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surface
+                                containerColor = if (isLowStock) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surface
                             )
                         ) {
                             Row(
@@ -151,7 +152,7 @@ fun WarehouseScreen(
                                                 imageVector = Icons.Default.Warning,
                                                 contentDescription = "تحذير",
                                                 tint = MaterialTheme.colorScheme.error,
-                                                modifier = Modifier.size(16.dp)
+                                                modifier = Modifier.size(20.dp)
                                             )
                                             Spacer(Modifier.width(8.dp))
                                         }
@@ -159,13 +160,13 @@ fun WarehouseScreen(
                                             text = item.product.name,
                                             style = MaterialTheme.typography.titleMedium,
                                             fontWeight = FontWeight.Bold,
-                                            color = if (isLowStock) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                                            color = if (isLowStock) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurface
                                         )
                                     }
                                     Text(
                                         text = "${item.variant.capacity}A",
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = if (isLowStock) MaterialTheme.colorScheme.error.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = if (isLowStock) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                                 
@@ -178,7 +179,7 @@ fun WarehouseScreen(
                                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                                         style = MaterialTheme.typography.titleLarge,
                                         fontWeight = FontWeight.ExtraBold,
-                                        color = if (isLowStock) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                        color = if (isLowStock) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onPrimaryContainer
                                     )
                                 }
                             }

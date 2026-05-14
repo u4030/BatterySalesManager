@@ -26,7 +26,8 @@ class SettingsViewModel @Inject constructor(
     private val billRepository: BillRepository,
     private val summaryRepository: SummaryRepository,
     private val accountingRepository: AccountingRepository,
-    private val bankRepository: BankRepository
+    private val bankRepository: BankRepository,
+    private val invoiceRepository: InvoiceRepository
 ) : ViewModel() {
 
     private val _migrationStatus = MutableStateFlow<String?>(null)
@@ -67,6 +68,7 @@ class SettingsViewModel @Inject constructor(
                 _isMigrating.value = true
                 _migrationStatus.value = "جاري ترحيل البيانات وإعادة بناء الملخصات... يرجى عدم إغلاق التطبيق"
 
+                invoiceRepository.migrateInvoices()
                 stockEntryRepository.migrateStockEntries()
                 stockEntryRepository.migrateAllVariants(productRepository, supplierRepository, billRepository)
 

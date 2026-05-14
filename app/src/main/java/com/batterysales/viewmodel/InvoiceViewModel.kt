@@ -33,8 +33,7 @@ data class InvoiceUiState(
     val searchQuery: String = "",
     val isAdmin: Boolean = false,
     val isLastPage: Boolean = false,
-    val isLoadingMore: Boolean = false,
-    val isDataLoaded: Boolean = true // Automatically allow initial load
+    val isLoadingMore: Boolean = false
 )
 
 @HiltViewModel
@@ -57,11 +56,6 @@ class InvoiceViewModel @Inject constructor(
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val invoices: Flow<PagingData<Invoice>> = combine(filterState, refreshTrigger) { f, _ -> f }
         .flatMapLatest { filters ->
-            // --- ELITE STRATEGY: Zero automatic reads ---
-            if (!_uiState.value.isDataLoaded && filters.searchQuery.isEmpty()) {
-                return@flatMapLatest flowOf(PagingData.empty())
-            }
-
             val startOfToday = com.batterysales.utils.DateUtils.getStartOfDay(System.currentTimeMillis())
             val endOfToday = com.batterysales.utils.DateUtils.getEndOfDay(System.currentTimeMillis())
 
@@ -124,20 +118,20 @@ class InvoiceViewModel @Inject constructor(
     }
 
     fun loadInvoices(reset: Boolean = false) {
-        _uiState.update { it.copy(isDataLoaded = true, isLoading = true) }
+        _uiState.update { it.copy(isLoading = true) }
         refreshTrigger.value += 1
         viewModelScope.launch { loadDebtFromSummary() }
     }
 
     fun onWarehouseSelected(warehouseId: String) {
         if (_uiState.value.selectedWarehouseId == warehouseId) return
-        _uiState.update { it.copy(selectedWarehouseId = warehouseId, isDataLoaded = false) } // Require explicit reload for new warehouse
+        _uiState.update { it.copy(selectedWarehouseId = warehouseId) }
         filterState.update { it.copy(warehouseId = warehouseId) }
     }
 
     fun onTabSelected(tabIndex: Int) {
         if (_uiState.value.selectedTab == tabIndex) return
-        _uiState.update { it.copy(selectedTab = tabIndex, startDate = null, endDate = null, isDataLoaded = false) }
+        _uiState.update { it.copy(selectedTab = tabIndex, startDate = null, endDate = null) }
         filterState.update { it.copy(selectedTab = tabIndex, startDate = null, endDate = null) }
     }
 
@@ -148,15 +142,12 @@ class InvoiceViewModel @Inject constructor(
         searchJob?.cancel()
         searchJob = viewModelScope.launch {
             kotlinx.coroutines.delay(500)
-            if (query.isNotEmpty()) {
-                _uiState.update { it.copy(isDataLoaded = true) }
-            }
             filterState.update { it.copy(searchQuery = query) }
         }
     }
 
     fun onDateRangeSelected(start: Long?, end: Long?) {
-        _uiState.update { it.copy(startDate = start, endDate = end, isDataLoaded = true) }
+        _uiState.update { it.copy(startDate = start, endDate = end) }
         filterState.update { it.copy(startDate = start, endDate = end) }
         refreshTrigger.value += 1
     }

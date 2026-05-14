@@ -387,6 +387,26 @@ class InvoiceRepository @Inject constructor(
         }.await()
     }
 
+    suspend fun migrateInvoices() {
+        val snapshot = firestore.collection(Invoice.COLLECTION_NAME).get().await()
+        val docsToUpdate = snapshot.documents.filter { doc ->
+            // Migration check: invoiceDate was previously initialized to Date(0) in the model,
+            // but older documents might not have the field at all.
+            !doc.contains("invoiceDate") || doc.getDate("invoiceDate")?.time == 0L
+        }
+
+        if (docsToUpdate.isEmpty()) return
+
+        docsToUpdate.chunked(500).forEach { chunk ->
+            val batch = firestore.batch()
+            chunk.forEach { doc ->
+                val createdAt = doc.getDate("createdAt") ?: Date()
+                batch.update(doc.reference, "invoiceDate", createdAt)
+            }
+            batch.commit().await()
+        }
+    }
+
     suspend fun deletePayment(paymentId: String, invoiceId: String) {
         val invoiceRef = firestore.collection(Invoice.COLLECTION_NAME).document(invoiceId)
         firestore.runTransaction { transaction ->
