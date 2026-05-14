@@ -50,15 +50,19 @@ class AccountingRepository @Inject constructor(
             baseQuery = baseQuery.whereLessThanOrEqualTo("createdAt", java.util.Date(com.batterysales.utils.DateUtils.getEndOfDay(endDate)))
         }
 
+        // Robust type matching (handle mixed casing and multiple types)
+        val incomeTypes = listOf("INCOME", "PAYMENT", "income", "payment", "Income", "Payment")
+        val expenseTypes = listOf("EXPENSE", "REFUND", "expense", "refund", "Expense", "Refund")
+
         // Sum INCOME & PAYMENT
-        val incomeQuery = baseQuery.whereIn("type", listOf(TransactionType.INCOME.name, TransactionType.PAYMENT.name))
-        val incomeSnap = incomeQuery.aggregate(AggregateField.sum("amount")).get(AggregateSource.SERVER).await()
-        val totalIncome = (incomeSnap.get(AggregateField.sum("amount")) as? Number)?.toDouble() ?: 0.0
+        val incomeQuery = baseQuery.whereIn("type", incomeTypes)
+        val incomeSnap = try { incomeQuery.aggregate(AggregateField.sum("amount")).get(AggregateSource.SERVER).await() } catch(e: Exception) { null }
+        val totalIncome = (incomeSnap?.get(AggregateField.sum("amount")) as? Number)?.toDouble() ?: 0.0
 
         // Sum EXPENSE & REFUND
-        val expenseQuery = baseQuery.whereIn("type", listOf(TransactionType.EXPENSE.name, TransactionType.REFUND.name))
-        val expenseSnap = expenseQuery.aggregate(AggregateField.sum("amount")).get(AggregateSource.SERVER).await()
-        val totalExpense = (expenseSnap.get(AggregateField.sum("amount")) as? Number)?.toDouble() ?: 0.0
+        val expenseQuery = baseQuery.whereIn("type", expenseTypes)
+        val expenseSnap = try { expenseQuery.aggregate(AggregateField.sum("amount")).get(AggregateSource.SERVER).await() } catch(e: Exception) { null }
+        val totalExpense = (expenseSnap?.get(AggregateField.sum("amount")) as? Number)?.toDouble() ?: 0.0
 
         return totalIncome - totalExpense
     }
@@ -69,8 +73,9 @@ class AccountingRepository @Inject constructor(
         startDate: Long? = null,
         endDate: Long? = null
     ): Double {
+        val expenseTypes = listOf("EXPENSE", "REFUND", "expense", "refund", "Expense", "Refund")
         var baseQuery: Query = firestore.collection(Transaction.COLLECTION_NAME)
-            .whereIn("type", listOf(TransactionType.EXPENSE.name, TransactionType.REFUND.name))
+            .whereIn("type", expenseTypes)
 
         if (warehouseId != null) {
             baseQuery = baseQuery.whereEqualTo("warehouseId", warehouseId)
@@ -83,8 +88,8 @@ class AccountingRepository @Inject constructor(
                 .whereLessThanOrEqualTo("createdAt", java.util.Date(com.batterysales.utils.DateUtils.getEndOfDay(endDate)))
         }
 
-        val snapshot = baseQuery.aggregate(AggregateField.sum("amount")).get(AggregateSource.SERVER).await()
-        return (snapshot.get(AggregateField.sum("amount")) as? Number)?.toDouble() ?: 0.0
+        val snapshot = try { baseQuery.aggregate(AggregateField.sum("amount")).get(AggregateSource.SERVER).await() } catch(e: Exception) { null }
+        return (snapshot?.get(AggregateField.sum("amount")) as? Number)?.toDouble() ?: 0.0
     }
 
     suspend fun getTransactionsPaginated(

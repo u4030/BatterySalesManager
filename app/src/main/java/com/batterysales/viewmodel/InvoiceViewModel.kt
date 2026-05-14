@@ -108,9 +108,20 @@ class InvoiceViewModel @Inject constructor(
 
     private suspend fun loadDebtFromSummary() {
         try {
-            val status = summaryRepository.getFinancialStatus()
             val whId = _uiState.value.selectedWarehouseId
-            val debt = status?.warehouseBalances?.get(whId)?.pendingCollection ?: 0.0
+            val status = summaryRepository.getFinancialStatus()
+
+            val debt = if (status != null) {
+                if (whId == "all" || whId.isEmpty()) {
+                    status.warehouseBalances.values.sumOf { it.pendingCollection }
+                } else {
+                    status.warehouseBalances[whId]?.pendingCollection ?: 0.0
+                }
+            } else {
+                // Fallback to repository aggregation
+                invoiceRepository.getTotalDebtForWarehouse(if (whId == "all") null else whId)
+            }
+
             _uiState.update { it.copy(totalDebt = debt) }
         } catch (e: Exception) {
             Log.e("InvoiceViewModel", "Error loading debt summary", e)

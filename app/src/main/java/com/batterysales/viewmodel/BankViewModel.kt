@@ -100,7 +100,10 @@ class BankViewModel @Inject constructor(
         cal.set(year, Calendar.DECEMBER, 31, 23, 59, 59)
         _endDate.value = cal.timeInMillis
 
-        viewModelScope.launch { loadBalancesFromSummary() }
+        viewModelScope.launch {
+            loadBalancesFromSummary()
+            loadTotals()
+        }
     }
 
     private suspend fun loadBalancesFromSummary() {
@@ -118,12 +121,24 @@ class BankViewModel @Inject constructor(
         }
     }
 
+    private suspend fun loadTotals() {
+        try {
+            val start = _startDate.value
+            val end = _endDate.value
+            val total = repository.getTotalWithdrawals(start, end)
+            _totalWithdrawals.value = total
+        } catch (e: Exception) {
+            Log.e("BankViewModel", "Error loading totals", e)
+        }
+    }
+
     fun loadData() {
         _isDataLoaded.value = true
         _isLoading.value = true
         viewModelScope.launch {
             try {
                 loadBalancesFromSummary()
+                loadTotals()
                 refreshTrigger.value += 1
             } finally {
                 _isLoading.value = false

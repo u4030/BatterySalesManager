@@ -111,6 +111,7 @@ class AccountingViewModel @Inject constructor(
 
             // --- ELITE STRATEGY: Load balances from summary (1 read) ---
             loadBalancesFromSummary()
+            loadTotals()
         }
     }
 
@@ -144,10 +145,32 @@ class AccountingViewModel @Inject constructor(
         }
     }
 
+    private suspend fun loadTotals() {
+        try {
+            val whId = _selectedWarehouseId.value
+            val method = _selectedPaymentMethod.value
+            val start = _startDate.value
+            val end = _endDate.value
+
+            val total = repository.getTotalExpenses(
+                warehouseId = if (whId == "all" || whId == null) null else whId,
+                paymentMethod = if (method == "all" || method == null) null else method,
+                startDate = start,
+                endDate = end
+            )
+            _totalExpenses.value = total
+        } catch (e: Exception) {
+            Log.e("AccountingViewModel", "Error loading totals", e)
+        }
+    }
+
     fun loadData(reset: Boolean = false) {
         _isDataLoaded.value = true
         if (reset) refreshTrigger.value += 1
-        viewModelScope.launch { loadBalancesFromSummary() }
+        viewModelScope.launch {
+            loadBalancesFromSummary()
+            loadTotals()
+        }
     }
 
     fun onWarehouseSelected(id: String) {
@@ -155,6 +178,7 @@ class AccountingViewModel @Inject constructor(
         _isDataLoaded.value = true // Automatically load for new selection
         viewModelScope.launch {
             loadBalancesFromSummary()
+            loadTotals()
             refreshTrigger.value += 1
         }
     }
@@ -164,6 +188,7 @@ class AccountingViewModel @Inject constructor(
         _isDataLoaded.value = true
         viewModelScope.launch {
             loadBalancesFromSummary()
+            loadTotals()
             refreshTrigger.value += 1
         }
     }
@@ -208,6 +233,7 @@ class AccountingViewModel @Inject constructor(
         _endDate.value = end
         _isDataLoaded.value = true
         refreshTrigger.value += 1
+        viewModelScope.launch { loadTotals() }
     }
 
     fun addManualTransaction(type: TransactionType, amount: Double, description: String, referenceNumber: String = "", paymentMethod: String = "cash") {
