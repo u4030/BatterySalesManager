@@ -173,6 +173,11 @@ class StockTransferViewModel @Inject constructor(
         _uiState.update { it.copy(errorMessage = null) }
     }
 
+    fun getStockForVariant(variant: ProductVariant?, warehouseId: String?): Int {
+        if (variant == null || warehouseId == null) return 0
+        return uiState.value.stockLevels[Pair(variant.id, warehouseId)] ?: 0
+    }
+
     fun onBarcodeScanned(barcode: String) {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }

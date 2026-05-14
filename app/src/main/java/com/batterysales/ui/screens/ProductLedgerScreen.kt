@@ -63,7 +63,6 @@ fun ProductLedgerScreen(
     }
     val isLoading by viewModel.isLoading.collectAsState()
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
-    val isLastPage by viewModel.isLastPage.collectAsState()
     val listState = rememberLazyListState()
     val selectedCategory by viewModel.selectedCategory.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
@@ -84,7 +83,7 @@ fun ProductLedgerScreen(
     }
 
     LaunchedEffect(shouldLoadMore.value) {
-        if (shouldLoadMore.value && !isLoading && !isLoadingMore && !isLastPage) {
+        if (shouldLoadMore.value && !isLoading && !isLoadingMore) {
             viewModel.loadData()
         }
     }

@@ -4,7 +4,6 @@ import androidx.paging.PagingSource
 import androidx.paging.PagingState
 import com.batterysales.data.models.*
 import com.batterysales.data.repositories.StockEntryRepository
-import com.batterysales.viewmodel.InventoryReportItem
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
@@ -22,11 +21,11 @@ class InventoryPagingSource(
     private val isSeller: Boolean = false,
     private val startDate: Long? = null,
     private val endDate: Long? = null
-) : PagingSource<DocumentSnapshot, InventoryReportItem>() {
+) : PagingSource<DocumentSnapshot, com.batterysales.data.models.InventoryReportItem>() {
 
-    override fun getRefreshKey(state: PagingState<DocumentSnapshot, InventoryReportItem>): DocumentSnapshot? = null
+    override fun getRefreshKey(state: PagingState<DocumentSnapshot, com.batterysales.data.models.InventoryReportItem>): DocumentSnapshot? = null
 
-    override suspend fun load(params: LoadParams<DocumentSnapshot>): LoadResult<DocumentSnapshot, InventoryReportItem> {
+    override suspend fun load(params: LoadParams<DocumentSnapshot>): LoadResult<DocumentSnapshot, com.batterysales.data.models.InventoryReportItem> {
         return try {
             // Robust query on ProductVariants
             var query = firestore.collection(ProductVariant.COLLECTION_NAME)
@@ -74,7 +73,7 @@ class InventoryPagingSource(
 
                         if (isSeller && totalQty <= 0) return@async null
 
-                        InventoryReportItem(
+                        com.batterysales.data.models.InventoryReportItem(
                             product = Product(id = variant.productId, name = variant.productName ?: "", specification = variant.productSpecification ?: ""),
                             variant = variant,
                             warehouseQuantities = whStock,

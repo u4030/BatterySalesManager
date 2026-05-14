@@ -101,6 +101,36 @@ class BillViewModel @Inject constructor(
         if (query.isNotEmpty()) _isDataLoaded.value = true
     }
 
+    fun updateBill(bill: Bill) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                repository.updateBill(bill)
+                loadData()
+            } finally { _isLoading.value = false }
+        }
+    }
+
+    fun recordPayment(billId: String, amount: Double) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                repository.recordPayment(billId, amount)
+                loadData()
+            } finally { _isLoading.value = false }
+        }
+    }
+
+    fun recordPayment(bill: Bill, amount: Double, method: String, warehouseId: String, notes: String) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                repository.addBillPayment(bill, amount, method, warehouseId, notes)
+                loadData()
+            } finally { _isLoading.value = false }
+        }
+    }
+
     fun addBill(description: String, amount: Double, dueDate: Date, billType: BillType, referenceNumber: String = "", supplierId: String = "", relatedEntryId: String? = null, warehouseId: String? = null, payImmediately: Boolean = false) {
         viewModelScope.launch {
             _isLoading.value = true

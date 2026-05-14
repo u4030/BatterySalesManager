@@ -37,6 +37,9 @@ class BankViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(false)
     val isLoading = _isLoading.asStateFlow()
 
+    private val _isLoadingMore = MutableStateFlow(false)
+    val isLoadingMore = _isLoadingMore.asStateFlow()
+
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage = _errorMessage.asStateFlow()
 
@@ -137,11 +140,27 @@ class BankViewModel @Inject constructor(
         if (query.isNotEmpty()) _isDataLoaded.value = true
     }
 
-    fun addManualTransaction(type: BankTransactionType, amount: Double, description: String, referenceNumber: String = "", fromTreasury: Boolean = false, warehouseId: String? = null) {
+    fun clearError() {
+        _errorMessage.value = null
+    }
+
+    fun updateTransaction(transaction: BankTransaction) {
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                val transaction = BankTransaction(type = type, amount = amount, description = description, referenceNumber = referenceNumber, date = Date())
+                repository.updateTransaction(transaction)
+                loadData()
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    fun addManualTransaction(type: BankTransactionType, amount: Double, description: String, referenceNumber: String = "", supplierName: String = "", fromTreasury: Boolean = false, warehouseId: String? = null) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                val transaction = BankTransaction(type = type, amount = amount, description = description, referenceNumber = referenceNumber, supplierName = supplierName, date = Date())
                 val transId = repository.addTransaction(transaction)
 
                 if (type == BankTransactionType.DEPOSIT && fromTreasury) {

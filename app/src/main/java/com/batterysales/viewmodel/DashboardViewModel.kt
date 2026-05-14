@@ -81,17 +81,16 @@ class DashboardViewModel @Inject constructor(
     }
 
     private fun loadDashboardData() {
-        viewModelScope.launch {
-            combine(
-                userRepository.getCurrentUserFlow(),
-                refreshTrigger
-            ) { user, _ -> user }.collect { user ->
-                if (user == null) {
-                    _uiState.value = DashboardUiState(isLoading = false)
-                    return@collect
-                }
+        combine(
+            userRepository.getCurrentUserFlow(),
+            refreshTrigger
+        ) { user, _ -> user }.onEach { user ->
+            if (user == null) {
+                _uiState.value = DashboardUiState(isLoading = false)
+                return@onEach
+            }
 
-                _uiState.value = _uiState.value.copy(isLoading = true)
+            _uiState.value = _uiState.value.copy(isLoading = true)
                 try {
                     val isAdmin = user.role == "admin"
                     val userWarehouseId = user.warehouseId
@@ -187,20 +186,19 @@ class DashboardViewModel @Inject constructor(
                         allNotifications.add(AppNotification("low_stock_${item.variantId}_${item.warehouseName}", "مخزون منخفض: ${item.productName}", "${item.capacity}A في ${item.warehouseName}", NotificationType.LOW_STOCK, route))
                     }
 
-                    _uiState.value = DashboardUiState(
-                        pendingApprovalsCount = pendingCount,
-                        lowStockVariants = lowStockItems,
-                        upcomingBills = upcoming,
-                        warehouseStats = warehouseStatsList,
-                        notifications = allNotifications,
-                        systemStats = systemStats,
-                        isLoading = false
-                    )
-                } catch (e: Exception) {
-                    Log.e("DashboardViewModel", "Error loading dashboard", e)
-                    _uiState.value = _uiState.value.copy(isLoading = false)
-                }
+                _uiState.value = DashboardUiState(
+                    pendingApprovalsCount = pendingCount,
+                    lowStockVariants = lowStockItems,
+                    upcomingBills = upcoming,
+                    warehouseStats = warehouseStatsList,
+                    notifications = allNotifications,
+                    systemStats = systemStats,
+                    isLoading = false
+                )
+            } catch (e: Exception) {
+                Log.e("DashboardViewModel", "Error loading dashboard", e)
+                _uiState.value = _uiState.value.copy(isLoading = false)
             }
-        }
+        }.launchIn(viewModelScope)
     }
 }

@@ -51,6 +51,9 @@ class ProductLedgerViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(false)
     val isLoading = _isLoading.asStateFlow()
 
+    private val _isLoadingMore = MutableStateFlow(false)
+    val isLoadingMore = _isLoadingMore.asStateFlow()
+
     private val _userRole = MutableStateFlow("seller")
     val userRole = _userRole.asStateFlow()
 
@@ -104,4 +107,36 @@ class ProductLedgerViewModel @Inject constructor(
 
     fun selectCategory(category: LedgerCategory) { _selectedCategory.value = category }
     fun onSearchQueryChanged(query: String) { _searchQuery.value = query; if(query.isNotEmpty()) _isDataLoaded.value = true }
+
+    suspend fun findVariantByBarcode(barcode: String): com.batterysales.data.models.ProductVariant? {
+        return productVariantRepository.getVariantByBarcode(barcode)
+    }
+
+    suspend fun getProductName(productId: String): String? {
+        return productRepository.getProduct(productId)?.name
+    }
+
+    fun processReturn(entry: StockEntry, quantity: Int, mode: String, notes: String) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                stockEntryRepository.processReturn(entry, quantity, mode, notes)
+                loadData(reset = true)
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    fun deleteStockEntry(id: String) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                stockEntryRepository.deleteStockEntry(id)
+                loadData(reset = true)
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
 }

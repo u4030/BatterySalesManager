@@ -18,7 +18,8 @@ import java.util.Date
 import javax.inject.Inject
 
 class BillRepository @Inject constructor(
-    private val firestore: FirebaseFirestore
+    private val firestore: FirebaseFirestore,
+    private val summaryRepository: SummaryRepository
 ) {
 
     suspend fun getAllBills(): List<Bill> {
@@ -110,12 +111,72 @@ class BillRepository @Inject constructor(
 
             transaction.update(billRef, updates)
 
+            // Update Summaries
+            summaryRepository.updateFinancialStatus(
+                transaction = transaction,
+                warehouseId = "global",
+                cashChange = -paymentAmount,
+                billChange = -paymentAmount
+            )
+
             // Update Supplier Denormalized Totals
             if (bill.supplierId.isNotEmpty()) {
                 val supplierRef = firestore.collection("suppliers").document(bill.supplierId)
                 transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(paymentAmount))
                 transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-paymentAmount))
                 // Add to unallocated pool for FIFO processing
+                transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(paymentAmount))
+            }
+
+            // Update Global System Stats
+            val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
+            transaction.update(statsRef, mapOf(
+                "totalSupplierDebt" to com.google.firebase.firestore.FieldValue.increment(-paymentAmount),
+                "updatedAt" to java.util.Date()
+            ))
+        }.await()
+    }
+
+    suspend fun addBillPayment(bill: Bill, paymentAmount: Double, method: String, warehouseId: String, notes: String) {
+        val billRef = firestore.collection(Bill.COLLECTION_NAME).document(bill.id)
+
+        firestore.runTransaction { transaction ->
+            val snapshot = transaction.get(billRef)
+            val freshBill = snapshot.toObject(Bill::class.java)?.copy(id = snapshot.id) ?: return@runTransaction
+
+            val newPaidAmount = freshBill.paidAmount + paymentAmount
+            val newStatus = when {
+                newPaidAmount >= freshBill.amount -> BillStatus.PAID
+                newPaidAmount > 0 -> BillStatus.PARTIAL
+                else -> BillStatus.UNPAID
+            }
+
+            val updates = mutableMapOf<String, Any>(
+                "paidAmount" to newPaidAmount,
+                "status" to newStatus,
+                "updatedAt" to Date()
+            )
+
+            if (newStatus == BillStatus.PAID) {
+                updates["paidDate"] = Date()
+            }
+
+            transaction.update(billRef, updates)
+
+            // Update Summaries
+            summaryRepository.updateFinancialStatus(
+                transaction = transaction,
+                warehouseId = warehouseId,
+                cashChange = if (method == "cash") -paymentAmount else 0.0,
+                bankChange = if (method == "bank") -paymentAmount else 0.0,
+                billChange = -paymentAmount
+            )
+
+            // Update Supplier Denormalized Totals
+            if (freshBill.supplierId.isNotEmpty()) {
+                val supplierRef = firestore.collection("suppliers").document(freshBill.supplierId)
+                transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(paymentAmount))
+                transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-paymentAmount))
                 transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(paymentAmount))
             }
 

@@ -24,7 +24,8 @@ class SettingsViewModel @Inject constructor(
     private val warehouseRepository: WarehouseRepository,
     private val supplierRepository: SupplierRepository,
     private val billRepository: BillRepository,
-    private val summaryRepository: SummaryRepository
+    private val summaryRepository: SummaryRepository,
+    private val accountingRepository: AccountingRepository
 ) : ViewModel() {
 
     private val _migrationStatus = MutableStateFlow<String?>(null)
@@ -114,12 +115,6 @@ class SettingsViewModel @Inject constructor(
         val variants = productVariantRepository.getAllVariants()
         val warehouses = warehouseRepository.getWarehousesOnce()
         val suppliers = supplierRepository.getSuppliersOnce()
-
-        // Pass summaryRepository to AccountingRepository
-        val accountingRepository = AccountingRepository(
-            com.google.firebase.firestore.FirebaseFirestore.getInstance(),
-            summaryRepository
-        )
 
         // 1. Rebuild Inventory Summaries
         val globalItems = mutableMapOf<String, InventorySummaryItem>()

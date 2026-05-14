@@ -802,4 +802,38 @@ class StockEntryRepository @Inject constructor(
             .await()
         return snapshot.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
     }
+
+    suspend fun processReturn(entry: StockEntry, quantity: Int, mode: String, notes: String) {
+        firestore.runTransaction { transaction ->
+            val docRef = firestore.collection(StockEntry.COLLECTION_NAME).document(entry.id)
+            val freshEntry = transaction.get(docRef).toObject(StockEntry::class.java) ?: return@runTransaction
+
+            val newReturnedQty = freshEntry.returnedQuantity + quantity
+            transaction.update(docRef, mapOf(
+                "returnedQuantity" to newReturnedQty,
+                "returnDate" to Date()
+            ))
+
+            // Update Variant Stock
+            val variantRef = firestore.collection(ProductVariant.COLLECTION_NAME).document(entry.productVariantId)
+            val variant = transaction.get(variantRef).toObject(ProductVariant::class.java)
+            if (variant != null) {
+                val newStockMap = variant.currentStock?.toMutableMap() ?: mutableMapOf()
+                newStockMap[entry.warehouseId] = (newStockMap[entry.warehouseId] ?: 0) - quantity
+                transaction.update(variantRef, "currentStock", newStockMap)
+
+                // Update Summary
+                summaryRepository.updateInventorySummary(transaction, entry.warehouseId, entry.productVariantId, variant, -quantity)
+            }
+
+            // Financial Adjustment
+            val costToReturn = quantity * entry.costPrice
+            if (mode == "supplier_balance" && entry.supplierId.isNotEmpty()) {
+                val supplierRef = firestore.collection("suppliers").document(entry.supplierId)
+                transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-costToReturn))
+                transaction.update(supplierRef, "totalDebit", com.google.firebase.firestore.FieldValue.increment(-costToReturn))
+                summaryRepository.updateSupplierOverview(transaction, entry.supplierId, entry.productName, debitChange = -costToReturn)
+            }
+        }.await()
+    }
 }

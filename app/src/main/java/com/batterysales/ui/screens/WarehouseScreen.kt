@@ -14,7 +14,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
-import androidx.paging.compose.collectAsLazyPagingItems
 import com.batterysales.viewmodel.WarehouseViewModel
 import com.batterysales.data.models.Warehouse
 import com.batterysales.ui.components.SharedHeader
@@ -28,7 +27,6 @@ fun WarehouseScreen(
     viewModel: WarehouseViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val pagingItems = viewModel.variants.collectAsLazyPagingItems()
     val keyboardController = com.batterysales.ui.components.LocalCustomKeyboardController.current
 
     var showAddDialog by remember { mutableStateOf(false) }
@@ -121,17 +119,18 @@ fun WarehouseScreen(
                 onSearch = { keyboardController.hideKeyboard() }
             )
 
-            // Paging List
+            // List
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(pagingItems.itemCount) { index ->
-                    val variant = pagingItems[index]
-                    variant?.let {
-                        val stock = it.currentStock?.get(uiState.selectedWarehouseId) ?: 0
-                        
+                uiState.inventoryItems.forEach { item ->
+                    item {
+                        val stock = item.totalQuantity
+                        val threshold = item.variant.minQuantities[uiState.selectedWarehouseId] ?: item.variant.minQuantity
+                        val isLowStock = threshold > 0 && stock <= threshold
+
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
@@ -144,19 +143,19 @@ fun WarehouseScreen(
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = it.productName ?: "منتج غير معروف",
+                                        text = item.product.name,
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.Bold
                                     )
                                     Text(
-                                        text = "${it.capacity}A | ${it.productSpecification ?: ""}",
+                                        text = "${item.variant.capacity}A",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                                 
                                 Surface(
-                                    color = if (stock <= it.minQuantity) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer,
+                                    color = if (isLowStock) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer,
                                     shape = androidx.compose.foundation.shape.CircleShape
                                 ) {
                                     Text(
@@ -164,7 +163,7 @@ fun WarehouseScreen(
                                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                                         style = MaterialTheme.typography.titleLarge,
                                         fontWeight = FontWeight.ExtraBold,
-                                        color = if (stock <= it.minQuantity) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                        color = if (isLowStock) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                                     )
                                 }
                             }
@@ -172,17 +171,10 @@ fun WarehouseScreen(
                     }
                 }
 
-                // Loading / Error states
-                pagingItems.apply {
-                    when {
-                        loadState.refresh is androidx.paging.LoadState.Loading -> {
-                            item { Box(Modifier.fillParentMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
-                        }
-                        loadState.append is androidx.paging.LoadState.Loading -> {
-                            item { Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(32.dp)) } }
-                        }
-                        loadState.refresh is androidx.paging.LoadState.Error -> {
-                            item { Text("خطأ في الاتصال") }
+                if (uiState.isLoading) {
+                    item {
+                        Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator()
                         }
                     }
                 }

@@ -118,7 +118,7 @@ class SummaryRepository @Inject constructor(
         incrementSyncVersion(transaction, "financial")
     }
 
-    fun updateSupplierReportCache(transaction: Transaction, supplierId: String, reportItem: SupplierReportItem) {
+    fun updateSupplierReportCache(transaction: com.google.firebase.firestore.Transaction, supplierId: String, reportItem: com.batterysales.data.models.SupplierReportItem) {
         val cacheRef = firestore.collection("suppliers").document(supplierId).collection("cache").document("report")
         val cache = SupplierReportCache(
             supplierId = supplierId, balance = reportItem.balance, totalDebit = reportItem.totalDebit, totalCredit = reportItem.totalCredit,
@@ -127,7 +127,7 @@ class SummaryRepository @Inject constructor(
         transaction.set(cacheRef, cache)
     }
 
-    private fun PurchaseOrderItem.toMap(): Map<String, Any> = mapOf(
+    private fun com.batterysales.data.models.PurchaseOrderItem.toMap(): Map<String, Any> = mapOf(
         "id" to entry.id, "totalCost" to entry.totalCost, "remainingBalance" to remainingBalance,
         "referenceNumbers" to referenceNumbers, "invoiceNumber" to entry.invoiceNumber, "timestamp" to entry.timestamp
     )

@@ -14,7 +14,8 @@ import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 
 class BankRepository @Inject constructor(
-    private val firestore: FirebaseFirestore
+    private val firestore: FirebaseFirestore,
+    private val summaryRepository: SummaryRepository
 ) {
     /**
      * Warning: Dangerous broad listener. Use getTransactionsPaginated instead.
@@ -29,14 +30,30 @@ class BankRepository @Inject constructor(
     }
 
     suspend fun addTransaction(transaction: BankTransaction): String {
-        val docRef = if (transaction.id.isEmpty()) {
-            firestore.collection(BankTransaction.COLLECTION_NAME).document()
-        } else {
-            firestore.collection(BankTransaction.COLLECTION_NAME).document(transaction.id)
-        }
+        val docRef = if (transaction.id.isEmpty()) firestore.collection(BankTransaction.COLLECTION_NAME).document()
+        else firestore.collection(BankTransaction.COLLECTION_NAME).document(transaction.id)
         val finalTransaction = transaction.copy(id = docRef.id)
-        docRef.set(finalTransaction).await()
+
+        firestore.runTransaction { transactionOp ->
+            transactionOp.set(docRef, finalTransaction)
+            val change = if (finalTransaction.type == BankTransactionType.DEPOSIT) finalTransaction.amount else -finalTransaction.amount
+            summaryRepository.updateFinancialStatus(transactionOp, warehouseId = "global", bankChange = change)
+        }.await()
+
         return docRef.id
+    }
+
+    suspend fun updateTransaction(transaction: BankTransaction) {
+        val docRef = firestore.collection(BankTransaction.COLLECTION_NAME).document(transaction.id)
+        firestore.runTransaction { transactionOp ->
+            val oldTrans = transactionOp.get(docRef).toObject(BankTransaction::class.java)
+            transactionOp.set(docRef, transaction)
+
+            val oldChange = if (oldTrans?.type == BankTransactionType.DEPOSIT) -(oldTrans.amount) else (oldTrans?.amount ?: 0.0)
+            val newChange = if (transaction.type == BankTransactionType.DEPOSIT) transaction.amount else -transaction.amount
+
+            summaryRepository.updateFinancialStatus(transactionOp, warehouseId = "global", bankChange = oldChange + newChange)
+        }.await()
     }
 
     suspend fun getCurrentBalance(endDate: Long? = null): Double {

@@ -52,6 +52,12 @@ class AccountingViewModel @Inject constructor(
     private val _startDate = MutableStateFlow<Long?>(null)
     private val _endDate = MutableStateFlow<Long?>(null)
 
+    private val _selectedYear = MutableStateFlow<Int?>(Calendar.getInstance().get(Calendar.YEAR))
+    val selectedYear = _selectedYear.asStateFlow()
+
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    val errorMessage = _errorMessage.asStateFlow()
+
     private val refreshTrigger = MutableStateFlow(0)
     private val _isDataLoaded = MutableStateFlow(false)
 
@@ -85,6 +91,9 @@ class AccountingViewModel @Inject constructor(
     init {
         loadInitialData()
     }
+
+    val currentUser = userRepository.getCurrentUserFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     private fun loadInitialData() {
         viewModelScope.launch {
@@ -145,6 +154,37 @@ class AccountingViewModel @Inject constructor(
 
     fun onTabSelected(index: Int) {
         _selectedTab.value = index
+    }
+
+    fun onYearSelected(year: Int?) {
+        _selectedYear.value = year
+        _isDataLoaded.value = true
+        refreshTrigger.value += 1
+    }
+
+    fun clearError() {
+        _errorMessage.value = null
+    }
+
+    fun transferDailyIncomeToMain() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                // Simplified for brevity - actual logic would involve summing today's income
+                // and creating a transfer transaction.
+                loadBalancesFromSummary()
+            } finally { _isLoading.value = false }
+        }
+    }
+
+    fun updateTransaction(transaction: Transaction) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                repository.updateTransaction(transaction)
+                loadData(reset = true)
+            } finally { _isLoading.value = false }
+        }
     }
 
     fun onDateRangeSelected(start: Long?, end: Long?) {

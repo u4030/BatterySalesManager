@@ -25,7 +25,6 @@ import com.batterysales.data.models.ScrapWarehouse
 import com.batterysales.data.models.SupplierSummaryItem
 import com.batterysales.ui.components.BarcodeScanner
 import com.batterysales.ui.components.InfoBadge
-import com.batterysales.viewmodel.InventoryReportItem
 import com.batterysales.viewmodel.ReportsViewModel
 import com.batterysales.ui.components.SharedHeader
 import com.batterysales.ui.components.HeaderIconButton
@@ -56,11 +55,11 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
         }
     }
 
-    val inventoryItems by viewModel.inventoryReportItems.collectAsState()
+    val inventoryItems by viewModel.inventoryReportItems.collectAsState(initial = emptyList<com.batterysales.data.models.InventoryReportItem>())
     val grandTotalQuantity by viewModel.grandTotalInventoryQuantity.collectAsState()
     val supplierOverviewList by viewModel.suppliersOverviewList.collectAsState()
     val isSeller by viewModel.isSeller.collectAsState()
-    val filteredWarehouses by viewModel.filteredWarehouses.collectAsState(initial = emptyList<Warehouse>())
+    val warehouseList by viewModel.filteredWarehouses.collectAsState(initial = emptyList<Warehouse>())
     val oldBatterySummary by viewModel.oldBatterySummary.collectAsState()
     val scrapWarehouses by viewModel.scrapWarehouses.collectAsState()
     val isInventoryLoading by viewModel.isInventoryLoading.collectAsState()
@@ -180,7 +179,7 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                                 Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                                     ReportItemCard(
                                         item = reportItem,
-                                        warehouses = filteredWarehouses,
+                                        warehouses = warehouseList,
                                         isSeller = isSeller,
                                         onClick = {
                                             val capacityStr = reportItem.variant.capacity.toString()
@@ -338,10 +337,13 @@ fun GrandTotalCard(totalQuantity: Int, isSeller: Boolean) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ReportItemCard(item: InventoryReportItem, warehouses: List<Warehouse>, isSeller: Boolean, onClick: () -> Unit) {
-    val anyWarehouseLowStock = item.warehouseQuantities.any { (whId, qty) ->
+fun ReportItemCard(item: com.batterysales.data.models.InventoryReportItem, warehouses: List<com.batterysales.data.models.Warehouse>, isSeller: Boolean, onClick: () -> Unit) {
+    var anyWarehouseLowStock = false
+    item.warehouseQuantities.forEach { entry ->
+        val whId = entry.key
+        val qty = entry.value
         val threshold = item.variant.minQuantities[whId] ?: item.variant.minQuantity
-        threshold > 0 && qty <= threshold
+        if (threshold > 0 && qty <= threshold) anyWarehouseLowStock = true
     }
     val isLowStock = anyWarehouseLowStock || (item.variant.minQuantity > 0 && item.totalQuantity <= item.variant.minQuantity)
 
@@ -450,7 +452,7 @@ fun SupplierReportControls(viewModel: ReportsViewModel) {
 }
 
 @Composable
-fun PurchaseOrderCard(po: com.batterysales.viewmodel.PurchaseOrderItem, dateFormatter: java.text.SimpleDateFormat, navController: NavController) {
+fun PurchaseOrderCard(po: com.batterysales.data.models.PurchaseOrderItem, dateFormatter: java.text.SimpleDateFormat, navController: NavController) {
     var expanded by remember { mutableStateOf(false) }
     Card(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp).clickable { expanded = !expanded }, shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.03f))) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -458,7 +460,31 @@ fun PurchaseOrderCard(po: com.batterysales.viewmodel.PurchaseOrderItem, dateForm
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("إجمالي الطلبية:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant); Text("JD ${String.format("%.3f", po.entry.totalCost)}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.ExtraBold) }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("المتبقي:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant); Text(text = "JD ${String.format("%.3f", po.remainingBalance)}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = if (po.remainingBalance > 0) Color(0xFFEF4444) else Color(0xFF10B981)) }
             if (po.referenceNumbers.isNotEmpty()) { HorizontalDivider(modifier = Modifier.alpha(0.1f)); Row(verticalAlignment = Alignment.Top) { Icon(Icons.Default.Payments, contentDescription = null, modifier = Modifier.size(16.dp).padding(top = 2.dp), tint = MaterialTheme.colorScheme.primary); Spacer(modifier = Modifier.width(8.dp)); Text(text = po.referenceNumbers.joinToString(", "), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, lineHeight = 16.sp, fontSize = 13.sp) } }
-            if (expanded) { HorizontalDivider(modifier = Modifier.alpha(0.1f)); Text("الأصناف:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold); po.items.forEach { entry -> Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { navController.navigate("product_ledger/${entry.productVariantId}/${entry.productName}/${entry.capacity}/no_spec") }, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(8.dp), border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))) { Row(modifier = Modifier.padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Column(modifier = Modifier.weight(1f)) { Text(entry.productName, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold); Text("${entry.capacity}A", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Column(horizontalAlignment = Alignment.End) { Text("الكمية: ${entry.quantity}", style = MaterialTheme.typography.bodySmall); Text("JD ${String.format("%.3f", entry.totalCost)}", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) } } } } }
+            if (expanded) {
+                HorizontalDivider(modifier = Modifier.alpha(0.1f))
+                Text("الأصناف:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                po.items.forEach { entry ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable {
+                            navController.navigate("product_ledger/${entry.productVariantId}/${entry.productName}/${entry.capacity}/no_spec")
+                        },
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        shape = RoundedCornerShape(8.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+                    ) {
+                        Row(modifier = Modifier.padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(entry.productName, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                Text("${entry.capacity}A", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text("الكمية: ${entry.quantity}", style = MaterialTheme.typography.bodySmall)
+                                Text("JD ${String.format("%.3f", entry.totalCost)}", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
