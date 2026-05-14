@@ -113,6 +113,17 @@ class StockTransferViewModel @Inject constructor(
 
     fun onSourceWarehouseSelected(warehouse: Warehouse) {
         _uiState.update { it.copy(sourceWarehouse = warehouse) }
+
+        // Update stock levels for the newly selected warehouse
+        val variant = _uiState.value.selectedVariant
+        if (variant != null) {
+            viewModelScope.launch {
+                val newStockMap = _uiState.value.stockLevels.toMutableMap()
+                val qty = variant.currentStock?.get(warehouse.id) ?: 0
+                newStockMap[Pair(variant.id, warehouse.id)] = qty
+                _uiState.update { it.copy(stockLevels = newStockMap) }
+            }
+        }
     }
 
     fun onDestinationWarehouseSelected(warehouse: Warehouse) {

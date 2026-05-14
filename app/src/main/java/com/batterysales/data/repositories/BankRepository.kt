@@ -130,10 +130,20 @@ class BankRepository @Inject constructor(
     }
 
     suspend fun deleteTransaction(id: String) {
-        firestore.collection(BankTransaction.COLLECTION_NAME)
-            .document(id)
-            .delete()
-            .await()
+        val docRef = firestore.collection(BankTransaction.COLLECTION_NAME).document(id)
+        firestore.runTransaction { transactionOp ->
+            // 1. Reads
+            val oldTrans = transactionOp.get(docRef).toObject(BankTransaction::class.java)
+            val snapshots = summaryRepository.getSummarySnapshots(transactionOp, "global")
+
+            // 2. Writes
+            transactionOp.delete(docRef)
+
+            if (oldTrans != null) {
+                val oldChange = if (oldTrans.type == BankTransactionType.DEPOSIT) -(oldTrans.amount) else oldTrans.amount
+                summaryRepository.applyFinancialUpdate(transactionOp, snapshots, warehouseId = "global", bankChange = oldChange)
+            }
+        }.await()
     }
 
     suspend fun deleteTransactionsByBillId(billId: String) {

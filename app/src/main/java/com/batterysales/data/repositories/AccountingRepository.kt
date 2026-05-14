@@ -204,30 +204,42 @@ class AccountingRepository @Inject constructor(
         val docRef = firestore.collection(Transaction.COLLECTION_NAME).document(transaction.id)
 
         firestore.runTransaction { transactionOp ->
+            // 1. Reads
             val oldDoc = transactionOp.get(docRef)
             val oldTrans = oldDoc.toObject(Transaction::class.java)
+            val snapshots = summaryRepository.getSummarySnapshots(transactionOp, transaction.warehouseId)
+            val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
 
+            // 2. Writes
             transactionOp.set(docRef, transaction)
 
-            // Update Global Cash Balance
-            val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
-            
-            // 1. Reverse old
-            if (oldTrans != null && oldTrans.paymentMethod == "cash") {
-                val oldChange = when (oldTrans.type) {
+            // Calculate Changes
+            val oldChange = if (oldTrans != null) {
+                when (oldTrans.type) {
                     TransactionType.INCOME, TransactionType.PAYMENT -> -oldTrans.amount
                     TransactionType.EXPENSE, TransactionType.REFUND -> oldTrans.amount
                 }
-                transactionOp.update(statsRef, "totalCashBalance", com.google.firebase.firestore.FieldValue.increment(oldChange))
+            } else 0.0
+
+            val newChange = when (transaction.type) {
+                TransactionType.INCOME, TransactionType.PAYMENT -> transaction.amount
+                TransactionType.EXPENSE, TransactionType.REFUND -> -transaction.amount
             }
 
-            // 2. Apply new
+            val totalChange = oldChange + newChange
+
+            // Update Summaries
+            summaryRepository.applyFinancialUpdate(
+                transaction = transactionOp,
+                snapshots = snapshots,
+                warehouseId = transaction.warehouseId ?: "",
+                cashChange = if (transaction.paymentMethod == "cash") totalChange else 0.0,
+                bankChange = if (transaction.paymentMethod == "bank") totalChange else 0.0
+            )
+
+            // Update Global Cash Balance
             if (transaction.paymentMethod == "cash") {
-                val newChange = when (transaction.type) {
-                    TransactionType.INCOME, TransactionType.PAYMENT -> transaction.amount
-                    TransactionType.EXPENSE, TransactionType.REFUND -> -transaction.amount
-                }
-                transactionOp.update(statsRef, "totalCashBalance", com.google.firebase.firestore.FieldValue.increment(newChange))
+                transactionOp.update(statsRef, "totalCashBalance", com.google.firebase.firestore.FieldValue.increment(totalChange))
             }
         }.await()
 
@@ -261,20 +273,35 @@ class AccountingRepository @Inject constructor(
         val docRef = firestore.collection(Transaction.COLLECTION_NAME).document(transactionId)
 
         val relatedId = firestore.runTransaction { transactionOp ->
+            // 1. Reads
             val doc = transactionOp.get(docRef)
             val trans = doc.toObject(Transaction::class.java)
+            val snapshots = summaryRepository.getSummarySnapshots(transactionOp, trans?.warehouseId)
             val relId = trans?.relatedId
 
+            // 2. Writes
             transactionOp.delete(docRef)
 
-            // Update Global Cash Balance
-            if (trans != null && trans.paymentMethod == "cash") {
-                val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
+            if (trans != null) {
                 val change = when (trans.type) {
                     TransactionType.INCOME, TransactionType.PAYMENT -> -trans.amount
                     TransactionType.EXPENSE, TransactionType.REFUND -> trans.amount
                 }
-                transactionOp.update(statsRef, "totalCashBalance", com.google.firebase.firestore.FieldValue.increment(change))
+
+                // Update Summaries
+                summaryRepository.applyFinancialUpdate(
+                    transaction = transactionOp,
+                    snapshots = snapshots,
+                    warehouseId = trans.warehouseId ?: "",
+                    cashChange = if (trans.paymentMethod == "cash") change else 0.0,
+                    bankChange = if (trans.paymentMethod == "bank") change else 0.0
+                )
+
+                // Update Global Cash Balance
+                if (trans.paymentMethod == "cash") {
+                    val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
+                    transactionOp.update(statsRef, "totalCashBalance", com.google.firebase.firestore.FieldValue.increment(change))
+                }
             }
             relId
         }.await()
