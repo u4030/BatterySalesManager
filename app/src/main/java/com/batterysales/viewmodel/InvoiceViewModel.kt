@@ -34,7 +34,7 @@ data class InvoiceUiState(
     val isAdmin: Boolean = false,
     val isLastPage: Boolean = false,
     val isLoadingMore: Boolean = false,
-    val isDataLoaded: Boolean = false // Track if first fetch occurred
+    val isDataLoaded: Boolean = true // Automatically allow initial load
 )
 
 @HiltViewModel
