@@ -116,19 +116,28 @@ class AccountingViewModel @Inject constructor(
 
     private suspend fun loadBalancesFromSummary() {
         try {
-            val status = summaryRepository.getFinancialStatus()
             val whId = _selectedWarehouseId.value
             val method = _selectedPaymentMethod.value
+            val status = summaryRepository.getFinancialStatus()
 
-            if (whId == null || whId == "all") {
-                _balance.value = if (method == "bank") status?.globalBankBalance ?: 0.0
-                                else if (method == "cash") status?.globalCashBalance ?: 0.0
-                                else (status?.globalCashBalance ?: 0.0) + (status?.globalBankBalance ?: 0.0)
+            if (status != null) {
+                if (whId == null || whId == "all") {
+                    _balance.value = if (method == "bank") status.globalBankBalance
+                                    else if (method == "cash") status.globalCashBalance
+                                    else status.globalCashBalance + status.globalBankBalance
+                } else {
+                    val whBalance = status.warehouseBalances[whId]
+                    _balance.value = if (method == "bank") whBalance?.bankBalance ?: 0.0
+                                    else if (method == "cash") whBalance?.cashBalance ?: 0.0
+                                    else (whBalance?.cashBalance ?: 0.0) + (whBalance?.bankBalance ?: 0.0)
+                }
             } else {
-                val whBalance = status?.warehouseBalances?.get(whId)
-                _balance.value = if (method == "bank") whBalance?.bankBalance ?: 0.0
-                                else if (method == "cash") whBalance?.cashBalance ?: 0.0
-                                else (whBalance?.cashBalance ?: 0.0) + (whBalance?.bankBalance ?: 0.0)
+                // Fallback to heavy calculation if summary is missing
+                val balance = repository.getCurrentBalance(
+                    warehouseId = if (whId == "all") null else whId,
+                    paymentMethod = if (method == "all" || method == null) null else method
+                )
+                _balance.value = balance
             }
         } catch (e: Exception) {
             Log.e("AccountingViewModel", "Error loading financial summary", e)
@@ -143,13 +152,20 @@ class AccountingViewModel @Inject constructor(
 
     fun onWarehouseSelected(id: String) {
         _selectedWarehouseId.value = id
-        _isDataLoaded.value = false // Require manual reload for new selection
-        viewModelScope.launch { loadBalancesFromSummary() }
+        _isDataLoaded.value = true // Automatically load for new selection
+        viewModelScope.launch {
+            loadBalancesFromSummary()
+            refreshTrigger.value += 1
+        }
     }
 
     fun onPaymentMethodSelected(method: String?) {
         _selectedPaymentMethod.value = method
-        viewModelScope.launch { loadBalancesFromSummary() }
+        _isDataLoaded.value = true
+        viewModelScope.launch {
+            loadBalancesFromSummary()
+            refreshTrigger.value += 1
+        }
     }
 
     fun onTabSelected(index: Int) {

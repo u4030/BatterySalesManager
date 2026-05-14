@@ -106,7 +106,13 @@ class BankViewModel @Inject constructor(
     private suspend fun loadBalancesFromSummary() {
         try {
             val status = summaryRepository.getFinancialStatus()
-            _balance.value = status?.globalBankBalance ?: 0.0
+            if (status != null) {
+                _balance.value = status.globalBankBalance
+            } else {
+                // Fallback to aggregation
+                val balance = repository.getCurrentBalance()
+                _balance.value = balance
+            }
         } catch (e: Exception) {
             Log.e("BankViewModel", "Error loading bank summary", e)
         }

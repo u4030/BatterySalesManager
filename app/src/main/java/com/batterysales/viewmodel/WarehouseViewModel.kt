@@ -65,50 +65,58 @@ class WarehouseViewModel @Inject constructor(
                 val summary = summaryRepository.getInventorySummary(whId)
                 cachedSummary = summary
 
-                if (summary == null) {
-                    // Fallback: If summary is empty, load from collection once
-                    val variants = variantRepository.getAllVariants()
-                    val items = variants.asSequence()
-                        .filter { !it.archived }
-                        .map { v ->
-                            val qty = v.currentStock?.get(whId) ?: 0
-                            com.batterysales.data.models.InventoryReportItem(
-                                product = Product(id = v.productId, name = v.productName ?: "Unknown"),
-                                variant = v,
-                                warehouseQuantities = mapOf(whId to qty),
-                                totalQuantity = qty,
-                                averageCost = v.weightedAverageCost,
-                                totalCostValue = qty * v.weightedAverageCost
-                            )
-                        }.toList()
-                    _uiState.update { it.copy(inventoryItems = items.sortedBy { i -> i.product.name }) }
-                } else {
-                    filterAndSetItems(_uiState.value.searchQuery)
-                }
+                // Always call filterAndSetItems to handle both summary and fallback scenarios
+                filterAndSetItems(_uiState.value.searchQuery, whId)
             } finally {
                 _uiState.update { it.copy(isLoading = false) }
             }
         }
     }
 
-    private fun filterAndSetItems(query: String) {
-        val summary = cachedSummary ?: return
-        val items = summary.items.values.asSequence()
-            .filter { if (query.isBlank()) true else it.productName.contains(query, ignoreCase = true) || it.barcode == query }
-            .map { item ->
-                InventoryReportItem(
-                    product = Product(id = item.productId, name = item.productName),
-                    variant = ProductVariant(id = item.variantId, productId = item.productId, capacity = item.capacity, barcode = item.barcode, weightedAverageCost = item.weightedAverageCost, sellingPrice = item.sellingPrice),
-                    warehouseQuantities = mapOf(summary.warehouseId.orEmpty() to item.currentStock),
-                    totalQuantity = item.currentStock,
-                    averageCost = item.weightedAverageCost,
-                    totalCostValue = item.currentStock * item.weightedAverageCost
-                )
-            }
-            .sortedBy { it.product.name }
-            .toList()
+    private fun filterAndSetItems(query: String, whId: String? = null) {
+        val targetWhId = whId ?: _uiState.value.selectedWarehouseId
+        if (targetWhId.isEmpty()) return
 
-        _uiState.update { it.copy(inventoryItems = items) }
+        viewModelScope.launch {
+            val summary = cachedSummary
+            val items = if (summary != null) {
+                summary.items.values.asSequence()
+                    .filter { if (query.isBlank()) true else it.productName.contains(query, ignoreCase = true) || it.barcode == query }
+                    .map { item ->
+                        InventoryReportItem(
+                            product = Product(id = item.productId, name = item.productName),
+                            variant = ProductVariant(id = item.variantId, productId = item.productId, capacity = item.capacity, barcode = item.barcode, weightedAverageCost = item.weightedAverageCost, sellingPrice = item.sellingPrice),
+                            warehouseQuantities = mapOf(targetWhId to item.currentStock),
+                            totalQuantity = item.currentStock,
+                            averageCost = item.weightedAverageCost,
+                            totalCostValue = item.currentStock * item.weightedAverageCost
+                        )
+                    }
+                    .sortedBy { it.product.name }
+                    .toList()
+            } else {
+                // Fallback filtering
+                val variants = variantRepository.getAllVariants()
+                variants.asSequence()
+                    .filter { !it.archived }
+                    .filter { if (query.isBlank()) true else (it.productName?.contains(query, ignoreCase = true) ?: false) || it.barcode == query }
+                    .map { v ->
+                        val qty = v.currentStock?.get(targetWhId) ?: 0
+                        InventoryReportItem(
+                            product = Product(id = v.productId, name = v.productName ?: "Unknown"),
+                            variant = v,
+                            warehouseQuantities = mapOf(targetWhId to qty),
+                            totalQuantity = qty,
+                            averageCost = v.weightedAverageCost,
+                            totalCostValue = qty * v.weightedAverageCost
+                        )
+                    }
+                    .sortedBy { it.product.name }
+                    .toList()
+            }
+
+            _uiState.update { it.copy(inventoryItems = items) }
+        }
     }
 
     fun onWarehouseSelected(id: String) {

@@ -141,7 +141,13 @@ class BankRepository @Inject constructor(
 
             if (oldTrans != null) {
                 val oldChange = if (oldTrans.type == BankTransactionType.DEPOSIT) -(oldTrans.amount) else oldTrans.amount
-                summaryRepository.applyFinancialUpdate(transactionOp, snapshots, warehouseId = "global", bankChange = oldChange)
+
+                if (snapshots.financialStatus != null) {
+                    summaryRepository.applyFinancialUpdate(transactionOp, snapshots, warehouseId = "global", bankChange = oldChange)
+                } else {
+                    // Force update if summary is missing (Summary system init)
+                    summaryRepository.incrementSyncVersion(transactionOp, "financial")
+                }
             }
         }.await()
     }
