@@ -21,56 +21,84 @@ class SummaryRepository @Inject constructor(
     private var cachedSyncRegistry: SyncRegistry? = null
 
     /**
-     * Updates the inventory summary for a specific warehouse and the global summary.
+     * NUCLEAR STRATEGY: Transaction-safe summary updates.
+     * All reads are performed at once to comply with Firestore rules.
      */
-    fun updateInventorySummary(
+    data class SummarySnapshots(
+        val inventoryWh: InventorySummary?,
+        val inventoryGlobal: InventorySummary?,
+        val suppliersOverview: SuppliersOverview?,
+        val financialStatus: FinancialStatus?,
+        val syncRegistry: SyncRegistry?
+    )
+
+    fun getSummarySnapshots(transaction: Transaction, warehouseId: String? = null): SummarySnapshots {
+        val whRef = if (warehouseId != null) summariesCollection.document("inventory_wh_$warehouseId") else null
+        val globalRef = summariesCollection.document("inventory_global")
+        val supplierRef = summariesCollection.document("suppliers_overview")
+        val financialRef = summariesCollection.document("financial_status")
+        val registryRef = summariesCollection.document("sync_registry")
+
+        return SummarySnapshots(
+            inventoryWh = whRef?.let { transaction.get(it).toObject(InventorySummary::class.java) ?: InventorySummary(id = it.id, warehouseId = warehouseId) },
+            inventoryGlobal = transaction.get(globalRef).toObject(InventorySummary::class.java) ?: InventorySummary(id = "inventory_global"),
+            suppliersOverview = transaction.get(supplierRef).toObject(SuppliersOverview::class.java) ?: SuppliersOverview(),
+            financialStatus = transaction.get(financialRef).toObject(FinancialStatus::class.java) ?: FinancialStatus(),
+            syncRegistry = transaction.get(registryRef).toObject(SyncRegistry::class.java) ?: SyncRegistry()
+        )
+    }
+
+    fun applyInventoryUpdate(
         transaction: Transaction,
+        snapshots: SummarySnapshots,
         warehouseId: String,
         variantId: String,
         variant: ProductVariant,
         qtyChange: Int,
         costChange: Double = 0.0
     ) {
-        val warehouseSummaryRef = summariesCollection.document("inventory_wh_$warehouseId")
-        val globalSummaryRef = summariesCollection.document("inventory_global")
+        val whSummary = snapshots.inventoryWh ?: InventorySummary(id = "inventory_wh_$warehouseId", warehouseId = warehouseId)
+        val globalSummary = snapshots.inventoryGlobal ?: InventorySummary(id = "inventory_global")
 
-        val whSnap = transaction.get(warehouseSummaryRef)
-        val whSummary = whSnap.toObject(InventorySummary::class.java) ?: InventorySummary(id = "inventory_wh_$warehouseId", warehouseId = warehouseId)
-
-        val globalSnap = transaction.get(globalSummaryRef)
-        val globalSummary = globalSnap.toObject(InventorySummary::class.java) ?: InventorySummary(id = "inventory_global")
-
+        // Update Warehouse Summary
         val updatedItemsWh = whSummary.items.toMutableMap()
         val currentItemWh = updatedItemsWh[variantId] ?: InventorySummaryItem(
             variantId = variantId, productId = variant.productId, productName = variant.productName ?: "Unknown",
             capacity = variant.capacity, barcode = variant.barcode, sellingPrice = variant.sellingPrice
         )
-        updatedItemsWh[variantId] = currentItemWh.copy(currentStock = currentItemWh.currentStock + qtyChange, weightedAverageCost = variant.weightedAverageCost, updatedAt = Date())
+        updatedItemsWh[variantId] = currentItemWh.copy(
+            currentStock = currentItemWh.currentStock + qtyChange,
+            weightedAverageCost = variant.weightedAverageCost,
+            updatedAt = Date()
+        )
 
+        // Update Global Summary
         val updatedItemsGlobal = globalSummary.items.toMutableMap()
         val currentItemGlobal = updatedItemsGlobal[variantId] ?: InventorySummaryItem(
             variantId = variantId, productId = variant.productId, productName = variant.productName ?: "Unknown",
             capacity = variant.capacity, barcode = variant.barcode, sellingPrice = variant.sellingPrice
         )
-        updatedItemsGlobal[variantId] = currentItemGlobal.copy(currentStock = currentItemGlobal.currentStock + qtyChange, weightedAverageCost = variant.weightedAverageCost, updatedAt = Date())
+        updatedItemsGlobal[variantId] = currentItemGlobal.copy(
+            currentStock = currentItemGlobal.currentStock + qtyChange,
+            weightedAverageCost = variant.weightedAverageCost,
+            updatedAt = Date()
+        )
 
-        transaction.set(warehouseSummaryRef, whSummary.copy(items = updatedItemsWh, lastUpdated = Date(), totalValue = whSummary.totalValue + costChange))
-        transaction.set(globalSummaryRef, globalSummary.copy(items = updatedItemsGlobal, lastUpdated = Date(), totalValue = globalSummary.totalValue + costChange))
+        transaction.set(summariesCollection.document("inventory_wh_$warehouseId"), whSummary.copy(items = updatedItemsWh, lastUpdated = Date(), totalValue = whSummary.totalValue + costChange))
+        transaction.set(summariesCollection.document("inventory_global"), globalSummary.copy(items = updatedItemsGlobal, lastUpdated = Date(), totalValue = globalSummary.totalValue + costChange))
 
         incrementSyncVersion(transaction, "inventory")
     }
 
-    fun updateSupplierOverview(
+    fun applySupplierUpdate(
         transaction: Transaction,
+        snapshots: SummarySnapshots,
         supplierId: String,
         name: String,
         debitChange: Double = 0.0,
         creditChange: Double = 0.0
     ) {
-        val overviewRef = summariesCollection.document("suppliers_overview")
-        val overviewSnap = transaction.get(overviewRef)
-        val overview = overviewSnap.toObject(SuppliersOverview::class.java) ?: SuppliersOverview()
-
+        val overview = snapshots.suppliersOverview ?: SuppliersOverview()
         val updatedSuppliers = overview.suppliers.toMutableMap()
         val current = updatedSuppliers[supplierId] ?: SupplierSummaryItem(supplierId = supplierId, name = name)
 
@@ -79,13 +107,14 @@ class SummaryRepository @Inject constructor(
 
         updatedSuppliers[supplierId] = current.copy(totalDebit = newDebit, totalCredit = newCredit, currentBalance = newDebit - newCredit, updatedAt = Date())
 
-        transaction.set(overviewRef, overview.copy(suppliers = updatedSuppliers, lastUpdated = Date(), totalSupplierDebt = overview.totalSupplierDebt + (debitChange - creditChange)))
+        transaction.set(summariesCollection.document("suppliers_overview"), overview.copy(suppliers = updatedSuppliers, lastUpdated = Date(), totalSupplierDebt = overview.totalSupplierDebt + (debitChange - creditChange)))
 
         incrementSyncVersion(transaction, "suppliers")
     }
 
-    fun updateFinancialStatus(
+    fun applyFinancialUpdate(
         transaction: Transaction,
+        snapshots: SummarySnapshots,
         warehouseId: String,
         cashChange: Double = 0.0,
         bankChange: Double = 0.0,
@@ -93,10 +122,7 @@ class SummaryRepository @Inject constructor(
         billChange: Double = 0.0,
         checkChange: Double = 0.0
     ) {
-        val statusRef = summariesCollection.document("financial_status")
-        val statusSnap = transaction.get(statusRef)
-        val status = statusSnap.toObject(FinancialStatus::class.java) ?: FinancialStatus()
-
+        val status = snapshots.financialStatus ?: FinancialStatus()
         val updatedWarehouses = status.warehouseBalances.toMutableMap()
         val currentWh = updatedWarehouses[warehouseId] ?: WarehouseBalance(warehouseId = warehouseId)
 
@@ -106,7 +132,7 @@ class SummaryRepository @Inject constructor(
             pendingCollection = currentWh.pendingCollection + pendingCollectionChange
         )
 
-        transaction.set(statusRef, status.copy(
+        transaction.set(summariesCollection.document("financial_status"), status.copy(
             warehouseBalances = updatedWarehouses,
             globalCashBalance = status.globalCashBalance + cashChange,
             globalBankBalance = status.globalBankBalance + bankChange,
@@ -209,8 +235,12 @@ class SummaryRepository @Inject constructor(
             "financial" -> "financialVersion"
             else -> return
         }
-        transaction.update(registryRef, field, com.google.firebase.firestore.FieldValue.increment(1))
-        transaction.update(registryRef, "lastModified", Date())
+
+        // Use Set with Merge to ensure document creation if it doesn't exist
+        transaction.set(registryRef, mapOf(
+            field to com.google.firebase.firestore.FieldValue.increment(1),
+            "lastModified" to Date()
+        ), com.google.firebase.firestore.SetOptions.merge())
     }
 
     suspend fun getSyncRegistry(): SyncRegistry? = fetchSyncRegistry()

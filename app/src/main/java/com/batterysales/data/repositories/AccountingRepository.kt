@@ -132,6 +132,11 @@ class AccountingRepository @Inject constructor(
         val finalTransaction = transaction.copy(id = docRef.id)
 
         firestore.runTransaction { transactionOp ->
+            // 1. All Reads First
+            val snapshots = summaryRepository.getSummarySnapshots(transactionOp, finalTransaction.warehouseId)
+            val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
+
+            // 2. All Writes
             transactionOp.set(docRef, finalTransaction)
 
             val change = when (finalTransaction.type) {
@@ -140,8 +145,9 @@ class AccountingRepository @Inject constructor(
             }
 
             // Update Summaries
-            summaryRepository.updateFinancialStatus(
+            summaryRepository.applyFinancialUpdate(
                 transaction = transactionOp,
+                snapshots = snapshots,
                 warehouseId = finalTransaction.warehouseId ?: "",
                 cashChange = if (finalTransaction.paymentMethod == "cash") change else 0.0,
                 bankChange = if (finalTransaction.paymentMethod == "bank") change else 0.0
@@ -149,7 +155,6 @@ class AccountingRepository @Inject constructor(
 
             // Update Global Cash Balance
             if (finalTransaction.paymentMethod == "cash") {
-                val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
                 transactionOp.update(statsRef, "totalCashBalance", com.google.firebase.firestore.FieldValue.increment(change))
             }
         }.await()

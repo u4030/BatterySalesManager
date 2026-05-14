@@ -56,7 +56,7 @@ class WarehouseViewModel @Inject constructor(
         }
     }
 
-    // --- NUCLEAR STRATEGY: Load ENTIRE warehouse inventory in ONE read ---
+    // --- NUCLEAR STRATEGY: Load ENTIRE warehouse inventory in ONE read with FALLBACK ---
     private fun loadWarehouseInventory(whId: String) {
         if (whId.isEmpty()) return
         viewModelScope.launch {
@@ -65,7 +65,26 @@ class WarehouseViewModel @Inject constructor(
                 val summary = summaryRepository.getInventorySummary(whId)
                 cachedSummary = summary
 
-                filterAndSetItems(_uiState.value.searchQuery)
+                if (summary == null) {
+                    // Fallback: If summary is empty, load from collection once
+                    val variants = variantRepository.getAllVariants()
+                    val items = variants.asSequence()
+                        .filter { !it.archived }
+                        .map { v ->
+                            val qty = v.currentStock?.get(whId) ?: 0
+                            com.batterysales.data.models.InventoryReportItem(
+                                product = Product(id = v.productId, name = v.productName ?: "Unknown"),
+                                variant = v,
+                                warehouseQuantities = mapOf(whId to qty),
+                                totalQuantity = qty,
+                                averageCost = v.weightedAverageCost,
+                                totalCostValue = qty * v.weightedAverageCost
+                            )
+                        }.toList()
+                    _uiState.update { it.copy(inventoryItems = items.sortedBy { i -> i.product.name }) }
+                } else {
+                    filterAndSetItems(_uiState.value.searchQuery)
+                }
             } finally {
                 _uiState.update { it.copy(isLoading = false) }
             }

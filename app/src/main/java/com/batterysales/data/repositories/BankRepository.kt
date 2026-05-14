@@ -35,9 +35,13 @@ class BankRepository @Inject constructor(
         val finalTransaction = transaction.copy(id = docRef.id)
 
         firestore.runTransaction { transactionOp ->
+            // 1. Reads
+            val snapshots = summaryRepository.getSummarySnapshots(transactionOp, "global")
+
+            // 2. Writes
             transactionOp.set(docRef, finalTransaction)
             val change = if (finalTransaction.type == BankTransactionType.DEPOSIT) finalTransaction.amount else -finalTransaction.amount
-            summaryRepository.updateFinancialStatus(transactionOp, warehouseId = "global", bankChange = change)
+            summaryRepository.applyFinancialUpdate(transactionOp, snapshots, warehouseId = "global", bankChange = change)
         }.await()
 
         return docRef.id
@@ -46,13 +50,17 @@ class BankRepository @Inject constructor(
     suspend fun updateTransaction(transaction: BankTransaction) {
         val docRef = firestore.collection(BankTransaction.COLLECTION_NAME).document(transaction.id)
         firestore.runTransaction { transactionOp ->
+            // 1. Reads
             val oldTrans = transactionOp.get(docRef).toObject(BankTransaction::class.java)
+            val snapshots = summaryRepository.getSummarySnapshots(transactionOp, "global")
+
+            // 2. Writes
             transactionOp.set(docRef, transaction)
 
             val oldChange = if (oldTrans?.type == BankTransactionType.DEPOSIT) -(oldTrans.amount) else (oldTrans?.amount ?: 0.0)
             val newChange = if (transaction.type == BankTransactionType.DEPOSIT) transaction.amount else -transaction.amount
 
-            summaryRepository.updateFinancialStatus(transactionOp, warehouseId = "global", bankChange = oldChange + newChange)
+            summaryRepository.applyFinancialUpdate(transactionOp, snapshots, warehouseId = "global", bankChange = oldChange + newChange)
         }.await()
     }
 

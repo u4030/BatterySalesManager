@@ -164,7 +164,7 @@ class ReportsViewModel @Inject constructor(
         loadSuppliersOverview()
     }
 
-    // --- NUCLEAR STRATEGY: Load ENTIRE inventory from ONE document ---
+    // --- NUCLEAR STRATEGY: Load ENTIRE inventory from ONE document with FALLBACK ---
     fun loadInventoryReport(reset: Boolean = false) {
         viewModelScope.launch {
             try {
@@ -174,32 +174,48 @@ class ReportsViewModel @Inject constructor(
                 val whId = if (seller) user?.warehouseId else null
 
                 val summary = summaryRepository.getInventorySummary(whId)
-                if (summary == null) {
-                    _inventoryReportItems.value = emptyList()
-                    return@launch
-                }
 
                 val query = _barcodeFilter.value
-                val items = summary.items.values.asSequence()
-                    .filter { if (query.isNullOrBlank()) true else it.productName.contains(query, ignoreCase = true) || it.barcode == query }
-                    .filter { if (seller) it.currentStock > 0 else true }
-                    .map { item ->
-                        InventoryReportItem(
-                            product = Product(id = item.productId, name = item.productName),
-                            variant = ProductVariant(id = item.variantId, productId = item.productId, capacity = item.capacity, barcode = item.barcode, weightedAverageCost = item.weightedAverageCost, sellingPrice = item.sellingPrice),
-                            warehouseQuantities = if (whId != null) mapOf(whId to item.currentStock) else emptyMap(),
-                            totalQuantity = item.currentStock,
-                            averageCost = item.weightedAverageCost,
-                            totalCostValue = item.currentStock * item.weightedAverageCost
-                        )
-                    }
-                    .sortedBy { it.product.name }
-                    .toList()
+                val items = if (summary != null) {
+                    summary.items.values.asSequence()
+                        .filter { if (query.isNullOrBlank()) true else it.productName.contains(query, ignoreCase = true) || it.barcode == query }
+                        .filter { if (seller) it.currentStock > 0 else true }
+                        .map { item ->
+                            InventoryReportItem(
+                                product = Product(id = item.productId, name = item.productName),
+                                variant = ProductVariant(id = item.variantId, productId = item.productId, capacity = item.capacity, barcode = item.barcode, weightedAverageCost = item.weightedAverageCost, sellingPrice = item.sellingPrice),
+                                warehouseQuantities = if (whId != null) mapOf(whId to item.currentStock) else emptyMap(),
+                                totalQuantity = item.currentStock,
+                                averageCost = item.weightedAverageCost,
+                                totalCostValue = item.currentStock * item.weightedAverageCost
+                            )
+                        }.toList()
+                } else {
+                    // Fallback to heavy collection scan if summary is missing
+                    val variants = productVariantRepository.getAllVariants()
+                    variants.asSequence()
+                        .filter { !it.archived }
+                        .filter { if (query.isNullOrBlank()) true else (it.productName?.contains(query, ignoreCase = true) ?: false) || it.barcode == query }
+                        .map { v ->
+                            val qty = if (whId != null) v.currentStock?.get(whId) ?: 0 else v.currentStock?.values?.sum() ?: 0
+                            InventoryReportItem(
+                                product = Product(id = v.productId, name = v.productName ?: "Unknown"),
+                                variant = v,
+                                warehouseQuantities = if (whId != null) mapOf(whId to qty) else v.currentStock ?: emptyMap(),
+                                totalQuantity = qty,
+                                averageCost = v.weightedAverageCost,
+                                totalCostValue = qty * v.weightedAverageCost
+                            )
+                        }
+                        .filter { if (seller) it.totalQuantity > 0 else true }
+                        .toList()
+                }
 
-                _inventoryReportItems.value = items
-                _grandTotalInventoryQuantity.value = items.sumOf { it.totalQuantity }
-                _grandTotalInventoryValue.value = items.sumOf { it.totalCostValue }
-                _allInventoryItemNames.value = items.map { it.product.name }.distinct()
+                val finalItems = items.sortedBy { it.product.name }
+                _inventoryReportItems.value = finalItems
+                _grandTotalInventoryQuantity.value = finalItems.sumOf { it.totalQuantity }
+                _grandTotalInventoryValue.value = finalItems.sumOf { it.totalCostValue }
+                _allInventoryItemNames.value = finalItems.map { it.product.name }.distinct()
 
             } catch (e: Exception) {
                 Log.e("ReportsViewModel", "Error loading nuclear inventory", e)

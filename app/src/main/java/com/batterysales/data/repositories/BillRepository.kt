@@ -89,8 +89,10 @@ class BillRepository @Inject constructor(
         val billRef = firestore.collection(Bill.COLLECTION_NAME).document(billId)
 
         firestore.runTransaction { transaction ->
+            // 1. Reads
             val snapshot = transaction.get(billRef)
             val bill = snapshot.toObject(Bill::class.java)?.copy(id = snapshot.id) ?: return@runTransaction
+            val snapshots = summaryRepository.getSummarySnapshots(transaction, "global")
 
             val newPaidAmount = bill.paidAmount + paymentAmount
             val newStatus = when {
@@ -112,8 +114,9 @@ class BillRepository @Inject constructor(
             transaction.update(billRef, updates)
 
             // Update Summaries
-            summaryRepository.updateFinancialStatus(
+            summaryRepository.applyFinancialUpdate(
                 transaction = transaction,
+                snapshots = snapshots,
                 warehouseId = "global",
                 cashChange = -paymentAmount,
                 billChange = -paymentAmount
@@ -141,9 +144,12 @@ class BillRepository @Inject constructor(
         val billRef = firestore.collection(Bill.COLLECTION_NAME).document(bill.id)
 
         firestore.runTransaction { transaction ->
+            // 1. Reads
             val snapshot = transaction.get(billRef)
             val freshBill = snapshot.toObject(Bill::class.java)?.copy(id = snapshot.id) ?: return@runTransaction
+            val snapshots = summaryRepository.getSummarySnapshots(transaction, warehouseId)
 
+            // 2. Writes
             val newPaidAmount = freshBill.paidAmount + paymentAmount
             val newStatus = when {
                 newPaidAmount >= freshBill.amount -> BillStatus.PAID
@@ -164,8 +170,9 @@ class BillRepository @Inject constructor(
             transaction.update(billRef, updates)
 
             // Update Summaries
-            summaryRepository.updateFinancialStatus(
+            summaryRepository.applyFinancialUpdate(
                 transaction = transaction,
+                snapshots = snapshots,
                 warehouseId = warehouseId,
                 cashChange = if (method == "cash") -paymentAmount else 0.0,
                 bankChange = if (method == "bank") -paymentAmount else 0.0,

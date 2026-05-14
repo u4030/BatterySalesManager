@@ -24,6 +24,7 @@ class StockEntryRepository @Inject constructor(
             // 1. Reads
             val variantRef = firestore.collection(ProductVariant.COLLECTION_NAME).document(stockEntry.productVariantId)
             val variant = transaction.get(variantRef).toObject(ProductVariant::class.java)
+            val snapshots = summaryRepository.getSummarySnapshots(transaction, stockEntry.warehouseId)
 
             // 2. Writes
             val docRef = firestore.collection(StockEntry.COLLECTION_NAME).document()
@@ -74,8 +75,9 @@ class StockEntryRepository @Inject constructor(
                 }
 
                 // --- Update Summaries ---
-                summaryRepository.updateInventorySummary(
+                summaryRepository.applyInventoryUpdate(
                     transaction = transaction,
+                    snapshots = snapshots,
                     warehouseId = finalEntry.warehouseId,
                     variantId = finalEntry.productVariantId,
                     variant = variant.copy(
@@ -93,14 +95,14 @@ class StockEntryRepository @Inject constructor(
                         transaction.update(supplierRef, "totalDebit", com.google.firebase.firestore.FieldValue.increment(cost))
                         transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(cost))
                         transaction.update(docRef, "remainingBalance", cost)
-                        summaryRepository.updateSupplierOverview(transaction, finalEntry.supplierId, variant.productName ?: "", debitChange = cost)
+                        summaryRepository.applySupplierUpdate(transaction, snapshots, finalEntry.supplierId, variant.productName ?: "", debitChange = cost)
                     } else if (cost < 0) {
                         transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(-cost))
                         transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(cost))
                         transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(-cost))
                         transaction.update(docRef, "isSettled", true)
                         transaction.update(docRef, "remainingBalance", 0.0)
-                        summaryRepository.updateSupplierOverview(transaction, finalEntry.supplierId, variant.productName ?: "", creditChange = -cost)
+                        summaryRepository.applySupplierUpdate(transaction, snapshots, finalEntry.supplierId, variant.productName ?: "", creditChange = -cost)
                     }
                 }
 
@@ -805,9 +807,15 @@ class StockEntryRepository @Inject constructor(
 
     suspend fun processReturn(entry: StockEntry, quantity: Int, mode: String, notes: String) {
         firestore.runTransaction { transaction ->
+            // 1. Reads
             val docRef = firestore.collection(StockEntry.COLLECTION_NAME).document(entry.id)
-            val freshEntry = transaction.get(docRef).toObject(StockEntry::class.java) ?: return@runTransaction
+            val variantRef = firestore.collection(ProductVariant.COLLECTION_NAME).document(entry.productVariantId)
 
+            val freshEntry = transaction.get(docRef).toObject(StockEntry::class.java) ?: return@runTransaction
+            val variant = transaction.get(variantRef).toObject(ProductVariant::class.java)
+            val snapshots = summaryRepository.getSummarySnapshots(transaction, entry.warehouseId)
+
+            // 2. Writes
             val newReturnedQty = freshEntry.returnedQuantity + quantity
             transaction.update(docRef, mapOf(
                 "returnedQuantity" to newReturnedQty,
@@ -815,15 +823,13 @@ class StockEntryRepository @Inject constructor(
             ))
 
             // Update Variant Stock
-            val variantRef = firestore.collection(ProductVariant.COLLECTION_NAME).document(entry.productVariantId)
-            val variant = transaction.get(variantRef).toObject(ProductVariant::class.java)
             if (variant != null) {
                 val newStockMap = variant.currentStock?.toMutableMap() ?: mutableMapOf()
                 newStockMap[entry.warehouseId] = (newStockMap[entry.warehouseId] ?: 0) - quantity
                 transaction.update(variantRef, "currentStock", newStockMap)
 
                 // Update Summary
-                summaryRepository.updateInventorySummary(transaction, entry.warehouseId, entry.productVariantId, variant, -quantity)
+                summaryRepository.applyInventoryUpdate(transaction, snapshots, entry.warehouseId, entry.productVariantId, variant, -quantity)
             }
 
             // Financial Adjustment
@@ -832,7 +838,7 @@ class StockEntryRepository @Inject constructor(
                 val supplierRef = firestore.collection("suppliers").document(entry.supplierId)
                 transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-costToReturn))
                 transaction.update(supplierRef, "totalDebit", com.google.firebase.firestore.FieldValue.increment(-costToReturn))
-                summaryRepository.updateSupplierOverview(transaction, entry.supplierId, entry.productName, debitChange = -costToReturn)
+                summaryRepository.applySupplierUpdate(transaction, snapshots, entry.supplierId, entry.productName, debitChange = -costToReturn)
             }
         }.await()
     }
