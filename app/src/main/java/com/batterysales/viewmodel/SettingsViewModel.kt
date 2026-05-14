@@ -25,7 +25,8 @@ class SettingsViewModel @Inject constructor(
     private val supplierRepository: SupplierRepository,
     private val billRepository: BillRepository,
     private val summaryRepository: SummaryRepository,
-    private val accountingRepository: AccountingRepository
+    private val accountingRepository: AccountingRepository,
+    private val bankRepository: BankRepository
 ) : ViewModel() {
 
     private val _migrationStatus = MutableStateFlow<String?>(null)
@@ -110,18 +111,27 @@ class SettingsViewModel @Inject constructor(
     }
 
     private suspend fun rebuildAllSummaries() {
+        val firestore = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+
         // This is a heavy operation to initialize the new Summary-First system
         val products = productRepository.getProductsOnce()
         val variants = productVariantRepository.getAllVariants()
         val warehouses = warehouseRepository.getWarehousesOnce()
         val suppliers = supplierRepository.getSuppliersOnce()
 
-        // 1. Rebuild Inventory Summaries
+        // --- 1. Clear existing alerts ---
+        val alertsSnap = firestore.collection(SystemAlert.COLLECTION_NAME).get().await()
+        val alertBatch = firestore.batch()
+        alertsSnap.documents.forEach { alertBatch.delete(it.reference) }
+        alertBatch.commit().await()
+
+        // 2. Rebuild Inventory Summaries
         val globalItems = mutableMapOf<String, InventorySummaryItem>()
         val warehouseItems = mutableMapOf<String, MutableMap<String, InventorySummaryItem>>()
 
         variants.forEach { variant: ProductVariant ->
             val productName = products.find { it.id == variant.productId }?.name ?: "Unknown"
+            val totalQty = variant.currentStock?.values?.sum() ?: 0
 
             val globalItem = InventorySummaryItem(
                 variantId = variant.id,
@@ -129,35 +139,44 @@ class SettingsViewModel @Inject constructor(
                 productName = productName,
                 capacity = variant.capacity,
                 barcode = variant.barcode,
-                currentStock = variant.currentStock?.values?.sum() ?: 0,
+                currentStock = totalQty,
                 weightedAverageCost = variant.weightedAverageCost,
                 sellingPrice = variant.sellingPrice
             )
             globalItems[variant.id] = globalItem
 
-            variant.currentStock?.forEach { entry: Map.Entry<String, Int> ->
-                val whId = entry.key
-                val qty = entry.value
+            variant.currentStock?.forEach { (whId, qty) ->
                 val whMap = warehouseItems.getOrPut(whId) { mutableMapOf() }
                 whMap[variant.id] = globalItem.copy(currentStock = qty)
+
+                // --- GENERATE ALERTS DURING REBUILD ---
+                val threshold = variant.minQuantities[whId] ?: variant.minQuantity
+                if (threshold > 0 && qty <= threshold) {
+                    val alertRef = firestore.collection(SystemAlert.COLLECTION_NAME).document("low_stock_${variant.id}_$whId")
+                    firestore.collection(SystemAlert.COLLECTION_NAME).document(alertRef.id).set(SystemAlert(
+                        id = alertRef.id,
+                        type = SystemAlert.TYPE_LOW_STOCK,
+                        title = "مخزون منخفض: $productName",
+                        message = "${variant.capacity}A | الكمية الحالية: $qty (الحد: $threshold)",
+                        relatedId = variant.id,
+                        warehouseId = whId,
+                        timestamp = Date()
+                    ))
+                }
             }
         }
 
         // Save Global
-        com.google.firebase.firestore.FirebaseFirestore.getInstance()
-            .collection("summaries").document("inventory_global")
+        firestore.collection("summaries").document("inventory_global")
             .set(InventorySummary(id = "inventory_global", items = globalItems)).await()
 
         // Save Warehouses
-        warehouseItems.forEach { entry: Map.Entry<String, MutableMap<String, InventorySummaryItem>> ->
-            val whId = entry.key
-            val items = entry.value
-            com.google.firebase.firestore.FirebaseFirestore.getInstance()
-                .collection("summaries").document("inventory_wh_$whId")
+        warehouseItems.forEach { (whId, items) ->
+            firestore.collection("summaries").document("inventory_wh_$whId")
                 .set(InventorySummary(id = "inventory_wh_$whId", warehouseId = whId, items = items)).await()
         }
 
-        // 2. Rebuild Suppliers Overview
+        // 3. Rebuild Suppliers Overview
         val supplierItems = suppliers.associate { s ->
             s.id to SupplierSummaryItem(
                 supplierId = s.id,
@@ -167,11 +186,10 @@ class SettingsViewModel @Inject constructor(
                 totalCredit = s.totalCredit
             )
         }
-        com.google.firebase.firestore.FirebaseFirestore.getInstance()
-            .collection("summaries").document("suppliers_overview")
+        firestore.collection("summaries").document("suppliers_overview")
             .set(SuppliersOverview(suppliers = supplierItems)).await()
 
-        // 3. Rebuild Financial Status
+        // 4. Rebuild Financial Status (High Precision Calculation)
         val warehouseBalances = warehouses.associate { wh ->
             val cash = accountingRepository.getCurrentBalance(wh.id, "cash")
             val bank = accountingRepository.getCurrentBalance(wh.id, "bank")
@@ -182,11 +200,11 @@ class SettingsViewModel @Inject constructor(
             )
         }
 
-        val globalCash = warehouseBalances.values.sumOf { it.cashBalance }
-        val globalBank = warehouseBalances.values.sumOf { it.bankBalance }
+        // Calculate Globals via raw aggregation to be 100% sure
+        val globalCash = accountingRepository.getCurrentBalance(null, "cash")
+        val globalBank = bankRepository.getCurrentBalance()
 
-        com.google.firebase.firestore.FirebaseFirestore.getInstance()
-            .collection("summaries").document("financial_status")
+        firestore.collection("summaries").document("financial_status")
             .set(FinancialStatus(
                 warehouseBalances = warehouseBalances,
                 globalCashBalance = globalCash,
