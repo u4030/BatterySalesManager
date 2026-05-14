@@ -82,6 +82,8 @@ class DashboardViewModel @Inject constructor(
     }
 
     private var dashboardJob: kotlinx.coroutines.Job? = null
+    private var alertsListener: com.google.firebase.firestore.ListenerRegistration? = null
+
     private fun loadDashboardData() {
         dashboardJob?.cancel()
         dashboardJob = combine(
@@ -90,6 +92,7 @@ class DashboardViewModel @Inject constructor(
         ) { user, _ -> user }.onEach { user ->
             if (user == null) {
                 _uiState.value = DashboardUiState(isLoading = false)
+                alertsListener?.remove()
                 return@onEach
             }
 
@@ -101,18 +104,22 @@ class DashboardViewModel @Inject constructor(
                 // 1. Initial Static Data Fetch
                 val systemStats = firestore.collection(SystemStats.COLLECTION_NAME).document(SystemStats.DOCUMENT_ID).get().await()
                         .toObject(SystemStats::class.java) ?: SystemStats()
-                val pendingEntriesCount = stockEntryRepository.getPendingCount()
-                val pendingRequests = approvalRepository.getPendingRequestsFlow().take(1).first()
-                val warehouses = warehouseRepository.getWarehousesOnce()
-                val pendingCount = pendingEntriesCount + pendingRequests.size
 
-                // 2. Real-time Snapshot Listener for Alerts (Nuclear Consistency)
-                firestore.collection(SystemAlert.COLLECTION_NAME)
+                val (pendingCount, warehouses) = if (isAdmin) {
+                    val pEntries = stockEntryRepository.getPendingCount()
+                    val pReqs = approvalRepository.getPendingRequestsFlow().take(1).first()
+                    Pair(pEntries + pReqs.size, warehouseRepository.getWarehousesOnce())
+                } else {
+                    Pair(0, warehouseRepository.getWarehousesOnce())
+                }
+
+                // 2. Real-time Snapshot Listener for Alerts
+                alertsListener?.remove()
+                alertsListener = firestore.collection(SystemAlert.COLLECTION_NAME)
                     .whereEqualTo("type", SystemAlert.TYPE_LOW_STOCK)
                     .addSnapshotListener { alertsSnap, e ->
                         if (e != null || alertsSnap == null) return@addSnapshotListener
 
-                        // Use viewModelScope.launch inside the listener
                         this@DashboardViewModel.viewModelScope.launch {
                             val filteredAlerts = alertsSnap.documents.mapNotNull { it.toObject(SystemAlert::class.java) }
                                 .filter { isAdmin || it.warehouseId == userWarehouseId }
@@ -141,7 +148,6 @@ class DashboardViewModel @Inject constructor(
                                 )
                             }
 
-                            // Update State with new alerts
                             updateStateWithAlerts(user, warehouses, lowStockItems, pendingCount, systemStats)
                         }
                     }
@@ -151,6 +157,11 @@ class DashboardViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(isLoading = false)
             }
         }.launchIn(viewModelScope)
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        alertsListener?.remove()
     }
 
     private suspend fun updateStateWithAlerts(

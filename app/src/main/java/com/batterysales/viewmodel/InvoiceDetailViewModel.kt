@@ -54,7 +54,7 @@ class InvoiceDetailViewModel @Inject constructor(
                 }
 
                 // Fetch associated stock entries (The "Constraints/Entries" the user asked for)
-                val entries = stockEntryRepository.getEntriesForInvoice(id)
+                val entries = stockEntryRepository.getEntriesForInvoice(id, invoice.invoiceNumber)
 
                 // Update UI state with invoice details first
                 _uiState.update { it.copy(invoice = invoice, stockEntries = entries, isLoading = false) }

@@ -841,12 +841,26 @@ class StockEntryRepository @Inject constructor(
             .filter { it.totalCost > 0 }
     }
 
-    suspend fun getEntriesForInvoice(invoiceId: String): List<StockEntry> {
-        val snapshot = firestore.collection(StockEntry.COLLECTION_NAME)
+    suspend fun getEntriesForInvoice(invoiceId: String, invoiceNumber: String = ""): List<StockEntry> {
+        // Try searching by invoiceId first (Modern)
+        val snapshotById = firestore.collection(StockEntry.COLLECTION_NAME)
             .whereEqualTo("invoiceId", invoiceId)
             .get()
             .await()
-        return snapshot.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
+
+        val entries = snapshotById.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
+        if (entries.isNotEmpty()) return entries
+
+        // Fallback: Try searching by invoiceNumber (Legacy)
+        if (invoiceNumber.isNotEmpty()) {
+            val snapshotByNum = firestore.collection(StockEntry.COLLECTION_NAME)
+                .whereEqualTo("invoiceNumber", invoiceNumber.trim())
+                .get()
+                .await()
+            return snapshotByNum.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
+        }
+
+        return emptyList()
     }
 
     suspend fun processReturn(entry: StockEntry, quantity: Int, mode: String, notes: String) {
