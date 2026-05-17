@@ -92,17 +92,23 @@ class StockEntryRepository @Inject constructor(
                 if (finalEntry.supplierId.isNotEmpty()) {
                     val supplierRef = firestore.collection("suppliers").document(finalEntry.supplierId)
                     val cost = finalEntry.getNetCost()
-                    if (cost > 0) {
+                    if (cost > 0.001) {
                         transaction.update(supplierRef, "totalDebit", com.google.firebase.firestore.FieldValue.increment(cost))
                         transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(cost))
                         transaction.update(docRef, "remainingBalance", cost)
                         summaryRepository.applySupplierUpdate(transaction, snapshots, finalEntry.supplierId, variant.productName ?: "", debitChange = cost)
-                    } else if (cost < 0) {
+                    } else if (cost < -0.001) {
+                        // This is a return/credit note
                         transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(-cost))
                         transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(cost))
                         transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(-cost))
-                        transaction.update(docRef, "isSettled", true)
-                        transaction.update(docRef, "remainingBalance", 0.0)
+
+                        val returnNotes = listOf("مرتجع مواد: JD ${String.format("%.3f", -cost)}")
+                        transaction.update(docRef, mapOf(
+                            "isSettled" to true,
+                            "remainingBalance" to 0.0,
+                            "settlementNotes" to returnNotes
+                        ))
                         summaryRepository.applySupplierUpdate(transaction, snapshots, finalEntry.supplierId, variant.productName ?: "", creditChange = -cost)
                     }
                 }

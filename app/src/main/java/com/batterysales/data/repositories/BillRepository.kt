@@ -57,6 +57,30 @@ class BillRepository @Inject constructor(
         firestore.runTransaction { transaction ->
             transaction.set(docRef, finalBill)
             
+            // If manually linked to a purchase order entry
+            if (finalBill.relatedEntryId != null) {
+                val entryRef = firestore.collection(StockEntry.COLLECTION_NAME).document(finalBill.relatedEntryId!!)
+                val entrySnap = transaction.get(entryRef)
+                val entry = entrySnap.toObject(StockEntry::class.java)
+                if (entry != null) {
+                    val notes = entry.settlementNotes.toMutableList()
+                    val typeLabel = when(finalBill.billType) {
+                        BillType.CHECK -> "شيك"
+                        BillType.BILL -> "كمبيالة"
+                        BillType.CASH -> "نقدي"
+                        else -> "دفعة"
+                    }
+                    notes.add("ارتباط يدوي ($typeLabel): JD ${String.format("%.3f", finalBill.amount)} (#${finalBill.referenceNumber})")
+
+                    val newRemaining = (entry.remainingBalance ?: entry.getNetCost()) - finalBill.amount
+                    transaction.update(entryRef, mapOf(
+                        "settlementNotes" to notes.distinct(),
+                        "remainingBalance" to newRemaining.coerceAtLeast(0.0),
+                        "isSettled" to (newRemaining <= 0.001)
+                    ))
+                }
+            }
+
             // Update Supplier Denormalized Totals (Credit only on creation/payment)
             if (finalBill.supplierId.isNotEmpty()) {
                 val supplierRef = firestore.collection("suppliers").document(finalBill.supplierId)
@@ -326,7 +350,6 @@ class BillRepository @Inject constructor(
         if (supplierId.isEmpty()) return
 
         // 1. Get ALL unsettled entries for this supplier to group them correctly
-        // (Efficiency: we only get unsettled ones, still better than full history)
         val ordersQuery = firestore.collection(StockEntry.COLLECTION_NAME)
             .whereEqualTo("supplierId", supplierId)
             .whereEqualTo("status", "approved")
@@ -335,6 +358,14 @@ class BillRepository @Inject constructor(
             .orderBy("timestamp", Query.Direction.ASCENDING)
         
         val entrySnapshots = ordersQuery.get().await()
+
+        // Also fetch all PAID bills/checks to find their reference numbers for notes
+        val billsQuery = firestore.collection(Bill.COLLECTION_NAME)
+            .whereEqualTo("supplierId", supplierId)
+            .orderBy("dueDate", Query.Direction.ASCENDING)
+        val billSnapshots = billsQuery.get().await()
+        val supplierBills = billSnapshots.documents.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) }
+
         if (entrySnapshots.isEmpty) return
 
         val allEntries = entrySnapshots.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
@@ -376,7 +407,9 @@ class BillRepository @Inject constructor(
 
                 val notes = representative.settlementNotes.toMutableList()
                 if (allocation > 0.001) {
-                    notes.add("تسوية تلقائية: JD ${String.format("%.3f", allocation)}")
+                    // Try to find the matching bills that contributed to this credit
+                    // (Simplified: we just mention it's from unallocated pool)
+                    notes.add("تسوية من الرصيد النقدي/الشيكات: JD ${String.format("%.3f", allocation)}")
                 }
 
                 val updates = mutableMapOf<String, Any>(

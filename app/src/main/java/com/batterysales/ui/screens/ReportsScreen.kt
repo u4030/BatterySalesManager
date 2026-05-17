@@ -459,7 +459,15 @@ fun PurchaseOrderCard(po: com.batterysales.data.models.PurchaseOrderItem, dateFo
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Text(text = dateFormatter.format(po.entry.getEffectiveDate()), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold); if (po.entry.invoiceNumber.isNotEmpty()) { Surface(color = Color(0xFFFB8C00).copy(alpha = 0.1f), shape = RoundedCornerShape(8.dp)) { Text(text = "فاتورة: ${po.entry.invoiceNumber}", style = MaterialTheme.typography.labelSmall, color = Color(0xFFFB8C00), modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) } } }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("إجمالي الطلبية:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant); Text("JD ${String.format("%.3f", po.entry.totalCost)}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.ExtraBold) }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("المتبقي:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant); Text(text = "JD ${String.format("%.3f", po.remainingBalance)}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = if (po.remainingBalance > 0) Color(0xFFEF4444) else Color(0xFF10B981)) }
-            if (po.referenceNumbers.isNotEmpty()) { HorizontalDivider(modifier = Modifier.alpha(0.1f)); Row(verticalAlignment = Alignment.Top) { Icon(Icons.Default.Payments, contentDescription = null, modifier = Modifier.size(16.dp).padding(top = 2.dp), tint = MaterialTheme.colorScheme.primary); Spacer(modifier = Modifier.width(8.dp)); Text(text = po.referenceNumbers.joinToString(", "), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, lineHeight = 16.sp, fontSize = 13.sp) } }
+            if (po.referenceNumbers.isNotEmpty() || po.entry.settlementNotes.isNotEmpty()) {
+                val allNotes = (po.referenceNumbers + po.entry.settlementNotes).distinct()
+                HorizontalDivider(modifier = Modifier.alpha(0.1f))
+                Row(verticalAlignment = Alignment.Top) {
+                    Icon(Icons.Default.Payments, contentDescription = null, modifier = Modifier.size(16.dp).padding(top = 2.dp), tint = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(text = allNotes.joinToString(", "), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, lineHeight = 16.sp, fontSize = 13.sp)
+                }
+            }
             if (expanded) {
                 HorizontalDivider(modifier = Modifier.alpha(0.1f))
                 Text("الأصناف:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)

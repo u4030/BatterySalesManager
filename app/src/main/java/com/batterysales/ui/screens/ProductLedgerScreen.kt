@@ -422,6 +422,20 @@ fun LedgerItemCard(
                     )
                 }
             }
+            if (entry.settlementNotes.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(12.dp))
+                HorizontalDivider(modifier = Modifier.background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)).height(1.dp).fillMaxWidth())
+                Spacer(modifier = Modifier.height(8.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    entry.settlementNotes.forEach { note ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Link, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(text = note, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
             if (entry.returnedQuantity > 0) {
                 val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
                 val returnDateStr = entry.returnDate?.let { dateFormatter.format(it) } ?: "غير معروف"

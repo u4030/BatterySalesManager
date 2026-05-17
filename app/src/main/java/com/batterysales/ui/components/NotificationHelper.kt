@@ -18,8 +18,9 @@ import com.batterysales.R
 object NotificationHelper {
     private const val CHANNEL_ID = "battery_sales_notifications"
     private const val CHANNEL_NAME = "Battery Sales Notifications"
+    private const val GROUP_KEY_ALERTS = "com.batterysales.ALERTS"
 
-    fun showNotification(context: Context, title: String, message: String, playSound: Boolean = true) {
+    fun showNotification(context: Context, title: String, message: String, playSound: Boolean = true, notificationId: Int = System.currentTimeMillis().toInt()) {
         val prefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
         val fontSizeScale = prefs.getFloat("font_size_scale", 1.0f)
         val isBold = prefs.getBoolean("is_bold", false)
@@ -64,6 +65,7 @@ object NotificationHelper {
             .setContentTitle(styledTitle)
             .setContentText(styledMessage)
             .setAutoCancel(true)
+            .setGroup(GROUP_KEY_ALERTS)
             .setSilent(!playSound)
             .apply {
                 if (playSound) {
@@ -74,6 +76,20 @@ object NotificationHelper {
             .setContentIntent(pendingIntent)
             .build()
 
-        notificationManager.notify(System.currentTimeMillis().toInt(), notification)
+        // Summary notification for grouping
+        val summaryNotification = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(R.mipmap.al_asriya)
+            .setContentTitle("تنبيهات النظام")
+            .setContentText("لديك تنبيهات جديدة بانتظار المراجعة")
+            .setStyle(NotificationCompat.InboxStyle()
+                .setSummaryText("تنبيهات النظام"))
+            .setGroup(GROUP_KEY_ALERTS)
+            .setGroupSummary(true)
+            .setAutoCancel(true)
+            .setSilent(true)
+            .build()
+
+        notificationManager.notify(notificationId, notification)
+        notificationManager.notify(1000, summaryNotification)
     }
 }
