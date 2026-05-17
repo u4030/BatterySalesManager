@@ -84,8 +84,56 @@ class SummaryRepository @Inject constructor(
             updatedAt = Date()
         )
 
-        transaction.set(summariesCollection.document("inventory_wh_$warehouseId"), whSummary.copy(items = updatedItemsWh, lastUpdated = Date(), totalValue = whSummary.totalValue + costChange))
-        transaction.set(summariesCollection.document("inventory_global"), globalSummary.copy(items = updatedItemsGlobal, lastUpdated = Date(), totalValue = globalSummary.totalValue + costChange))
+        transaction.set(summariesCollection.document("inventory_wh_$warehouseId"), whSummary.copy(items = updatedItemsWh, lastUpdated = Date(), totalValue = whSummary.totalValue + costChange, version = whSummary.version + 1))
+        transaction.set(summariesCollection.document("inventory_global"), globalSummary.copy(items = updatedItemsGlobal, lastUpdated = Date(), totalValue = globalSummary.totalValue + costChange, version = globalSummary.version + 1))
+
+        incrementSyncVersion(transaction, "inventory")
+    }
+
+    fun applyBulkInventoryUpdate(
+        transaction: Transaction,
+        snapshots: SummarySnapshots,
+        warehouseId: String,
+        variantsMap: Map<String, ProductVariant?>,
+        qtyChanges: Map<String, Int>
+    ) {
+        val whSummary = snapshots.inventoryWh ?: InventorySummary(id = "inventory_wh_$warehouseId", warehouseId = warehouseId)
+        val globalSummary = snapshots.inventoryGlobal ?: InventorySummary(id = "inventory_global")
+
+        val updatedItemsWh = whSummary.items.toMutableMap()
+        val updatedItemsGlobal = globalSummary.items.toMutableMap()
+        var totalCostChange = 0.0
+
+        qtyChanges.forEach { (variantId, qtyChange) ->
+            val variant = variantsMap[variantId] ?: return@forEach
+
+            // Warehouse Map
+            val currentItemWh = updatedItemsWh[variantId] ?: InventorySummaryItem(
+                variantId = variantId, productId = variant.productId, productName = variant.productName ?: "Unknown",
+                capacity = variant.capacity, barcode = variant.barcode, sellingPrice = variant.sellingPrice
+            )
+            updatedItemsWh[variantId] = currentItemWh.copy(
+                currentStock = currentItemWh.currentStock + qtyChange,
+                weightedAverageCost = variant.weightedAverageCost,
+                updatedAt = Date()
+            )
+
+            // Global Map
+            val currentItemGlobal = updatedItemsGlobal[variantId] ?: InventorySummaryItem(
+                variantId = variantId, productId = variant.productId, productName = variant.productName ?: "Unknown",
+                capacity = variant.capacity, barcode = variant.barcode, sellingPrice = variant.sellingPrice
+            )
+            updatedItemsGlobal[variantId] = currentItemGlobal.copy(
+                currentStock = currentItemGlobal.currentStock + qtyChange,
+                weightedAverageCost = variant.weightedAverageCost,
+                updatedAt = Date()
+            )
+
+            totalCostChange += (qtyChange * variant.weightedAverageCost)
+        }
+
+        transaction.set(summariesCollection.document("inventory_wh_$warehouseId"), whSummary.copy(items = updatedItemsWh, lastUpdated = Date(), totalValue = whSummary.totalValue + totalCostChange, version = whSummary.version + 1))
+        transaction.set(summariesCollection.document("inventory_global"), globalSummary.copy(items = updatedItemsGlobal, lastUpdated = Date(), totalValue = globalSummary.totalValue + totalCostChange, version = globalSummary.version + 1))
 
         incrementSyncVersion(transaction, "inventory")
     }
@@ -107,7 +155,7 @@ class SummaryRepository @Inject constructor(
 
         updatedSuppliers[supplierId] = current.copy(totalDebit = newDebit, totalCredit = newCredit, currentBalance = newDebit - newCredit, updatedAt = Date())
 
-        transaction.set(summariesCollection.document("suppliers_overview"), overview.copy(suppliers = updatedSuppliers, lastUpdated = Date(), totalSupplierDebt = overview.totalSupplierDebt + (debitChange - creditChange)))
+        transaction.set(summariesCollection.document("suppliers_overview"), overview.copy(suppliers = updatedSuppliers, lastUpdated = Date(), totalSupplierDebt = overview.totalSupplierDebt + (debitChange - creditChange), version = overview.version + 1))
 
         incrementSyncVersion(transaction, "suppliers")
     }
@@ -138,7 +186,8 @@ class SummaryRepository @Inject constructor(
             globalBankBalance = status.globalBankBalance + bankChange,
             totalUnpaidBills = status.totalUnpaidBills + billChange,
             totalUnpaidChecks = status.totalUnpaidChecks + checkChange,
-            lastUpdated = Date()
+            lastUpdated = Date(),
+            version = status.version + 1
         ))
 
         incrementSyncVersion(transaction, "financial")

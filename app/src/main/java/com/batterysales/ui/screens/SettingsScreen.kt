@@ -114,6 +114,17 @@ fun SettingsScreen(
                                 }
                             }
 
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Button(
+                        onClick = { viewModel.performHealthCheck() },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isMigrating,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFB8C00))
+                    ) {
+                        Text("فحص صحة البيانات (Cross-Audit)")
+                    }
+
                             migrationStatus?.let { status ->
                                 Text(
                                     text = status,

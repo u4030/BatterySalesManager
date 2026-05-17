@@ -197,10 +197,39 @@ class BillRepository @Inject constructor(
     }
 
     suspend fun deleteBill(billId: String) {
-        firestore.collection(Bill.COLLECTION_NAME)
-            .document(billId)
-            .delete()
-            .await()
+        val billRef = firestore.collection(Bill.COLLECTION_NAME).document(billId)
+
+        firestore.runTransaction { transaction ->
+            // 1. Reads
+            val billSnap = transaction.get(billRef)
+            val bill = billSnap.toObject(Bill::class.java) ?: return@runTransaction
+            val snapshots = summaryRepository.getSummarySnapshots(transaction, "global")
+            val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
+
+            // 2. Writes
+            transaction.delete(billRef)
+
+            // Reverse financial impact on summaries (Only reversing the paid amount part from the pool)
+            if (bill.paidAmount > 0) {
+                summaryRepository.applyFinancialUpdate(
+                    transaction = transaction,
+                    snapshots = snapshots,
+                    warehouseId = "global",
+                    billChange = bill.paidAmount // Adding back to debt since we deleted the "payment"
+                )
+
+                // Update Supplier Denormalized Totals
+                if (bill.supplierId.isNotEmpty()) {
+                    val supplierRef = firestore.collection("suppliers").document(bill.supplierId)
+                    transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(-bill.paidAmount))
+                    transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(bill.paidAmount))
+                    transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(-bill.paidAmount))
+                }
+
+                // Update System Stats
+                transaction.update(statsRef, "totalSupplierDebt", com.google.firebase.firestore.FieldValue.increment(bill.paidAmount))
+            }
+        }.await()
     }
 
     suspend fun getBillsPaginated(
@@ -257,19 +286,36 @@ class BillRepository @Inject constructor(
     }
 
     suspend fun updateBill(bill: Bill) {
-        val updates = mutableMapOf<String, Any>(
-            "description" to bill.description,
-            "amount" to bill.amount,
-            "dueDate" to bill.dueDate,
-            "billType" to bill.billType,
-            "referenceNumber" to bill.referenceNumber,
-            "supplierId" to bill.supplierId,
-            "updatedAt" to Date()
-        )
-        firestore.collection(Bill.COLLECTION_NAME)
-            .document(bill.id)
-            .update(updates)
-            .await()
+        val billRef = firestore.collection(Bill.COLLECTION_NAME).document(bill.id)
+
+        firestore.runTransaction { transaction ->
+            // 1. Reads
+            val oldSnap = transaction.get(billRef)
+            val oldBill = oldSnap.toObject(Bill::class.java) ?: return@runTransaction
+
+            // 2. Writes
+            val updates = mutableMapOf<String, Any>(
+                "description" to bill.description,
+                "amount" to bill.amount,
+                "dueDate" to bill.dueDate,
+                "billType" to bill.billType,
+                "referenceNumber" to bill.referenceNumber,
+                "supplierId" to bill.supplierId,
+                "updatedAt" to Date()
+            )
+            transaction.update(billRef, updates)
+
+            // Note: If amount changed, we might need to recalculate status, but typically
+            // these basic updates don't change paidAmount.
+            if (bill.amount != oldBill.amount) {
+                val newStatus = when {
+                    oldBill.paidAmount >= bill.amount -> BillStatus.PAID
+                    oldBill.paidAmount > 0 -> BillStatus.PARTIAL
+                    else -> BillStatus.UNPAID
+                }
+                transaction.update(billRef, "status", newStatus)
+            }
+        }.await()
     }
 
     /**

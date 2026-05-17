@@ -37,6 +37,7 @@ import com.batterysales.ui.components.SharedHeader
 import com.batterysales.ui.components.HeaderIconButton
 import com.batterysales.ui.components.CustomKeyboardTextField
 import com.batterysales.ui.components.AppDialog
+import com.batterysales.ui.components.ConnectivityBanner
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -47,6 +48,9 @@ fun BankScreen(
     val keyboardController = com.batterysales.ui.components.LocalCustomKeyboardController.current
     val pagingItems = viewModel.transactions.collectAsLazyPagingItems()
     val lifecycleOwner = LocalLifecycleOwner.current
+
+    val networkHelper = (androidx.compose.ui.platform.LocalContext.current.applicationContext as com.batterysales.BatterySalesApp).networkHelper
+    val isOnline by networkHelper.isOnlineFlow.collectAsState(initial = true)
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -402,12 +406,18 @@ fun AddBankTransactionDialog(
         onDismiss = onDismiss,
         title = if (type == com.batterysales.data.models.BankTransactionType.DEPOSIT) "إيداع في البنك" else "سحب من البنك",
         confirmButton = {
-            Button(onClick = {
-                val amt = amount.toDoubleOrNull() ?: 0.0
-                if (description.isNotEmpty() && amt > 0) onAdd(type, description, amt, referenceNumber, supplierName, fromTreasury, selectedWarehouseId)
-            }, colors = ButtonDefaults.buttonColors(
-                containerColor = if (type == com.batterysales.data.models.BankTransactionType.DEPOSIT) Color(0xFF4CAF50) else Color(0xFFF44336)
-            )) { Text("موافق") }
+            val isOnline = (androidx.compose.ui.platform.LocalContext.current.applicationContext as? com.batterysales.BatterySalesApp)?.networkHelper?.isNetworkConnected() ?: true
+            Button(
+                onClick = {
+                    val amt = amount.toDoubleOrNull() ?: 0.0
+                    if (description.isNotEmpty() && amt > 0) onAdd(type, description, amt, referenceNumber, supplierName, fromTreasury, selectedWarehouseId)
+                },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (type == com.batterysales.data.models.BankTransactionType.DEPOSIT) Color(0xFF4CAF50) else Color(0xFFF44336),
+                    disabledContainerColor = (if (type == com.batterysales.data.models.BankTransactionType.DEPOSIT) Color(0xFF4CAF50) else Color(0xFFF44336)).copy(alpha = 0.5f)
+                ),
+                enabled = isOnline
+            ) { Text("موافق") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("إلغاء") }

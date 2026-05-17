@@ -179,6 +179,10 @@ class StockEntryRepository @Inject constructor(
                 }
             }
 
+            // Group updates by warehouse to minimize summary writes
+            val warehouseQtyChanges = mutableMapOf<String, MutableMap<String, Int>>() // whId -> {vid -> qty}
+            val warehouseCostChanges = mutableMapOf<String, Double>() // whId -> totalCost
+
             stockUpdates.forEach { (variantId, updates) ->
                 val variant = variantsMap[variantId] ?: return@forEach
                 val variantRef = variantRefs[variantId] ?: return@forEach
@@ -207,19 +211,23 @@ class StockEntryRepository @Inject constructor(
                         transaction.delete(alertRef)
                     }
 
-                    // Update Summaries
-                    snapshotsMap[warehouseId]?.let { snapshots ->
-                        summaryRepository.applyInventoryUpdate(
-                            transaction = transaction,
-                            snapshots = snapshots,
-                            warehouseId = warehouseId,
-                            variantId = variantId,
-                            variant = variant, // Note: weightedAverageCost might be slightly off in bulk but acceptable
-                            qtyChange = change
-                        )
-                    }
+                    // Track for summary update
+                    val whQtyMap = warehouseQtyChanges.getOrPut(warehouseId) { mutableMapOf() }
+                    whQtyMap[variantId] = (whQtyMap[variantId] ?: 0) + change
                 }
                 transaction.update(variantRef, "currentStock", newStockMap)
+            }
+
+            // Apply Summary Updates (ONE WRITE PER WAREHOUSE)
+            warehouseQtyChanges.forEach { (whId, vChanges) ->
+                val snapshots = snapshotsMap[whId] ?: return@forEach
+                summaryRepository.applyBulkInventoryUpdate(
+                    transaction = transaction,
+                    snapshots = snapshots,
+                    warehouseId = whId,
+                    variantsMap = variantsMap,
+                    qtyChanges = vChanges
+                )
             }
 
             val allSupplierIds = (supplierDebitChanges.keys + supplierCreditChanges.keys).distinct()

@@ -29,6 +29,7 @@ import com.batterysales.ui.components.SharedHeader
 import com.batterysales.ui.components.HeaderIconButton
 import com.batterysales.ui.components.CustomKeyboardTextField
 import com.batterysales.ui.components.KeyboardLanguage
+import com.batterysales.ui.components.ConnectivityBanner
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -38,6 +39,9 @@ fun StockEntryScreen(
     navController: NavController,
     viewModel: StockEntryViewModel = hiltViewModel()
 ) {
+    val networkHelper = (androidx.compose.ui.platform.LocalContext.current.applicationContext as com.batterysales.BatterySalesApp).networkHelper
+    val isOnline by networkHelper.isOnlineFlow.collectAsState(initial = true)
+
     val uiState by viewModel.uiState.collectAsState()
     val keyboardController = com.batterysales.ui.components.LocalCustomKeyboardController.current
     var showScanner by remember { mutableStateOf(false) }
@@ -380,6 +384,9 @@ fun StockEntryContent(
             }
         }
 
+        val networkHelper = (androidx.compose.ui.platform.LocalContext.current.applicationContext as com.batterysales.BatterySalesApp).networkHelper
+        val isOnlineLocal by networkHelper.isOnlineFlow.collectAsState(initial = true)
+
         Button(
             onClick = {
                 keyboardController.hideKeyboard()
@@ -387,8 +394,11 @@ fun StockEntryContent(
             },
             modifier = Modifier.fillMaxWidth().height(56.dp),
             shape = RoundedCornerShape(16.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
-            enabled = !uiState.isSubmitting
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color(0xFFEF4444),
+                disabledContainerColor = Color(0xFFEF4444).copy(alpha = 0.5f)
+            ),
+            enabled = !uiState.isSubmitting && isOnlineLocal
         ) { 
             if (uiState.isSubmitting) {
                 CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))

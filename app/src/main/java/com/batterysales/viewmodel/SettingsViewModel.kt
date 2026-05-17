@@ -112,6 +112,56 @@ class SettingsViewModel @Inject constructor(
         _migrationStatus.value = null
     }
 
+    fun performHealthCheck() {
+        if (_isMigrating.value) return
+        viewModelScope.launch {
+            try {
+                _isMigrating.value = true
+                _migrationStatus.value = "جاري فحص صحة البيانات..."
+
+                // 1. Audit Inventory
+                val variants = productVariantRepository.getAllVariants()
+                val globalSummary = summaryRepository.getInventorySummary(null, forceRefresh = true)
+
+                var issuesFound = 0
+                variants.forEach { v ->
+                    val expectedQty = v.currentStock?.values?.sum() ?: 0
+                    val actualQty = globalSummary?.items?.get(v.id)?.currentStock ?: 0
+                    if (expectedQty != actualQty) {
+                        issuesFound++
+                        Log.w("HealthCheck", "Inventory mismatch for ${v.id}: Variant has $expectedQty, Summary has $actualQty")
+                    }
+                }
+
+                // 2. Audit Suppliers
+                val suppliers = supplierRepository.getSuppliersOnce()
+                val suppliersOverview = summaryRepository.getSuppliersOverview(forceRefresh = true)
+                suppliers.forEach { s ->
+                    val expectedBal = s.currentBalance
+                    val actualBal = suppliersOverview?.suppliers?.get(s.id)?.currentBalance ?: 0.0
+                    if (Math.abs(expectedBal - actualBal) > 0.001) {
+                        issuesFound++
+                        Log.w("HealthCheck", "Supplier mismatch for ${s.id}: Supplier has $expectedBal, Summary has $actualBal")
+                    }
+                }
+
+                if (issuesFound > 0) {
+                    _migrationStatus.value = "تم العثور على $issuesFound تعارضات في البيانات. جاري إعادة بناء الملخصات تلقائياً..."
+                    rebuildAllSummaries()
+                    _migrationStatus.value = "تمت معالجة التعارضات وإعادة بناء الملخصات بنجاح ✅"
+                } else {
+                    _migrationStatus.value = "حالة البيانات: سليمة ومطابقة 100% ✅"
+                }
+
+            } catch (e: Exception) {
+                Log.e("SettingsViewModel", "Health check error", e)
+                _migrationStatus.value = "فشل الفحص: ${e.message}"
+            } finally {
+                _isMigrating.value = false
+            }
+        }
+    }
+
     private suspend fun rebuildAllSummaries() {
         val firestore = com.google.firebase.firestore.FirebaseFirestore.getInstance()
 
@@ -195,10 +245,13 @@ class SettingsViewModel @Inject constructor(
         val warehouseBalances = warehouses.associate { wh ->
             val cash = accountingRepository.getCurrentBalance(wh.id, "cash")
             val bank = accountingRepository.getCurrentBalance(wh.id, "bank")
+            val debt = invoiceRepository.getTotalDebtForWarehouse(wh.id)
+
             wh.id to WarehouseBalance(
                 warehouseId = wh.id,
                 cashBalance = cash,
-                bankBalance = bank
+                bankBalance = bank,
+                pendingCollection = debt
             )
         }
 

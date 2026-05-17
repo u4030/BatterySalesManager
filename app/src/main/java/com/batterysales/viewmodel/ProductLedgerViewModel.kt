@@ -97,6 +97,7 @@ class ProductLedgerViewModel @Inject constructor(
             val user = userRepository.getCurrentUser()
             _userRole.value = user?.role ?: "seller"
             allWarehouses = warehouseRepository.getWarehousesOnce()
+            loadData()
         }
     }
 

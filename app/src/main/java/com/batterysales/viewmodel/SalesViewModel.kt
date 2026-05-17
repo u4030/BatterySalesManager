@@ -31,6 +31,7 @@ data class SalesUiState(
     val isLoading: Boolean = false,
     val isSubmitting: Boolean = false,
     val errorMessage: String? = null,
+    val successMessage: String? = null,
     val isFinished: Boolean = false
 )
 
@@ -335,7 +336,9 @@ class SalesViewModel @Inject constructor(
                     oldBatteryTransaction = oldBatteryTransaction
                 )
 
-                _uiState.update { it.copy(isFinished = true, isSubmitting = false) }
+                _uiState.update { it.copy(successMessage = "تم الحفظ والمزامنة بنجاح ✅", isSubmitting = false) }
+                kotlinx.coroutines.delay(1500)
+                _uiState.update { it.copy(isFinished = true) }
             } catch (e: Exception) {
                 Log.e("SalesViewModel", "Error creating sale", e)
                 _uiState.update { it.copy(errorMessage = "Failed to create sale: ${e.message}", isSubmitting = false) }

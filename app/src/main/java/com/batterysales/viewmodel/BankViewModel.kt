@@ -104,6 +104,7 @@ class BankViewModel @Inject constructor(
             loadBalancesFromSummary()
             loadTotals()
         }
+        loadData()
     }
 
     private suspend fun loadBalancesFromSummary() {

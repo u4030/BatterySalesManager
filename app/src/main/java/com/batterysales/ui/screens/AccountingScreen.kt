@@ -39,6 +39,7 @@ import com.batterysales.ui.components.SharedHeader
 import com.batterysales.ui.components.HeaderIconButton
 import com.batterysales.ui.components.CustomKeyboardTextField
 import com.batterysales.ui.components.AppDialog
+import com.batterysales.ui.components.ConnectivityBanner
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -49,6 +50,9 @@ fun AccountingScreen(
     val keyboardController = com.batterysales.ui.components.LocalCustomKeyboardController.current
     val pagingItems = viewModel.transactions.collectAsLazyPagingItems()
     val lifecycleOwner = LocalLifecycleOwner.current
+
+    val networkHelper = (androidx.compose.ui.platform.LocalContext.current.applicationContext as com.batterysales.BatterySalesApp).networkHelper
+    val isOnline by networkHelper.isOnlineFlow.collectAsState(initial = true)
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -641,12 +645,18 @@ fun AddTransactionDialog(
         onDismiss = onDismiss,
         title = if (type == TransactionType.INCOME) "إيداع مبلغ" else "سحب مبلغ / مصروف",
         confirmButton = {
-            Button(onClick = {
-                val amt = amount.toDoubleOrNull() ?: 0.0
-                if (description.isNotEmpty() && amt > 0) onAdd(type, description, amt, referenceNumber, selectedMethod)
-            }, colors = ButtonDefaults.buttonColors(
-                containerColor = if (type == TransactionType.INCOME) Color(0xFF4CAF50) else MaterialTheme.colorScheme.error
-            )) { Text("موافق") }
+            val isOnline = (androidx.compose.ui.platform.LocalContext.current.applicationContext as? com.batterysales.BatterySalesApp)?.networkHelper?.isNetworkConnected() ?: true
+            Button(
+                onClick = {
+                    val amt = amount.toDoubleOrNull() ?: 0.0
+                    if (description.isNotEmpty() && amt > 0) onAdd(type, description, amt, referenceNumber, selectedMethod)
+                },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (type == TransactionType.INCOME) Color(0xFF4CAF50) else MaterialTheme.colorScheme.error,
+                    disabledContainerColor = (if (type == TransactionType.INCOME) Color(0xFF4CAF50) else MaterialTheme.colorScheme.error).copy(alpha = 0.5f)
+                ),
+                enabled = isOnline
+            ) { Text("موافق") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("إلغاء") }

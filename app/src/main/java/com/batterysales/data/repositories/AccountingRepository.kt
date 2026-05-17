@@ -182,7 +182,7 @@ class AccountingRepository @Inject constructor(
         val finalExpense = expense.copy(id = expenseRef.id)
 
         val transactionRef = firestore.collection(Transaction.COLLECTION_NAME).document()
-        val transaction = Transaction(
+        val transactionData = Transaction(
             id = transactionRef.id,
             type = com.batterysales.data.models.TransactionType.EXPENSE,
             amount = expense.amount,
@@ -192,17 +192,29 @@ class AccountingRepository @Inject constructor(
             createdAt = expense.timestamp
         )
 
-        firestore.runBatch { batch ->
-            batch.set(expenseRef, finalExpense)
-            batch.set(transactionRef, transaction)
+        firestore.runTransaction { transactionOp ->
+            // 1. Reads
+            val snapshots = summaryRepository.getSummarySnapshots(transactionOp, transactionData.warehouseId)
+            val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
+
+            // 2. Writes
+            transactionOp.set(expenseRef, finalExpense)
+            transactionOp.set(transactionRef, transactionData)
+
+            // Update Summaries
+            summaryRepository.applyFinancialUpdate(
+                transaction = transactionOp,
+                snapshots = snapshots,
+                warehouseId = transactionData.warehouseId ?: "",
+                cashChange = if (transactionData.paymentMethod == "cash") -transactionData.amount else 0.0,
+                bankChange = if (transactionData.paymentMethod == "bank") -transactionData.amount else 0.0
+            )
+
+            // Update Global Cash Balance
+            if (transactionData.paymentMethod == "cash") {
+                transactionOp.update(statsRef, "totalCashBalance", com.google.firebase.firestore.FieldValue.increment(-transactionData.amount))
+            }
         }.await()
-        
-        // Update Stats (Global Cash)
-        if (transaction.paymentMethod == "cash") {
-            firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
-                .update("totalCashBalance", com.google.firebase.firestore.FieldValue.increment(-transaction.amount))
-                .await()
-        }
     }
 
     suspend fun updateTransaction(transaction: Transaction) {

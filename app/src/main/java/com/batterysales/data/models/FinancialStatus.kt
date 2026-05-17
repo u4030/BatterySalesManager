@@ -13,7 +13,8 @@ data class FinancialStatus(
     val globalCashBalance: Double = 0.0,
     val totalUnpaidBills: Double = 0.0,
     val totalUnpaidChecks: Double = 0.0,
-    val lastUpdated: Date = Date()
+    val lastUpdated: Date = Date(),
+    val version: Long = 0
 )
 
 data class WarehouseBalance(

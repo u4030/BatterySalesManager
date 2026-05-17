@@ -28,7 +28,8 @@ data class InventorySummary(
     val items: Map<String, InventorySummaryItem> = emptyMap(), // Keyed by variantId
     val lastUpdated: Date = Date(),
     val totalItemsCount: Int = 0,
-    val totalValue: Double = 0.0
+    val totalValue: Double = 0.0,
+    val version: Long = 0
 )
 
 /**
@@ -51,7 +52,8 @@ data class SuppliersOverview(
     val id: String = "suppliers_overview",
     val suppliers: Map<String, SupplierSummaryItem> = emptyMap(), // Keyed by supplierId
     val lastUpdated: Date = Date(),
-    val totalSupplierDebt: Double = 0.0
+    val totalSupplierDebt: Double = 0.0,
+    val version: Long = 0
 )
 
 /**

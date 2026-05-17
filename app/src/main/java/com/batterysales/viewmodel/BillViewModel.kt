@@ -77,6 +77,7 @@ class BillViewModel @Inject constructor(
             loadUnpaidFromSummary()
             _suppliers.value = supplierRepository.getSuppliersOnce()
         }
+        loadData()
     }
 
     private suspend fun loadUnpaidFromSummary() {

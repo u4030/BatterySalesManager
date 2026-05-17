@@ -90,6 +90,7 @@ class AccountingViewModel @Inject constructor(
 
     init {
         loadInitialData()
+        loadData()
     }
 
     val currentUser = userRepository.getCurrentUserFlow()
