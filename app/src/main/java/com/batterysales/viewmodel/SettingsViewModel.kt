@@ -7,9 +7,7 @@ import com.batterysales.data.repositories.*
 import com.batterysales.data.models.*
 import android.util.Log
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import java.util.*
@@ -27,7 +25,8 @@ class SettingsViewModel @Inject constructor(
     private val summaryRepository: SummaryRepository,
     private val accountingRepository: AccountingRepository,
     private val bankRepository: BankRepository,
-    private val invoiceRepository: InvoiceRepository
+    private val invoiceRepository: InvoiceRepository,
+    private val userRepository: UserRepository
 ) : ViewModel() {
 
     private val _migrationStatus = MutableStateFlow<String?>(null)
@@ -38,6 +37,9 @@ class SettingsViewModel @Inject constructor(
 
     private val _summaryStatus = MutableStateFlow<Map<String, Boolean>>(emptyMap())
     val summaryStatus = _summaryStatus.asStateFlow()
+
+    val currentUser = userRepository.getCurrentUserFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val fontSizeScale: StateFlow<Float> = settingsManager.fontSizeScale
     val isBold: StateFlow<Boolean> = settingsManager.isBold

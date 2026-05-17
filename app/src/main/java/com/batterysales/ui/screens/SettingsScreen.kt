@@ -43,6 +43,7 @@ fun SettingsScreen(
     val migrationStatus by viewModel.migrationStatus.collectAsState()
     val isMigrating by viewModel.isMigrating.collectAsState()
     val summaryStatus by viewModel.summaryStatus.collectAsState()
+    val currentUser by viewModel.currentUser.collectAsState(initial = null)
 
     val bgColor = MaterialTheme.colorScheme.background
     val cardBgColor = MaterialTheme.colorScheme.surface
@@ -68,71 +69,74 @@ fun SettingsScreen(
 
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
                 // Data Management Group (Admin/Nuclear)
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    SettingsHeaderItem("إدارة البيانات والنظام", Icons.Default.Storage)
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(24.dp),
-                        colors = CardDefaults.cardColors(containerColor = cardBgColor)
-                    ) {
-                        Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                            Text(
-                                "تحديث المعمارية وبناء الملخصات",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                "يستخدم هذا الخيار لإعادة حساب الأرصدة والمخزون وبناء وثائق الملخصات الموفرة للقراءات.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-
-                            // Summary Status Indicators
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                SummaryStatusTag("المخزون", summaryStatus["inventory_global"] ?: false)
-                                SummaryStatusTag("الموردين", summaryStatus["suppliers_overview"] ?: false)
-                            }
-
-                            Spacer(modifier = Modifier.height(4.dp))
-
-                            Button(
-                                onClick = { viewModel.startDataMigration() },
-                                modifier = Modifier.fillMaxWidth(),
-                                enabled = !isMigrating,
-                                shape = RoundedCornerShape(16.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = accentColor)
-                            ) {
-                                if (isMigrating) {
-                                    CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Text("جاري المعالجة...")
-                                } else {
-                                    Icon(Icons.Default.Refresh, contentDescription = null)
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Text("ترحيل البيانات وإعادة بناء الملخصات")
-                                }
-                            }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Button(
-                        onClick = { viewModel.performHealthCheck() },
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = !isMigrating,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFB8C00))
-                    ) {
-                        Text("فحص صحة البيانات (Cross-Audit)")
-                    }
-
-                            migrationStatus?.let { status ->
+                if (currentUser?.role == "admin") {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        SettingsHeaderItem("إدارة البيانات والنظام", Icons.Default.Storage)
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(24.dp),
+                            colors = CardDefaults.cardColors(containerColor = cardBgColor)
+                        ) {
+                            Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                                 Text(
-                                    text = status,
-                                    color = if (status.contains("نجاح")) Color(0xFF43A047) else Color(0xFFE53935),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontWeight = FontWeight.Medium,
-                                    modifier = Modifier.padding(top = 4.dp)
+                                    "تحديث المعمارية وبناء الملخصات",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
+                                Text(
+                                    "يستخدم هذا الخيار لإعادة حساب الأرصدة والمخزون وبناء وثائق الملخصات الموفرة للقراءات.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+
+                                // Summary Status Indicators
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    SummaryStatusTag("المخزون", summaryStatus["inventory_global"] ?: false)
+                                    SummaryStatusTag("الموردين", summaryStatus["suppliers_overview"] ?: false)
+                                }
+
+                                Spacer(modifier = Modifier.height(4.dp))
+
+                                Button(
+                                    onClick = { viewModel.startDataMigration() },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    enabled = !isMigrating,
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = accentColor)
+                                ) {
+                                    if (isMigrating) {
+                                        CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Text("جاري المعالجة...")
+                                    } else {
+                                        Icon(Icons.Default.Refresh, contentDescription = null)
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Text("ترحيل البيانات وإعادة بناء الملخصات")
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(16.dp))
+
+                                Button(
+                                    onClick = { viewModel.performHealthCheck() },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    enabled = !isMigrating,
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFB8C00)),
+                                    shape = RoundedCornerShape(16.dp)
+                                ) {
+                                    Text("فحص صحة البيانات (Cross-Audit)")
+                                }
+
+                                migrationStatus?.let { status ->
+                                    Text(
+                                        text = status,
+                                        color = if (status.contains("نجاح")) Color(0xFF43A047) else Color(0xFFE53935),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Medium,
+                                        modifier = Modifier.padding(top = 4.dp)
+                                    )
+                                }
                             }
                         }
                     }
