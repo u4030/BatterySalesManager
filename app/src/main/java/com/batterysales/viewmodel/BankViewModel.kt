@@ -186,11 +186,14 @@ class BankViewModel @Inject constructor(
                 val transId = repository.addTransaction(transaction)
 
                 if (type == BankTransactionType.DEPOSIT && fromTreasury) {
-                    val targetWhId = warehouseId ?: userRepository.getCurrentUser()?.warehouseId
+                    val mainWhId = warehouseRepository.getWarehousesOnce().find { it.isMain }?.id
+                    val targetWhId = mainWhId ?: warehouseId ?: userRepository.getCurrentUser()?.warehouseId
+
                     if (targetWhId != null) {
                         accountingRepository.addTransaction(Transaction(
-                            type = TransactionType.EXPENSE, amount = amount, description = "إيداع في البنك: $description",
-                            referenceNumber = referenceNumber, warehouseId = targetWhId, relatedId = transId, paymentMethod = "cash"
+                            type = TransactionType.EXPENSE, amount = amount, description = "تغذية رصيد بنك: $description",
+                            referenceNumber = referenceNumber, warehouseId = targetWhId, relatedId = transId, paymentMethod = "cash",
+                            isSystemManaged = true
                         ))
                     }
                 }

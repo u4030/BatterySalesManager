@@ -454,20 +454,114 @@ fun SupplierReportControls(viewModel: ReportsViewModel) {
 @Composable
 fun PurchaseOrderCard(po: com.batterysales.data.models.PurchaseOrderItem, dateFormatter: java.text.SimpleDateFormat, navController: NavController) {
     var expanded by remember { mutableStateOf(false) }
-    Card(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp).clickable { expanded = !expanded }, shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.03f))) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Text(text = dateFormatter.format(po.entry.getEffectiveDate()), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold); if (po.entry.invoiceNumber.isNotEmpty()) { Surface(color = Color(0xFFFB8C00).copy(alpha = 0.1f), shape = RoundedCornerShape(8.dp)) { Text(text = "فاتورة: ${po.entry.invoiceNumber}", style = MaterialTheme.typography.labelSmall, color = Color(0xFFFB8C00), modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) } } }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("إجمالي الطلبية:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant); Text("JD ${String.format("%.3f", po.entry.totalCost)}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.ExtraBold) }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("المتبقي:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant); Text(text = "JD ${String.format("%.3f", po.remainingBalance)}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = if (po.remainingBalance > 0) Color(0xFFEF4444) else Color(0xFF10B981)) }
-            if (po.referenceNumbers.isNotEmpty() || po.entry.settlementNotes.isNotEmpty()) {
-                val allNotes = (po.referenceNumbers + po.entry.settlementNotes).distinct()
-                HorizontalDivider(modifier = Modifier.alpha(0.1f))
-                Row(verticalAlignment = Alignment.Top) {
-                    Icon(Icons.Default.Payments, contentDescription = null, modifier = Modifier.size(16.dp).padding(top = 2.dp), tint = MaterialTheme.colorScheme.primary)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = allNotes.joinToString(", "), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, lineHeight = 16.sp, fontSize = 13.sp)
+    val isFullyCovered = po.remainingBalance <= 0.001
+
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp).clickable { expanded = !expanded },
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            // Header Row: Date & Invoice Tag
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = dateFormatter.format(po.entry.getEffectiveDate()),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                if (po.entry.invoiceNumber.isNotEmpty()) {
+                    Surface(color = Color(0xFFFB8C00).copy(alpha = 0.1f), shape = RoundedCornerShape(12.dp)) {
+                        Text(
+                            text = "فاتورة: ${po.entry.invoiceNumber}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFFFB8C00),
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
+
+            // Financial Summary Row
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column {
+                    Text("إجمالي الطلبية:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("JD ${String.format("%,.3f", po.entry.totalCost)}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text("المتبقي:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        text = "JD ${String.format("%,.3f", po.remainingBalance)}",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = if (isFullyCovered) Color(0xFF10B981) else Color(0xFFEF4444)
+                    )
+                }
+            }
+
+            // Coverage Status Badge (Image match)
+            val coverageAmount = po.entry.totalCost - po.remainingBalance
+            if (coverageAmount > 0.001) {
+                Surface(
+                    color = (if (isFullyCovered) Color(0xFF10B981) else Color(0xFFFB8C00)).copy(alpha = 0.1f),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = null,
+                            tint = if (isFullyCovered) Color(0xFF10B981) else Color(0xFFFB8C00),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (isFullyCovered) "مغطاة بالكامل من شيكات غير مرتبطة"
+                                   else "من شيكات مرتبطة جزئياً بمبلغ JD ${String.format("%.3f", coverageAmount)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isFullyCovered) Color(0xFF10B981) else Color(0xFFFB8C00),
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+
+            // Settlement Traceability Notes (Image match)
+            if (po.referenceNumbers.isNotEmpty() || po.entry.settlementNotes.isNotEmpty()) {
+                val allNotes = (po.referenceNumbers + po.entry.settlementNotes).distinct()
+                Row(verticalAlignment = Alignment.Top, modifier = Modifier.padding(top = 4.dp)) {
+                    Icon(
+                        Icons.Default.Payments,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp).padding(top = 2.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = allNotes.joinToString(", "),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                        lineHeight = 20.sp
+                    )
+                }
+            }
+
+            IconButton(
+                onClick = { expanded = !expanded },
+                modifier = Modifier.align(Alignment.CenterHorizontally).size(24.dp)
+            ) {
+                Icon(
+                    if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
             if (expanded) {
                 HorizontalDivider(modifier = Modifier.alpha(0.1f))
                 Text("الأصناف:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)

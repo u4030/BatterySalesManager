@@ -11,7 +11,8 @@ data class BankTransaction(
     val referenceNumber: String = "",
     val supplierName: String = "",
     val date: Date = Date(),
-    val notes: String = ""
+    val notes: String = "",
+    val isSystemManaged: Boolean = false
 ) {
     companion object {
         const val COLLECTION_NAME = "bank_transactions"

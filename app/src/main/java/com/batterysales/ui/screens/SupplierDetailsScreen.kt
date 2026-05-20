@@ -166,38 +166,21 @@ fun SupplierDetailsScreen(
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        val currentRegularOrders = if (selectedSubTab == 0) {
-                            item.regularOrders.filter { it.remainingBalance > 0.001 }
+                        val allOrders = (item.regularOrders + item.obligatedOrders)
+                            .sortedByDescending { it.entry.getEffectiveDate() }
+
+                        val filteredOrders = if (selectedSubTab == 0) {
+                            allOrders.filter { it.remainingBalance > 0.001 }
                         } else {
-                            item.regularOrders.filter { it.remainingBalance <= 0.001 }
+                            allOrders.filter { it.remainingBalance <= 0.001 }
                         }
 
-                        val currentObligatedOrders = if (selectedSubTab == 0) {
-                            item.obligatedOrders.filter { it.remainingBalance > 0.001 }
-                        } else {
-                            item.obligatedOrders.filter { it.remainingBalance <= 0.001 }
-                        }
-
-                        if (currentRegularOrders.isEmpty() && currentObligatedOrders.isEmpty()) {
+                        if (filteredOrders.isEmpty()) {
                             Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                                 Text("لا توجد طلبيات في هذا القسم", color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                        }
-
-                        if (currentRegularOrders.isNotEmpty()) {
-                            Text("طلبيات شراء:", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-                            Spacer(modifier = Modifier.height(12.dp))
-                            currentRegularOrders.forEach { po ->
-                                PurchaseOrderCard(po, dateFormatter, navController)
-                                Spacer(modifier = Modifier.height(8.dp))
-                            }
-                        }
-
-                        if (currentObligatedOrders.isNotEmpty()) {
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text("طلبيات مرتبطة بالتزامات (شيكات/كمبيالات):", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = Color(0xFFEF4444))
-                            Spacer(modifier = Modifier.height(12.dp))
-                            currentObligatedOrders.forEach { po ->
+                        } else {
+                            filteredOrders.forEach { po ->
                                 PurchaseOrderCard(po, dateFormatter, navController)
                                 Spacer(modifier = Modifier.height(8.dp))
                             }

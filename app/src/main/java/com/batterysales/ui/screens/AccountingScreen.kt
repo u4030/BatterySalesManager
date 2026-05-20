@@ -428,12 +428,12 @@ fun AccountingScreen(
     }
 
     if (transactionToEdit != null) {
-        val isLinkedToBill = transactionToEdit?.relatedId?.isNotEmpty() == true
+        val isLinkedToBill = transactionToEdit?.relatedId?.isNotEmpty() == true || transactionToEdit?.isSystemManaged == true
         if (isLinkedToBill) {
             AlertDialog(
                 onDismissRequest = { transactionToEdit = null },
                 title = { Text("تنبيه") },
-                text = { Text("هذه العملية مرتبطة بكمبيالة أو شيك. لتعديلها، يرجى الانتقال إلى شاشة الكمبيالات.") },
+                text = { Text("هذا القيد نظامي ومرتبط بعملية أخرى (كمبيالة/شيك/تمويل). لتعديله، يرجى الانتقال إلى الشاشة المختصة (الكمبيالات مثلاً).") },
                 confirmButton = { Button(onClick = { transactionToEdit = null }) { Text("فهمت") } }
             )
         } else {
@@ -463,14 +463,14 @@ fun AccountingScreen(
     }
 
     if (showDeleteConfirm != null) {
-        val isLinkedToBill = showDeleteConfirm?.relatedId?.isNotEmpty() == true
+        val isLinkedToBill = showDeleteConfirm?.relatedId?.isNotEmpty() == true || showDeleteConfirm?.isSystemManaged == true
         
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = null },
             title = { Text(if (isLinkedToBill) "تنبيه" else "حذف العملية") },
             text = { 
                 if (isLinkedToBill) {
-                    Text("هذه العملية مرتبطة بكمبيالة أو شيك. لحذفها أو تعديلها، يرجى الانتقال إلى شاشة الكمبيالات والحذف من هناك لضمان دقة البيانات.")
+                    Text("هذا القيد نظامي ومرتبط بعملية أخرى. لحذفه، يرجى الانتقال إلى الشاشة المختصة (الكمبيالات مثلاً) والحذف من هناك لضمان دقة البيانات.")
                 } else {
                     Text("هل أنت متأكد من حذف هذه العملية المالية؟ لا يمكن التراجع عن هذا الإجراء.")
                 }

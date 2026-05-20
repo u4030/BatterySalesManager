@@ -345,34 +345,57 @@ fun BankScreen(
     }
 
     if (showDeleteConfirm != null) {
+        val isManaged = showDeleteConfirm?.billId?.isNotEmpty() == true || showDeleteConfirm?.isSystemManaged == true
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = null },
-            title = { Text("حذف العملية") },
-            text = { Text("هل أنت متأكد من حذف هذه العملية البنكية؟ إذا كانت مرتبطة بالخزينة سيتم حذف القيد المقابل أيضاً.") },
+            title = { Text(if (isManaged) "تنبيه" else "حذف العملية") },
+            text = {
+                if (isManaged) {
+                    Text("هذا القيد نظامي ومرتبط بعملية أخرى (كمبيالة/شيك/تمويل). لحذفه، يرجى الانتقال إلى الشاشة المختصة (الكمبيالات مثلاً) والحذف من هناك.")
+                } else {
+                    Text("هل أنت متأكد من حذف هذه العملية البنكية؟ إذا كانت مرتبطة بالخزينة سيتم حذف القيد المقابل أيضاً.")
+                }
+            },
             confirmButton = {
-                Button(
-                    onClick = {
-                        viewModel.deleteTransaction(showDeleteConfirm!!.id)
-                        showDeleteConfirm = null
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) { Text("حذف") }
+                if (isManaged) {
+                    Button(onClick = { showDeleteConfirm = null }) { Text("فهمت") }
+                } else {
+                    Button(
+                        onClick = {
+                            viewModel.deleteTransaction(showDeleteConfirm!!.id)
+                            showDeleteConfirm = null
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    ) { Text("حذف") }
+                }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = null }) { Text("إلغاء") }
+                if (!isManaged) {
+                    TextButton(onClick = { showDeleteConfirm = null }) { Text("إلغاء") }
+                }
             }
         )
     }
 
     if (transactionToEdit != null) {
-        EditBankTransactionDialog(
-            transaction = transactionToEdit!!,
-            onDismiss = { transactionToEdit = null },
-            onConfirm = { updated ->
-                viewModel.updateTransaction(updated)
-                transactionToEdit = null
-            }
-        )
+        val isManaged = transactionToEdit?.billId?.isNotEmpty() == true || transactionToEdit?.isSystemManaged == true
+        if (isManaged) {
+            AlertDialog(
+                onDismissRequest = { transactionToEdit = null },
+                title = { Text("تنبيه") },
+                text = { Text("هذا القيد نظامي ومرتبط بعملية أخرى. لتعديله، يرجى الانتقال إلى الشاشة المختصة.") },
+                confirmButton = { Button(onClick = { transactionToEdit = null }) { Text("فهمت") } }
+            )
+        } else {
+            EditBankTransactionDialog(
+                transaction = transactionToEdit!!,
+                onDismiss = { transactionToEdit = null },
+                onConfirm = { updated ->
+                    viewModel.updateTransaction(updated)
+                    transactionToEdit = null
+                }
+            )
+        }
     }
 
     if (showAddDialog) {
@@ -572,7 +595,7 @@ fun BankTransactionItemCard(
                     }
                 }
 
-                if (transaction.billId == null) {
+                if (transaction.billId == null && !transaction.isSystemManaged) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         IconButton(
                             onClick = onEdit,
