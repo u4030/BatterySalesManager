@@ -412,13 +412,25 @@ class ReportsViewModel @Inject constructor(
 }
 
 private fun Map<String, Any>.toOrderItem(): PurchaseOrderItem {
+    val timestamp = when (val t = this["timestamp"]) {
+        is com.google.firebase.Timestamp -> t.toDate()
+        is Date -> t
+        else -> Date()
+    }
+    val invoiceDate = when (val d = this["invoiceDate"]) {
+        is com.google.firebase.Timestamp -> d.toDate()
+        is Date -> d
+        else -> null
+    }
+
     return PurchaseOrderItem(
         entry = StockEntry(
             id = this["id"] as? String ?: "",
             totalCost = (this["totalCost"] as? Number)?.toDouble() ?: 0.0,
             invoiceNumber = this["invoiceNumber"] as? String ?: "",
-            timestamp = this["timestamp"] as? Date ?: Date(),
-            invoiceDate = this["invoiceDate"] as? Date,
+            timestamp = timestamp,
+            invoiceDate = invoiceDate,
+            specification = this["specification"] as? String ?: "",
             settlementNotes = (this["settlementNotes"] as? List<String>) ?: emptyList()
         ),
         linkedPaidAmount = 0.0,

@@ -582,7 +582,13 @@ fun PurchaseOrderCard(po: com.batterysales.data.models.PurchaseOrderItem, dateFo
                         Row(modifier = Modifier.padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(entry.productName, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
-                                Text("${entry.capacity}A", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("${entry.capacity}A", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    if (entry.specification.isNotEmpty()) {
+                                        Text(" | ", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+                                        Text(entry.specification, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                    }
+                                }
                             }
                             Column(horizontalAlignment = Alignment.End) {
                                 Text("الكمية: ${entry.quantity}", style = MaterialTheme.typography.bodySmall)

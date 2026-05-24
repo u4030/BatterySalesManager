@@ -29,7 +29,10 @@ class StockEntryRepository @Inject constructor(
 
             // 2. Writes
             val docRef = firestore.collection(StockEntry.COLLECTION_NAME).document()
-            val finalEntry = stockEntry.copy(id = docRef.id)
+            val finalEntry = stockEntry.copy(
+                id = docRef.id,
+                specification = variant?.specification ?: stockEntry.specification
+            )
             transaction.set(docRef, finalEntry)
 
             if (finalEntry.status == "approved" && variant != null) {
@@ -154,6 +157,7 @@ class StockEntryRepository @Inject constructor(
             val supplierCreditChanges = mutableMapOf<String, Double>()
 
             stockEntries.forEach { entry ->
+                val variant = variantsMap[entry.productVariantId]
                 val docRef = firestore.collection(StockEntry.COLLECTION_NAME).document()
                 val cost = entry.getNetCost()
                 val qty = entry.quantity - entry.returnedQuantity
@@ -164,7 +168,8 @@ class StockEntryRepository @Inject constructor(
                 val finalEntry = entry.copy(
                     id = docRef.id,
                     remainingBalance = remainingBalance,
-                    isSettled = isSettled
+                    isSettled = isSettled,
+                    specification = variant?.specification ?: entry.specification
                 )
                 transaction.set(docRef, finalEntry)
 
@@ -311,6 +316,7 @@ class StockEntryRepository @Inject constructor(
                 productVariantId = productVariantId,
                 productName = productName,
                 capacity = capacity,
+                specification = variant?.specification ?: "",
                 warehouseId = sourceWarehouseId,
                 quantity = -quantity,
                 costPrice = 0.0,
@@ -326,6 +332,7 @@ class StockEntryRepository @Inject constructor(
                 productVariantId = productVariantId,
                 productName = productName,
                 capacity = capacity,
+                specification = variant?.specification ?: "",
                 warehouseId = destinationWarehouseId,
                 quantity = quantity,
                 costPrice = 0.0,
