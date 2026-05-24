@@ -30,8 +30,18 @@ class SupplierRepository @Inject constructor(
         awaitClose { listenerRegistration.remove() }
     }
 
-    suspend fun getSuppliersOnce(): List<Supplier> {
-        val snapshot = firestore.collection(Supplier.COLLECTION_NAME).get().await()
+    suspend fun getSuppliersOnce(query: String = ""): List<Supplier> {
+        var baseQuery: com.google.firebase.firestore.Query = firestore.collection(Supplier.COLLECTION_NAME)
+        
+        if (query.isNotBlank()) {
+            baseQuery = baseQuery.whereGreaterThanOrEqualTo("name", query)
+                .whereLessThanOrEqualTo("name", query + "\uf8ff")
+                .orderBy("name")
+        } else {
+            baseQuery = baseQuery.orderBy("name")
+        }
+        
+        val snapshot = baseQuery.get().await()
         return snapshot.documents.mapNotNull { it.toObject(Supplier::class.java)?.copy(id = it.id) }
     }
 

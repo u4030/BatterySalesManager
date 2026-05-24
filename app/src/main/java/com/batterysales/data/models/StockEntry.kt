@@ -7,6 +7,7 @@ data class StockEntry(
     val productVariantId: String = "",
     val productName: String = "", // Denormalized product name
     val capacity: Int = 0, // Denormalized capacity
+    val specification: String = "", // Denormalized specification
     val warehouseId: String = "",
     val quantity: Int = 0,
     val costPrice: Double = 0.0, // Cost per item
@@ -29,7 +30,8 @@ data class StockEntry(
     val returnDate: Date? = null,
     val remainingBalance: Double? = null, // المتبقي من قيمة الطلبية (بعد الكاش والمرتجعات)
     val isSettled: Boolean = false, // هل الطلبية مسددة بالكامل؟
-    val settlementNotes: List<String> = emptyList() // ملاحظات التسوية (أرقام الشيكات، المرتجعات، إلخ)
+    val settlementNotes: List<String> = emptyList(), // ملاحظات التسوية (أرقام الشيكات، المرتجعات، إلخ)
+    val linkedAllocations: Map<String, Double> = emptyMap() // تتبع المبالغ المرتبطة من كل سند (ID -> Amount)
 ) {
     /**
      * Calculates the net impact of this entry on stock levels.
@@ -67,6 +69,14 @@ data class StockEntry(
      * يعيد تاريخ الفاتورة الفعلي إذا وجد، وإلا يعيد تاريخ الإدخال
      */
     fun getEffectiveDate(): Date = invoiceDate ?: timestamp
+
+    /**
+     * يحسب تكلفة الوحدة الواحدة بشكل صحيح مع دعم البيانات القديمة والجديدة
+     */
+    fun getUnitPrice(): Double {
+        return if (quantity != 0 && Math.abs(totalCost) > 0.001) Math.abs(totalCost / quantity)
+        else costPrice
+    }
 
     companion object {
         const val COLLECTION_NAME = "stock_entries"

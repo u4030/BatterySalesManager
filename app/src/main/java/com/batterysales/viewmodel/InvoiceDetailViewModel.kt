@@ -19,6 +19,7 @@ import javax.inject.Inject
 data class InvoiceDetailUiState(
     val invoice: Invoice? = null,
     val payments: List<Payment> = emptyList(),
+    val stockEntries: List<com.batterysales.data.models.StockEntry> = emptyList(),
     val isLoading: Boolean = true,
     val errorMessage: String? = null
 )
@@ -28,6 +29,7 @@ class InvoiceDetailViewModel @Inject constructor(
     private val invoiceRepository: InvoiceRepository,
     private val paymentRepository: PaymentRepository,
     private val accountingRepository: AccountingRepository,
+    private val stockEntryRepository: com.batterysales.data.repositories.StockEntryRepository,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -51,8 +53,11 @@ class InvoiceDetailViewModel @Inject constructor(
                     return@launch
                 }
 
+                // Fetch associated stock entries (The "Constraints/Entries" the user asked for)
+                val entries = stockEntryRepository.getEntriesForInvoice(id, invoice.invoiceNumber)
+
                 // Update UI state with invoice details first
-                _uiState.update { it.copy(invoice = invoice, isLoading = false) }
+                _uiState.update { it.copy(invoice = invoice, stockEntries = entries, isLoading = false) }
 
                 // Then, start listening for real-time payment updates
                 paymentRepository.getPaymentsForInvoice(id)

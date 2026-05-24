@@ -12,7 +12,8 @@ import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 
 class AccountingRepository @Inject constructor(
-    private val firestore: FirebaseFirestore
+    private val firestore: FirebaseFirestore,
+    private val summaryRepository: SummaryRepository
 ) {
 
     suspend fun getAllTransactions(): List<Transaction> {
@@ -49,15 +50,19 @@ class AccountingRepository @Inject constructor(
             baseQuery = baseQuery.whereLessThanOrEqualTo("createdAt", java.util.Date(com.batterysales.utils.DateUtils.getEndOfDay(endDate)))
         }
 
+        // Robust type matching (handle mixed casing and multiple types)
+        val incomeTypes = listOf("INCOME", "PAYMENT", "income", "payment", "Income", "Payment")
+        val expenseTypes = listOf("EXPENSE", "REFUND", "expense", "refund", "Expense", "Refund")
+
         // Sum INCOME & PAYMENT
-        val incomeQuery = baseQuery.whereIn("type", listOf(TransactionType.INCOME.name, TransactionType.PAYMENT.name))
-        val incomeSnap = incomeQuery.aggregate(AggregateField.sum("amount")).get(AggregateSource.SERVER).await()
-        val totalIncome = (incomeSnap.get(AggregateField.sum("amount")) as? Number)?.toDouble() ?: 0.0
+        val incomeQuery = baseQuery.whereIn("type", incomeTypes)
+        val incomeSnap = try { incomeQuery.aggregate(AggregateField.sum("amount")).get(AggregateSource.SERVER).await() } catch(e: Exception) { null }
+        val totalIncome = (incomeSnap?.get(AggregateField.sum("amount")) as? Number)?.toDouble() ?: 0.0
 
         // Sum EXPENSE & REFUND
-        val expenseQuery = baseQuery.whereIn("type", listOf(TransactionType.EXPENSE.name, TransactionType.REFUND.name))
-        val expenseSnap = expenseQuery.aggregate(AggregateField.sum("amount")).get(AggregateSource.SERVER).await()
-        val totalExpense = (expenseSnap.get(AggregateField.sum("amount")) as? Number)?.toDouble() ?: 0.0
+        val expenseQuery = baseQuery.whereIn("type", expenseTypes)
+        val expenseSnap = try { expenseQuery.aggregate(AggregateField.sum("amount")).get(AggregateSource.SERVER).await() } catch(e: Exception) { null }
+        val totalExpense = (expenseSnap?.get(AggregateField.sum("amount")) as? Number)?.toDouble() ?: 0.0
 
         return totalIncome - totalExpense
     }
@@ -68,8 +73,9 @@ class AccountingRepository @Inject constructor(
         startDate: Long? = null,
         endDate: Long? = null
     ): Double {
+        val expenseTypes = listOf("EXPENSE", "REFUND", "expense", "refund", "Expense", "Refund")
         var baseQuery: Query = firestore.collection(Transaction.COLLECTION_NAME)
-            .whereIn("type", listOf(TransactionType.EXPENSE.name, TransactionType.REFUND.name))
+            .whereIn("type", expenseTypes)
 
         if (warehouseId != null) {
             baseQuery = baseQuery.whereEqualTo("warehouseId", warehouseId)
@@ -82,8 +88,8 @@ class AccountingRepository @Inject constructor(
                 .whereLessThanOrEqualTo("createdAt", java.util.Date(com.batterysales.utils.DateUtils.getEndOfDay(endDate)))
         }
 
-        val snapshot = baseQuery.aggregate(AggregateField.sum("amount")).get(AggregateSource.SERVER).await()
-        return (snapshot.get(AggregateField.sum("amount")) as? Number)?.toDouble() ?: 0.0
+        val snapshot = try { baseQuery.aggregate(AggregateField.sum("amount")).get(AggregateSource.SERVER).await() } catch(e: Exception) { null }
+        return (snapshot?.get(AggregateField.sum("amount")) as? Number)?.toDouble() ?: 0.0
     }
 
     suspend fun getTransactionsPaginated(
@@ -131,16 +137,32 @@ class AccountingRepository @Inject constructor(
         val finalTransaction = transaction.copy(id = docRef.id)
 
         firestore.runTransaction { transactionOp ->
+            // 1. All Reads First
+            val snapshots = summaryRepository.getSummarySnapshots(transactionOp, finalTransaction.warehouseId)
+            val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
+
+            // 2. All Writes
             transactionOp.set(docRef, finalTransaction)
 
-            // Update Global Cash Balance
+            val change = when (finalTransaction.type) {
+                TransactionType.INCOME, TransactionType.PAYMENT -> finalTransaction.amount
+                TransactionType.EXPENSE, TransactionType.REFUND -> -finalTransaction.amount
+            }
+
+            // Update Summaries
+            summaryRepository.applyFinancialUpdate(
+                transaction = transactionOp,
+                snapshots = snapshots,
+                warehouseId = finalTransaction.warehouseId ?: "",
+                cashChange = if (finalTransaction.paymentMethod == "cash") change else 0.0,
+                bankChange = if (finalTransaction.paymentMethod == "bank") change else 0.0
+            )
+
+            // Update Global Balances
             if (finalTransaction.paymentMethod == "cash") {
-                val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
-                val change = when (finalTransaction.type) {
-                    TransactionType.INCOME, TransactionType.PAYMENT -> finalTransaction.amount
-                    TransactionType.EXPENSE, TransactionType.REFUND -> -finalTransaction.amount
-                }
                 transactionOp.update(statsRef, "totalCashBalance", com.google.firebase.firestore.FieldValue.increment(change))
+            } else if (finalTransaction.paymentMethod == "bank") {
+                transactionOp.update(statsRef, "totalBankBalance", com.google.firebase.firestore.FieldValue.increment(change))
             }
         }.await()
 
@@ -162,7 +184,7 @@ class AccountingRepository @Inject constructor(
         val finalExpense = expense.copy(id = expenseRef.id)
 
         val transactionRef = firestore.collection(Transaction.COLLECTION_NAME).document()
-        val transaction = Transaction(
+        val transactionData = Transaction(
             id = transactionRef.id,
             type = com.batterysales.data.models.TransactionType.EXPENSE,
             amount = expense.amount,
@@ -172,47 +194,79 @@ class AccountingRepository @Inject constructor(
             createdAt = expense.timestamp
         )
 
-        firestore.runBatch { batch ->
-            batch.set(expenseRef, finalExpense)
-            batch.set(transactionRef, transaction)
+        firestore.runTransaction { transactionOp ->
+            // 1. Reads
+            val snapshots = summaryRepository.getSummarySnapshots(transactionOp, transactionData.warehouseId)
+            val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
+
+            // 2. Writes
+            transactionOp.set(expenseRef, finalExpense)
+            transactionOp.set(transactionRef, transactionData)
+
+            // Update Summaries
+            summaryRepository.applyFinancialUpdate(
+                transaction = transactionOp,
+                snapshots = snapshots,
+                warehouseId = transactionData.warehouseId ?: "",
+                cashChange = if (transactionData.paymentMethod == "cash") -transactionData.amount else 0.0,
+                bankChange = if (transactionData.paymentMethod == "bank") -transactionData.amount else 0.0
+            )
+
+            // Update Global Balances
+            if (transactionData.paymentMethod == "cash") {
+                transactionOp.update(statsRef, "totalCashBalance", com.google.firebase.firestore.FieldValue.increment(-transactionData.amount))
+            } else if (transactionData.paymentMethod == "bank") {
+                transactionOp.update(statsRef, "totalBankBalance", com.google.firebase.firestore.FieldValue.increment(-transactionData.amount))
+            }
         }.await()
-        
-        // Update Stats (Global Cash)
-        if (transaction.paymentMethod == "cash") {
-            firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
-                .update("totalCashBalance", com.google.firebase.firestore.FieldValue.increment(-transaction.amount))
-                .await()
-        }
     }
 
-    suspend fun updateTransaction(transaction: Transaction) {
+    suspend fun updateTransaction(transaction: Transaction, forceSystemUpdate: Boolean = false) {
         val docRef = firestore.collection(Transaction.COLLECTION_NAME).document(transaction.id)
 
         firestore.runTransaction { transactionOp ->
+            // 1. Reads
             val oldDoc = transactionOp.get(docRef)
             val oldTrans = oldDoc.toObject(Transaction::class.java)
 
+            if (oldTrans?.isSystemManaged == true && !forceSystemUpdate) {
+                throw Exception("هذا القيد مدار من قبل النظام (فاتورة/كمبيالة)، يرجى تعديله من المصدر لضمان دقة البيانات.")
+            }
+            val snapshots = summaryRepository.getSummarySnapshots(transactionOp, transaction.warehouseId)
+            val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
+
+            // 2. Writes
             transactionOp.set(docRef, transaction)
 
-            // Update Global Cash Balance
-            val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
-            
-            // 1. Reverse old
-            if (oldTrans != null && oldTrans.paymentMethod == "cash") {
-                val oldChange = when (oldTrans.type) {
+            // Calculate Changes
+            val oldChange = if (oldTrans != null) {
+                when (oldTrans.type) {
                     TransactionType.INCOME, TransactionType.PAYMENT -> -oldTrans.amount
                     TransactionType.EXPENSE, TransactionType.REFUND -> oldTrans.amount
                 }
-                transactionOp.update(statsRef, "totalCashBalance", com.google.firebase.firestore.FieldValue.increment(oldChange))
+            } else 0.0
+
+            val newChange = when (transaction.type) {
+                TransactionType.INCOME, TransactionType.PAYMENT -> transaction.amount
+                TransactionType.EXPENSE, TransactionType.REFUND -> -transaction.amount
             }
 
-            // 2. Apply new
+            val totalChange = oldChange + newChange
+
+            // Update Summaries
+            summaryRepository.applyFinancialUpdate(
+                transaction = transactionOp,
+                snapshots = snapshots,
+                warehouseId = transaction.warehouseId ?: "",
+                cashChange = if (transaction.paymentMethod == "cash") totalChange else 0.0,
+                bankChange = if (transaction.paymentMethod == "bank") totalChange else 0.0
+            )
+
+            // Update Global Balances
             if (transaction.paymentMethod == "cash") {
-                val newChange = when (transaction.type) {
-                    TransactionType.INCOME, TransactionType.PAYMENT -> transaction.amount
-                    TransactionType.EXPENSE, TransactionType.REFUND -> -transaction.amount
-                }
-                transactionOp.update(statsRef, "totalCashBalance", com.google.firebase.firestore.FieldValue.increment(newChange))
+                transactionOp.update(statsRef, "totalCashBalance", com.google.firebase.firestore.FieldValue.increment(totalChange))
+            } else if (transaction.paymentMethod == "bank") {
+                transactionOp.update(statsRef, "totalBankBalance", com.google.firebase.firestore.FieldValue.increment(totalChange))
             }
         }.await()
 
@@ -242,24 +296,46 @@ class AccountingRepository @Inject constructor(
         batch.commit().await()
     }
 
-    suspend fun deleteTransaction(transactionId: String) {
+    suspend fun deleteTransaction(transactionId: String, forceSystemUpdate: Boolean = false) {
         val docRef = firestore.collection(Transaction.COLLECTION_NAME).document(transactionId)
 
         val relatedId = firestore.runTransaction { transactionOp ->
+            // 1. Reads
             val doc = transactionOp.get(docRef)
             val trans = doc.toObject(Transaction::class.java)
+
+            if (trans?.isSystemManaged == true && !forceSystemUpdate) {
+                throw Exception("هذا القيد مدار من قبل النظام (فاتورة/كمبيالة)، يرجى حذفه من المصدر لضمان دقة البيانات.")
+            }
+            val snapshots = summaryRepository.getSummarySnapshots(transactionOp, trans?.warehouseId)
             val relId = trans?.relatedId
 
+            // 2. Writes
             transactionOp.delete(docRef)
 
-            // Update Global Cash Balance
-            if (trans != null && trans.paymentMethod == "cash") {
-                val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
+            if (trans != null) {
                 val change = when (trans.type) {
                     TransactionType.INCOME, TransactionType.PAYMENT -> -trans.amount
                     TransactionType.EXPENSE, TransactionType.REFUND -> trans.amount
                 }
-                transactionOp.update(statsRef, "totalCashBalance", com.google.firebase.firestore.FieldValue.increment(change))
+
+                // Update Summaries
+                summaryRepository.applyFinancialUpdate(
+                    transaction = transactionOp,
+                    snapshots = snapshots,
+                    warehouseId = trans.warehouseId ?: "",
+                    cashChange = if (trans.paymentMethod == "cash") change else 0.0,
+                    bankChange = if (trans.paymentMethod == "bank") change else 0.0
+                )
+
+                // Update Global Balances
+                if (trans.paymentMethod == "cash") {
+                    val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
+                    transactionOp.update(statsRef, "totalCashBalance", com.google.firebase.firestore.FieldValue.increment(change))
+                } else if (trans.paymentMethod == "bank") {
+                    val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
+                    transactionOp.update(statsRef, "totalBankBalance", com.google.firebase.firestore.FieldValue.increment(change))
+                }
             }
             relId
         }.await()

@@ -37,6 +37,7 @@ import com.batterysales.ui.components.SharedHeader
 import com.batterysales.ui.components.HeaderIconButton
 import com.batterysales.ui.components.CustomKeyboardTextField
 import com.batterysales.ui.components.AppDialog
+import com.batterysales.ui.components.ConnectivityBanner
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -47,6 +48,9 @@ fun BankScreen(
     val keyboardController = com.batterysales.ui.components.LocalCustomKeyboardController.current
     val pagingItems = viewModel.transactions.collectAsLazyPagingItems()
     val lifecycleOwner = LocalLifecycleOwner.current
+
+    val networkHelper = (androidx.compose.ui.platform.LocalContext.current.applicationContext as com.batterysales.BatterySalesApp).networkHelper 
+    val isOnline by networkHelper.isOnlineFlow.collectAsState(initial = true)
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -64,7 +68,6 @@ fun BankScreen(
     val totalWithdrawals by viewModel.totalWithdrawals.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
-    val isLastPage by viewModel.isLastPage.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val listState = rememberLazyListState()
     var showAddDialog by remember { mutableStateOf(false) }
@@ -342,34 +345,57 @@ fun BankScreen(
     }
 
     if (showDeleteConfirm != null) {
+        val isManaged = showDeleteConfirm?.billId?.isNotEmpty() == true || showDeleteConfirm?.isSystemManaged == true
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = null },
-            title = { Text("حذف العملية") },
-            text = { Text("هل أنت متأكد من حذف هذه العملية البنكية؟ إذا كانت مرتبطة بالخزينة سيتم حذف القيد المقابل أيضاً.") },
+            title = { Text(if (isManaged) "تنبيه" else "حذف العملية") },
+            text = { 
+                if (isManaged) {
+                    Text("هذا القيد نظامي ومرتبط بعملية أخرى (كمبيالة/شيك/تمويل). لحذفه، يرجى الانتقال إلى الشاشة المختصة (الكمبيالات مثلاً) والحذف من هناك.")
+                } else {
+                    Text("هل أنت متأكد من حذف هذه العملية البنكية؟ إذا كانت مرتبطة بالخزينة سيتم حذف القيد المقابل أيضاً.")
+                }
+            },
             confirmButton = {
-                Button(
-                    onClick = {
-                        viewModel.deleteTransaction(showDeleteConfirm!!.id)
-                        showDeleteConfirm = null
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) { Text("حذف") }
+                if (isManaged) {
+                    Button(onClick = { showDeleteConfirm = null }) { Text("فهمت") }
+                } else {
+                    Button(
+                        onClick = {
+                            viewModel.deleteTransaction(showDeleteConfirm!!.id)
+                            showDeleteConfirm = null
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    ) { Text("حذف") }
+                }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = null }) { Text("إلغاء") }
+                if (!isManaged) {
+                    TextButton(onClick = { showDeleteConfirm = null }) { Text("إلغاء") }
+                }
             }
         )
     }
 
     if (transactionToEdit != null) {
-        EditBankTransactionDialog(
-            transaction = transactionToEdit!!,
-            onDismiss = { transactionToEdit = null },
-            onConfirm = { updated ->
-                viewModel.updateTransaction(updated)
-                transactionToEdit = null
-            }
-        )
+        val isManaged = transactionToEdit?.billId?.isNotEmpty() == true || transactionToEdit?.isSystemManaged == true
+        if (isManaged) {
+            AlertDialog(
+                onDismissRequest = { transactionToEdit = null },
+                title = { Text("تنبيه") },
+                text = { Text("هذا القيد نظامي ومرتبط بعملية أخرى. لتعديله، يرجى الانتقال إلى الشاشة المختصة.") },
+                confirmButton = { Button(onClick = { transactionToEdit = null }) { Text("فهمت") } }
+            )
+        } else {
+            EditBankTransactionDialog(
+                transaction = transactionToEdit!!,
+                onDismiss = { transactionToEdit = null },
+                onConfirm = { updated ->
+                    viewModel.updateTransaction(updated)
+                    transactionToEdit = null
+                }
+            )
+        }
     }
 
     if (showAddDialog) {
@@ -403,12 +429,18 @@ fun AddBankTransactionDialog(
         onDismiss = onDismiss,
         title = if (type == com.batterysales.data.models.BankTransactionType.DEPOSIT) "إيداع في البنك" else "سحب من البنك",
         confirmButton = {
-            Button(onClick = {
-                val amt = amount.toDoubleOrNull() ?: 0.0
-                if (description.isNotEmpty() && amt > 0) onAdd(type, description, amt, referenceNumber, supplierName, fromTreasury, selectedWarehouseId)
-            }, colors = ButtonDefaults.buttonColors(
-                containerColor = if (type == com.batterysales.data.models.BankTransactionType.DEPOSIT) Color(0xFF4CAF50) else Color(0xFFF44336)
-            )) { Text("موافق") }
+            val isOnline = (androidx.compose.ui.platform.LocalContext.current.applicationContext as? com.batterysales.BatterySalesApp)?.networkHelper?.isNetworkConnected() ?: true
+            Button(
+                onClick = {
+                    val amt = amount.toDoubleOrNull() ?: 0.0
+                    if (description.isNotEmpty() && amt > 0) onAdd(type, description, amt, referenceNumber, supplierName, fromTreasury, selectedWarehouseId)
+                }, 
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (type == com.batterysales.data.models.BankTransactionType.DEPOSIT) Color(0xFF4CAF50) else Color(0xFFF44336),
+                    disabledContainerColor = (if (type == com.batterysales.data.models.BankTransactionType.DEPOSIT) Color(0xFF4CAF50) else Color(0xFFF44336)).copy(alpha = 0.5f)
+                ),
+                enabled = isOnline
+            ) { Text("موافق") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("إلغاء") }
@@ -563,7 +595,7 @@ fun BankTransactionItemCard(
                     }
                 }
 
-                if (transaction.billId == null) {
+                if (transaction.billId == null && !transaction.isSystemManaged) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         IconButton(
                             onClick = onEdit,

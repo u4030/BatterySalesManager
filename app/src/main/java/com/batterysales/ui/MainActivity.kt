@@ -26,6 +26,7 @@ import com.batterysales.services.NotificationService
 import com.batterysales.ui.components.*
 import com.batterysales.ui.navigation.AppNavigation
 import com.batterysales.ui.theme.BatterySalesManagerTheme
+import com.batterysales.utils.NetworkHelper
 import com.batterysales.utils.SettingsManager
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -38,6 +39,9 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var settingsManager: SettingsManager
+
+    @Inject
+    lateinit var networkHelper: NetworkHelper
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -64,6 +68,8 @@ class MainActivity : ComponentActivity() {
             val scaleInputText by settingsManager.scaleInputText.collectAsState()
             val keyboardController = remember { CustomKeyboardController() }
 
+            val isOnline by networkHelper.isOnlineFlow.collectAsState(initial = true)
+
             BatterySalesManagerTheme(
                 fontSizeScale = fontSizeScale,
                 isBold = isBold,
@@ -71,6 +77,8 @@ class MainActivity : ComponentActivity() {
             ) {
                 CompositionLocalProvider(LocalCustomKeyboardController provides keyboardController) {
                     Column(modifier = Modifier.fillMaxSize()) {
+                        ConnectivityBanner(isOnline = isOnline)
+                        
                         Box(modifier = Modifier.weight(1f)) {
                             val navController = rememberNavController()
                             AppNavigation(navController = navController)

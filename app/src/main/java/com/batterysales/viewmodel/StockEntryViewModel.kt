@@ -31,6 +31,8 @@ data class StockEntryUiState(
     val costValue: String = "",
     val minQuantity: String = "",
     val supplierName: String = "",
+    val paymentAmount: String = "",
+    val paymentMethod: String = "cash", // cash, transfer
     val stockItems: List<StockEntryItem> = emptyList(),
     val userRole: String = "seller",
     val isEditMode: Boolean = false,
@@ -64,6 +66,7 @@ enum class CostInputMode {
 class StockEntryViewModel @Inject constructor(
     private val productRepository: ProductRepository,
     private val productVariantRepository: ProductVariantRepository,
+    private val summaryRepository: com.batterysales.data.repositories.SummaryRepository,
     private val warehouseRepository: WarehouseRepository,
     private val stockEntryRepository: StockEntryRepository,
     private val supplierRepository: SupplierRepository,
@@ -85,45 +88,34 @@ class StockEntryViewModel @Inject constructor(
         val isEditMode = editingEntryId != null
         _uiState.update { it.copy(isEditMode = isEditMode) }
 
-        userRepository.getCurrentUserFlow()
-            .onEach { user ->
-                currentUser = user
+        viewModelScope.launch {
+            val user = userRepository.getCurrentUser()
+            currentUser = user
+            
+            // One-time fetch for initialization instead of persistent listeners
+            val products = productRepository.getProductsOnce()
+            val warehouses = warehouseRepository.getWarehousesOnce()
+            val suppliers = supplierRepository.getSuppliersOnce()
 
-                // Nest the combine collection inside user change to ensure it reacts to new user role/warehouse
-                combine(
-                    productRepository.getProducts(),
-                    warehouseRepository.getWarehouses(),
-                    supplierRepository.getSuppliers(),
-                    _selectedSupplier
-                ) { products, warehouses, suppliers, selectedSupplier ->
-                    val activeProducts = products.filter { !it.archived }.sortedBy { it.name }
+            val activeProducts = products.filter { !it.archived }.sortedBy { it.name }
+            val selectedWH = warehouses.find { it.id == user?.warehouseId }
 
-                    val filteredBySupplier = if (selectedSupplier != null) {
-                        activeProducts.filter { it.supplierId == selectedSupplier.id || it.supplierId.isBlank() }
-                    } else {
-                        activeProducts
-                    }
+            _uiState.update {
+                it.copy(
+                    products = activeProducts,
+                    warehouses = warehouses.filter { w -> w.isActive },
+                    suppliers = suppliers,
+                    userRole = user?.role ?: "seller",
+                    selectedWarehouse = if (user?.role == "seller") selectedWH else it.selectedWarehouse
+                )
+            }
 
-                    val selectedWH = warehouses.find { it.id == user?.warehouseId }
-
-                    _uiState.update {
-                        it.copy(
-                            products = filteredBySupplier,
-                            warehouses = warehouses.filter { w -> w.isActive },
-                            suppliers = suppliers,
-                            userRole = user?.role ?: "seller",
-                            selectedWarehouse = if (user?.role == "seller") selectedWH else it.selectedWarehouse,
-                            selectedSupplier = selectedSupplier
-                        )
-                    }
-
-                    if (isEditMode && uiState.value.selectedProduct == null) {
-                        loadEntryForEdit(editingEntryId!!)
-                    } else if (!isEditMode) {
-                        _uiState.update { it.copy(isLoading = false) }
-                    }
-                }.take(1).collect() // Just take initial state for the combined flows per user change
-            }.launchIn(viewModelScope)
+            if (isEditMode) {
+                loadEntryForEdit(editingEntryId!!)
+            } else {
+                _uiState.update { it.copy(isLoading = false) }
+            }
+        }
     }
 
     private suspend fun loadEntryForEdit(entryId: String) {
@@ -240,6 +232,8 @@ class StockEntryViewModel @Inject constructor(
     fun onSupplierNameChanged(name: String) { _uiState.update { it.copy(supplierName = name) } }
     fun onInvoiceNumberChanged(number: String) { _uiState.update { it.copy(invoiceNumber = number) } }
     fun onInvoiceDateChanged(date: Date) { _uiState.update { it.copy(invoiceDate = date) } }
+    fun onPaymentAmountChanged(amount: String) { _uiState.update { it.copy(paymentAmount = amount) } }
+    fun onPaymentMethodChanged(method: String) { _uiState.update { it.copy(paymentMethod = method) } }
     fun onRemoveItemClicked(item: StockEntryItem) { _uiState.update { it.copy(stockItems = it.stockItems - item) } }
     fun onDismissError() { _uiState.update { it.copy(errorMessage = null) } }
 
@@ -348,7 +342,7 @@ class StockEntryViewModel @Inject constructor(
                     // Update variant minQuantity if Admin
                     if (state.isAdmin) {
                         val updatedVariant = state.selectedVariant!!.copy(minQuantity = updatedItem.minQuantity)
-                        productVariantRepository.updateVariant(updatedVariant)
+                        productVariantRepository.updateVariant(updatedVariant, summaryRepository)
                     }
                 } else {
                     val grandTotalAmperes = state.stockItems.sumOf { it.totalAmperes }
@@ -381,9 +375,25 @@ class StockEntryViewModel @Inject constructor(
                     }
                     stockEntryRepository.addStockEntries(entries)
                     
-                    // تحديث الروابط التلقائية للمورد
+                    // Handle immediate payment if specified (Admin only or based on UI)
+                    val payAmount = state.paymentAmount.toDoubleOrNull() ?: 0.0
                     val supplierId = entries.firstOrNull()?.supplierId
-                    if (!supplierId.isNullOrEmpty()) {
+                    if (payAmount > 0.001 && !supplierId.isNullOrEmpty()) {
+                        val bill = Bill(
+                            description = "دفعة نقدية مع الطلبية: ${state.invoiceNumber}",
+                            amount = payAmount,
+                            dueDate = state.invoiceDate ?: now,
+                            billType = if (state.paymentMethod == "transfer") BillType.TRANSFER else BillType.CASH,
+                            supplierId = supplierId,
+                            warehouseId = state.selectedWarehouse.id,
+                            status = BillStatus.PAID,
+                            paidAmount = payAmount,
+                            paidDate = now,
+                            referenceNumber = state.invoiceNumber
+                        )
+                        billRepository.addBill(bill)
+                    } else if (!supplierId.isNullOrEmpty()) {
+                        // Trigger FIFO anyway to use existing credits
                         billRepository.autoLinkBillsForSupplier(supplierId)
                     }
 
@@ -391,7 +401,7 @@ class StockEntryViewModel @Inject constructor(
                     if (state.isAdmin) {
                         state.stockItems.forEach { item ->
                             val updatedVariant = item.productVariant.copy(minQuantity = item.minQuantity)
-                            productVariantRepository.updateVariant(updatedVariant)
+                            productVariantRepository.updateVariant(updatedVariant, summaryRepository)
                         }
                     }
                 }

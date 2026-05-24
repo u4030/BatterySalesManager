@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.*
 import android.util.Log
 import com.batterysales.utils.Quadruple
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import java.util.*
 import javax.inject.Inject
 
@@ -54,14 +55,17 @@ class OldBatteryViewModel @Inject constructor(
     private val _startDate = MutableStateFlow<Long?>(null)
     private val _endDate = MutableStateFlow<Long?>(null)
 
+    private val refreshTrigger = MutableStateFlow(0)
+
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val transactions: Flow<PagingData<OldBatteryTransaction>> = combine(
-        _selectedWarehouseId,
-        _startDate,
-        _endDate,
-        _isSeller,
-        _userWarehouseId
-    ) { selId, start, end, seller, userWhId ->
+        listOf(_selectedWarehouseId, _startDate, _endDate, _isSeller, _userWarehouseId, refreshTrigger)
+    ) { args ->
+        val selId = args[0] as String?
+        val start = args[1] as Long?
+        val end = args[2] as Long?
+        val seller = args[3] as Boolean
+        val userWhId = args[4] as String?
         Quadruple(if (seller) userWhId else selId, start, end, seller)
     }.flatMapLatest { (warehouseId, start, end, _) ->
         Pager(PagingConfig(pageSize = 20)) {
@@ -96,26 +100,7 @@ class OldBatteryViewModel @Inject constructor(
                 _summary.value = Pair(0, 0.0)
                 _selectedWarehouseId.value = null
 
-                scrapWarehouseRepository.getScrapWarehouses().onEach { allScrapWh ->
-                    val active = allScrapWh.filter { it.isActive }
-                    
-                    val filtered = if (user?.role == "seller") {
-                        active.filter { it.parentWarehouseId == user.warehouseId }
-                    } else active
-                    
-                    _scrapWarehouses.value = filtered
-
-                    if (user?.role == "admin" && _selectedWarehouseId.value == null) {
-                        // For admin, don't pre-select a warehouse to force manual selection in dialogs
-                        // But load initial data from first available if needed for summary
-                        filtered.firstOrNull()?.let {
-                            loadTransactions(reset = true, warehouseId = null) // Load all for admin view initially
-                        }
-                    } else if (user?.role == "seller") {
-                        _selectedWarehouseId.value = user.warehouseId
-                        loadTransactions(reset = true, warehouseId = user.warehouseId)
-                    }
-                }.launchIn(viewModelScope)
+                refreshScrapWarehouses(user)
 
                 if (user?.role == "seller") {
                     loadTransactions(reset = true, warehouseId = user.warehouseId)
@@ -125,6 +110,34 @@ class OldBatteryViewModel @Inject constructor(
 
     fun loadInitialData() {
         // No-op now as initialization is handled by user flow
+    }
+
+    private fun refreshScrapWarehouses(user: com.batterysales.data.models.User? = currentUser) {
+        viewModelScope.launch {
+            try {
+                val snapshot = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                    .collection(com.batterysales.data.models.ScrapWarehouse.COLLECTION_NAME)
+                    .get().await()
+                
+                val allScrapWh = snapshot.documents.mapNotNull { it.toObject(com.batterysales.data.models.ScrapWarehouse::class.java)?.copy(id = it.id) }
+                val active = allScrapWh.filter { it.isActive }
+                
+                val filtered = if (user?.role == "seller") {
+                    active.filter { it.parentWarehouseId == user.warehouseId }
+                } else active
+                
+                _scrapWarehouses.value = filtered
+
+                if (user?.role == "admin" && _selectedWarehouseId.value == null) {
+                    loadTransactions(reset = true, warehouseId = null)
+                } else if (user?.role == "seller") {
+                    _selectedWarehouseId.value = user.warehouseId
+                    loadTransactions(reset = true, warehouseId = user.warehouseId)
+                }
+            } catch (e: Exception) {
+                Log.e("OldBatteryViewModel", "Error refreshing scrap warehouses", e)
+            }
+        }
     }
 
     fun loadTransactions(
@@ -144,8 +157,15 @@ class OldBatteryViewModel @Inject constructor(
             try {
                 val warehouseFilter = if (_isSeller.value) _userWarehouseId.value else warehouseId
                 
+                // Refresh scrap warehouses list first to ensure summary is up-to-date
+                val snapshot = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                    .collection(com.batterysales.data.models.ScrapWarehouse.COLLECTION_NAME)
+                    .get().await()
+                val allScrapWh = snapshot.documents.mapNotNull { it.toObject(com.batterysales.data.models.ScrapWarehouse::class.java)?.copy(id = it.id) }
+                _scrapWarehouses.value = allScrapWh // Update cache
+
                 // Use ScrapWarehouse entity for summary instead of aggregation
-                val scrapWh = _scrapWarehouses.value.find { it.parentWarehouseId == warehouseFilter }
+                val scrapWh = allScrapWh.find { it.parentWarehouseId == warehouseFilter }
                 if (scrapWh != null) {
                     _summary.value = Pair(scrapWh.totalQuantity, scrapWh.totalAmperes)
                 } else {
@@ -197,6 +217,9 @@ class OldBatteryViewModel @Inject constructor(
                 repository.deleteTransaction(id)
                 // Delete related treasury transaction
                 accountingRepository.deleteTransactionsByRelatedId(id)
+                
+                refreshTrigger.value++
+                loadTransactions()
             } catch (e: Exception) {
                 Log.e("OldBatteryViewModel", "Error deleting transaction", e)
             }
@@ -226,6 +249,9 @@ class OldBatteryViewModel @Inject constructor(
                         updateInvoiceScrap(invoiceId, transaction.quantity, transaction.totalAmperes, newValue)
                     }
                 }
+                
+                refreshTrigger.value++
+                loadTransactions()
             } catch (e: Exception) {
                 Log.e("OldBatteryViewModel", "Error updating transaction", e)
             }
@@ -278,6 +304,9 @@ class OldBatteryViewModel @Inject constructor(
                     )
                     accountingRepository.addTransaction(treasuryTransaction)
                 }
+                
+                refreshTrigger.value++
+                loadTransactions()
             } catch (e: Exception) {
                 Log.e("OldBatteryViewModel", "Error adding manual intake", e)
             }
@@ -311,6 +340,9 @@ class OldBatteryViewModel @Inject constructor(
                     relatedId = transId
                 )
                 accountingRepository.addTransaction(treasuryTransaction)
+                
+                refreshTrigger.value++
+                loadTransactions()
             } catch (e: Exception) {
                 Log.e("OldBatteryViewModel", "Error selling batteries", e)
             }

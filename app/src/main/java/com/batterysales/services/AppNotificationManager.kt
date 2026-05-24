@@ -56,7 +56,7 @@ class AppNotificationManager @Inject constructor(
                     if (user.role != User.ROLE_SELLER) {
                         setupUpcomingBillsListener()
                     }
-                    setupTargetedLowStockListener()
+                    setupTargetedLowStockListener(user)
                 } else {
                     notifiedLowStockKeys.clear()
                     notifiedBillIds.clear()
@@ -68,7 +68,6 @@ class AppNotificationManager @Inject constructor(
         upcomingBillsListener?.remove()
 
         var hasEmittedData = false
-        // Listener for Upcoming Bills/Checks
         upcomingBillsListener = firestore.collection(Bill.COLLECTION_NAME)
             .whereNotEqualTo("status", BillStatus.PAID)
             .addSnapshotListener { snapshot, e ->
@@ -115,9 +114,8 @@ class AppNotificationManager @Inject constructor(
                             context,
                             "تنبيه الالتزامات المالية",
                             message.toString(),
-                            playSound = false // Mute initial batch on startup
+                            playSound = false
                         )
-                        // Add to notified list to avoid individual notifications immediately
                         allRelevantBills.forEach { notifiedBillIds.add(it.id) }
                     }
                     return@addSnapshotListener
@@ -151,18 +149,26 @@ class AppNotificationManager @Inject constructor(
         pendingEntriesListener?.remove()
         pendingRequestsListener?.remove()
 
-        // Listener for NEW Pending Stock Entries and Approval Requests (For Admins)
         if (user.role == User.ROLE_ADMIN) {
             var isFirstSnapshotEntries = true
             pendingEntriesListener = firestore.collection(StockEntry.COLLECTION_NAME)
                 .whereEqualTo("status", StockEntry.STATUS_PENDING)
                 .addSnapshotListener { snapshot, e ->
-                    if (e != null) return@addSnapshotListener
+                    if (e != null || snapshot == null) return@addSnapshotListener
                     if (isFirstSnapshotEntries) {
                         isFirstSnapshotEntries = false
+                        if (!snapshot.isEmpty) {
+                            NotificationHelper.showNotification(
+                                context,
+                                "موافقات معلقة",
+                                "لديك عدد ${snapshot.size()} قيود بانتظار الموافقة",
+                                playSound = false,
+                                notificationId = 3000
+                            )
+                        }
                         return@addSnapshotListener
                     }
-                    snapshot?.documentChanges?.forEach { change ->
+                    snapshot.documentChanges.forEach { change ->
                         if (change.type == com.google.firebase.firestore.DocumentChange.Type.ADDED) {
                             val entry = change.document.toObject(StockEntry::class.java)
                             val userSuffix = if (entry.createdByUserName.isNotEmpty()) " بواسطة ${entry.createdByUserName}" else ""
@@ -179,12 +185,21 @@ class AppNotificationManager @Inject constructor(
             pendingRequestsListener = firestore.collection(ApprovalRequest.COLLECTION_NAME)
                 .whereEqualTo("status", ApprovalRequest.STATUS_PENDING)
                 .addSnapshotListener { snapshot, e ->
-                    if (e != null) return@addSnapshotListener
+                    if (e != null || snapshot == null) return@addSnapshotListener
                     if (isFirstSnapshotRequests) {
                         isFirstSnapshotRequests = false
+                        if (!snapshot.isEmpty) {
+                            NotificationHelper.showNotification(
+                                context,
+                                "طلبات تعديل معلقة",
+                                "لديك عدد ${snapshot.size()} طلبات حذف/تعديل بانتظار الموافقة",
+                                playSound = false,
+                                notificationId = 4000
+                            )
+                        }
                         return@addSnapshotListener
                     }
-                    snapshot?.documentChanges?.forEach { change ->
+                    snapshot.documentChanges.forEach { change ->
                         if (change.type == com.google.firebase.firestore.DocumentChange.Type.ADDED) {
                             val req = change.document.toObject(ApprovalRequest::class.java)
                             val action = if (req.actionType == ApprovalRequest.ACTION_EDIT) "تعديل" else "حذف"
@@ -201,67 +216,63 @@ class AppNotificationManager @Inject constructor(
     }
 
     /**
-     * Improved Targeted Low Stock Listener:
-     * Listens for ALL document changes in StockEntry and checks every affected variant.
+     * Event-Driven Low Stock Listener:
+     * Listens only to the system_alerts collection.
      */
-    private fun setupTargetedLowStockListener() {
+    private fun setupTargetedLowStockListener(user: User) {
         lowStockListener?.remove()
 
         var isFirstSnapshot = true
-        lowStockListener = firestore.collection(StockEntry.COLLECTION_NAME)
-            .orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING)
-            .limit(10) // Limit to 10 for snapshot startup efficiency
+        lowStockListener = firestore.collection(com.batterysales.data.models.SystemAlert.COLLECTION_NAME)
+            .whereEqualTo("type", com.batterysales.data.models.SystemAlert.TYPE_LOW_STOCK)
             .addSnapshotListener { snapshot, e ->
-                if (e != null) return@addSnapshotListener
-                if (snapshot == null) return@addSnapshotListener
+                if (e != null || snapshot == null) return@addSnapshotListener
+
+                val isAdmin = user.role == "admin"
+                val myWarehouseId = user.warehouseId
+                
+                val relevantAlerts = snapshot.documents.mapNotNull { it.toObject(SystemAlert::class.java) }
+                    .filter { isAdmin || it.warehouseId == myWarehouseId }
 
                 if (isFirstSnapshot) {
                     isFirstSnapshot = false
+                    // Optimization: On app launch/resume, we only show ONE summary notification instead of many.
+                    relevantAlerts.forEach { alert ->
+                        notifiedLowStockKeys.add("${alert.relatedId}:${alert.warehouseId}")
+                    }
+                    
+                    if (relevantAlerts.isNotEmpty()) {
+                        NotificationHelper.showNotification(
+                            context,
+                            "تنبيه المخزون",
+                            "لديك عدد ${relevantAlerts.size} أصناف برصيد منخفض",
+                            playSound = false,
+                            notificationId = 2000
+                        )
+                    }
                     return@addSnapshotListener
                 }
 
                 snapshot.documentChanges.forEach { change ->
+                    val alert = change.document.toObject(SystemAlert::class.java) ?: return@forEach
+                    if (!isAdmin && alert.warehouseId != myWarehouseId) return@forEach
+
+                    val key = "${alert.relatedId}:${alert.warehouseId}"
+                    
                     if (change.type == com.google.firebase.firestore.DocumentChange.Type.ADDED) {
-                        val entry = change.document.toObject(StockEntry::class.java)
-                        // Verify approval status before notifying
-                        if (entry.status == StockEntry.STATUS_APPROVED) {
-                            scope.launch {
-                                checkVariantLowStock(entry.productVariantId, entry.warehouseId)
-                            }
+                        if (!notifiedLowStockKeys.contains(key)) {
+                            NotificationHelper.showNotification(
+                                context,
+                                alert.title,
+                                alert.message,
+                                notificationId = key.hashCode()
+                            )
+                            notifiedLowStockKeys.add(key)
                         }
+                    } else if (change.type == com.google.firebase.firestore.DocumentChange.Type.REMOVED) {
+                        notifiedLowStockKeys.remove(key)
                     }
                 }
             }
-    }
-
-    private suspend fun checkVariantLowStock(variantId: String, warehouseId: String) {
-        try {
-            val variant = productVariantRepository.getVariant(variantId) ?: return
-            if (variant.archived) return
-
-            val threshold = variant.minQuantities[warehouseId] ?: variant.minQuantity
-            if (threshold <= 0) return
-
-            // Use denormalized currentStock map
-            val qty = variant.currentStock?.get(warehouseId) ?: 0
-
-            val key = "$variantId:$warehouseId"
-            if (qty <= threshold) {
-                if (!notifiedLowStockKeys.contains(key)) {
-                    val product = productRepository.getProduct(variant.productId)
-                    val warehouse = warehouseRepository.getWarehouse(warehouseId)
-                    NotificationHelper.showNotification(
-                        context,
-                        "مخزون منخفض: ${product?.name ?: ""}",
-                        "السعة: ${variant.capacity}A | الكمية المتبقية: $qty (الحد: $threshold) في ${warehouse?.name ?: ""}"
-                    )
-                    notifiedLowStockKeys.add(key)
-                }
-            } else {
-                notifiedLowStockKeys.remove(key)
-            }
-        } catch (e: Exception) {
-            Log.e("AppNotificationManager", "Error checking targeted low stock", e)
-        }
     }
 }

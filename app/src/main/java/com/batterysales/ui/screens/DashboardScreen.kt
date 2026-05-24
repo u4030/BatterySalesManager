@@ -507,27 +507,6 @@ fun NotificationItem(notification: AppNotification, onClick: (String?) -> Unit) 
 }
 
 @Composable
-fun SummaryCard(title: String, value: String, modifier: Modifier = Modifier) {
-    Card(
-        modifier = modifier.heightIn(min = 100.dp),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.15f))
-    ) {
-        Column(
-            modifier = Modifier
-                .padding(16.dp)
-                .fillMaxSize(),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.End
-        ) {
-            Text(title, color = Color.White.copy(alpha = 0.9f), fontSize = 12.sp)
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(value, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-        }
-    }
-}
-
-@Composable
 fun DashboardCardItem(item: DashboardItem, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Card(
         modifier = modifier

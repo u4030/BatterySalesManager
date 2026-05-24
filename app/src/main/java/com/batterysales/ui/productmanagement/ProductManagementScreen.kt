@@ -471,6 +471,14 @@ fun VariantItemRow(variant: ProductVariant, onEdit: () -> Unit, onDelete: () -> 
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                if (variant.isDiscontinued) {
+                    Text(
+                        text = "موقوف التوريد",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFFEF4444),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
                 if (variant.barcode.isNotEmpty()) {
                     val barcodeBitmap = remember(variant.barcode) {
                         com.batterysales.utils.BarcodeUtils.generateBarcodeBitmap(variant.barcode)
@@ -702,6 +710,7 @@ fun EditVariantDialog(
     var capacity by remember { mutableStateOf(variant.capacity.toString()) }
     var specification by remember { mutableStateOf(variant.specification) }
     var barcode by remember { mutableStateOf(variant.barcode) }
+    var isDiscontinued by remember { mutableStateOf(variant.isDiscontinued) }
     var minQuantity by remember { mutableStateOf(variant.minQuantity.toString()) }
     var minQuantities by remember { mutableStateOf(variant.minQuantities.mapValues { it.value.toString() }.toMutableMap()) }
     var showScanner by remember { mutableStateOf(false) }
@@ -735,6 +744,7 @@ fun EditVariantDialog(
                     capacity = capacity.toIntOrNull() ?: 0,
                     specification = specification,
                     barcode = barcode,
+                    isDiscontinued = isDiscontinued,
                     minQuantity = minQuantity.toIntOrNull() ?: 0,
                     minQuantities = minQuantities.mapValues { it.value.toIntOrNull() ?: 0 }
                 ))
@@ -756,6 +766,22 @@ fun EditVariantDialog(
                 modifier = Modifier.widthIn(min = 120.dp),
                 keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
             )
+
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Switch(
+                    checked = isDiscontinued,
+                    onCheckedChange = { isDiscontinued = it },
+                    colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFEF4444))
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text("إيقاف التوريد (Discontinued)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                    Text("لن تظهر في المبيعات وسيتم إيقاف تنبيهات نقص المخزون", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
             com.batterysales.ui.components.CustomKeyboardTextField(
                 value = specification,
                 onValueChange = { specification = it },
