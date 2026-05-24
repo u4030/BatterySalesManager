@@ -41,6 +41,7 @@ import com.batterysales.ui.components.SharedHeader
 import com.batterysales.ui.components.HeaderIconButton
 import com.batterysales.ui.components.CustomKeyboardTextField
 import com.batterysales.ui.components.AppDialog
+import com.batterysales.ui.components.ConnectivityBanner
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -51,6 +52,9 @@ fun BillsScreen(
     val pagingItems = viewModel.bills.collectAsLazyPagingItems()
     val warehouses by viewModel.warehouses.collectAsState()
     val lifecycleOwner = LocalLifecycleOwner.current
+
+    val networkHelper = (androidx.compose.ui.platform.LocalContext.current.applicationContext as com.batterysales.BatterySalesApp).networkHelper
+    val isOnline by networkHelper.isOnlineFlow.collectAsState(initial = true)
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -392,10 +396,14 @@ fun PaymentDialog(
         onDismiss = onDismiss,
         title = "تسديد مبلغ",
         confirmButton = {
-            Button(onClick = {
-                val amt = amount.toDoubleOrNull() ?: 0.0
-                if (amt > 0) onConfirm(amt)
-            }) { Text("تسديد") }
+            val isOnline = (androidx.compose.ui.platform.LocalContext.current.applicationContext as? com.batterysales.BatterySalesApp)?.networkHelper?.isNetworkConnected() ?: true
+            Button(
+                onClick = {
+                    val amt = amount.toDoubleOrNull() ?: 0.0
+                    if (amt > 0) onConfirm(amt)
+                },
+                enabled = isOnline
+            ) { Text("تسديد") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("إلغاء") }
@@ -444,18 +452,22 @@ fun AddBillDialog(
         onDismiss = onDismiss,
         title = "إضافة كمبيالة/شيك جديد",
         confirmButton = {
-            Button(onClick = {
-                val amt = amount.toDoubleOrNull() ?: 0.0
-                if (description.isBlank()) {
-                    errorMessage = "الرجاء إدخال الوصف"
-                    return@Button
-                }
-                if (amt <= 0) {
-                    errorMessage = "الرجاء إدخال مبلغ صحيح"
-                    return@Button
-                }
-                onAdd(description, amt, selectedDate, selectedType, refNum, selectedSupplier?.id ?: "", selectedPurchase?.id, selectedWarehouseId, payImmediately)
-            }) { Text("إضافة") }
+            val isOnline = (androidx.compose.ui.platform.LocalContext.current.applicationContext as? com.batterysales.BatterySalesApp)?.networkHelper?.isNetworkConnected() ?: true
+            Button(
+                onClick = {
+                    val amt = amount.toDoubleOrNull() ?: 0.0
+                    if (description.isBlank()) {
+                        errorMessage = "الرجاء إدخال الوصف"
+                        return@Button
+                    }
+                    if (amt <= 0) {
+                        errorMessage = "الرجاء إدخال مبلغ صحيح"
+                        return@Button
+                    }
+                    onAdd(description, amt, selectedDate, selectedType, refNum, selectedSupplier?.id ?: "", selectedPurchase?.id, selectedWarehouseId, payImmediately)
+                },
+                enabled = isOnline
+            ) { Text("إضافة") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("إلغاء") }

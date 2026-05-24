@@ -12,6 +12,7 @@ import java.util.*
 import javax.inject.Inject
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 
 data class WarehouseStats(
     val warehouseId: String,
@@ -80,135 +81,156 @@ class DashboardViewModel @Inject constructor(
         refreshTrigger.value += 1
     }
 
-    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private var dashboardJob: kotlinx.coroutines.Job? = null
+    private var alertsListener: com.google.firebase.firestore.ListenerRegistration? = null
+
     private fun loadDashboardData() {
-        // Broad listeners are replaced with Targeted fetches triggered by specific small events or manual refresh
-        combine(
+        dashboardJob?.cancel()
+        dashboardJob = combine(
             userRepository.getCurrentUserFlow(),
             refreshTrigger
-        ) { user, _ ->
-            user
-        }.flatMapLatest { user ->
-            if (user == null) return@flatMapLatest flowOf(DashboardUiState(isLoading = false))
-            
-            flow {
-                emit(DashboardUiState(isLoading = true))
-                try {
-                    coroutineScope {
-                        val isAdmin = user.role == "admin"
-                        val userWarehouseId = user.warehouseId
-
-                        // 1. Efficient server-side counts and stats (Aggregations)
-                        val systemStatsJob = async { 
-                            firestore.collection(SystemStats.COLLECTION_NAME).document(SystemStats.DOCUMENT_ID).get().await()
-                                .toObject(SystemStats::class.java) ?: SystemStats()
-                        }
-                        val pendingEntriesCountJob = async { stockEntryRepository.getPendingCount() }
-                        val pendingRequestsJob = async { approvalRepository.getPendingRequestsFlow().take(1).first() }
-                        val warehousesJob = async { warehouseRepository.getWarehousesOnce() }
-
-                        val systemStats = systemStatsJob.await()
-                        val pendingEntriesCount = pendingEntriesCountJob.await()
-                        val pendingRequests = pendingRequestsJob.await()
-                        val warehouses = warehousesJob.await()
-
-                        val pendingCount = pendingEntriesCount + pendingRequests.size
-
-                        // 2. Today's Collections (Server-side aggregation)
-                        val today = Calendar.getInstance().apply {
-                            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-                        }
-                        val startOfToday = today.time.time
-                        val relevantWarehouses = if (isAdmin) warehouses
-                                                else warehouses.filter { it.id == userWarehouseId && it.isActive }
-
-                        val warehouseStatsList = relevantWarehouses.map { warehouse ->
-                            val (collection, count) = paymentRepository.getTodayStats(warehouse.id, startOfToday)
-                            WarehouseStats(warehouse.id, warehouse.name, collection, count)
-                        }.filter { if (isAdmin) it.todayCollection > 0 || it.todayCollectionCount > 0 else true }
-
-                        // 3. Upcoming Bills (Optimized: only fetch relevant bills)
-                        val nextWeek = Calendar.getInstance().apply {
-                            add(Calendar.DAY_OF_YEAR, 7)
-                            set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59)
-                        }
-                        
-                        val upcoming = if (user.role == User.ROLE_SELLER) emptyList() 
-                        else {
-                            // Firestore doesn't allow inequality filters on different fields (status and dueDate) in one query.
-                            // We fetch unpaid bills and filter by date locally for robustness.
-                            firestore.collection(Bill.COLLECTION_NAME)
-                                .whereNotEqualTo("status", BillStatus.PAID)
-                                .get().await()
-                                .documents.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) }
-                                .filter { it.dueDate != null && !it.dueDate.after(nextWeek.time) }
-                                .sortedBy { it.dueDate }
-                        }
-
-                        // 4. Targeted Low Stock (Using pre-aggregated currentStock)
-                        // Optimization: Instead of fetching all variants, we could query where any warehouse in currentStock is <= minQuantity
-                        // But Firestore doesn't support complex map comparisons. We fetch active variants but limit data processing.
-                        val activeVariants = productVariantRepository.getAllVariants().filter { !it.archived }
-                        val productsMap = productRepository.getProductsOnce().associateBy { it.id }
-
-                        val lowStockItems = mutableListOf<LowStockItem>()
-                        for (variant in activeVariants) {
-                            val targetWhs = if (isAdmin) warehouses.filter { it.isActive }
-                                            else warehouses.filter { it.id == userWarehouseId && it.isActive }
-
-                            for (wh in targetWhs) {
-                                val currentQty = variant.currentStock?.get(wh.id) ?: 0
-                                val threshold = variant.minQuantities[wh.id] ?: variant.minQuantity
-                                if (threshold > 0 && currentQty <= threshold) {
-                                    lowStockItems.add(LowStockItem(variant.id, productsMap[variant.productId]?.name ?: "منتج غير معروف", variant.capacity, currentQty, threshold, wh.name))
-                                }
-                            }
-                        }
-
-                        // Construct Notifications
-                        val allNotifications = mutableListOf<AppNotification>()
-                        
-                        // Bills
-                        upcoming.forEach { bill ->
-                            val isOverdue = bill.dueDate.before(today.time)
-                            allNotifications.add(AppNotification(
-                                "bill_${bill.id}",
-                                if (isOverdue) "كمبيالة متأخرة" else "موعد استحقاق قريب",
-                                "الكمبيالة: ${bill.description} تستحق بتاريخ ${java.text.SimpleDateFormat("yyyy/MM/dd").format(bill.dueDate)}",
-                                if (isOverdue) NotificationType.OVERDUE_BILL else NotificationType.UPCOMING_BILL,
-                                "bills"
-                            ))
-                        }
-                        allNotifications.sortBy { if (it.type == NotificationType.OVERDUE_BILL) 0 else 1 }
-
-                        // Approvals
-                        if (pendingCount > 0) {
-                            allNotifications.add(AppNotification("pending_approvals", "موافقات معلقة", "لديك $pendingCount طلبات بانتظار الموافقة", NotificationType.PENDING_APPROVAL, "approvals"))
-                        }
-
-                        // Low Stock
-                        lowStockItems.forEach { item ->
-                            val route = "product_ledger/${item.variantId}/${item.productName}/${item.capacity}/no_spec"
-                            allNotifications.add(AppNotification("low_stock_${item.variantId}_${item.warehouseName}", "مخزون منخفض: ${item.productName}", "${item.capacity}A | المتبقي: ${item.currentQuantity} (الحد: ${item.minQuantity}) في ${item.warehouseName}", NotificationType.LOW_STOCK, route))
-                        }
-
-                        emit(DashboardUiState(
-                            pendingApprovalsCount = pendingCount,
-                            lowStockVariants = lowStockItems,
-                            upcomingBills = upcoming,
-                            warehouseStats = warehouseStatsList,
-                            notifications = allNotifications,
-                            systemStats = systemStats,
-                            isLoading = false
-                        ))
-                    }
-                } catch (e: Exception) {
-                    Log.e("DashboardViewModel", "Error loading dashboard", e)
-                    emit(DashboardUiState(isLoading = false))
-                }
+        ) { user, _ -> user }.onEach { user ->
+            if (user == null) {
+                _uiState.value = DashboardUiState(isLoading = false)
+                alertsListener?.remove()
+                return@onEach
             }
-        }.onEach { state ->
-            _uiState.value = state
+
+            _uiState.value = _uiState.value.copy(isLoading = true)
+            try {
+                val isAdmin = user.role == "admin"
+                val userWarehouseId = user.warehouseId
+
+                // 1. Initial Static Data Fetch
+                val systemStats = firestore.collection(SystemStats.COLLECTION_NAME).document(SystemStats.DOCUMENT_ID).get().await()
+                        .toObject(SystemStats::class.java) ?: SystemStats()
+
+                val (pendingCount, warehouses) = if (isAdmin) {
+                    val pEntries = stockEntryRepository.getPendingCount()
+                    val pReqs = approvalRepository.getPendingRequestsFlow().take(1).first()
+                    Pair(pEntries + pReqs.size, warehouseRepository.getWarehousesOnce())
+                } else {
+                    Pair(0, warehouseRepository.getWarehousesOnce())
+                }
+
+                // 2. Real-time Snapshot Listener for Alerts
+                alertsListener?.remove()
+                alertsListener = firestore.collection(SystemAlert.COLLECTION_NAME)
+                    .whereEqualTo("type", SystemAlert.TYPE_LOW_STOCK)
+                    .addSnapshotListener { alertsSnap, e ->
+                        if (e != null || alertsSnap == null) return@addSnapshotListener
+
+                        this@DashboardViewModel.viewModelScope.launch {
+                            val filteredAlerts = alertsSnap.documents.mapNotNull { it.toObject(SystemAlert::class.java) }
+                                .filter { isAdmin || it.warehouseId == userWarehouseId }
+
+                            val variantIds = filteredAlerts.map { it.relatedId }.distinct()
+                            val variantsMap = if (variantIds.isEmpty()) emptyMap() else {
+                                variantIds.chunked(30).map { chunk ->
+                                    firestore.collection(ProductVariant.COLLECTION_NAME)
+                                        .whereIn(com.google.firebase.firestore.FieldPath.documentId(), chunk)
+                                        .get().await()
+                                        .documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }
+                                }.flatten().associateBy { it.id }
+                            }
+
+                            val lowStockItems = filteredAlerts.mapNotNull { alert ->
+                                val variant = variantsMap[alert.relatedId] ?: return@mapNotNull null
+                                val whName = warehouses.find { it.id == alert.warehouseId }?.name ?: "مخزن غير معروف"
+
+                                LowStockItem(
+                                    variantId = alert.relatedId,
+                                    productName = variant.productName ?: alert.title.replace("مخزون منخفض: ", ""),
+                                    capacity = variant.capacity,
+                                    currentQuantity = variant.currentStock?.get(alert.warehouseId) ?: 0,
+                                    minQuantity = variant.minQuantities[alert.warehouseId] ?: variant.minQuantity,
+                                    warehouseName = whName
+                                )
+                            }
+
+                            updateStateWithAlerts(user, warehouses, lowStockItems, pendingCount, systemStats)
+                        }
+                    }
+
+            } catch (e: Exception) {
+                Log.e("DashboardViewModel", "Error loading dashboard", e)
+                _uiState.value = _uiState.value.copy(isLoading = false)
+            }
         }.launchIn(viewModelScope)
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        alertsListener?.remove()
+    }
+
+    private suspend fun updateStateWithAlerts(
+        user: User,
+        warehouses: List<Warehouse>,
+        lowStockItems: List<LowStockItem>,
+        pendingCount: Int,
+        systemStats: SystemStats
+    ) {
+        val isAdmin = user.role == "admin"
+        val userWarehouseId = user.warehouseId
+
+        // 2. Today's Collections (Server-side aggregation)
+        val today = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }
+        val startOfToday = today.time.time
+        val relevantWarehouses = if (isAdmin) warehouses
+                                else warehouses.filter { it.id == userWarehouseId && it.isActive }
+
+        val warehouseStatsList = relevantWarehouses.map { warehouse ->
+            val (collection, count) = paymentRepository.getTodayStats(warehouse.id, startOfToday)
+            WarehouseStats(warehouse.id, warehouse.name, collection, count)
+        }.filter { if (isAdmin) it.todayCollection > 0 || it.todayCollectionCount > 0 else true }
+
+        // 3. Upcoming Bills
+        val nextWeek = Calendar.getInstance().apply {
+            add(Calendar.DAY_OF_YEAR, 7)
+            set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59)
+        }
+        val upcoming = if (user.role == User.ROLE_SELLER) emptyList()
+        else {
+            firestore.collection(Bill.COLLECTION_NAME)
+                .whereNotEqualTo("status", BillStatus.PAID)
+                .get().await()
+                .documents.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) }
+                .filter { it.dueDate != null && !it.dueDate.after(nextWeek.time) }
+                .sortedBy { it.dueDate }
+        }
+
+        // Construct Notifications
+        val allNotifications = mutableListOf<AppNotification>()
+        upcoming.forEach { bill ->
+            val isOverdue = bill.dueDate.before(today.time)
+            allNotifications.add(AppNotification(
+                "bill_${bill.id}",
+                if (isOverdue) "كمبيالة متأخرة" else "موعد استحقاق قريب",
+                "الكمبيالة: ${bill.description} تستحق بتاريخ ${java.text.SimpleDateFormat("yyyy/MM/dd").format(bill.dueDate)}",
+                if (isOverdue) NotificationType.OVERDUE_BILL else NotificationType.UPCOMING_BILL,
+                "bills"
+            ))
+        }
+        allNotifications.sortBy { if (it.type == NotificationType.OVERDUE_BILL) 0 else 1 }
+        if (pendingCount > 0) {
+            allNotifications.add(AppNotification("pending_approvals", "موافقات معلقة", "لديك $pendingCount طلبات بانتظار الموافقة", NotificationType.PENDING_APPROVAL, "approvals"))
+        }
+        lowStockItems.forEach { item ->
+            val route = "product_ledger/${item.variantId}/${item.productName}/${item.capacity}/no_spec"
+            allNotifications.add(AppNotification("low_stock_${item.variantId}_${item.warehouseName}", "مخزون منخفض: ${item.productName}", "${item.capacity}A في ${item.warehouseName}", NotificationType.LOW_STOCK, route))
+        }
+
+        _uiState.value = DashboardUiState(
+            pendingApprovalsCount = pendingCount,
+            lowStockVariants = lowStockItems,
+            upcomingBills = upcoming,
+            warehouseStats = warehouseStatsList,
+            notifications = allNotifications,
+            systemStats = systemStats,
+            isLoading = false
+        )
     }
 }

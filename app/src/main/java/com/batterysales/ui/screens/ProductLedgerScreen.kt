@@ -63,7 +63,6 @@ fun ProductLedgerScreen(
     }
     val isLoading by viewModel.isLoading.collectAsState()
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
-    val isLastPage by viewModel.isLastPage.collectAsState()
     val listState = rememberLazyListState()
     val selectedCategory by viewModel.selectedCategory.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
@@ -84,7 +83,7 @@ fun ProductLedgerScreen(
     }
 
     LaunchedEffect(shouldLoadMore.value) {
-        if (shouldLoadMore.value && !isLoading && !isLoadingMore && !isLastPage) {
+        if (shouldLoadMore.value && !isLoading && !isLoadingMore) {
             viewModel.loadData()
         }
     }
@@ -421,6 +420,20 @@ fun LedgerItemCard(
                         value = "JD ${String.format("%.3f", entry.costPrice)}",
                         color = Color(0xFF3B82F6)
                     )
+                }
+            }
+            if (entry.settlementNotes.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(12.dp))
+                HorizontalDivider(modifier = Modifier.background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)).height(1.dp).fillMaxWidth())
+                Spacer(modifier = Modifier.height(8.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    entry.settlementNotes.forEach { note ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Link, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(text = note, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
             }
             if (entry.returnedQuantity > 0) {

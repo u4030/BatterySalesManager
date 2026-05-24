@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.batterysales.ui.components.BarcodeScanner
+import com.batterysales.utils.NetworkHelper
 import com.batterysales.viewmodel.SalesViewModel
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.*
@@ -35,6 +36,9 @@ import com.batterysales.ui.components.HeaderIconButton
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltViewModel()) {
+    val networkHelper = (androidx.compose.ui.platform.LocalContext.current.applicationContext as com.batterysales.BatterySalesApp).networkHelper
+
+    val isOnline by networkHelper.isOnlineFlow.collectAsState(initial = true)
     val uiState by viewModel.uiState.collectAsState()
     val keyboardController = com.batterysales.ui.components.LocalCustomKeyboardController.current
     var customerName by remember { mutableStateOf("") }
@@ -100,6 +104,21 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                if (uiState.successMessage != null) {
+                    item {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9)),
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF4CAF50))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(text = uiState.successMessage!!, color = Color(0xFF2E7D32), style = MaterialTheme.typography.bodyMedium)
+                            }
+                        }
+                    }
+                }
                 if (uiState.errorMessage != null) {
                     item {
                         Card(
@@ -161,7 +180,10 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
                                 icon = Icons.Default.Warehouse
                             )
 
-                            val availableQty = uiState.selectedVariant?.let { uiState.stockLevels[Pair(it.id, uiState.selectedWarehouse?.id ?: "")] ?: 0 } ?: 0
+                            val availableQty = uiState.selectedVariant?.let {
+                                val whId = uiState.selectedWarehouse?.id ?: uiState.userWarehouseId.ifEmpty { "global" }
+                                uiState.stockLevels[Pair(it.id, whId)] ?: 0
+                            } ?: 0
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                                 Text("الكمية المتاحة: ", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f), fontSize = 14.sp)
                                 Text("$availableQty", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 18.sp)
@@ -362,9 +384,12 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
                             )
                         },
                         modifier = Modifier.fillMaxWidth().height(56.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = accentColor),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = accentColor,
+                            disabledContainerColor = accentColor.copy(alpha = 0.5f)
+                        ),
                         shape = RoundedCornerShape(16.dp),
-                        enabled = !uiState.isSubmitting
+                        enabled = !uiState.isSubmitting && isOnline
                     ) {
                         if (uiState.isSubmitting) {
                             CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))

@@ -82,4 +82,6 @@
     <string name="no_data">لا توجد بيانات</string>
     <string name="error">خطأ</string>
     <string name="success">نجح</string>
+    <string name="saved_and_synced">تم الحفظ والمزامنة بنجاح ✅</string>
+    <string name="saved_locally">تم الحفظ محلياً.. جاري المزامنة ⏳</string>
 </resources>

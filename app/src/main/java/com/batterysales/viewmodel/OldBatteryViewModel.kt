@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.*
 import android.util.Log
 import com.batterysales.utils.Quadruple
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import java.util.*
 import javax.inject.Inject
 
@@ -96,7 +97,13 @@ class OldBatteryViewModel @Inject constructor(
                 _summary.value = Pair(0, 0.0)
                 _selectedWarehouseId.value = null
 
-                scrapWarehouseRepository.getScrapWarehouses().onEach { allScrapWh ->
+                // Optimization: Replace Flow listener with one-time fetch or manual refresh
+                viewModelScope.launch {
+                    val snapshot = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                        .collection(com.batterysales.data.models.ScrapWarehouse.COLLECTION_NAME)
+                        .get().await()
+
+                    val allScrapWh = snapshot.documents.mapNotNull { it.toObject(com.batterysales.data.models.ScrapWarehouse::class.java)?.copy(id = it.id) }
                     val active = allScrapWh.filter { it.isActive }
                     
                     val filtered = if (user?.role == "seller") {
@@ -106,16 +113,12 @@ class OldBatteryViewModel @Inject constructor(
                     _scrapWarehouses.value = filtered
 
                     if (user?.role == "admin" && _selectedWarehouseId.value == null) {
-                        // For admin, don't pre-select a warehouse to force manual selection in dialogs
-                        // But load initial data from first available if needed for summary
-                        filtered.firstOrNull()?.let {
-                            loadTransactions(reset = true, warehouseId = null) // Load all for admin view initially
-                        }
+                        loadTransactions(reset = true, warehouseId = null)
                     } else if (user?.role == "seller") {
                         _selectedWarehouseId.value = user.warehouseId
                         loadTransactions(reset = true, warehouseId = user.warehouseId)
                     }
-                }.launchIn(viewModelScope)
+                }
 
                 if (user?.role == "seller") {
                     loadTransactions(reset = true, warehouseId = user.warehouseId)
