@@ -64,7 +64,8 @@ class SummaryRepository @Inject constructor(
         val updatedItemsWh = whSummary.items.toMutableMap()
         val currentItemWh = updatedItemsWh[variantId] ?: InventorySummaryItem(
             variantId = variantId, productId = variant.productId, productName = variant.productName ?: "Unknown",
-            capacity = variant.capacity, barcode = variant.barcode, sellingPrice = variant.sellingPrice
+            capacity = variant.capacity, barcode = variant.barcode, sellingPrice = variant.sellingPrice,
+            specification = variant.specification
         )
         updatedItemsWh[variantId] = currentItemWh.copy(
             currentStock = currentItemWh.currentStock + qtyChange,
@@ -76,7 +77,8 @@ class SummaryRepository @Inject constructor(
         val updatedItemsGlobal = globalSummary.items.toMutableMap()
         val currentItemGlobal = updatedItemsGlobal[variantId] ?: InventorySummaryItem(
             variantId = variantId, productId = variant.productId, productName = variant.productName ?: "Unknown",
-            capacity = variant.capacity, barcode = variant.barcode, sellingPrice = variant.sellingPrice
+            capacity = variant.capacity, barcode = variant.barcode, sellingPrice = variant.sellingPrice,
+            specification = variant.specification
         )
         updatedItemsGlobal[variantId] = currentItemGlobal.copy(
             currentStock = currentItemGlobal.currentStock + qtyChange,
@@ -110,7 +112,8 @@ class SummaryRepository @Inject constructor(
             // Warehouse Map
             val currentItemWh = updatedItemsWh[variantId] ?: InventorySummaryItem(
                 variantId = variantId, productId = variant.productId, productName = variant.productName ?: "Unknown",
-                capacity = variant.capacity, barcode = variant.barcode, sellingPrice = variant.sellingPrice
+                capacity = variant.capacity, barcode = variant.barcode, sellingPrice = variant.sellingPrice,
+                specification = variant.specification
             )
             updatedItemsWh[variantId] = currentItemWh.copy(
                 currentStock = currentItemWh.currentStock + qtyChange,
@@ -121,7 +124,8 @@ class SummaryRepository @Inject constructor(
             // Global Map
             val currentItemGlobal = updatedItemsGlobal[variantId] ?: InventorySummaryItem(
                 variantId = variantId, productId = variant.productId, productName = variant.productName ?: "Unknown",
-                capacity = variant.capacity, barcode = variant.barcode, sellingPrice = variant.sellingPrice
+                capacity = variant.capacity, barcode = variant.barcode, sellingPrice = variant.sellingPrice,
+                specification = variant.specification
             )
             updatedItemsGlobal[variantId] = currentItemGlobal.copy(
                 currentStock = currentItemGlobal.currentStock + qtyChange,
@@ -204,7 +208,9 @@ class SummaryRepository @Inject constructor(
 
     private fun com.batterysales.data.models.PurchaseOrderItem.toMap(): Map<String, Any> = mapOf(
         "id" to entry.id, "totalCost" to entry.totalCost, "remainingBalance" to remainingBalance,
-        "referenceNumbers" to referenceNumbers, "invoiceNumber" to entry.invoiceNumber, "timestamp" to entry.timestamp
+        "referenceNumbers" to referenceNumbers, "invoiceNumber" to entry.invoiceNumber,
+        "timestamp" to entry.timestamp, "invoiceDate" to (entry.invoiceDate ?: entry.timestamp),
+        "settlementNotes" to entry.settlementNotes
     )
 
     suspend fun getSupplierReportCache(supplierId: String): SupplierReportCache? {

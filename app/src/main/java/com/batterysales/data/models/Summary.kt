@@ -10,6 +10,7 @@ data class InventorySummaryItem(
     val productId: String = "",
     val productName: String = "",
     val capacity: Int = 0,
+    var specification: String = "",
     val barcode: String = "",
     val currentStock: Int = 0,
     val minQuantity: Int = 0,

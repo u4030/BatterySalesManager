@@ -183,7 +183,7 @@ class ReportsViewModel @Inject constructor(
                         .map { item ->
                             InventoryReportItem(
                                 product = Product(id = item.productId, name = item.productName),
-                                variant = ProductVariant(id = item.variantId, productId = item.productId, capacity = item.capacity, barcode = item.barcode, weightedAverageCost = item.weightedAverageCost, sellingPrice = item.sellingPrice),
+                                variant = ProductVariant(id = item.variantId, productId = item.productId, capacity = item.capacity, barcode = item.barcode, weightedAverageCost = item.weightedAverageCost, sellingPrice = item.sellingPrice, specification = item.specification),
                                 warehouseQuantities = if (whId != null) mapOf(whId to item.currentStock) else emptyMap(),
                                 totalQuantity = item.currentStock,
                                 averageCost = item.weightedAverageCost,
@@ -305,7 +305,8 @@ class ReportsViewModel @Inject constructor(
                     .groupBy { it.invoiceNumber.trim().ifEmpty { it.orderId.trim().ifEmpty { it.id } } }
 
                 val purchaseOrders: List<PurchaseOrderItem> = groupedEntries.map { (key, group) ->
-                    val representative = group.first()
+                    val sortedGroup = group.sortedBy { it.timestamp }
+                    val representative = sortedGroup.first()
                     val totalOrderCost = group.sumOf { it.getNetCost() }
                     val effectiveBalance = if (representative.isSettled) 0.0 else (representative.remainingBalance ?: 0.0)
 
@@ -318,7 +319,16 @@ class ReportsViewModel @Inject constructor(
                         entry = representative.copy(totalCost = totalOrderCost),
                         linkedPaidAmount = manualLinkedBills.sumOf { it.paidAmount },
                         remainingBalance = effectiveBalance,
-                        items = group,
+                        items = sortedGroup,
+                        referenceNumbers = manualLinkedBills.map { bill ->
+                            val typeLabel = when(bill.billType) {
+                                BillType.CHECK -> "شيك"
+                                BillType.BILL -> "كمبيالة"
+                                BillType.CASH -> "نقدي"
+                                else -> "دفعة"
+                            }
+                            "$typeLabel (#${bill.referenceNumber}): JD ${String.format("%.3f", bill.paidAmount)}"
+                        },
                         hasManualLink = manualLinkedBills.isNotEmpty(),
                         totalActualPaid = totalOrderCost - effectiveBalance,
                         totalLinkedAmount = maxOf(manualLinkedBills.sumOf { it.amount }, totalOrderCost - effectiveBalance)
@@ -326,7 +336,7 @@ class ReportsViewModel @Inject constructor(
                 }
 
                 val positiveOrders = purchaseOrders.filter { it.entry.totalCost > 0 }
-                    .sortedWith(compareByDescending<PurchaseOrderItem> { it.entry.getEffectiveDate() }.thenByDescending { it.entry.timestamp })
+                    .sortedWith(compareBy<PurchaseOrderItem> { it.entry.getEffectiveDate() }.thenBy { it.entry.timestamp })
 
                 val totalDebit = if (start == null && end == null) supplier.totalDebit else positiveOrders.sumOf { it.entry.totalCost }
                 val totalCredit = if (start == null && end == null) supplier.totalCredit else (supplierBills.sumOf { it.paidAmount } + purchaseOrders.filter { it.entry.totalCost < 0 }.sumOf { -it.entry.totalCost })
@@ -407,7 +417,9 @@ private fun Map<String, Any>.toOrderItem(): PurchaseOrderItem {
             id = this["id"] as? String ?: "",
             totalCost = (this["totalCost"] as? Number)?.toDouble() ?: 0.0,
             invoiceNumber = this["invoiceNumber"] as? String ?: "",
-            timestamp = this["timestamp"] as? Date ?: Date()
+            timestamp = this["timestamp"] as? Date ?: Date(),
+            invoiceDate = this["invoiceDate"] as? Date,
+            settlementNotes = (this["settlementNotes"] as? List<String>) ?: emptyList()
         ),
         linkedPaidAmount = 0.0,
         remainingBalance = (this["remainingBalance"] as? Number)?.toDouble() ?: 0.0,

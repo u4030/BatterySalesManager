@@ -163,11 +163,26 @@ fun WarehouseScreen(
                                             color = if (isLowStock) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurface
                                         )
                                     }
-                                    Text(
-                                        text = "${item.variant.capacity}A",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = if (isLowStock) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = "${item.variant.capacity}A",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = if (isLowStock) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        if (item.variant.specification.isNotEmpty()) {
+                                            Text(
+                                                text = " | ",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = (if (isLowStock) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant).copy(alpha = 0.5f)
+                                            )
+                                            Text(
+                                                text = item.variant.specification,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isLowStock) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                    }
                                 }
                                 
                                 Surface(

@@ -85,7 +85,7 @@ class WarehouseViewModel @Inject constructor(
                     .map { item ->
                         InventoryReportItem(
                             product = Product(id = item.productId, name = item.productName),
-                            variant = ProductVariant(id = item.variantId, productId = item.productId, capacity = item.capacity, barcode = item.barcode, weightedAverageCost = item.weightedAverageCost, sellingPrice = item.sellingPrice),
+                            variant = ProductVariant(id = item.variantId, productId = item.productId, capacity = item.capacity, barcode = item.barcode, weightedAverageCost = item.weightedAverageCost, sellingPrice = item.sellingPrice, specification = item.specification),
                             warehouseQuantities = mapOf(targetWhId to item.currentStock),
                             totalQuantity = item.currentStock,
                             averageCost = item.weightedAverageCost,

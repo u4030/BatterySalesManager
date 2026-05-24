@@ -209,16 +209,15 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                 }
             }
 
-            if (selectedTab == 0 && allItemNames.isNotEmpty()) {
+            if (selectedTab == 0 && inventoryItems.isNotEmpty()) {
                 com.batterysales.ui.components.SidebarAlphabetNavigation(
                     onLetterSelected = { letter ->
-                        val index = allItemNames.indexOfFirst { it.trim().startsWith(letter.toString(), ignoreCase = true) }
+                        val index = inventoryItems.indexOfFirst {
+                            it.product.name.trim().startsWith(letter.toString(), ignoreCase = true)
+                        }
                         if (index != -1) {
-                            var offset = 0
-                            offset += 1
-                            offset += 1
-                            if (inventoryItems.isNotEmpty()) offset += 1
-
+                            // Offsets: 0: Header, 1: Controls, 2: GrandTotalCard
+                            val offset = 3
                             scope.launch { listState.animateScrollToItem(index + offset) }
                         }
                     },
@@ -357,7 +356,13 @@ fun ReportItemCard(item: com.batterysales.data.models.InventoryReportItem, wareh
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(text = "\u200F${item.product.name}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                    Text(text = "\u200E${item.variant.capacity} A", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(text = "\u200E${item.variant.capacity} A", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (item.variant.specification.isNotEmpty()) {
+                            Text(text = " | ", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+                            Text(text = item.variant.specification, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
                 }
                 if (isLowStock) {
                     Surface(color = Color(0xFFEF4444).copy(alpha = 0.1f), shape = RoundedCornerShape(12.dp)) {
