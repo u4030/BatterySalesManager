@@ -20,8 +20,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.core.content.FileProvider
-import com.batterysales.data.models.ProductVariant
-import com.batterysales.viewmodel.SupplierReportItem
+import com.batterysales.data.models.*
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat

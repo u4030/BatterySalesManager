@@ -12,7 +12,8 @@ data class Transaction(
     val warehouseId: String? = null, // المستودع المرتبط (للخزينة لكل مستودع)
     val paymentMethod: String = "cash", // cash, e-wallet, visa
     val createdAt: Date = Date(),
-    val notes: String = ""
+    val notes: String = "",
+    val isSystemManaged: Boolean = false
 ) {
     companion object {
         const val COLLECTION_NAME = "transactions"

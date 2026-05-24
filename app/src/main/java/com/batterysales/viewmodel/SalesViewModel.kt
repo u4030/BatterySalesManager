@@ -5,9 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.batterysales.data.models.*
 import com.batterysales.data.repositories.*
 import android.util.Log
-import com.batterysales.data.repositories.OldBatteryRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.Date
@@ -29,198 +27,185 @@ data class SalesUiState(
     val paymentMethod: String = "cash",
     val isWarehouseFixed: Boolean = false,
     val userRole: String = "",
+    val userWarehouseId: String = "",
     val isLoading: Boolean = false,
     val isSubmitting: Boolean = false,
     val errorMessage: String? = null,
+    val successMessage: String? = null,
     val isFinished: Boolean = false
 )
 
-private data class SalesFormData(
-    val product: Product?,
-    val variant: ProductVariant?,
-    val warehouse: Warehouse?,
-    val qty: String,
-    val price: String,
-    val oldQty: String,
-    val oldAmps: String,
-    val oldVal: String,
-    val payMethod: String
-)
-
-private data class SalesStatus(
-    val error: String?,
-    val loading: Boolean,
-    val submitting: Boolean,
-    val finished: Boolean
-)
-
-@OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class SalesViewModel @Inject constructor(
     private val productRepository: ProductRepository,
     private val productVariantRepository: ProductVariantRepository,
     private val warehouseRepository: WarehouseRepository,
-    private val stockEntryRepository: StockEntryRepository,
+    private val summaryRepository: SummaryRepository,
     private val invoiceRepository: InvoiceRepository,
-    private val paymentRepository: PaymentRepository,
     private val userRepository: UserRepository,
-    private val accountingRepository: AccountingRepository,
     private val oldBatteryRepository: OldBatteryRepository,
     private val networkHelper: com.batterysales.utils.NetworkHelper
 ) : ViewModel() {
 
-    private val _selectedProduct = MutableStateFlow<Product?>(null)
-    private val _selectedVariant = MutableStateFlow<ProductVariant?>(null)
-    private val _selectedWarehouse = MutableStateFlow<Warehouse?>(null)
-    private val _quantity = MutableStateFlow("1")
-    private val _sellingPrice = MutableStateFlow("")
-    private val _oldBatteriesQuantity = MutableStateFlow("")
-    private val _oldBatteriesTotalAmps = MutableStateFlow("")
-    private val _oldBatteriesValue = MutableStateFlow("")
-    private val _paymentMethod = MutableStateFlow("cash")
-    private val _errorMessage = MutableStateFlow<String?>(null)
-    private val _isLoading = MutableStateFlow(false)
-    private val _isSubmitting = MutableStateFlow(false)
-    private val _isFinished = MutableStateFlow(false)
+    private val _uiState = MutableStateFlow(SalesUiState(isLoading = true))
+    val uiState: StateFlow<SalesUiState> = _uiState.asStateFlow()
 
     private var currentUser: User? = null
+    private var cachedInventorySummary: InventorySummary? = null
 
-    @Suppress("UNCHECKED_CAST")
-    private val formData = combine(
-        _selectedProduct, _selectedVariant, _selectedWarehouse,
-        _quantity, _sellingPrice, _oldBatteriesQuantity,
-        _oldBatteriesTotalAmps, _oldBatteriesValue, _paymentMethod
-    ) { args ->
-        SalesFormData(
-            args[0] as Product?, args[1] as ProductVariant?, args[2] as Warehouse?,
-            args[3] as String, args[4] as String, args[5] as String,
-            args[6] as String, args[7] as String, args[8] as String
-        )
+    init {
+        loadInitialData()
     }
 
-    private val statusData = combine(
-        _errorMessage, _isLoading, _isSubmitting, _isFinished
-    ) { err, load, sub, fin ->
-        SalesStatus(err, load, sub, fin)
-    }
+    private fun loadInitialData() {
+        viewModelScope.launch {
+            try {
+                _uiState.update { it.copy(isLoading = true) }
+                val user = userRepository.getCurrentUser()
+                currentUser = user
 
-    @Suppress("UNCHECKED_CAST")
-    val uiState: StateFlow<SalesUiState> = combine(
-        productRepository.getProducts(),
-        warehouseRepository.getWarehouses(),
-        userRepository.getCurrentUserFlow(),
-        productVariantRepository.getAllVariantsFlow(),
-        formData,
-        statusData,
-        _selectedProduct.flatMapLatest { product ->
-            if (product == null) flowOf(emptyList<ProductVariant>())
-            else productVariantRepository.getVariantsForProductFlow(product.id)
-                .map { variants -> variants.filter { !it.archived }.sortedBy { it.capacity } }
-        }
-    ) { args ->
-        val products = args[0] as List<Product>
-        val warehouses = args[1] as List<Warehouse>
-        val user = args[2] as User?
-        val allVariants = args[3] as List<ProductVariant>
-        val form = args[4] as SalesFormData
-        val status = args[5] as SalesStatus
-        val productVariants = args[6] as List<ProductVariant>
+                val isSeller = user?.role == User.ROLE_SELLER
+                val userWarehouseId = user?.warehouseId ?: ""
+                
+                // Fetch Summary
+                cachedInventorySummary = summaryRepository.getInventorySummary(if (isSeller) userWarehouseId else null)
+                val warehouses = warehouseRepository.getWarehousesOnce()
+                val products = productRepository.getProductsOnce()
 
-        currentUser = user
+                // Fallback: If summary is empty (first time), allow loading products from collection
+                val summaryItems = cachedInventorySummary?.items?.values ?: emptyList()
+                val availableProductIds = summaryItems.filter { it.currentStock > 0 }.map { it.productId }.toSet()
 
-        val stockMap = mutableMapOf<Pair<String, String>, Int>()
-        allVariants.forEach { variant ->
-            variant.currentStock?.forEach { (warehouseId, qty) ->
-                stockMap[Pair(variant.id, warehouseId)] = qty
+                val filteredProducts = if (isSeller && availableProductIds.isNotEmpty()) {
+                    products.filter { !it.archived && availableProductIds.contains(it.id) }
+                } else {
+                    products.filter { !it.archived }
+                }
+
+                _uiState.update {
+                    it.copy(
+                        products = filteredProducts.sortedBy { p -> p.name },
+                        warehouses = warehouses.filter { w -> w.isActive },
+                        selectedWarehouse = if (isSeller) warehouses.find { w -> w.id == userWarehouseId } else null,
+                        isWarehouseFixed = isSeller,
+                        userRole = user?.role ?: "",
+                        userWarehouseId = userWarehouseId,
+                        isLoading = false
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e("SalesViewModel", "Error loading initial data", e)
+                _uiState.update { it.copy(isLoading = false, errorMessage = "فشل تحميل البيانات") }
             }
         }
-
-        val activeSelectedProduct = products.find { it.id == form.product?.id } ?: form.product
-        val activeSelectedVariant = allVariants.find { it.id == form.variant?.id } ?: form.variant
-
-        val isSeller = user?.role == User.ROLE_SELLER
-        val autoSelectedWarehouse = if (isSeller) {
-            warehouses.find { it.id == user?.warehouseId }
-        } else {
-            form.warehouse
-        }
-
-        val filteredProducts = if (isSeller && user?.warehouseId != null) {
-            val availableVariantIds = allVariants.filter { v ->
-                val qty = v.currentStock?.get(user.warehouseId) ?: 0
-                qty > 0
-            }.map { it.id }.toSet()
-
-            val availableProductIds = allVariants.filter { availableVariantIds.contains(it.id) }.map { it.productId }.toSet()
-            products.filter { !it.archived && (availableProductIds.contains(it.id) || it.id == form.product?.id) }
-                .sortedBy { it.name }
-        } else {
-            products.filter { !it.archived }
-                .sortedBy { it.name }
-        }
-
-        SalesUiState(
-            products = filteredProducts,
-            variants = productVariants,
-            warehouses = warehouses.filter { it.isActive },
-            stockLevels = stockMap,
-            selectedProduct = activeSelectedProduct,
-            selectedVariant = activeSelectedVariant,
-            selectedWarehouse = autoSelectedWarehouse,
-            quantity = form.qty,
-            sellingPrice = form.price,
-            oldBatteriesQuantity = form.oldQty,
-            oldBatteriesTotalAmps = form.oldAmps,
-            oldBatteriesValue = form.oldVal,
-            paymentMethod = form.payMethod,
-            isWarehouseFixed = isSeller,
-            userRole = user?.role ?: "",
-            isLoading = status.loading,
-            isSubmitting = status.submitting,
-            errorMessage = status.error,
-            isFinished = status.finished
-        )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SalesUiState(isLoading = true))
+    }
 
     fun onProductSelected(product: Product) {
-        _selectedProduct.value = product
-        if (_selectedVariant.value?.productId != product.id) {
-            _selectedVariant.value = null
-            _sellingPrice.value = ""
+        viewModelScope.launch {
+            loadVariantsForProduct(product)
+        }
+    }
+
+    private suspend fun loadVariantsForProduct(product: Product, targetVariantId: String? = null) {
+        try {
+            _uiState.update { it.copy(isLoading = true, selectedProduct = product, selectedVariant = if (targetVariantId != null) it.selectedVariant else null) }
+            
+            // --- ELITE STRATEGY with Fallback ---
+            val summaryItems = cachedInventorySummary?.items?.values ?: emptyList()
+            var variantsForProduct = summaryItems.filter { it.productId == product.id }
+                .map { item -> 
+                    ProductVariant(
+                        id = item.variantId,
+                        productId = item.productId,
+                        capacity = item.capacity,
+                        barcode = item.barcode,
+                        sellingPrice = item.sellingPrice,
+                        weightedAverageCost = item.weightedAverageCost,
+                        productName = item.productName,
+                        currentStock = mapOf((cachedInventorySummary?.warehouseId ?: "global") to item.currentStock)
+                    )
+                }.sortedBy { it.capacity }
+
+            if (variantsForProduct.isEmpty()) {
+                variantsForProduct = productVariantRepository.getVariantsForProduct(product.id)
+                    .filter { !it.archived }
+                    .sortedBy { it.capacity }
+            }
+
+            val userWhId = currentUser?.warehouseId ?: ""
+            val selectedWhId = _uiState.value.selectedWarehouse?.id ?: userWhId.ifEmpty { "global" }
+
+            val filteredVariants = if (currentUser?.role == User.ROLE_SELLER && userWhId.isNotEmpty()) {
+                variantsForProduct.filter { (it.currentStock?.get(userWhId) ?: 0) > 0 || variantsForProduct.size <= 2 }
+            } else {
+                variantsForProduct
+            }
+
+            val newStockMap = _uiState.value.stockLevels.toMutableMap()
+            filteredVariants.forEach { v ->
+                // Map the stock to the CORRECT key that the UI expects
+                val qty = v.currentStock?.get(selectedWhId) ?: v.currentStock?.get("global") ?: 0
+                newStockMap[Pair(v.id, selectedWhId)] = qty
+            }
+
+            val selectedVar = if (targetVariantId != null) filteredVariants.find { it.id == targetVariantId } else null
+
+            _uiState.update { 
+                it.copy(
+                    variants = filteredVariants, 
+                    stockLevels = newStockMap,
+                    selectedVariant = selectedVar ?: it.selectedVariant,
+                    sellingPrice = selectedVar?.let { sv -> if (sv.sellingPrice > 0.0) sv.sellingPrice.toString() else "" } ?: it.sellingPrice,
+                    isLoading = false 
+                ) 
+            }
+        } catch (e: Exception) {
+            Log.e("SalesViewModel", "Error loading variants", e)
+            _uiState.update { it.copy(isLoading = false, errorMessage = "فشل تحميل السعات") }
         }
     }
 
     fun onVariantSelected(variant: ProductVariant) {
-        _selectedVariant.value = variant
-        _sellingPrice.value = if (variant.sellingPrice > 0.0) variant.sellingPrice.toString() else ""
+        _uiState.update { 
+            it.copy(
+                selectedVariant = variant,
+                sellingPrice = if (variant.sellingPrice > 0.0) variant.sellingPrice.toString() else ""
+            )
+        }
     }
 
     fun onWarehouseSelected(warehouse: Warehouse) {
-        _selectedWarehouse.value = warehouse
+        _uiState.update { it.copy(selectedWarehouse = warehouse) }
+        val state = uiState.value
+        state.selectedProduct?.let { product ->
+            viewModelScope.launch {
+                loadVariantsForProduct(product, state.selectedVariant?.id)
+            }
+        }
     }
 
     fun onQuantityChanged(quantity: String) {
-        _quantity.value = quantity
+        _uiState.update { it.copy(quantity = quantity) }
     }
 
     fun onSellingPriceChanged(price: String) {
-        _sellingPrice.value = price
+        _uiState.update { it.copy(sellingPrice = price) }
     }
 
     fun onOldBatteriesQuantityChanged(qty: String) {
-        _oldBatteriesQuantity.value = qty
+        _uiState.update { it.copy(oldBatteriesQuantity = qty) }
     }
 
     fun onOldBatteriesTotalAmpsChanged(amps: String) {
-        _oldBatteriesTotalAmps.value = amps
+        _uiState.update { it.copy(oldBatteriesTotalAmps = amps) }
     }
 
     fun onOldBatteriesValueChanged(value: String) {
-        _oldBatteriesValue.value = value
+        _uiState.update { it.copy(oldBatteriesValue = value) }
     }
 
     fun onPaymentMethodChanged(method: String) {
-        _paymentMethod.value = method
+        _uiState.update { it.copy(paymentMethod = method) }
     }
 
     fun createSale(customerName: String, customerPhone: String, paidAmount: Double) {
@@ -234,49 +219,42 @@ class SalesViewModel @Inject constructor(
         val price = state.sellingPrice.toDoubleOrNull() ?: 0.0
 
         if (product == null || variant == null || warehouse == null) {
-            _errorMessage.value = "الرجاء اختيار المنتج والصنف والمستودع"
+            _uiState.update { it.copy(errorMessage = "الرجاء اختيار المنتج والصنف والمستودع") }
             return
         }
 
         if (qty <= 0) {
-            _errorMessage.value = "الرجاء إدخال كمية صحيحة"
+            _uiState.update { it.copy(errorMessage = "الرجاء إدخال كمية صحيحة") }
             return
         }
 
         val available = state.stockLevels[Pair(variant.id, warehouse.id)] ?: 0
         if (qty > available) {
-            _errorMessage.value = "المخزون غير كافٍ في مستودع ${warehouse.name}. المتاح: $available، المطلوب: $qty"
+            _uiState.update { it.copy(errorMessage = "المخزون غير كافٍ في مستودع ${warehouse.name}. المتاح: $available، المطلوب: $qty") }
             return
         }
 
         viewModelScope.launch {
-            _isLoading.value = true
-            _isSubmitting.value = true
+            _uiState.update { it.copy(isSubmitting = true) }
 
             try {
                 if (!warehouse.isActive) {
-                    _errorMessage.value = "عذراً، هذا المستودع متوقف حالياً ولا يمكن إجراء عمليات عليه."
-                    _isLoading.value = false
-                    _isSubmitting.value = false
+                    _uiState.update { it.copy(errorMessage = "عذراً، هذا المستودع متوقف حالياً ولا يمكن إجراء عمليات عليه.", isSubmitting = false) }
                     return@launch
                 }
 
                 if (!networkHelper.isNetworkConnected()) {
-                     _errorMessage.value = "لا يوجد اتصال بالإنترنت. يرجى المحاولة لاحقاً."
-                    _isLoading.value = false
-                    _isSubmitting.value = false
+                    _uiState.update { it.copy(errorMessage = "لا يوجد اتصال بالإنترنت. يرجى المحاولة لاحقاً.", isSubmitting = false) }
                     return@launch
                 }
 
                 val weightedAverageCost = variant.weightedAverageCost
-
                 val total = qty * price
                 val oldBatteriesVal = state.oldBatteriesValue.toDoubleOrNull() ?: 0.0
                 val finalTotal = (total - oldBatteriesVal).coerceAtLeast(0.0)
 
                 if (paidAmount > finalTotal) {
-                    _errorMessage.value = "المبلغ المدفوع (JD $paidAmount) لا يمكن أن يتجاوز صافي الإجمالي (JD $finalTotal)"
-                    _isLoading.value = false
+                    _uiState.update { it.copy(errorMessage = "المبلغ المدفوع (JD $paidAmount) لا يمكن أن يتجاوز صافي الإجمالي (JD $finalTotal)", isSubmitting = false) }
                     return@launch
                 }
 
@@ -358,44 +336,46 @@ class SalesViewModel @Inject constructor(
                     oldBatteryTransaction = oldBatteryTransaction
                 )
 
-                _isFinished.value = true
-                _isSubmitting.value = false
+                _uiState.update { it.copy(successMessage = "تم الحفظ والمزامنة بنجاح ✅", isSubmitting = false) }
+                kotlinx.coroutines.delay(1500)
+                _uiState.update { it.copy(isFinished = true) }
             } catch (e: Exception) {
                 Log.e("SalesViewModel", "Error creating sale", e)
-                _errorMessage.value = "Failed to create sale: ${e.message}"
-                _isLoading.value = false
-                _isSubmitting.value = false
+                _uiState.update { it.copy(errorMessage = "Failed to create sale: ${e.message}", isSubmitting = false) }
             }
         }
     }
 
     fun onDismissError() {
-        _errorMessage.value = null
+        _uiState.update { it.copy(errorMessage = null) }
     }
 
     fun findProductByBarcode(barcode: String) {
         viewModelScope.launch {
+            val item = cachedInventorySummary?.items?.values?.find { it.barcode == barcode }
+            if (item != null) {
+                val product = _uiState.value.products.find { it.id == item.productId }
+                if (product != null) {
+                    loadVariantsForProduct(product, targetVariantId = item.variantId)
+                    return@launch
+                }
+            }
+            
             try {
-                _isLoading.value = true
+                _uiState.update { it.copy(isLoading = true) }
                 val variant = productVariantRepository.getVariantByBarcode(barcode)
                 if (variant != null) {
                     val product = productRepository.getProduct(variant.productId)
                     if (product != null) {
-                        _selectedProduct.value = product
-                        _selectedVariant.value = variant
-                        _sellingPrice.value = if (variant.sellingPrice > 0.0) variant.sellingPrice.toString() else ""
-                        _errorMessage.value = null
+                        loadVariantsForProduct(product, targetVariantId = variant.id)
                     } else {
-                        _errorMessage.value = "المنتج المرتبط بهذا الباركود غير موجود"
+                        _uiState.update { it.copy(errorMessage = "المنتج المرتبط بهذا الباركود غير موجود", isLoading = false) }
                     }
                 } else {
-                    _errorMessage.value = "لم يتم العثور على منتج بهذا الباركود: $barcode"
+                    _uiState.update { it.copy(errorMessage = "لم يتم العثور على منتج بهذا الباركود محلياً أو في السحابة", isLoading = false) }
                 }
             } catch (e: Exception) {
-                _errorMessage.value = "خطأ أثناء البحث عن الباركود"
-                Log.e("SalesViewModel", "Barcode error", e)
-            } finally {
-                _isLoading.value = false
+                _uiState.update { it.copy(errorMessage = "خطأ أثناء البحث عن الباركود", isLoading = false) }
             }
         }
     }

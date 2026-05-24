@@ -4,7 +4,6 @@ import androidx.paging.PagingSource
 import androidx.paging.PagingState
 import com.batterysales.data.models.*
 import com.batterysales.data.repositories.StockEntryRepository
-import com.batterysales.viewmodel.InventoryReportItem
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
@@ -22,11 +21,11 @@ class InventoryPagingSource(
     private val isSeller: Boolean = false,
     private val startDate: Long? = null,
     private val endDate: Long? = null
-) : PagingSource<DocumentSnapshot, InventoryReportItem>() {
+) : PagingSource<DocumentSnapshot, com.batterysales.data.models.InventoryReportItem>() {
 
-    override fun getRefreshKey(state: PagingState<DocumentSnapshot, InventoryReportItem>): DocumentSnapshot? = null
+    override fun getRefreshKey(state: PagingState<DocumentSnapshot, com.batterysales.data.models.InventoryReportItem>): DocumentSnapshot? = null
 
-    override suspend fun load(params: LoadParams<DocumentSnapshot>): LoadResult<DocumentSnapshot, InventoryReportItem> {
+    override suspend fun load(params: LoadParams<DocumentSnapshot>): LoadResult<DocumentSnapshot, com.batterysales.data.models.InventoryReportItem> {
         return try {
             // Robust query on ProductVariants
             var query = firestore.collection(ProductVariant.COLLECTION_NAME)
@@ -58,17 +57,9 @@ class InventoryPagingSource(
                         // Fallback: If currentStock is null (migration pending), calculate on-the-fly for THIS document only
                         val warehouseIds = warehouseList.map { it.id }.toSet()
                         
-                        val whStock = if (variant.currentStock != null) {
-                            variant.currentStock.filter { warehouseIds.contains(it.key) }
-                        } else {
-                            // Target calculation fallback to guarantee data visibility
-                            val calculatedStock = mutableMapOf<String, Int>()
-                            warehouseIds.forEach { wid ->
-                                val qty = stockEntryRepository.getVariantQuantity(variant.id, wid)
-                                if (qty != 0) calculatedStock[wid] = qty
-                            }
-                            calculatedStock
-                        }
+                        // High Performance: Use currentStock map
+                        // After migration, currentStock should always be present.
+                        val whStock = variant.currentStock?.filter { warehouseIds.contains(it.key) } ?: emptyMap()
                         
                         val totalQty = whStock.values.sum()
 
@@ -82,7 +73,7 @@ class InventoryPagingSource(
 
                         if (isSeller && totalQty <= 0) return@async null
 
-                        InventoryReportItem(
+                        com.batterysales.data.models.InventoryReportItem(
                             product = Product(id = variant.productId, name = variant.productName ?: "", specification = variant.productSpecification ?: ""),
                             variant = variant,
                             warehouseQuantities = whStock,

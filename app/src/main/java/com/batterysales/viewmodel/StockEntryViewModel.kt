@@ -85,45 +85,34 @@ class StockEntryViewModel @Inject constructor(
         val isEditMode = editingEntryId != null
         _uiState.update { it.copy(isEditMode = isEditMode) }
 
-        userRepository.getCurrentUserFlow()
-            .onEach { user ->
-                currentUser = user
+        viewModelScope.launch {
+            val user = userRepository.getCurrentUser()
+            currentUser = user
+            
+            // One-time fetch for initialization instead of persistent listeners
+            val products = productRepository.getProductsOnce()
+            val warehouses = warehouseRepository.getWarehousesOnce()
+            val suppliers = supplierRepository.getSuppliersOnce()
 
-                // Nest the combine collection inside user change to ensure it reacts to new user role/warehouse
-                combine(
-                    productRepository.getProducts(),
-                    warehouseRepository.getWarehouses(),
-                    supplierRepository.getSuppliers(),
-                    _selectedSupplier
-                ) { products, warehouses, suppliers, selectedSupplier ->
-                    val activeProducts = products.filter { !it.archived }.sortedBy { it.name }
+            val activeProducts = products.filter { !it.archived }.sortedBy { it.name }
+            val selectedWH = warehouses.find { it.id == user?.warehouseId }
 
-                    val filteredBySupplier = if (selectedSupplier != null) {
-                        activeProducts.filter { it.supplierId == selectedSupplier.id || it.supplierId.isBlank() }
-                    } else {
-                        activeProducts
-                    }
+            _uiState.update {
+                it.copy(
+                    products = activeProducts,
+                    warehouses = warehouses.filter { w -> w.isActive },
+                    suppliers = suppliers,
+                    userRole = user?.role ?: "seller",
+                    selectedWarehouse = if (user?.role == "seller") selectedWH else it.selectedWarehouse
+                )
+            }
 
-                    val selectedWH = warehouses.find { it.id == user?.warehouseId }
-
-                    _uiState.update {
-                        it.copy(
-                            products = filteredBySupplier,
-                            warehouses = warehouses.filter { w -> w.isActive },
-                            suppliers = suppliers,
-                            userRole = user?.role ?: "seller",
-                            selectedWarehouse = if (user?.role == "seller") selectedWH else it.selectedWarehouse,
-                            selectedSupplier = selectedSupplier
-                        )
-                    }
-
-                    if (isEditMode && uiState.value.selectedProduct == null) {
-                        loadEntryForEdit(editingEntryId!!)
-                    } else if (!isEditMode) {
-                        _uiState.update { it.copy(isLoading = false) }
-                    }
-                }.take(1).collect() // Just take initial state for the combined flows per user change
-            }.launchIn(viewModelScope)
+            if (isEditMode) {
+                loadEntryForEdit(editingEntryId!!)
+            } else {
+                _uiState.update { it.copy(isLoading = false) }
+            }
+        }
     }
 
     private suspend fun loadEntryForEdit(entryId: String) {
