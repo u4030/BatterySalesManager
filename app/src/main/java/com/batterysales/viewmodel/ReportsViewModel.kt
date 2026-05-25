@@ -423,6 +423,19 @@ private fun Map<String, Any>.toOrderItem(): PurchaseOrderItem {
         else -> null
     }
 
+    val itemsRaw = this["items"] as? List<Map<String, Any>> ?: emptyList()
+    val orderItems = itemsRaw.map { itemMap ->
+        StockEntry(
+            id = itemMap["id"] as? String ?: "",
+            productVariantId = itemMap["productVariantId"] as? String ?: "",
+            productName = itemMap["productName"] as? String ?: "",
+            capacity = (itemMap["capacity"] as? Number)?.toInt() ?: 0,
+            specification = itemMap["specification"] as? String ?: "",
+            quantity = (itemMap["quantity"] as? Number)?.toInt() ?: 0,
+            totalCost = (itemMap["totalCost"] as? Number)?.toDouble() ?: 0.0
+        )
+    }
+
     return PurchaseOrderItem(
         entry = StockEntry(
             id = this["id"] as? String ?: "",
@@ -435,6 +448,7 @@ private fun Map<String, Any>.toOrderItem(): PurchaseOrderItem {
         ),
         linkedPaidAmount = 0.0,
         remainingBalance = (this["remainingBalance"] as? Number)?.toDouble() ?: 0.0,
-        referenceNumbers = (this["referenceNumbers"] as? List<String>) ?: emptyList()
+        referenceNumbers = (this["referenceNumbers"] as? List<String>) ?: emptyList(),
+        items = orderItems
     )
 }

@@ -207,10 +207,25 @@ class SummaryRepository @Inject constructor(
     }
 
     private fun com.batterysales.data.models.PurchaseOrderItem.toMap(): Map<String, Any> = mapOf(
-        "id" to entry.id, "totalCost" to entry.totalCost, "remainingBalance" to remainingBalance,
-        "referenceNumbers" to referenceNumbers, "invoiceNumber" to entry.invoiceNumber, 
-        "timestamp" to entry.timestamp, "invoiceDate" to (entry.invoiceDate ?: entry.timestamp),
-        "settlementNotes" to entry.settlementNotes
+        "id" to entry.id,
+        "totalCost" to entry.totalCost,
+        "remainingBalance" to remainingBalance,
+        "referenceNumbers" to referenceNumbers,
+        "invoiceNumber" to entry.invoiceNumber,
+        "timestamp" to entry.timestamp,
+        "invoiceDate" to (entry.invoiceDate ?: entry.timestamp),
+        "settlementNotes" to entry.settlementNotes,
+        "items" to items.map { item ->
+            mapOf(
+                "id" to item.id,
+                "productVariantId" to item.productVariantId,
+                "productName" to item.productName,
+                "capacity" to item.capacity,
+                "specification" to item.specification,
+                "quantity" to item.quantity,
+                "totalCost" to item.totalCost
+            )
+        }
     )
 
     suspend fun getSupplierReportCache(supplierId: String): SupplierReportCache? {

@@ -357,10 +357,10 @@ fun ReportItemCard(item: com.batterysales.data.models.InventoryReportItem, wareh
                 Column(modifier = Modifier.weight(1f)) {
                     Text(text = "\u200F${item.product.name}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(text = "\u200E${item.variant.capacity} A", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(text = "\u200E${item.variant.capacity}A", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         if (item.variant.specification.isNotEmpty()) {
                             Text(text = " | ", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
-                            Text(text = item.variant.specification, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                                        Text(text = item.variant.specification, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                         }
                     }
                 }
@@ -573,7 +573,8 @@ fun PurchaseOrderCard(po: com.batterysales.data.models.PurchaseOrderItem, dateFo
                 po.items.forEach { entry ->
                     Card(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable {
-                            navController.navigate("product_ledger/${entry.productVariantId}/${entry.productName}/${entry.capacity}/no_spec")
+                            val spec = entry.specification.ifEmpty { "no_spec" }
+                            navController.navigate("product_ledger/${entry.productVariantId}/${entry.productName}/${entry.capacity}/$spec")
                         },
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                         shape = RoundedCornerShape(8.dp),

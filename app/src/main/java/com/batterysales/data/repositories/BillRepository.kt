@@ -57,16 +57,24 @@ class BillRepository @Inject constructor(
         firestore.runTransaction { transaction ->
             transaction.set(docRef, finalBill)
             
-            var amountToPool = finalBill.paidAmount
+            // For Checks and Bills, we credit the FULL amount immediately to the supplier, even if UNPAID.
+            // This allows them to cover/settle invoices immediately (FIFO).
+            val creditToApply = if (finalBill.billType == BillType.CHECK || finalBill.billType == BillType.BILL) {
+                finalBill.amount
+            } else {
+                finalBill.paidAmount
+            }
+
+            var amountToPool = creditToApply
 
             // 1. If manually linked to a purchase order entry, settle it first
-            if (finalBill.relatedEntryId != null && finalBill.paidAmount > 0) {
+            if (finalBill.relatedEntryId != null && creditToApply > 0) {
                 val entryRef = firestore.collection(StockEntry.COLLECTION_NAME).document(finalBill.relatedEntryId!!)
                 val entrySnap = transaction.get(entryRef)
                 val entry = entrySnap.toObject(StockEntry::class.java)
                 if (entry != null) {
                     val currentRemaining = entry.remainingBalance ?: entry.getNetCost()
-                    val allocation = minOf(finalBill.paidAmount, currentRemaining)
+                    val allocation = minOf(creditToApply, currentRemaining)
                     
                     val notes = entry.settlementNotes.toMutableList()
                     val typeLabel = when(finalBill.billType) {
@@ -85,23 +93,37 @@ class BillRepository @Inject constructor(
                     ))
                     
                     // Only pool the SURPLUS amount
-                    amountToPool = (finalBill.paidAmount - allocation).coerceAtLeast(0.0)
+                    amountToPool = (creditToApply - allocation).coerceAtLeast(0.0)
                 }
             }
 
             // 2. Update Supplier Totals and unallocatedCredit
             if (finalBill.supplierId.isNotEmpty()) {
                 val supplierRef = firestore.collection("suppliers").document(finalBill.supplierId)
-                if (finalBill.paidAmount > 0) {
-                    transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(finalBill.paidAmount))
-                    transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-finalBill.paidAmount))
+                if (creditToApply > 0) {
+                    transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(creditToApply))
+                    transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-creditToApply))
                     
                     if (amountToPool > 0.001) {
                         transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(amountToPool))
                     }
                 }
             }
+
+            // 3. Update Global System Stats
+            if (creditToApply > 0.001) {
+                val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
+                transaction.update(statsRef, mapOf(
+                    "totalSupplierDebt" to com.google.firebase.firestore.FieldValue.increment(-creditToApply),
+                    "updatedAt" to Date()
+                ))
+            }
         }.await()
+
+        // Trigger FIFO settlement
+        if (finalBill.supplierId.isNotEmpty()) {
+            autoLinkBillsForSupplier(finalBill.supplierId)
+        }
         
         return docRef.id
     }
@@ -198,12 +220,18 @@ class BillRepository @Inject constructor(
             // Update Supplier Denormalized Totals
             if (bill.supplierId.isNotEmpty()) {
                 val supplierRef = firestore.collection("suppliers").document(bill.supplierId)
-                transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(paymentAmount))
-                transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-paymentAmount))
+
+                // IMPORTANT: For CHECK/BILL, the FULL amount was already credited at creation.
+                // We only increment totals for other types (like CASH/TRANSFER) that credit upon payment.
+                val isAlreadyCredited = bill.billType == BillType.CHECK || bill.billType == BillType.BILL
+                if (!isAlreadyCredited) {
+                    transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(paymentAmount))
+                    transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-paymentAmount))
+                }
                 
                 // Add to unallocated pool (Check if it has a manual link to deduct first)
-                var unallocatedToAdd = paymentAmount
-                if (bill.relatedEntryId != null) {
+                var unallocatedToAdd = if (isAlreadyCredited) 0.0 else paymentAmount
+                if (bill.relatedEntryId != null && !isAlreadyCredited) {
                     val entryRef = firestore.collection(StockEntry.COLLECTION_NAME).document(bill.relatedEntryId!!)
                     val entrySnap = transaction.get(entryRef)
                     val entry = entrySnap.toObject(StockEntry::class.java)
@@ -231,11 +259,22 @@ class BillRepository @Inject constructor(
 
             // Update Global System Stats
             val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
-            transaction.update(statsRef, mapOf(
-                "totalSupplierDebt" to com.google.firebase.firestore.FieldValue.increment(-paymentAmount),
-                "updatedAt" to java.util.Date()
-            ))
+
+            // Only update if it wasn't already updated at bill creation (CHECK/BILL)
+            if (bill.billType != BillType.CHECK && bill.billType != BillType.BILL) {
+                transaction.update(statsRef, mapOf(
+                    "totalSupplierDebt" to com.google.firebase.firestore.FieldValue.increment(-paymentAmount),
+                    "updatedAt" to java.util.Date()
+                ))
+            }
         }.await()
+
+        // Trigger FIFO settlement
+        getBill(billId)?.let { freshBill ->
+            if (freshBill.supplierId.isNotEmpty()) {
+                autoLinkBillsForSupplier(freshBill.supplierId)
+            }
+        }
     }
 
     suspend fun addBillPayment(bill: Bill, paymentAmount: Double, method: String, warehouseId: String, notes: String) {
@@ -320,18 +359,31 @@ class BillRepository @Inject constructor(
             // Update Supplier Denormalized Totals
             if (freshBill.supplierId.isNotEmpty()) {
                 val supplierRef = firestore.collection("suppliers").document(freshBill.supplierId)
-                transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(paymentAmount))
-                transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-paymentAmount))
-                transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(paymentAmount))
+
+                // Only credit if it wasn't already credited at creation (CHECK/BILL)
+                if (freshBill.billType != BillType.CHECK && freshBill.billType != BillType.BILL) {
+                    transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(paymentAmount))
+                    transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-paymentAmount))
+                    transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(paymentAmount))
+                }
             }
 
             // Update Global System Stats
             val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
-            transaction.update(statsRef, mapOf(
-                "totalSupplierDebt" to com.google.firebase.firestore.FieldValue.increment(-paymentAmount),
-                "updatedAt" to java.util.Date()
-            ))
+
+            // Only update if it wasn't already updated at bill creation (CHECK/BILL)
+            if (freshBill.billType != BillType.CHECK && freshBill.billType != BillType.BILL) {
+                transaction.update(statsRef, mapOf(
+                    "totalSupplierDebt" to com.google.firebase.firestore.FieldValue.increment(-paymentAmount),
+                    "updatedAt" to java.util.Date()
+                ))
+            }
         }.await()
+
+        // Trigger FIFO settlement
+        if (bill.supplierId.isNotEmpty()) {
+            autoLinkBillsForSupplier(bill.supplierId)
+        }
     }
 
     suspend fun deleteBill(billId: String) {
@@ -347,25 +399,34 @@ class BillRepository @Inject constructor(
             // 2. Writes
             transaction.delete(billRef)
 
-            // Reverse financial impact on summaries (Only reversing the paid amount part from the pool)
-            if (bill.paidAmount > 0) {
+            // Reverse financial impact
+            val creditToRemove = if (bill.billType == BillType.CHECK || bill.billType == BillType.BILL) {
+                bill.amount
+            } else {
+                bill.paidAmount
+            }
+
+            if (creditToRemove > 0) {
                 summaryRepository.applyFinancialUpdate(
                     transaction = transaction,
                     snapshots = snapshots,
                     warehouseId = "global",
-                    billChange = bill.paidAmount // Adding back to debt since we deleted the "payment"
+                    billChange = bill.paidAmount // Reversing the actual financial clearing
                 )
 
                 // Update Supplier Denormalized Totals
                 if (bill.supplierId.isNotEmpty()) {
                     val supplierRef = firestore.collection("suppliers").document(bill.supplierId)
-                    transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(-bill.paidAmount))
-                    transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(bill.paidAmount))
-                    transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(-bill.paidAmount))
+                    transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(-creditToRemove))
+                    transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(creditToRemove))
+
+                    // We need to estimate how much of THIS bill was still in the unallocated pool.
+                    // This is complex, but standard reversal is to deduct from the pool.
+                    transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(-creditToRemove))
                 }
 
                 // Update System Stats
-                transaction.update(statsRef, "totalSupplierDebt", com.google.firebase.firestore.FieldValue.increment(bill.paidAmount))
+                transaction.update(statsRef, "totalSupplierDebt", com.google.firebase.firestore.FieldValue.increment(creditToRemove))
             }
         }.await()
     }
@@ -475,10 +536,10 @@ class BillRepository @Inject constructor(
         val entriesSnap = entriesQuery.get().await()
         if (entriesSnap.isEmpty) return
 
-        // 2. Fetch all PAID bills/checks and RETURNS to find their references for notes
+        // 2. Fetch all bills (including UNPAID checks/bills which now credit the supplier) and RETURNS
+        // We include all bills because CHECK/BILL types now provide credit immediately upon creation.
         val billsQuery = firestore.collection(Bill.COLLECTION_NAME)
             .whereEqualTo("supplierId", supplierId)
-            .whereEqualTo("status", BillStatus.PAID)
             .orderBy("updatedAt", Query.Direction.DESCENDING)
         val billsSnap = billsQuery.get().await()
         val supplierBills = billsSnap.documents.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) }
