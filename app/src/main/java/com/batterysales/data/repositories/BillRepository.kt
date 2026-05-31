@@ -528,8 +528,8 @@ class BillRepository @Inject constructor(
     }
 
     /**
-     * Nuclear Sync: Recalculates everything for a supplier from scratch.
-     * This fixes existing data that didn't follow the new FIFO/Check logic.
+     * Manual Sync: Recalculates everything for a supplier from scratch.
+     * This is now an ON-DEMAND operation to save quota and time.
      */
     suspend fun syncSupplierFinancials(supplierId: String) {
         if (supplierId.isEmpty()) return

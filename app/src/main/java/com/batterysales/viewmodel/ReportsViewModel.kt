@@ -269,19 +269,32 @@ class ReportsViewModel @Inject constructor(
             try {
                 _isSupplierLoading.value = true
 
-                // Safe Re-Sync: If it fails (due to index/limit), we still want to load the report
-                try {
-                    billRepository.syncSupplierFinancials(supplierId)
-                } catch (e: Exception) {
-                    Log.e("ReportsViewModel", "Sync failed for supplier $supplierId", e)
-                }
-
                 val start = _startDate.value
                 val end = _endDate.value
+
+                // 1. Prioritize Cache for speed and lower quota usage
+                if (start == null && end == null) {
+                    val cachedReport = summaryRepository.getSupplierReportCache(supplierId)
+                    if (cachedReport != null) {
+                        _selectedSupplierReport.value = cachedReport
+                        _isSupplierLoading.value = false
+
+                        // Background incremental sync only if there is unallocated credit
+                        if (cachedReport.supplier.unallocatedCredit > 0.001) {
+                            viewModelScope.launch {
+                                try { billRepository.autoLinkBillsForSupplier(supplierId) } catch (e: Exception) {}
+                            }
+                        }
+                        return@launch
+                    }
+                }
+
                 val supplier = supplierRepository.getSupplier(supplierId) ?: return@launch
 
-                // Skip cache fetch to ensure we always see the latest logic corrections and FIFO links.
-                // We'll still update the cache document at the end for other parts of the app.
+                // If no cache, perform incremental sync ONLY if pool exists
+                if (supplier.unallocatedCredit > 0.001) {
+                    try { billRepository.autoLinkBillsForSupplier(supplierId) } catch (e: Exception) {}
+                }
 
                 val allEntries = stockEntryRepository.getEntriesBySuppliers(listOf(supplierId))
                 val allBills = billRepository.getBillsBySuppliers(listOf(supplierId))

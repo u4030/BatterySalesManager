@@ -486,12 +486,13 @@ fun PurchaseOrderCard(po: com.batterysales.data.models.PurchaseOrderItem, dateFo
                     }
                 }
 
+                val isCleared = po.remainingBalance <= 0.001 && po.linkedPaidAmount >= (po.entry.totalCost - 0.001)
                 Surface(
-                    color = (if (isFullyCovered) Color(0xFF10B981) else if (po.totalLinkedAmount > 0.001) Color(0xFFFB8C00) else Color(0xFFEF4444)).copy(alpha = 0.1f),
+                    color = (if (isFullyCovered) (if (isCleared) Color(0xFF10B981) else Color(0xFF3B82F6)) else if (po.totalLinkedAmount > 0.001) Color(0xFFFB8C00) else Color(0xFFEF4444)).copy(alpha = 0.1f),
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Text(
-                        text = if (isFullyCovered) "مغطاة بالكامل" else if (po.totalLinkedAmount > 0.001) "مغطاة جزئياً" else "غير مغطاة",
+                        text = if (isFullyCovered) (if (isCleared) "مسددة بالكامل" else "مغطاة (التزام)") else if (po.totalLinkedAmount > 0.001) "مغطاة جزئياً" else "غير مغطاة",
                         style = MaterialTheme.typography.labelSmall,
                         color = if (isFullyCovered) Color(0xFF10B981) else if (po.totalLinkedAmount > 0.001) Color(0xFFFB8C00) else Color(0xFFEF4444),
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),

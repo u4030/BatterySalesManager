@@ -157,7 +157,7 @@ fun SupplierDetailsScreen(
                                 modifier = Modifier.weight(1f)
                             )
                             TabItem(
-                                title = "طلبيات مسددة",
+                                title = "طلبيات مغطاة/مسددة",
                                 isSelected = selectedSubTab == 1,
                                 onClick = { selectedSubTab = 1 },
                                 modifier = Modifier.weight(1f)
