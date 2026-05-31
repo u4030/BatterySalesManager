@@ -275,12 +275,21 @@ class ReportsViewModel @Inject constructor(
                 // 1. Prioritize Cache for speed and lower quota usage
                 if (start == null && end == null) {
                     val cachedReport = summaryRepository.getSupplierReportCache(supplierId)
-                    if (cachedReport != null) {
-                        _selectedSupplierReport.value = cachedReport
+                    val supplier = supplierRepository.getSupplier(supplierId)
+                    if (cachedReport != null && supplier != null) {
+                        _selectedSupplierReport.value = SupplierReportItem(
+                            supplier = supplier,
+                            totalDebit = cachedReport.totalDebit,
+                            totalCredit = cachedReport.totalCredit,
+                            balance = cachedReport.balance,
+                            targetProgress = if (supplier.yearlyTarget > 0) cachedReport.totalDebit / supplier.yearlyTarget else 0.0,
+                            regularOrders = cachedReport.regularOrders.map { it.toOrderItem() },
+                            obligatedOrders = cachedReport.obligatedOrders.map { it.toOrderItem() }
+                        )
                         _isSupplierLoading.value = false
 
                         // Background incremental sync only if there is unallocated credit
-                        if (cachedReport.supplier.unallocatedCredit > 0.001) {
+                        if (supplier.unallocatedCredit > 0.001) {
                             viewModelScope.launch {
                                 try { billRepository.autoLinkBillsForSupplier(supplierId) } catch (e: Exception) {}
                             }
