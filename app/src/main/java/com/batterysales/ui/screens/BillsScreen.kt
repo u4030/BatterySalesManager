@@ -69,6 +69,7 @@ fun BillsScreen(
     }
     val searchQuery by viewModel.searchQuery.collectAsState()
     val selectedSupplierId by viewModel.selectedSupplierId.collectAsState()
+    val selectedSupplierBalance by viewModel.selectedSupplierBalance.collectAsState()
     val suppliers by viewModel.suppliers.collectAsState()
     val pendingPurchases by viewModel.pendingPurchases.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -161,6 +162,20 @@ fun BillsScreen(
                                     selectedLabelColor = Color.White
                                 )
                             )
+                        }
+                    }
+
+                    if (selectedSupplierId != null && selectedSupplierBalance != null) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Row(modifier = Modifier.padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text("إجمالي رصيد المورد المتبقي:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                                Text("JD ${String.format("%.3f", selectedSupplierBalance)}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, color = if ((selectedSupplierBalance ?: 0.0) > 0) Color(0xFFEF4444) else Color(0xFF10B981))
+                            }
                         }
                     }
                 }

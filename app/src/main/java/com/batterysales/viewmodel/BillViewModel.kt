@@ -36,6 +36,9 @@ class BillViewModel @Inject constructor(
     private val _selectedSupplierId = MutableStateFlow<String?>(null)
     val selectedSupplierId = _selectedSupplierId.asStateFlow()
 
+    private val _selectedSupplierBalance = MutableStateFlow<Double?>(null)
+    val selectedSupplierBalance = _selectedSupplierBalance.asStateFlow()
+
     private val _suppliers = MutableStateFlow<List<Supplier>>(emptyList())
     val suppliers = _suppliers.asStateFlow()
 
@@ -108,6 +111,14 @@ class BillViewModel @Inject constructor(
     fun onSupplierSelected(supplierId: String?) {
         _selectedSupplierId.value = supplierId
         _isDataLoaded.value = true
+        if (supplierId != null) {
+            viewModelScope.launch {
+                val supplier = supplierRepository.getSupplier(supplierId)
+                _selectedSupplierBalance.value = supplier?.currentBalance
+            }
+        } else {
+            _selectedSupplierBalance.value = null
+        }
     }
 
     fun updateBill(bill: Bill) {

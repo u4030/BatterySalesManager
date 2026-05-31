@@ -548,9 +548,13 @@ class BillRepository @Inject constructor(
 
         // 2. Fetch all bills (including UNPAID checks/bills which now credit the supplier) and RETURNS
         // We include all bills because CHECK/BILL types now provide credit immediately upon creation.
+        // Get all unallocated sources:
+        // 1. Checks/Bills (immediately credit)
+        // 2. Returns (negative cost entries)
+        // 3. Direct cash payments (bills of type CASH/TRANSFER)
         val billsQuery = firestore.collection(Bill.COLLECTION_NAME)
             .whereEqualTo("supplierId", supplierId)
-            .orderBy("updatedAt", Query.Direction.DESCENDING)
+            .orderBy("updatedAt", Query.Direction.ASCENDING)
         val billsSnap = billsQuery.get().await()
         val supplierBills = billsSnap.documents.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) }
 
@@ -558,6 +562,7 @@ class BillRepository @Inject constructor(
             .whereEqualTo("supplierId", supplierId)
             .whereEqualTo("status", "approved")
             .whereLessThan("totalCost", 0.0)
+            .orderBy("totalCost", Query.Direction.ASCENDING)
         val returnsSnap = returnsQuery.get().await()
         val supplierReturns = returnsSnap.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
 
@@ -618,21 +623,18 @@ class BillRepository @Inject constructor(
 
                     val notes = doc.settlementNotes.toMutableList()
                     if (itemAllocation > 0.001) {
-                        val latestReturn = supplierReturns.firstOrNull()
-                        val latestBill = supplierBills.firstOrNull()
-                        val noteText = when {
-                            latestReturn != null && latestReturn.timestamp.after(latestBill?.updatedAt ?: Date(0)) ->
-                                "مرتجع مواد: JD ${String.format("%.3f", itemAllocation)} (ربط تلقائي)"
-                            latestBill != null -> {
-                                val type = when(latestBill.billType) {
-                                    BillType.CHECK -> "شيك"
-                                    BillType.BILL -> "كمبيالة"
-                                    else -> "نقدي"
-                                }
-                                "$type: ${latestBill.referenceNumber} (ربط تلقائي): JD ${String.format("%.3f", itemAllocation)}"
-                            }
-                            else -> "تسوية من الرصيد: JD ${String.format("%.3f", itemAllocation)}"
-                        }
+                        // Find a source that likely contributed to this allocation for traceability
+                        // We sort sources by date to match the "latest unallocated" logic
+                        val relevantSource = (supplierBills.filter { it.billType == BillType.CHECK || it.billType == BillType.BILL || it.paidAmount > 0 }
+                            .map { b -> Triple(b.updatedAt, when(b.billType){ BillType.CHECK -> "شيك"; BillType.BILL -> "كمبيالة"; else -> "نقدي" }, b.referenceNumber) } +
+                            supplierReturns.map { r -> Triple(r.timestamp, "مرتجع مواد", r.invoiceNumber) })
+                            .sortedByDescending { it.first }
+                            .firstOrNull()
+
+                        val noteText = relevantSource?.let { (_, type, ref) ->
+                            "$type: $ref (ربط تلقائي): JD ${String.format("%.3f", itemAllocation)}"
+                        } ?: "تسوية من الرصيد (ربط تلقائي): JD ${String.format("%.3f", itemAllocation)}"
+
                         notes.add(noteText)
                     }
 
