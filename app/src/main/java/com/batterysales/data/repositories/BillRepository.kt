@@ -625,7 +625,7 @@ class BillRepository @Inject constructor(
         val orderedGroups = groupedOrders.values.sortedBy { it.first().getEffectiveDate() }
 
         firestore.runTransaction { transaction ->
-            // 3. Get Supplier's Unallocated Credit
+            // --- READ PHASE: Execute all reads before any writes ---
             val supplierRef = firestore.collection("suppliers").document(supplierId)
             val supplierSnap = transaction.get(supplierRef)
             val supplier = supplierSnap.toObject(Supplier::class.java)
@@ -633,19 +633,21 @@ class BillRepository @Inject constructor(
             var unallocatedPool = supplier?.unallocatedCredit ?: 0.0
             if (unallocatedPool <= 0.001) return@runTransaction
 
-            // 4. Process FIFO per GROUP
+            // Gather all entries to read first
+            val entriesToRead = orderedGroups.flatMap { it }.map { it.id }.distinct()
+            val entrySnapshots = entriesToRead.associateWith { id ->
+                transaction.get(firestore.collection(StockEntry.COLLECTION_NAME).document(id))
+            }
+
+            // --- WRITE PHASE: Perform calculations and apply updates ---
             orderedGroups.forEach { group ->
                 if (unallocatedPool <= 0.001) return@forEach
 
-                // Read FRESH versions of ALL group members inside the transaction
-                val freshGroup = group.map {
-                    val snap = transaction.get(firestore.collection(StockEntry.COLLECTION_NAME).document(it.id))
-                    snap.toObject(StockEntry::class.java)?.copy(id = snap.id) ?: it
+                val freshGroup = group.mapNotNull {
+                    entrySnapshots[it.id]?.toObject(StockEntry::class.java)?.copy(id = it.id)
                 }
+                if (freshGroup.isEmpty()) return@forEach
 
-                val representative = freshGroup.first()
-
-                // Use the SUM of remaining balances of all items in the group
                 val currentGroupBalance = freshGroup.sumOf { it.remainingBalance ?: it.getNetCost() }
                 
                 if (currentGroupBalance <= 0.001) {
@@ -661,7 +663,6 @@ class BillRepository @Inject constructor(
                 val totalAllocationToGroup = minOf(unallocatedPool, currentGroupBalance)
                 unallocatedPool -= totalAllocationToGroup
                 
-                // Distribute totalAllocationToGroup across group members
                 var remainingToDistribute = totalAllocationToGroup
 
                 freshGroup.forEach { doc ->
@@ -675,10 +676,8 @@ class BillRepository @Inject constructor(
                     val newItemBalance = itemBalance - itemAllocation
                     remainingToDistribute -= itemAllocation
 
-                    val notes = doc.settlementNotes.toMutableList()
                     if (itemAllocation > 0.001) {
-                        // Find a source that likely contributed to this allocation for traceability
-                        // We sort sources by date to match the "latest unallocated" logic
+                        val notes = doc.settlementNotes.toMutableList()
                         val relevantSource = (supplierBills.filter { it.billType == BillType.CHECK || it.billType == BillType.BILL || it.paidAmount > 0 }
                             .map { b -> Triple(b.updatedAt, when(b.billType){ BillType.CHECK -> "شيك"; BillType.BILL -> "كمبيالة"; else -> "نقدي" }, b.referenceNumber) } +
                             supplierReturns.map { r -> Triple(r.timestamp, "مرتجع مواد", r.invoiceNumber) })
@@ -690,17 +689,17 @@ class BillRepository @Inject constructor(
                         } ?: "تسوية من الرصيد (ربط تلقائي): JD ${String.format("%.3f", itemAllocation)}"
 
                         notes.add(noteText)
-                    }
 
-                    transaction.update(firestore.collection(StockEntry.COLLECTION_NAME).document(doc.id), mapOf(
-                        "remainingBalance" to newItemBalance.coerceAtLeast(0.0),
-                        "isSettled" to (newItemBalance <= 0.001),
-                        "settlementNotes" to notes.distinct()
-                    ))
+                        transaction.update(firestore.collection(StockEntry.COLLECTION_NAME).document(doc.id), mapOf(
+                            "remainingBalance" to newItemBalance.coerceAtLeast(0.0),
+                            "isSettled" to (newItemBalance <= 0.001),
+                            "settlementNotes" to notes.distinct()
+                        ))
+                    }
                 }
             }
 
-            // 5. Final update to pool
+            // Final update to pool
             transaction.update(supplierRef, "unallocatedCredit", unallocatedPool)
         }.await()
     }
