@@ -468,25 +468,36 @@ fun PurchaseOrderCard(po: com.batterysales.data.models.PurchaseOrderItem, dateFo
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            // Header Row: Date & Invoice Tag
+            // Header Row: Date & Invoice Tag + Coverage Badge
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { 
-                Text(
-                    text = dateFormatter.format(po.entry.getEffectiveDate()), 
-                    style = MaterialTheme.typography.titleMedium, 
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                if (po.entry.invoiceNumber.isNotEmpty()) { 
-                    Surface(color = Color(0xFFFB8C00).copy(alpha = 0.1f), shape = RoundedCornerShape(12.dp)) { 
+                Column {
+                    Text(
+                        text = dateFormatter.format(po.entry.getEffectiveDate()),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    if (po.entry.invoiceNumber.isNotEmpty()) {
                         Text(
-                            text = "فاتورة: ${po.entry.invoiceNumber}", 
-                            style = MaterialTheme.typography.labelSmall, 
-                            color = Color(0xFFFB8C00), 
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            fontWeight = FontWeight.Bold
-                        ) 
-                    } 
-                } 
+                            text = "فاتورة: ${po.entry.invoiceNumber}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Surface(
+                    color = (if (isFullyCovered) Color(0xFF10B981) else if (po.totalLinkedAmount > 0.001) Color(0xFFFB8C00) else Color(0xFFEF4444)).copy(alpha = 0.1f),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(
+                        text = if (isFullyCovered) "مغطاة بالكامل" else if (po.totalLinkedAmount > 0.001) "مغطاة جزئياً" else "غير مغطاة",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isFullyCovered) Color(0xFF10B981) else if (po.totalLinkedAmount > 0.001) Color(0xFFFB8C00) else Color(0xFFEF4444),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
 
             // Financial Summary Row
@@ -506,58 +517,27 @@ fun PurchaseOrderCard(po: com.batterysales.data.models.PurchaseOrderItem, dateFo
                 }
             }
 
-            // Coverage Status Badge
-            if (po.totalLinkedAmount > 0.001) {
-                Surface(
-                    color = (if (isFullyCovered) Color(0xFF10B981) else Color(0xFFFB8C00)).copy(alpha = 0.1f), 
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            Icons.Default.VerifiedUser,
-                            contentDescription = null, 
-                            tint = if (isFullyCovered) Color(0xFF10B981) else Color(0xFFFB8C00),
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        val text = when {
-                            isFullyCovered -> "الفاتورة مسددة بالكامل"
-                            po.autoLinkedAmount > 0.001 && po.linkedPaidAmount > 0.001 ->
-                                "مسددة جزئياً: JD ${String.format("%.3f", po.linkedPaidAmount)} (يدوي) + JD ${String.format("%.3f", po.autoLinkedAmount)} (تلقائي)"
-                            po.autoLinkedAmount > 0.001 -> "تغطية تلقائية بمبلغ JD ${String.format("%.3f", po.autoLinkedAmount)}"
-                            else -> "ارتباط يدوي بمبلغ JD ${String.format("%.3f", po.linkedPaidAmount)}"
-                        }
-                        Text(
-                            text = text,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (isFullyCovered) Color(0xFF10B981) else Color(0xFFFB8C00),
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-            }
-
-            // Settlement Traceability Notes (Image match)
+            // Settlement Details Section
             if (po.referenceNumbers.isNotEmpty() || po.entry.settlementNotes.isNotEmpty()) {
                 val allNotes = (po.referenceNumbers + po.entry.settlementNotes).distinct()
-                Row(verticalAlignment = Alignment.Top, modifier = Modifier.padding(top = 4.dp)) {
-                    Icon(
-                        Icons.Default.Payments, 
-                        contentDescription = null, 
-                        modifier = Modifier.size(18.dp).padding(top = 2.dp), 
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = allNotes.joinToString(", "), 
-                        style = MaterialTheme.typography.bodySmall, 
-                        color = MaterialTheme.colorScheme.primary, 
-                        fontWeight = FontWeight.Bold,
-                        lineHeight = 20.sp
-                    )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.1f), RoundedCornerShape(12.dp))
+                        .padding(12.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Payments, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("تفاصيل التغطية:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    allNotes.forEach { note ->
+                        Row(modifier = Modifier.padding(bottom = 4.dp), verticalAlignment = Alignment.Top) {
+                            Text("• ", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(text = note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface, lineHeight = 18.sp)
+                        }
+                    }
                 }
             }
 

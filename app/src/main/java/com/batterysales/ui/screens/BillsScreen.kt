@@ -68,6 +68,7 @@ fun BillsScreen(
         }
     }
     val searchQuery by viewModel.searchQuery.collectAsState()
+    val selectedSupplierId by viewModel.selectedSupplierId.collectAsState()
     val suppliers by viewModel.suppliers.collectAsState()
     val pendingPurchases by viewModel.pendingPurchases.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -125,13 +126,43 @@ fun BillsScreen(
                     }
                 )
 
-                Column(modifier = Modifier.padding(16.dp)) {
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                     CustomKeyboardTextField(
                         value = searchQuery,
                         onValueChange = viewModel::onSearchQueryChanged,
-                        label = "بحث باسم المورد أو رقم السند...",
+                        label = "بحث برقم السند...",
                         modifier = Modifier.fillMaxWidth()
                     )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilterChip(
+                            selected = selectedSupplierId == null,
+                            onClick = { viewModel.onSupplierSelected(null) },
+                            label = { Text("الكل") },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = Color(0xFFFB8C00),
+                                selectedLabelColor = Color.White
+                            )
+                        )
+                        suppliers.forEach { supplier ->
+                            FilterChip(
+                                selected = selectedSupplierId == supplier.id,
+                                onClick = { viewModel.onSupplierSelected(supplier.id) },
+                                label = { Text(supplier.name) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = Color(0xFFFB8C00),
+                                    selectedLabelColor = Color.White
+                                )
+                            )
+                        }
+                    }
                 }
             }
 

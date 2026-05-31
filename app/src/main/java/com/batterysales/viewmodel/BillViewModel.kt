@@ -33,6 +33,9 @@ class BillViewModel @Inject constructor(
     private val _searchQuery = MutableStateFlow("")
     val searchQuery = _searchQuery.asStateFlow()
 
+    private val _selectedSupplierId = MutableStateFlow<String?>(null)
+    val selectedSupplierId = _selectedSupplierId.asStateFlow()
+
     private val _suppliers = MutableStateFlow<List<Supplier>>(emptyList())
     val suppliers = _suppliers.asStateFlow()
 
@@ -47,12 +50,12 @@ class BillViewModel @Inject constructor(
     private val _isDataLoaded = MutableStateFlow(false)
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    val bills: Flow<PagingData<Bill>> = combine(_searchQuery, refreshTrigger, _isDataLoaded) { query, _, loaded ->
-        if (!loaded && query.isEmpty()) return@combine null
-        query
-    }.filterNotNull().flatMapLatest { query ->
+    val bills: Flow<PagingData<Bill>> = combine(_searchQuery, _selectedSupplierId, refreshTrigger, _isDataLoaded) { query, supplierId, _, loaded ->
+        if (!loaded && query.isEmpty() && supplierId == null) return@combine null
+        Triple(query, supplierId, loaded)
+    }.filterNotNull().flatMapLatest { (query, supplierId, _) ->
         Pager(PagingConfig(pageSize = 25)) {
-            BillPagingSource(repository, query.ifBlank { null })
+            BillPagingSource(repository, query.ifBlank { null }, supplierId)
         }.flow.cachedIn(viewModelScope)
     }
 
@@ -100,6 +103,11 @@ class BillViewModel @Inject constructor(
     fun onSearchQueryChanged(query: String) {
         _searchQuery.value = query
         if (query.isNotEmpty()) _isDataLoaded.value = true
+    }
+
+    fun onSupplierSelected(supplierId: String?) {
+        _selectedSupplierId.value = supplierId
+        _isDataLoaded.value = true
     }
 
     fun updateBill(bill: Bill) {

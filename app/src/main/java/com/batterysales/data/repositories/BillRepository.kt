@@ -81,6 +81,9 @@ class BillRepository @Inject constructor(
                         BillType.CHECK -> "شيك"
                         BillType.BILL -> "كمبيالة"
                         BillType.CASH -> "نقدي"
+                        BillType.VISA -> "فيزا"
+                        BillType.E_WALLET -> "محفظة"
+                        BillType.TRANSFER -> "تحويل"
                         else -> "دفعة"
                     }
                     notes.add("ارتباط يدوي ($typeLabel): JD ${String.format("%.3f", allocation)} (#${finalBill.referenceNumber})")
@@ -433,10 +436,15 @@ class BillRepository @Inject constructor(
 
     suspend fun getBillsPaginated(
         searchQuery: String? = null,
+        supplierId: String? = null,
         lastDocument: DocumentSnapshot? = null,
         limit: Long = 20
     ): Pair<List<Bill>, DocumentSnapshot?> {
         var query: Query = firestore.collection(Bill.COLLECTION_NAME)
+
+        if (!supplierId.isNullOrEmpty()) {
+            query = query.whereEqualTo("supplierId", supplierId)
+        }
 
         if (!searchQuery.isNullOrBlank()) {
             // Server-side search by referenceNumber (most common)
@@ -445,8 +453,10 @@ class BillRepository @Inject constructor(
                 .orderBy("referenceNumber", Query.Direction.ASCENDING)
         } else {
             // Default sorting by supplierId (ASC) and then dueDate (ASC)
-            query = query.orderBy("supplierId", Query.Direction.ASCENDING)
-                .orderBy("dueDate", Query.Direction.ASCENDING)
+            if (supplierId.isNullOrEmpty()) {
+                query = query.orderBy("supplierId", Query.Direction.ASCENDING)
+            }
+            query = query.orderBy("dueDate", Query.Direction.ASCENDING)
         }
 
         if (lastDocument != null) {
