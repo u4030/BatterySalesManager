@@ -11,6 +11,7 @@ The following composite indexes must be created in the Firebase Console to suppo
 | **stock_entries** | status (Asc), timestamp (Desc) | Collection |
 | **stock_entries** | invoiceId (Asc), timestamp (Desc) | Collection |
 | **bills** | supplierId (Asc), dueDate (Asc) | Collection |
+| **stock_entries** | supplierId (Asc), status (Asc), isSettled (Asc) | Collection |
 | **product_variants** | productId (Asc), capacity (Asc) | Collection |
 | **product_variants** | barcode (Asc), archived (Asc) | Collection |
 | **suppliers** | name (Asc), id (Asc) | Collection |

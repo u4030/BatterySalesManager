@@ -555,17 +555,24 @@ class BillRepository @Inject constructor(
         val totalCreditPool = totalReturnCredit + totalBillCredit
         val totalDebit = positiveEntries.sumOf { it.totalCost }
 
-        firestore.runTransaction { transaction ->
-            // 1. Reset all positive entries
-            positiveEntries.forEach { entry ->
-                transaction.update(firestore.collection(StockEntry.COLLECTION_NAME).document(entry.id), mapOf(
-                    "remainingBalance" to entry.totalCost,
-                    "isSettled" to false,
-                    "settlementNotes" to emptyList<String>()
-                ))
-            }
+        // Split updates into batches to handle the 500-op limit
+        val allDocsToUpdate = positiveEntries
+        val chunks = allDocsToUpdate.chunked(450) // Leaving room for supplier update
 
-            // 2. Update Supplier Totals
+        chunks.forEach { chunk ->
+            firestore.runTransaction { transaction ->
+                chunk.forEach { entry ->
+                    transaction.update(firestore.collection(StockEntry.COLLECTION_NAME).document(entry.id), mapOf(
+                        "remainingBalance" to entry.totalCost,
+                        "isSettled" to false,
+                        "settlementNotes" to emptyList<String>()
+                    ))
+                }
+            }.await()
+        }
+
+        firestore.runTransaction { transaction ->
+            // Update Supplier Totals
             transaction.update(supplierRef, mapOf(
                 "totalDebit" to totalDebit,
                 "totalCredit" to totalCreditPool,
@@ -587,35 +594,31 @@ class BillRepository @Inject constructor(
         if (supplierId.isEmpty()) return
 
         // 1. Get ALL unsettled entries for this supplier to group them correctly
+        // Use client-side sorting to avoid requiring composite indexes
         val entriesQuery = firestore.collection(StockEntry.COLLECTION_NAME)
             .whereEqualTo("supplierId", supplierId)
             .whereEqualTo("status", "approved")
             .whereEqualTo("isSettled", false)
-            .orderBy("invoiceDate", Query.Direction.ASCENDING)
-            .orderBy("timestamp", Query.Direction.ASCENDING)
         
         val entriesSnap = entriesQuery.get().await()
         if (entriesSnap.isEmpty) return
 
         // 2. Fetch all bills (including UNPAID checks/bills which now credit the supplier) and RETURNS
-        // We include all bills because CHECK/BILL types now provide credit immediately upon creation.
-        // Get all unallocated sources:
-        // 1. Checks/Bills (immediately credit)
-        // 2. Returns (negative cost entries)
-        // 3. Direct cash payments (bills of type CASH/TRANSFER)
+        // Use client-side sorting to avoid requiring composite indexes
         val billsQuery = firestore.collection(Bill.COLLECTION_NAME)
             .whereEqualTo("supplierId", supplierId)
-            .orderBy("updatedAt", Query.Direction.ASCENDING)
         val billsSnap = billsQuery.get().await()
-        val supplierBills = billsSnap.documents.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) }
 
         val returnsQuery = firestore.collection(StockEntry.COLLECTION_NAME)
             .whereEqualTo("supplierId", supplierId)
             .whereEqualTo("status", "approved")
             .whereLessThan("totalCost", 0.0)
-            .orderBy("totalCost", Query.Direction.ASCENDING)
         val returnsSnap = returnsQuery.get().await()
+
+        val supplierBills = billsSnap.documents.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) }
+            .sortedBy { it.updatedAt }
         val supplierReturns = returnsSnap.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
+            .sortedBy { it.totalCost }
 
         val allEntries = entriesSnap.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
         val groupedOrders = allEntries.groupBy { it.invoiceNumber.trim().ifEmpty { it.orderId.trim().ifEmpty { it.id } }.lowercase() }

@@ -269,8 +269,12 @@ class ReportsViewModel @Inject constructor(
             try {
                 _isSupplierLoading.value = true
 
-                // Nuclear Re-Sync before loading to fix existing data discrepancies
-                billRepository.syncSupplierFinancials(supplierId)
+                // Safe Re-Sync: If it fails (due to index/limit), we still want to load the report
+                try {
+                    billRepository.syncSupplierFinancials(supplierId)
+                } catch (e: Exception) {
+                    Log.e("ReportsViewModel", "Sync failed for supplier $supplierId", e)
+                }
 
                 val start = _startDate.value
                 val end = _endDate.value
