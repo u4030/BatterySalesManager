@@ -268,6 +268,10 @@ class ReportsViewModel @Inject constructor(
         supplierJob = viewModelScope.launch {
             try {
                 _isSupplierLoading.value = true
+
+                // Nuclear Re-Sync before loading to fix existing data discrepancies
+                billRepository.syncSupplierFinancials(supplierId)
+
                 val start = _startDate.value
                 val end = _endDate.value
                 val supplier = supplierRepository.getSupplier(supplierId) ?: return@launch

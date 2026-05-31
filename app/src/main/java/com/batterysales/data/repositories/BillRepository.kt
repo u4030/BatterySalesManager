@@ -528,6 +528,57 @@ class BillRepository @Inject constructor(
     }
 
     /**
+     * Nuclear Sync: Recalculates everything for a supplier from scratch.
+     * This fixes existing data that didn't follow the new FIFO/Check logic.
+     */
+    suspend fun syncSupplierFinancials(supplierId: String) {
+        if (supplierId.isEmpty()) return
+
+        val supplierRef = firestore.collection("suppliers").document(supplierId)
+        val bills = firestore.collection(Bill.COLLECTION_NAME).whereEqualTo("supplierId", supplierId).get().await()
+            .documents.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) }
+
+        val entries = firestore.collection(StockEntry.COLLECTION_NAME)
+            .whereEqualTo("supplierId", supplierId)
+            .whereEqualTo("status", "approved")
+            .get().await()
+            .documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
+
+        val positiveEntries = entries.filter { it.totalCost > 0 }
+        val returns = entries.filter { it.totalCost < 0 }
+
+        // Calculate Pool
+        val totalReturnCredit = returns.sumOf { -it.totalCost }
+        val totalBillCredit = bills.sumOf { b ->
+            if (b.billType == BillType.CHECK || b.billType == BillType.BILL) b.amount else b.paidAmount
+        }
+        val totalCreditPool = totalReturnCredit + totalBillCredit
+        val totalDebit = positiveEntries.sumOf { it.totalCost }
+
+        firestore.runTransaction { transaction ->
+            // 1. Reset all positive entries
+            positiveEntries.forEach { entry ->
+                transaction.update(firestore.collection(StockEntry.COLLECTION_NAME).document(entry.id), mapOf(
+                    "remainingBalance" to entry.totalCost,
+                    "isSettled" to false,
+                    "settlementNotes" to emptyList<String>()
+                ))
+            }
+
+            // 2. Update Supplier Totals
+            transaction.update(supplierRef, mapOf(
+                "totalDebit" to totalDebit,
+                "totalCredit" to totalCreditPool,
+                "currentBalance" to (totalDebit - totalCreditPool),
+                "unallocatedCredit" to totalCreditPool
+            ))
+        }.await()
+
+        // 3. Run FIFO Linkage
+        autoLinkBillsForSupplier(supplierId)
+    }
+
+    /**
      * Advanced Incremental FIFO for Grouped Orders:
      * Treats grouped StockEntries (Invoices) as single units.
      * Records detailed settlement notes including reference numbers.
