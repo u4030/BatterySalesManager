@@ -552,7 +552,7 @@ class BillRepository @Inject constructor(
         val supplierReturns = returnsSnap.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
 
         val allEntries = entriesSnap.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
-        val groupedOrders = allEntries.groupBy { it.invoiceNumber.trim().ifEmpty { it.orderId.trim().ifEmpty { it.id } } }
+        val groupedOrders = allEntries.groupBy { it.invoiceNumber.trim().ifEmpty { it.orderId.trim().ifEmpty { it.id } }.lowercase() }
         val orderedGroups = groupedOrders.values.sortedBy { it.first().getEffectiveDate() }
 
         firestore.runTransaction { transaction ->
@@ -568,12 +568,25 @@ class BillRepository @Inject constructor(
             orderedGroups.forEach { group ->
                 if (unallocatedPool <= 0.001) return@forEach
 
-                val representative = group.first()
-                val groupTotalCost = group.sumOf { it.getNetCost() }
-                val currentGroupBalance = representative.remainingBalance ?: groupTotalCost
+                // Read FRESH versions of ALL group members inside the transaction
+                val freshGroup = group.map {
+                    val snap = transaction.get(firestore.collection(StockEntry.COLLECTION_NAME).document(it.id))
+                    snap.toObject(StockEntry::class.java)?.copy(id = snap.id) ?: it
+                }
+
+                val representative = freshGroup.first()
+                val groupTotalCost = freshGroup.sumOf { it.getNetCost() }
+
+                // We must use the minimum remainingBalance in the group as the truth
+                val currentGroupBalance = freshGroup.minOf { it.remainingBalance ?: it.getNetCost() }
                 
                 if (currentGroupBalance <= 0.001) {
-                    group.forEach { doc -> transaction.update(firestore.collection(StockEntry.COLLECTION_NAME).document(doc.id), "isSettled", true) }
+                    freshGroup.forEach { doc ->
+                        transaction.update(firestore.collection(StockEntry.COLLECTION_NAME).document(doc.id), mapOf(
+                            "isSettled" to true,
+                            "remainingBalance" to 0.0
+                        ))
+                    }
                     return@forEach
                 }
 
@@ -606,12 +619,12 @@ class BillRepository @Inject constructor(
                 }
 
                 val updates = mutableMapOf<String, Any>(
-                    "remainingBalance" to newGroupBalance,
+                    "remainingBalance" to newGroupBalance.coerceAtLeast(0.0),
                     "isSettled" to (newGroupBalance <= 0.001),
                     "settlementNotes" to notes.distinct()
                 )
                 
-                group.forEach { doc ->
+                freshGroup.forEach { doc ->
                     transaction.update(firestore.collection(StockEntry.COLLECTION_NAME).document(doc.id), updates)
                 }
             }

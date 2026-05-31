@@ -574,7 +574,7 @@ fun PurchaseOrderCard(po: com.batterysales.data.models.PurchaseOrderItem, dateFo
                     Card(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable {
                             val spec = entry.specification.ifEmpty { "no_spec" }
-                            navController.navigate("product_ledger/${entry.productVariantId}/${entry.productName}/${entry.capacity}/$spec")
+                            navController.navigate("product_ledger/${entry.productVariantId}/${entry.productName}/${entry.capacity}/$spec?highlightEntryId=${entry.id}")
                         },
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                         shape = RoundedCornerShape(8.dp),

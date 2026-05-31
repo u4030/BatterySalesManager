@@ -316,10 +316,21 @@ class ReportsViewModel @Inject constructor(
                     }.distinctBy { it.id }
 
                     PurchaseOrderItem(
-                        entry = representative.copy(totalCost = totalOrderCost),
+                        entry = representative.copy(
+                            totalCost = totalOrderCost,
+                            remainingBalance = effectiveBalance,
+                            isSettled = representative.isSettled
+                        ),
                         linkedPaidAmount = manualLinkedBills.sumOf { it.paidAmount },
                         remainingBalance = effectiveBalance,
-                        items = sortedGroup,
+                        items = sortedGroup.map { item ->
+                            // Ensure each item has correct name/capacity/spec for display
+                            item.copy(
+                                productName = item.productName.ifEmpty { representative.productName },
+                                capacity = if (item.capacity == 0) representative.capacity else item.capacity,
+                                specification = item.specification.ifEmpty { representative.specification }
+                            )
+                        },
                         referenceNumbers = manualLinkedBills.map { bill ->
                             val typeLabel = when(bill.billType) {
                                 BillType.CHECK -> "شيك"

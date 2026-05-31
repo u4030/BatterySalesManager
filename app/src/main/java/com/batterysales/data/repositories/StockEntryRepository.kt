@@ -31,6 +31,8 @@ class StockEntryRepository @Inject constructor(
             val docRef = firestore.collection(StockEntry.COLLECTION_NAME).document()
             val finalEntry = stockEntry.copy(
                 id = docRef.id,
+                productName = variant?.productName ?: stockEntry.productName,
+                capacity = variant?.capacity ?: stockEntry.capacity,
                 specification = variant?.specification ?: stockEntry.specification
             )
             transaction.set(docRef, finalEntry)
@@ -167,6 +169,8 @@ class StockEntryRepository @Inject constructor(
 
                 val finalEntry = entry.copy(
                     id = docRef.id,
+                    productName = variant?.productName ?: entry.productName,
+                    capacity = variant?.capacity ?: entry.capacity,
                     remainingBalance = remainingBalance,
                     isSettled = isSettled,
                     specification = variant?.specification ?: entry.specification

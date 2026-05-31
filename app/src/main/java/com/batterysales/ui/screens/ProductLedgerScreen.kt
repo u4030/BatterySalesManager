@@ -88,6 +88,18 @@ fun ProductLedgerScreen(
         }
     }
 
+    // Auto-scroll to highlighted entry
+    LaunchedEffect(pagingItems.itemCount, viewModel.highlightEntryId) {
+        if (viewModel.highlightEntryId != null) {
+            for (i in 0 until pagingItems.itemCount) {
+                if (pagingItems[i]?.entry?.id == viewModel.highlightEntryId) {
+                    listState.animateScrollToItem(i + 1) // +1 for Header
+                    break
+                }
+            }
+        }
+    }
+
     if (showScanner) {
         androidx.compose.ui.window.Dialog(
             onDismissRequest = { showScanner = false },
@@ -237,6 +249,7 @@ fun ProductLedgerScreen(
                                 productName = viewModel.productName,
                                 variantCapacity = viewModel.variantCapacity,
                                 variantSpecification = viewModel.variantSpecification,
+                                isHighlighted = it.entry.id == viewModel.highlightEntryId,
                                 onEdit = { entryId ->
                                     if (it.entry.supplier != "Sale") {
                                         navController.navigate("stock_entry?entryId=$entryId")
@@ -277,6 +290,7 @@ fun LedgerItemCard(
     productName: String,
     variantCapacity: String,
     variantSpecification: String,
+    isHighlighted: Boolean = false,
     onEdit: (String) -> Unit,
     onDelete: (String) -> Unit,
     onReturn: (StockEntry) -> Unit = {}
@@ -301,7 +315,9 @@ fun LedgerItemCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        border = if (isHighlighted) androidx.compose.foundation.BorderStroke(3.dp, accentColor) else null,
+        colors = CardDefaults.cardColors(containerColor = if (isHighlighted) accentColor.copy(alpha = 0.05f) else MaterialTheme.colorScheme.surface),
+        elevation = if (isHighlighted) CardDefaults.cardElevation(defaultElevation = 8.dp) else CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
