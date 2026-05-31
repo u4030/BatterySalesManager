@@ -575,10 +575,9 @@ class BillRepository @Inject constructor(
                 }
 
                 val representative = freshGroup.first()
-                val groupTotalCost = freshGroup.sumOf { it.getNetCost() }
 
-                // We must use the minimum remainingBalance in the group as the truth
-                val currentGroupBalance = freshGroup.minOf { it.remainingBalance ?: it.getNetCost() }
+                // Use the SUM of remaining balances of all items in the group
+                val currentGroupBalance = freshGroup.sumOf { it.remainingBalance ?: it.getNetCost() }
                 
                 if (currentGroupBalance <= 0.001) {
                     freshGroup.forEach { doc ->
@@ -590,42 +589,48 @@ class BillRepository @Inject constructor(
                     return@forEach
                 }
 
-                val allocation = minOf(unallocatedPool, currentGroupBalance)
-                val newGroupBalance = currentGroupBalance - allocation
-                unallocatedPool -= allocation
-
-                val notes = representative.settlementNotes.toMutableList()
+                val totalAllocationToGroup = minOf(unallocatedPool, currentGroupBalance)
+                unallocatedPool -= totalAllocationToGroup
                 
-                // Identify the "Source" of this allocation (for traceability)
-                if (allocation > 0.001) {
-                    // Find most recent return or bill that could have contributed
-                    val latestReturn = supplierReturns.firstOrNull()
-                    val latestBill = supplierBills.firstOrNull()
-                    
-                    val noteText = when {
-                        latestReturn != null && latestReturn.timestamp.after(latestBill?.updatedAt ?: Date(0)) -> 
-                            "مرتجع مواد: JD ${String.format("%.3f", allocation)} (ربط تلقائي)"
-                        latestBill != null -> {
-                            val type = when(latestBill.billType) {
-                                BillType.CHECK -> "شيك"
-                                BillType.BILL -> "كمبيالة"
-                                else -> "نقدي"
-                            }
-                            "$type: ${latestBill.referenceNumber} (ربط تلقائي): JD ${String.format("%.3f", allocation)}"
-                        }
-                        else -> "تسوية من الرصيد: JD ${String.format("%.3f", allocation)}"
-                    }
-                    notes.add(noteText)
-                }
+                // Distribute totalAllocationToGroup across group members
+                var remainingToDistribute = totalAllocationToGroup
 
-                val updates = mutableMapOf<String, Any>(
-                    "remainingBalance" to newGroupBalance.coerceAtLeast(0.0),
-                    "isSettled" to (newGroupBalance <= 0.001),
-                    "settlementNotes" to notes.distinct()
-                )
-                
                 freshGroup.forEach { doc ->
-                    transaction.update(firestore.collection(StockEntry.COLLECTION_NAME).document(doc.id), updates)
+                    val itemBalance = doc.remainingBalance ?: doc.getNetCost()
+                    if (itemBalance <= 0.001) {
+                        transaction.update(firestore.collection(StockEntry.COLLECTION_NAME).document(doc.id), mapOf("isSettled" to true, "remainingBalance" to 0.0))
+                        return@forEach
+                    }
+
+                    val itemAllocation = minOf(remainingToDistribute, itemBalance)
+                    val newItemBalance = itemBalance - itemAllocation
+                    remainingToDistribute -= itemAllocation
+
+                    val notes = doc.settlementNotes.toMutableList()
+                    if (itemAllocation > 0.001) {
+                        val latestReturn = supplierReturns.firstOrNull()
+                        val latestBill = supplierBills.firstOrNull()
+                        val noteText = when {
+                            latestReturn != null && latestReturn.timestamp.after(latestBill?.updatedAt ?: Date(0)) ->
+                                "مرتجع مواد: JD ${String.format("%.3f", itemAllocation)} (ربط تلقائي)"
+                            latestBill != null -> {
+                                val type = when(latestBill.billType) {
+                                    BillType.CHECK -> "شيك"
+                                    BillType.BILL -> "كمبيالة"
+                                    else -> "نقدي"
+                                }
+                                "$type: ${latestBill.referenceNumber} (ربط تلقائي): JD ${String.format("%.3f", itemAllocation)}"
+                            }
+                            else -> "تسوية من الرصيد: JD ${String.format("%.3f", itemAllocation)}"
+                        }
+                        notes.add(noteText)
+                    }
+
+                    transaction.update(firestore.collection(StockEntry.COLLECTION_NAME).document(doc.id), mapOf(
+                        "remainingBalance" to newItemBalance.coerceAtLeast(0.0),
+                        "isSettled" to (newItemBalance <= 0.001),
+                        "settlementNotes" to notes.distinct()
+                    ))
                 }
             }
 

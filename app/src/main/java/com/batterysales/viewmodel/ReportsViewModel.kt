@@ -272,22 +272,8 @@ class ReportsViewModel @Inject constructor(
                 val end = _endDate.value
                 val supplier = supplierRepository.getSupplier(supplierId) ?: return@launch
 
-                if (start == null && end == null) {
-                    val cache = summaryRepository.getSupplierReportCache(supplierId)
-                    if (cache != null) {
-                        _selectedSupplierReport.value = SupplierReportItem(
-                            supplier = supplier,
-                            totalDebit = cache.totalDebit,
-                            totalCredit = cache.totalCredit,
-                            balance = cache.balance,
-                            targetProgress = if (supplier.yearlyTarget > 0) cache.totalDebit / supplier.yearlyTarget else 0.0,
-                            regularOrders = cache.regularOrders.map { it.toOrderItem() },
-                            obligatedOrders = cache.obligatedOrders.map { it.toOrderItem() }
-                        )
-                        _isSupplierLoading.value = false
-                        return@launch
-                    }
-                }
+                // Skip cache fetch to ensure we always see the latest logic corrections and FIFO links.
+                // We'll still update the cache document at the end for other parts of the app.
 
                 val allEntries = stockEntryRepository.getEntriesBySuppliers(listOf(supplierId))
                 val allBills = billRepository.getBillsBySuppliers(listOf(supplierId))
@@ -326,9 +312,9 @@ class ReportsViewModel @Inject constructor(
                         items = sortedGroup.map { item ->
                             // Ensure each item has correct name/capacity/spec for display
                             item.copy(
-                                productName = item.productName.ifEmpty { representative.productName },
+                                productName = item.productName.trim().ifEmpty { representative.productName.trim().ifEmpty { "منتج غير معروف" } },
                                 capacity = if (item.capacity == 0) representative.capacity else item.capacity,
-                                specification = item.specification.ifEmpty { representative.specification }
+                                specification = item.specification.trim().ifEmpty { representative.specification.trim() }
                             )
                         },
                         referenceNumbers = manualLinkedBills.map { bill ->
