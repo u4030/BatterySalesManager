@@ -506,9 +506,8 @@ fun PurchaseOrderCard(po: com.batterysales.data.models.PurchaseOrderItem, dateFo
                 }
             }
 
-            // Coverage Status Badge (Image match)
-            val coverageAmount = po.entry.totalCost - po.remainingBalance
-            if (coverageAmount > 0.001) {
+            // Coverage Status Badge
+            if (po.totalLinkedAmount > 0.001) {
                 Surface(
                     color = (if (isFullyCovered) Color(0xFF10B981) else Color(0xFFFB8C00)).copy(alpha = 0.1f), 
                     shape = RoundedCornerShape(12.dp)
@@ -518,15 +517,21 @@ fun PurchaseOrderCard(po: com.batterysales.data.models.PurchaseOrderItem, dateFo
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            Icons.Default.Info, 
+                            Icons.Default.VerifiedUser,
                             contentDescription = null, 
                             tint = if (isFullyCovered) Color(0xFF10B981) else Color(0xFFFB8C00),
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
+                        val text = when {
+                            isFullyCovered -> "الفاتورة مسددة بالكامل"
+                            po.autoLinkedAmount > 0.001 && po.linkedPaidAmount > 0.001 ->
+                                "مسددة جزئياً: JD ${String.format("%.3f", po.linkedPaidAmount)} (يدوي) + JD ${String.format("%.3f", po.autoLinkedAmount)} (تلقائي)"
+                            po.autoLinkedAmount > 0.001 -> "تغطية تلقائية بمبلغ JD ${String.format("%.3f", po.autoLinkedAmount)}"
+                            else -> "ارتباط يدوي بمبلغ JD ${String.format("%.3f", po.linkedPaidAmount)}"
+                        }
                         Text(
-                            text = if (isFullyCovered) "مغطاة بالكامل من شيكات غير مرتبطة" 
-                                   else "من شيكات مرتبطة جزئياً بمبلغ JD ${String.format("%.3f", coverageAmount)}",
+                            text = text,
                             style = MaterialTheme.typography.labelSmall,
                             color = if (isFullyCovered) Color(0xFF10B981) else Color(0xFFFB8C00),
                             fontWeight = FontWeight.Bold

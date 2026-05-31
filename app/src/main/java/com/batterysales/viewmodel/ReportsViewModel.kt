@@ -293,31 +293,38 @@ class ReportsViewModel @Inject constructor(
                 val purchaseOrders: List<PurchaseOrderItem> = groupedEntries.map { (key, group) ->
                     val sortedGroup = group.sortedBy { it.timestamp }
                     val representative = sortedGroup.first()
+
+                    // Correctly calculate total group cost and remaining balance
                     val totalOrderCost = group.sumOf { it.getNetCost() }
-                    val effectiveBalance = if (representative.isSettled) 0.0 else (representative.remainingBalance ?: 0.0)
+                    val effectiveBalance = group.sumOf { item ->
+                        if (item.isSettled) 0.0 else (item.remainingBalance ?: item.getNetCost())
+                    }
 
                     val manualLinkedBills = supplierBills.filter { bill ->
                         val ref = bill.referenceNumber.trim()
-                        bill.relatedEntryId == key || ref == key || (ref.isNotEmpty() && ref == representative.invoiceNumber.trim())
+                        bill.relatedEntryId == key || (ref.isNotEmpty() && (ref == key || ref == representative.invoiceNumber.trim()))
                     }.distinctBy { it.id }
+
+                    val manualPaidAmount = manualLinkedBills.sumOf { it.paidAmount }
+                    val autoPaidAmount = maxOf(0.0, totalOrderCost - effectiveBalance - manualPaidAmount)
 
                     PurchaseOrderItem(
                         entry = representative.copy(
                             totalCost = totalOrderCost,
                             remainingBalance = effectiveBalance,
-                            isSettled = representative.isSettled
+                            isSettled = effectiveBalance <= 0.001
                         ),
-                        linkedPaidAmount = manualLinkedBills.sumOf { it.paidAmount },
+                        linkedPaidAmount = manualPaidAmount,
+                        autoLinkedAmount = autoPaidAmount,
                         remainingBalance = effectiveBalance,
                         items = sortedGroup.map { item ->
-                            // Ensure each item has correct name/capacity/spec for display
                             item.copy(
                                 productName = item.productName.trim().ifEmpty { representative.productName.trim().ifEmpty { "منتج غير معروف" } },
                                 capacity = if (item.capacity == 0) representative.capacity else item.capacity,
                                 specification = item.specification.trim().ifEmpty { representative.specification.trim() }
                             )
                         },
-                        referenceNumbers = manualLinkedBills.map { bill ->
+                        referenceNumbers = (manualLinkedBills.map { bill ->
                             val typeLabel = when(bill.billType) {
                                 BillType.CHECK -> "شيك"
                                 BillType.BILL -> "كمبيالة"
@@ -325,10 +332,10 @@ class ReportsViewModel @Inject constructor(
                                 else -> "دفعة"
                             }
                             "$typeLabel (#${bill.referenceNumber}): JD ${String.format("%.3f", bill.paidAmount)}"
-                        },
+                        } + representative.settlementNotes).distinct(),
                         hasManualLink = manualLinkedBills.isNotEmpty(),
                         totalActualPaid = totalOrderCost - effectiveBalance,
-                        totalLinkedAmount = maxOf(manualLinkedBills.sumOf { it.amount }, totalOrderCost - effectiveBalance)
+                        totalLinkedAmount = totalOrderCost - effectiveBalance
                     )
                 }
 
