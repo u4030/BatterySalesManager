@@ -616,9 +616,9 @@ class BillRepository @Inject constructor(
         val returnsSnap = returnsQuery.get().await()
 
         val supplierBills = billsSnap.documents.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) }
-            .sortedBy { it.updatedAt }
+            .sortedBy { it.createdAt } // Sort by creation date for FIFO
         val supplierReturns = returnsSnap.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
-            .sortedBy { it.totalCost }
+            .sortedBy { it.timestamp } // Sort by timestamp for FIFO
 
         val allEntries = entriesSnap.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
         val groupedOrders = allEntries.groupBy { it.invoiceNumber.trim().ifEmpty { it.orderId.trim().ifEmpty { it.id } }.lowercase() }
@@ -639,16 +639,61 @@ class BillRepository @Inject constructor(
                 transaction.get(firestore.collection(StockEntry.COLLECTION_NAME).document(id))
             }
 
+            // --- CREDIT SOURCE TRACKING ---
+            // We need to know how much of each bill/return has already been used to settle items.
+            // This is a complex simulation since Firestore doesn't track per-bill remaining balance for auto-linking easily.
+            // For now, we'll estimate based on the unallocatedPool and distribute it.
+
+            val creditSources = (
+                supplierBills.filter { it.billType == BillType.CHECK || it.billType == BillType.BILL || it.paidAmount > 0 }
+                    .map { b ->
+                        val amount = if (b.billType == BillType.CHECK || b.billType == BillType.BILL) b.amount else b.paidAmount
+                        CreditSource(
+                            id = b.id,
+                            type = when(b.billType){ BillType.CHECK -> "شيك"; BillType.BILL -> "كمبيالة"; else -> "دفعة" },
+                            ref = b.referenceNumber,
+                            amount = amount,
+                            date = b.createdAt
+                        )
+                    } +
+                supplierReturns.map { r ->
+                    CreditSource(
+                        id = r.id,
+                        type = "مرتجع مواد",
+                        ref = r.invoiceNumber,
+                        amount = -r.totalCost,
+                        date = r.timestamp
+                    )
+                }
+            ).sortedBy { it.date }
+
+            // To accurately track what's left of each source, we need to know what was ALREADY consumed.
+            // We calculate the total consumed credit so far:
+            val totalCreditEver = creditSources.sumOf { it.amount }
+            var creditAlreadyConsumed = totalCreditEver - unallocatedPool
+
+            // Skip sources that were fully consumed
+            val activeSources = creditSources.toMutableList()
+            while (activeSources.isNotEmpty() && creditAlreadyConsumed >= activeSources.first().amount - 0.001) {
+                creditAlreadyConsumed -= activeSources.removeAt(0).amount
+            }
+
+            // The first active source might be partially consumed
+            if (activeSources.isNotEmpty() && creditAlreadyConsumed > 0.001) {
+                val first = activeSources[0]
+                activeSources[0] = first.copy(amount = first.amount - creditAlreadyConsumed)
+            }
+
             // --- WRITE PHASE: Perform calculations and apply updates ---
             orderedGroups.forEach { group ->
-                if (unallocatedPool <= 0.001) return@forEach
+                if (activeSources.isEmpty()) return@forEach
 
                 val freshGroup = group.mapNotNull {
                     entrySnapshots[it.id]?.toObject(StockEntry::class.java)?.copy(id = it.id)
                 }
                 if (freshGroup.isEmpty()) return@forEach
 
-                val currentGroupBalance = freshGroup.sumOf { it.remainingBalance ?: it.getNetCost() }
+                var currentGroupBalance = freshGroup.sumOf { it.remainingBalance ?: it.getNetCost() }
                 
                 if (currentGroupBalance <= 0.001) {
                     freshGroup.forEach { doc ->
@@ -660,42 +705,40 @@ class BillRepository @Inject constructor(
                     return@forEach
                 }
 
-                val totalAllocationToGroup = minOf(unallocatedPool, currentGroupBalance)
-                unallocatedPool -= totalAllocationToGroup
-                
-                var remainingToDistribute = totalAllocationToGroup
-
+                // Process each entry in the group
                 freshGroup.forEach { doc ->
-                    val itemBalance = doc.remainingBalance ?: doc.getNetCost()
+                    var itemBalance = doc.remainingBalance ?: doc.getNetCost()
                     if (itemBalance <= 0.001) {
                         transaction.update(firestore.collection(StockEntry.COLLECTION_NAME).document(doc.id), mapOf("isSettled" to true, "remainingBalance" to 0.0))
                         return@forEach
                     }
 
-                    val itemAllocation = minOf(remainingToDistribute, itemBalance)
-                    val newItemBalance = itemBalance - itemAllocation
-                    remainingToDistribute -= itemAllocation
+                    val notes = doc.settlementNotes.toMutableList()
 
-                    if (itemAllocation > 0.001) {
-                        val notes = doc.settlementNotes.toMutableList()
-                        val relevantSource = (supplierBills.filter { it.billType == BillType.CHECK || it.billType == BillType.BILL || it.paidAmount > 0 }
-                            .map { b -> Triple(b.updatedAt, when(b.billType){ BillType.CHECK -> "شيك"; BillType.BILL -> "كمبيالة"; else -> "نقدي" }, b.referenceNumber) } +
-                            supplierReturns.map { r -> Triple(r.timestamp, "مرتجع مواد", r.invoiceNumber) })
-                            .sortedByDescending { it.first }
-                            .firstOrNull()
+                    // Allocate from multiple sources if needed
+                    while (itemBalance > 0.001 && activeSources.isNotEmpty()) {
+                        val source = activeSources.first()
+                        val allocation = minOf(itemBalance, source.amount)
 
-                        val noteText = relevantSource?.let { (_, type, ref) ->
-                            "$type: $ref (ربط تلقائي): JD ${String.format("%.3f", itemAllocation)}"
-                        } ?: "تسوية من الرصيد (ربط تلقائي): JD ${String.format("%.3f", itemAllocation)}"
+                        itemBalance -= allocation
+                        unallocatedPool -= allocation
 
+                        // Update source's remaining amount
+                        if (source.amount - allocation <= 0.001) {
+                            activeSources.removeAt(0)
+                        } else {
+                            activeSources[0] = source.copy(amount = source.amount - allocation)
+                        }
+
+                        val noteText = "${source.type}: ${source.ref} (ربط تلقائي): JD ${String.format("%.3f", allocation)}"
                         notes.add(noteText)
-
-                        transaction.update(firestore.collection(StockEntry.COLLECTION_NAME).document(doc.id), mapOf(
-                            "remainingBalance" to newItemBalance.coerceAtLeast(0.0),
-                            "isSettled" to (newItemBalance <= 0.001),
-                            "settlementNotes" to notes.distinct()
-                        ))
                     }
+
+                    transaction.update(firestore.collection(StockEntry.COLLECTION_NAME).document(doc.id), mapOf(
+                        "remainingBalance" to itemBalance.coerceAtLeast(0.0),
+                        "isSettled" to (itemBalance <= 0.001),
+                        "settlementNotes" to notes.distinct()
+                    ))
                 }
             }
 
@@ -711,6 +754,14 @@ class BillRepository @Inject constructor(
             .await()
         return snapshot.documents.mapNotNull { it.getString("relatedEntryId") }.toSet()
     }
+
+    private data class CreditSource(
+        val id: String,
+        val type: String,
+        val ref: String,
+        val amount: Double,
+        val date: Date
+    )
 
     suspend fun getLinkedAmounts(): Map<String, Double> {
         val snapshot = firestore.collection(Bill.COLLECTION_NAME).get().await()
