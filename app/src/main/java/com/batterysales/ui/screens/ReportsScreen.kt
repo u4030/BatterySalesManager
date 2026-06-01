@@ -537,8 +537,8 @@ fun PurchaseOrderCard(po: com.batterysales.data.models.PurchaseOrderItem, dateFo
             }
 
             // Settlement Details Section
-            if (po.referenceNumbers.isNotEmpty() || po.entry.settlementNotes.isNotEmpty()) {
-                val allNotes = (po.referenceNumbers + po.entry.settlementNotes).distinct()
+            val allNotes = po.referenceNumbers.filter { it.isNotBlank() }
+            if (allNotes.isNotEmpty()) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()

@@ -55,6 +55,12 @@ class BillRepository @Inject constructor(
         val finalBill = bill.copy(id = docRef.id, createdAt = Date(), updatedAt = Date())
         
         firestore.runTransaction { transaction ->
+            // --- READ PHASE ---
+            val entrySnap = if (finalBill.relatedEntryId != null) {
+                transaction.get(firestore.collection(StockEntry.COLLECTION_NAME).document(finalBill.relatedEntryId))
+            } else null
+
+            // --- WRITE PHASE ---
             transaction.set(docRef, finalBill)
             
             // For Checks and Bills, we credit the FULL amount immediately to the supplier, even if UNPAID.
@@ -68,9 +74,7 @@ class BillRepository @Inject constructor(
             var amountToPool = creditToApply
 
             // 1. If manually linked to a purchase order entry, settle it first
-            if (finalBill.relatedEntryId != null && creditToApply > 0) {
-                val entryRef = firestore.collection(StockEntry.COLLECTION_NAME).document(finalBill.relatedEntryId!!)
-                val entrySnap = transaction.get(entryRef)
+            if (entrySnap != null && creditToApply > 0) {
                 val entry = entrySnap.toObject(StockEntry::class.java)
                 if (entry != null) {
                     val currentRemaining = entry.remainingBalance ?: entry.getNetCost()
@@ -88,11 +92,15 @@ class BillRepository @Inject constructor(
                     }
                     notes.add("ارتباط يدوي ($typeLabel): JD ${String.format("%.3f", allocation)} (#${finalBill.referenceNumber})")
                     
-                    val newRemaining = currentRemaining - allocation
-                    transaction.update(entryRef, mapOf(
+                    val allocations = entry.linkedAllocations.toMutableMap()
+                    allocations[finalBill.id] = (allocations[finalBill.id] ?: 0.0) + allocation
+
+                    val newRemaining = (currentRemaining - allocation).coerceAtLeast(0.0)
+                    transaction.update(entrySnap.reference, mapOf(
                         "settlementNotes" to notes.distinct(),
-                        "remainingBalance" to newRemaining.coerceAtLeast(0.0),
-                        "isSettled" to (newRemaining <= 0.001)
+                        "remainingBalance" to newRemaining,
+                        "isSettled" to (newRemaining <= 0.001),
+                        "linkedAllocations" to allocations
                     ))
 
                     // Update bill to record manual allocation
@@ -151,21 +159,23 @@ class BillRepository @Inject constructor(
         val billRef = firestore.collection(Bill.COLLECTION_NAME).document(billId)
 
         firestore.runTransaction { transaction ->
-            // 1. Reads
+            // --- READ PHASE ---
             val snapshot = transaction.get(billRef)
             val bill = snapshot.toObject(Bill::class.java)?.copy(id = snapshot.id) ?: return@runTransaction
             
-            // --- AUTOMATED SOURCE SELECTION ---
             val targetMethod = if (bill.billType == BillType.CHECK) "bank" else "cash"
-            // Bills are always Main Warehouse treasury
             val targetWhId = if (bill.billType == BillType.BILL) {
-                // We'll try to find the main warehouse or fallback to the bill's warehouse
                 bill.warehouseId ?: "main_treasury" 
             } else "global"
 
             val snapshots = summaryRepository.getSummarySnapshots(transaction, targetWhId)
 
-            // 2. Writes
+            val isAlreadyCredited = bill.billType == BillType.CHECK || bill.billType == BillType.BILL
+            val entrySnap = if (bill.relatedEntryId != null && !isAlreadyCredited) {
+                transaction.get(firestore.collection(StockEntry.COLLECTION_NAME).document(bill.relatedEntryId!!))
+            } else null
+
+            // --- WRITE PHASE ---
             val newPaidAmount = bill.paidAmount + paymentAmount
             val newStatus = when {
                 newPaidAmount >= bill.amount -> BillStatus.PAID
@@ -227,9 +237,6 @@ class BillRepository @Inject constructor(
             if (bill.supplierId.isNotEmpty()) {
                 val supplierRef = firestore.collection("suppliers").document(bill.supplierId)
 
-                // IMPORTANT: For CHECK/BILL, the FULL amount was already credited at creation.
-                // We only increment totals for other types (like CASH/TRANSFER) that credit upon payment.
-                val isAlreadyCredited = bill.billType == BillType.CHECK || bill.billType == BillType.BILL
                 if (!isAlreadyCredited) {
                     transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(paymentAmount))
                     transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-paymentAmount))
@@ -237,22 +244,29 @@ class BillRepository @Inject constructor(
                 
                 // Add to unallocated pool (Check if it has a manual link to deduct first)
                 var unallocatedToAdd = if (isAlreadyCredited) 0.0 else paymentAmount
-                if (bill.relatedEntryId != null && !isAlreadyCredited) {
-                    val entryRef = firestore.collection(StockEntry.COLLECTION_NAME).document(bill.relatedEntryId!!)
-                    val entrySnap = transaction.get(entryRef)
+                if (entrySnap != null) {
                     val entry = entrySnap.toObject(StockEntry::class.java)
                     if (entry != null) {
                         val currentRemaining = entry.remainingBalance ?: entry.getNetCost()
                         val allocation = minOf(paymentAmount, currentRemaining)
-                        val newRemaining = currentRemaining - allocation
+                        val newRemaining = (currentRemaining - allocation).coerceAtLeast(0.0)
                         
                         val notes = entry.settlementNotes.toMutableList()
-                        notes.add("تسديد دفعة ($targetMethod): JD ${String.format("%.3f", allocation)}")
+                        val typeLabel = when(bill.billType) {
+                            BillType.CHECK -> "شيك"
+                            BillType.BILL -> "كمبيالة"
+                            else -> "دفعة"
+                        }
+                        notes.add("تسديد ($typeLabel): JD ${String.format("%.3f", allocation)} (#${bill.referenceNumber})")
                         
-                        transaction.update(entryRef, mapOf(
-                            "remainingBalance" to newRemaining.coerceAtLeast(0.0),
+                        val allocations = entry.linkedAllocations.toMutableMap()
+                        allocations[bill.id] = (allocations[bill.id] ?: 0.0) + allocation
+
+                        transaction.update(entrySnap.reference, mapOf(
+                            "remainingBalance" to newRemaining,
                             "isSettled" to (newRemaining <= 0.001),
-                            "settlementNotes" to notes.distinct()
+                            "settlementNotes" to notes.distinct(),
+                            "linkedAllocations" to allocations
                         ))
 
                         // Update bill's manual allocation record
@@ -268,10 +282,8 @@ class BillRepository @Inject constructor(
             }
 
             // Update Global System Stats
-            val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
-
-            // Only update if it wasn't already updated at bill creation (CHECK/BILL)
-            if (bill.billType != BillType.CHECK && bill.billType != BillType.BILL) {
+            if (!isAlreadyCredited) {
+                val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
                 transaction.update(statsRef, mapOf(
                     "totalSupplierDebt" to com.google.firebase.firestore.FieldValue.increment(-paymentAmount),
                     "updatedAt" to java.util.Date()
@@ -291,23 +303,22 @@ class BillRepository @Inject constructor(
         val billRef = firestore.collection(Bill.COLLECTION_NAME).document(bill.id)
 
         firestore.runTransaction { transaction ->
-            // 1. Reads
+            // --- READ PHASE ---
             val snapshot = transaction.get(billRef)
             val freshBill = snapshot.toObject(Bill::class.java)?.copy(id = snapshot.id) ?: return@runTransaction
             
-            // --- AUTOMATED SOURCE SELECTION ---
-            // If it's a CHECK -> ALWAYS deduct from Bank
-            // If it's a BILL -> ALWAYS deduct from Main Warehouse Treasury
             val targetMethod = if (freshBill.billType == BillType.CHECK) "bank" else "cash"
             val targetWhId = if (freshBill.billType == BillType.BILL) {
-                // Find main warehouse ID (assumed "main" or fetched via query)
-                // For now we use the provided warehouseId if it's bill, but logic dictates Main Treasury.
                 warehouseId 
             } else "global"
 
             val snapshots = summaryRepository.getSummarySnapshots(transaction, targetWhId)
 
-            // 2. Writes
+            val entrySnap = if (freshBill.relatedEntryId != null && freshBill.billType != BillType.CHECK && freshBill.billType != BillType.BILL) {
+                transaction.get(firestore.collection(StockEntry.COLLECTION_NAME).document(freshBill.relatedEntryId!!))
+            } else null
+
+            // --- WRITE PHASE ---
             val newPaidAmount = freshBill.paidAmount + paymentAmount
             val newStatus = when {
                 newPaidAmount >= freshBill.amount -> BillStatus.PAID
@@ -370,29 +381,35 @@ class BillRepository @Inject constructor(
             if (freshBill.supplierId.isNotEmpty()) {
                 val supplierRef = firestore.collection("suppliers").document(freshBill.supplierId)
 
-                // Only credit if it wasn't already credited at creation (CHECK/BILL)
                 if (freshBill.billType != BillType.CHECK && freshBill.billType != BillType.BILL) {
                     transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(paymentAmount))
                     transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-paymentAmount))
 
                     var amountToPool = paymentAmount
                     // If this specific payment was linked to an entry, we handle it
-                    if (freshBill.relatedEntryId != null) {
-                        val entryRef = firestore.collection(StockEntry.COLLECTION_NAME).document(freshBill.relatedEntryId!!)
-                        val entrySnap = transaction.get(entryRef)
+                    if (entrySnap != null) {
                         val entry = entrySnap.toObject(StockEntry::class.java)
                         if (entry != null) {
                             val currentRemaining = entry.remainingBalance ?: entry.getNetCost()
                             val allocation = minOf(paymentAmount, currentRemaining)
-                            val newRemaining = currentRemaining - allocation
+                            val newRemaining = (currentRemaining - allocation).coerceAtLeast(0.0)
 
                             val notes = entry.settlementNotes.toMutableList()
-                            notes.add("تسديد دفعة: JD ${String.format("%.3f", allocation)} (#${freshBill.referenceNumber})")
+                            val typeLabel = when(freshBill.billType) {
+                                BillType.CHECK -> "شيك"
+                                BillType.BILL -> "كمبيالة"
+                                else -> "دفعة"
+                            }
+                            notes.add("تسديد ($typeLabel): JD ${String.format("%.3f", allocation)} (#${freshBill.referenceNumber})")
 
-                            transaction.update(entryRef, mapOf(
-                                "remainingBalance" to newRemaining.coerceAtLeast(0.0),
+                            val allocations = entry.linkedAllocations.toMutableMap()
+                            allocations[freshBill.id] = (allocations[freshBill.id] ?: 0.0) + allocation
+
+                            transaction.update(entrySnap.reference, mapOf(
+                                "remainingBalance" to newRemaining,
                                 "isSettled" to (newRemaining <= 0.001),
-                                "settlementNotes" to notes.distinct()
+                                "settlementNotes" to notes.distinct(),
+                                "linkedAllocations" to allocations
                             ))
 
                             transaction.update(billRef, "manualAllocation", freshBill.manualAllocation + allocation)
@@ -407,10 +424,8 @@ class BillRepository @Inject constructor(
             }
 
             // Update Global System Stats
-            val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
-
-            // Only update if it wasn't already updated at bill creation (CHECK/BILL)
             if (freshBill.billType != BillType.CHECK && freshBill.billType != BillType.BILL) {
+                val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
                 transaction.update(statsRef, mapOf(
                     "totalSupplierDebt" to com.google.firebase.firestore.FieldValue.increment(-paymentAmount),
                     "updatedAt" to java.util.Date()
@@ -587,7 +602,10 @@ class BillRepository @Inject constructor(
         val totalBillCredit = bills.sumOf { b ->
             if (b.billType == BillType.CHECK || b.billType == BillType.BILL) b.amount else b.paidAmount
         }
+        val totalManualAllocation = bills.sumOf { it.manualAllocation }
+
         val totalCreditPool = totalReturnCredit + totalBillCredit
+        val unallocatedPool = (totalCreditPool - totalManualAllocation).coerceAtLeast(0.0)
         val totalDebit = positiveEntries.sumOf { it.totalCost }
 
         // Split updates into batches to handle the 500-op limit
@@ -600,7 +618,8 @@ class BillRepository @Inject constructor(
                     transaction.update(firestore.collection(StockEntry.COLLECTION_NAME).document(entry.id), mapOf(
                         "remainingBalance" to entry.totalCost,
                         "isSettled" to false,
-                        "settlementNotes" to emptyList<String>()
+                        "settlementNotes" to emptyList<String>(),
+                        "linkedAllocations" to emptyMap<String, Double>()
                     ))
                 }
             }.await()
@@ -612,11 +631,11 @@ class BillRepository @Inject constructor(
                 "totalDebit" to totalDebit,
                 "totalCredit" to totalCreditPool,
                 "currentBalance" to (totalDebit - totalCreditPool),
-                "unallocatedCredit" to totalCreditPool
+                "unallocatedCredit" to unallocatedPool
             ))
         }.await()
 
-        // 3. Run FIFO Linkage
+        // 3. Run FIFO Linkage (It will re-apply manual links first internally)
         autoLinkBillsForSupplier(supplierId)
     }
 
@@ -628,8 +647,7 @@ class BillRepository @Inject constructor(
     suspend fun autoLinkBillsForSupplier(supplierId: String, resetDate: Date? = null) {
         if (supplierId.isEmpty()) return
 
-        // 1. Get ALL unsettled entries for this supplier to group them correctly
-        // Use client-side sorting to avoid requiring composite indexes
+        // 1. Get ALL unsettled entries for this supplier
         val entriesQuery = firestore.collection(StockEntry.COLLECTION_NAME)
             .whereEqualTo("supplierId", supplierId)
             .whereEqualTo("status", "approved")
@@ -638,8 +656,7 @@ class BillRepository @Inject constructor(
         val entriesSnap = entriesQuery.get().await()
         if (entriesSnap.isEmpty) return
 
-        // 2. Fetch all bills (including UNPAID checks/bills which now credit the supplier) and RETURNS
-        // Use client-side sorting to avoid requiring composite indexes
+        // 2. Fetch all bills and RETURNS
         val billsQuery = firestore.collection(Bill.COLLECTION_NAME)
             .whereEqualTo("supplierId", supplierId)
         val billsSnap = billsQuery.get().await()
@@ -651,135 +668,157 @@ class BillRepository @Inject constructor(
         val returnsSnap = returnsQuery.get().await()
 
         val supplierBills = billsSnap.documents.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) }
-            .sortedBy { it.createdAt } // Sort by creation date for FIFO
+            .sortedBy { it.createdAt }
         val supplierReturns = returnsSnap.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
-            .sortedBy { it.timestamp } // Sort by timestamp for FIFO
+            .sortedBy { it.timestamp }
 
         val allEntries = entriesSnap.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
         val groupedOrders = allEntries.groupBy { it.invoiceNumber.trim().ifEmpty { it.orderId.trim().ifEmpty { it.id } }.lowercase() }
         val orderedGroups = groupedOrders.values.sortedBy { it.first().getEffectiveDate() }
 
         firestore.runTransaction { transaction ->
-            // --- READ PHASE: Execute all reads before any writes ---
+            // --- READ PHASE ---
             val supplierRef = firestore.collection("suppliers").document(supplierId)
             val supplierSnap = transaction.get(supplierRef)
             val supplier = supplierSnap.toObject(Supplier::class.java)
             
             var unallocatedPool = supplier?.unallocatedCredit ?: 0.0
-            if (unallocatedPool <= 0.001) return@runTransaction
 
-            // Gather all entries to read first
+            // Gather entries snapshots
             val entriesToRead = orderedGroups.flatMap { it }.map { it.id }.distinct()
             val entrySnapshots = entriesToRead.associateWith { id ->
                 transaction.get(firestore.collection(StockEntry.COLLECTION_NAME).document(id))
             }
 
-            // --- CREDIT SOURCE TRACKING ---
-            // We need to know how much of each bill/return has already been used to settle items.
-            // This is a complex simulation since Firestore doesn't track per-bill remaining balance for auto-linking easily.
-            // For now, we'll estimate based on the unallocatedPool and distribute it.
+            // --- CALCULATION PHASE (No transaction writes yet) ---
+            val documentUpdates = mutableMapOf<String, Map<String, Any>>()
 
-            val creditSources = (
-                supplierBills.filter { it.billType == BillType.CHECK || it.billType == BillType.BILL || it.paidAmount > 0 }
-                    .map { b ->
-                        val totalAmount = if (b.billType == BillType.CHECK || b.billType == BillType.BILL) b.amount else b.paidAmount
-                        // Important: subtract the manual allocation already used from this specific instrument
-                        val availableAmount = (totalAmount - b.manualAllocation).coerceAtLeast(0.0)
+            // 1. Re-apply Manual Allocations if needed
+            supplierBills.filter { it.relatedEntryId != null && it.manualAllocation > 0.001 }.forEach { bill ->
+                val entrySnap = entrySnapshots[bill.relatedEntryId]
+                if (entrySnap != null) {
+                    val entry = entrySnap.toObject(StockEntry::class.java)
+                    if (entry != null) {
+                        val typeLabel = when(bill.billType) {
+                            BillType.CHECK -> "شيك"
+                            BillType.BILL -> "كمبيالة"
+                            else -> "دفعة"
+                        }
+                        val manualNote = "ارتباط يدوي ($typeLabel): JD ${String.format("%.3f", bill.manualAllocation)} (#${bill.referenceNumber})"
+
+                        if (!entry.settlementNotes.contains(manualNote)) {
+                            val currentRemaining = entry.remainingBalance ?: entry.getNetCost()
+                            val newRemaining = (currentRemaining - bill.manualAllocation).coerceAtLeast(0.0)
+                            val newNotes = (entry.settlementNotes + manualNote).distinct()
+                            val newAllocations = entry.linkedAllocations.toMutableMap()
+                            newAllocations[bill.id] = bill.manualAllocation
+
+                            documentUpdates[entry.id] = mapOf(
+                                "remainingBalance" to newRemaining,
+                                "isSettled" to (newRemaining <= 0.001),
+                                "settlementNotes" to newNotes,
+                                "linkedAllocations" to newAllocations
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 2. FIFO Linking
+            if (unallocatedPool > 0.001) {
+                val creditSources = (
+                    supplierBills.filter { it.billType == BillType.CHECK || it.billType == BillType.BILL || it.paidAmount > 0 }
+                        .map { b ->
+                            val totalAmount = if (b.billType == BillType.CHECK || b.billType == BillType.BILL) b.amount else b.paidAmount
+                            val availableAmount = (totalAmount - b.manualAllocation).coerceAtLeast(0.0)
+                            CreditSource(
+                                id = b.id,
+                                type = when(b.billType){ BillType.CHECK -> "شيك"; BillType.BILL -> "كمبيالة"; else -> "دفعة" },
+                                ref = b.referenceNumber,
+                                amount = availableAmount,
+                                date = b.createdAt
+                            )
+                        } +
+                    supplierReturns.map { r ->
                         CreditSource(
-                            id = b.id,
-                            type = when(b.billType){ BillType.CHECK -> "شيك"; BillType.BILL -> "كمبيالة"; else -> "دفعة" },
-                            ref = b.referenceNumber,
-                            amount = availableAmount,
-                            date = b.createdAt
+                            id = r.id,
+                            type = "مرتجع مواد",
+                            ref = r.invoiceNumber,
+                            amount = -r.totalCost,
+                            date = r.timestamp
                         )
-                    } +
-                supplierReturns.map { r ->
-                    CreditSource(
-                        id = r.id,
-                        type = "مرتجع مواد",
-                        ref = r.invoiceNumber,
-                        amount = -r.totalCost,
-                        date = r.timestamp
-                    )
+                    }
+                ).sortedBy { it.date }
+
+                val totalCreditEver = creditSources.sumOf { it.amount }
+                var creditAlreadyConsumed = totalCreditEver - unallocatedPool
+
+                val activeSources = creditSources.toMutableList()
+                while (activeSources.isNotEmpty() && creditAlreadyConsumed >= activeSources.first().amount - 0.001) {
+                    creditAlreadyConsumed -= activeSources.removeAt(0).amount
                 }
-            ).sortedBy { it.date }
-
-            // To accurately track what's left of each source, we need to know what was ALREADY consumed.
-            // We calculate the total consumed credit so far:
-            val totalCreditEver = creditSources.sumOf { it.amount }
-            var creditAlreadyConsumed = totalCreditEver - unallocatedPool
-
-            // Skip sources that were fully consumed
-            val activeSources = creditSources.toMutableList()
-            while (activeSources.isNotEmpty() && creditAlreadyConsumed >= activeSources.first().amount - 0.001) {
-                creditAlreadyConsumed -= activeSources.removeAt(0).amount
-            }
-
-            // The first active source might be partially consumed
-            if (activeSources.isNotEmpty() && creditAlreadyConsumed > 0.001) {
-                val first = activeSources[0]
-                activeSources[0] = first.copy(amount = first.amount - creditAlreadyConsumed)
-            }
-
-            // --- WRITE PHASE: Perform calculations and apply updates ---
-            orderedGroups.forEach { group ->
-                if (activeSources.isEmpty()) return@forEach
-
-                val freshGroup = group.mapNotNull {
-                    entrySnapshots[it.id]?.toObject(StockEntry::class.java)?.copy(id = it.id)
-                }
-                if (freshGroup.isEmpty()) return@forEach
-
-                var currentGroupBalance = freshGroup.sumOf { it.remainingBalance ?: it.getNetCost() }
                 
-                if (currentGroupBalance <= 0.001) {
-                    freshGroup.forEach { doc ->
-                        transaction.update(firestore.collection(StockEntry.COLLECTION_NAME).document(doc.id), mapOf(
-                            "isSettled" to true,
-                            "remainingBalance" to 0.0
-                        ))
-                    }
-                    return@forEach
+                if (activeSources.isNotEmpty() && creditAlreadyConsumed > 0.001) {
+                    val first = activeSources[0]
+                    activeSources[0] = first.copy(amount = first.amount - creditAlreadyConsumed)
                 }
 
-                // Process each entry in the group
-                freshGroup.forEach { doc ->
-                    var itemBalance = doc.remainingBalance ?: doc.getNetCost()
-                    if (itemBalance <= 0.001) {
-                        transaction.update(firestore.collection(StockEntry.COLLECTION_NAME).document(doc.id), mapOf("isSettled" to true, "remainingBalance" to 0.0))
-                        return@forEach
-                    }
+                orderedGroups.forEach { group ->
+                    if (activeSources.isEmpty()) return@forEach
 
-                    val notes = doc.settlementNotes.toMutableList()
+                    val freshGroup = group.mapNotNull { entrySnapshots[it.id]?.toObject(StockEntry::class.java)?.copy(id = it.id) }
 
-                    // Allocate from multiple sources if needed
-                    while (itemBalance > 0.001 && activeSources.isNotEmpty()) {
-                        val source = activeSources.first()
-                        val allocation = minOf(itemBalance, source.amount)
-
-                        itemBalance -= allocation
-                        unallocatedPool -= allocation
-
-                        // Update source's remaining amount
-                        if (source.amount - allocation <= 0.001) {
-                            activeSources.removeAt(0)
+                    freshGroup.forEach { doc ->
+                        // Start with updates from manual re-link if any
+                        val currentUpdate = documentUpdates[doc.id]
+                        var itemBalance = if (currentUpdate != null) {
+                            currentUpdate["remainingBalance"] as Double
                         } else {
-                            activeSources[0] = source.copy(amount = source.amount - allocation)
+                            doc.remainingBalance ?: doc.getNetCost()
                         }
 
-                        val noteText = "${source.type}: ${source.ref} (ربط تلقائي): JD ${String.format("%.3f", allocation)}"
-                        notes.add(noteText)
-                    }
+                        if (itemBalance <= 0.001) {
+                            if (!documentUpdates.containsKey(doc.id)) {
+                                documentUpdates[doc.id] = mapOf("isSettled" to true, "remainingBalance" to 0.0)
+                            }
+                            return@forEach
+                        }
 
-                    transaction.update(firestore.collection(StockEntry.COLLECTION_NAME).document(doc.id), mapOf(
-                        "remainingBalance" to itemBalance.coerceAtLeast(0.0),
-                        "isSettled" to (itemBalance <= 0.001),
-                        "settlementNotes" to notes.distinct()
-                    ))
+                        val notes = (currentUpdate?.get("settlementNotes") as? List<String> ?: doc.settlementNotes).toMutableList()
+                        val allocations = (currentUpdate?.get("linkedAllocations") as? Map<String, Double> ?: doc.linkedAllocations).toMutableMap()
+
+                        while (itemBalance > 0.001 && activeSources.isNotEmpty()) {
+                            val source = activeSources.first()
+                            val allocation = minOf(itemBalance, source.amount)
+
+                            itemBalance -= allocation
+                            unallocatedPool -= allocation
+
+                            if (source.amount - allocation <= 0.001) {
+                                activeSources.removeAt(0)
+                            } else {
+                                activeSources[0] = source.copy(amount = source.amount - allocation)
+                            }
+
+                            val noteText = "${source.type}: ${source.ref} (ربط تلقائي): JD ${String.format("%.3f", allocation)}"
+                            notes.add(noteText)
+                            allocations[source.id] = (allocations[source.id] ?: 0.0) + allocation
+                        }
+
+                        documentUpdates[doc.id] = mapOf(
+                            "remainingBalance" to itemBalance.coerceAtLeast(0.0),
+                            "isSettled" to (itemBalance <= 0.001),
+                            "settlementNotes" to notes.distinct(),
+                            "linkedAllocations" to allocations
+                        )
+                    }
                 }
             }
 
-            // Final update to pool
+            // --- WRITE PHASE ---
+            documentUpdates.forEach { (id, updates) ->
+                transaction.update(firestore.collection(StockEntry.COLLECTION_NAME).document(id), updates)
+            }
             transaction.update(supplierRef, "unallocatedCredit", unallocatedPool)
         }.await()
     }

@@ -223,7 +223,8 @@ class SummaryRepository @Inject constructor(
                 "capacity" to item.capacity,
                 "specification" to item.specification,
                 "quantity" to item.quantity,
-                "totalCost" to item.totalCost
+                "totalCost" to item.totalCost,
+                "linkedAllocations" to item.linkedAllocations
             )
         }
     )

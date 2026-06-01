@@ -332,23 +332,46 @@ class ReportsViewModel @Inject constructor(
                 val groupedEntries: Map<String, List<StockEntry>> = supplierEntries
                     .groupBy { it.invoiceNumber.trim().ifEmpty { it.orderId.trim().ifEmpty { it.id } } }
 
-                val purchaseOrders: List<PurchaseOrderItem> = groupedEntries.map { (key, group) ->
+                val purchaseOrders: List<PurchaseOrderItem> = groupedEntries.map { (_, group) ->
                     val sortedGroup = group.sortedBy { it.timestamp }
                     val representative = sortedGroup.first()
 
-                    // Correctly calculate total group cost and remaining balance
+                    // Correctly calculate total group cost and remaining balance from DB state
                     val totalOrderCost = group.sumOf { it.getNetCost() }
                     val effectiveBalance = group.sumOf { item ->
                         if (item.isSettled) 0.0 else (item.remainingBalance ?: item.getNetCost())
                     }
 
-                    val manualLinkedBills = supplierBills.filter { bill ->
-                        val ref = bill.referenceNumber.trim()
-                        bill.relatedEntryId == key || (ref.isNotEmpty() && (ref == key || ref == representative.invoiceNumber.trim()))
-                    }.distinctBy { it.id }
+                    // Aggregate allocations across the whole order group for accurate coverage reporting
+                    val combinedAllocations = mutableMapOf<String, Double>()
+                    group.forEach { entry ->
+                        entry.linkedAllocations.forEach { (id, amount) ->
+                            combinedAllocations[id] = (combinedAllocations[id] ?: 0.0) + amount
+                        }
+                    }
 
-                    val manualPaidAmount = manualLinkedBills.sumOf { it.paidAmount }
-                    val autoPaidAmount = maxOf(0.0, totalOrderCost - effectiveBalance - manualPaidAmount)
+                    val aggregatedNotes = combinedAllocations.mapNotNull { (id, amount) ->
+                        if (amount <= 0.001) return@mapNotNull null
+
+                        val bill = supplierBills.find { it.id == id }
+                        if (bill != null) {
+                            val typeLabel = when(bill.billType) {
+                                BillType.CHECK -> "شيك"
+                                BillType.BILL -> "كمبيالة"
+                                else -> "دفعة"
+                            }
+                            val linkType = if (bill.relatedEntryId != null) "ارتباط يدوي" else "ربط تلقائي"
+                            "$typeLabel (#${bill.referenceNumber}) ($linkType): JD ${String.format("%.3f", amount)}"
+                        } else {
+                            val ret = allEntries.find { it.id == id && it.totalCost < 0 }
+                            if (ret != null) {
+                                "مرتجع مواد (#${ret.invoiceNumber}) (ربط تلقائي): JD ${String.format("%.3f", amount)}"
+                            } else {
+                                // Fallback for manual link notes or direct settlement notes if id lookup fails
+                                "مبلغ مغطى: JD ${String.format("%.3f", amount)}"
+                            }
+                        }
+                    }.distinct()
 
                     PurchaseOrderItem(
                         entry = representative.copy(
@@ -356,8 +379,8 @@ class ReportsViewModel @Inject constructor(
                             remainingBalance = effectiveBalance,
                             isSettled = effectiveBalance <= 0.001
                         ),
-                        linkedPaidAmount = manualPaidAmount,
-                        autoLinkedAmount = autoPaidAmount,
+                        linkedPaidAmount = totalOrderCost - effectiveBalance,
+                        autoLinkedAmount = 0.0,
                         remainingBalance = effectiveBalance,
                         items = sortedGroup.map { item ->
                             item.copy(
@@ -366,16 +389,8 @@ class ReportsViewModel @Inject constructor(
                                 specification = item.specification.trim().ifEmpty { representative.specification.trim() }
                             )
                         },
-                        referenceNumbers = (manualLinkedBills.map { bill ->
-                            val typeLabel = when(bill.billType) {
-                                BillType.CHECK -> "شيك"
-                                BillType.BILL -> "كمبيالة"
-                                BillType.CASH -> "نقدي"
-                                else -> "دفعة"
-                            }
-                            "$typeLabel (#${bill.referenceNumber}): JD ${String.format("%.3f", bill.paidAmount)}"
-                        } + group.flatMap { it.settlementNotes }).distinct(),
-                        hasManualLink = manualLinkedBills.isNotEmpty(),
+                        referenceNumbers = aggregatedNotes,
+                        hasManualLink = aggregatedNotes.any { it.contains("ارتباط يدوي") },
                         totalActualPaid = totalOrderCost - effectiveBalance,
                         totalLinkedAmount = totalOrderCost - effectiveBalance
                     )
@@ -385,7 +400,10 @@ class ReportsViewModel @Inject constructor(
                     .sortedWith(compareBy<PurchaseOrderItem> { it.entry.getEffectiveDate() }.thenBy { it.entry.timestamp })
 
                 val totalDebit = if (start == null && end == null) supplier.totalDebit else positiveOrders.sumOf { it.entry.totalCost }
-                val totalCredit = if (start == null && end == null) supplier.totalCredit else (supplierBills.sumOf { it.paidAmount } + purchaseOrders.filter { it.entry.totalCost < 0 }.sumOf { -it.entry.totalCost })
+                val totalCredit = if (start == null && end == null) supplier.totalCredit else (
+                    supplierBills.sumOf { b -> if (b.billType == BillType.CHECK || b.billType == BillType.BILL) b.amount else b.paidAmount }
+                    + purchaseOrders.filter { it.entry.totalCost < 0 }.sumOf { -it.entry.totalCost }
+                )
                 val balance = if (start == null && end == null) supplier.currentBalance else (totalDebit - totalCredit)
 
                 val adjustedStart = start?.let { com.batterysales.utils.DateUtils.getStartOfDay(it) }
@@ -478,23 +496,30 @@ private fun Map<String, Any>.toOrderItem(): PurchaseOrderItem {
             capacity = (itemMap["capacity"] as? Number)?.toInt() ?: 0,
             specification = itemMap["specification"] as? String ?: "",
             quantity = (itemMap["quantity"] as? Number)?.toInt() ?: 0,
-            totalCost = (itemMap["totalCost"] as? Number)?.toDouble() ?: 0.0
+            totalCost = (itemMap["totalCost"] as? Number)?.toDouble() ?: 0.0,
+            linkedAllocations = (itemMap["linkedAllocations"] as? Map<String, Double>) ?: emptyMap()
         )
     }
+
+    val totalCost = (this["totalCost"] as? Number)?.toDouble() ?: 0.0
+    val remainingBalance = (this["remainingBalance"] as? Number)?.toDouble() ?: 0.0
+    val settlementNotes = (this["settlementNotes"] as? List<String>) ?: emptyList()
+    val referenceNumbers = (this["referenceNumbers"] as? List<String>) ?: settlementNotes
 
     return PurchaseOrderItem(
         entry = StockEntry(
             id = this["id"] as? String ?: "",
-            totalCost = (this["totalCost"] as? Number)?.toDouble() ?: 0.0,
+            totalCost = totalCost,
             invoiceNumber = this["invoiceNumber"] as? String ?: "",
             timestamp = timestamp,
             invoiceDate = invoiceDate,
             specification = this["specification"] as? String ?: "",
-            settlementNotes = (this["settlementNotes"] as? List<String>) ?: emptyList()
+            settlementNotes = settlementNotes
         ),
-        linkedPaidAmount = 0.0,
-        remainingBalance = (this["remainingBalance"] as? Number)?.toDouble() ?: 0.0,
-        referenceNumbers = (this["referenceNumbers"] as? List<String>) ?: emptyList(),
-        items = orderItems
+        linkedPaidAmount = totalCost - remainingBalance,
+        remainingBalance = remainingBalance,
+        referenceNumbers = referenceNumbers,
+        items = orderItems,
+        totalLinkedAmount = totalCost - remainingBalance
     )
 }
