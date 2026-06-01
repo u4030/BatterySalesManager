@@ -164,6 +164,18 @@ class ReportsViewModel @Inject constructor(
         loadSuppliersOverview()
     }
 
+    fun syncSupplier(supplierId: String) {
+        viewModelScope.launch {
+            _isSupplierLoading.value = true
+            try {
+                billRepository.syncSupplierFinancials(supplierId)
+                loadDetailedSupplierReport(supplierId)
+            } finally {
+                _isSupplierLoading.value = false
+            }
+        }
+    }
+
     // --- NUCLEAR STRATEGY: Load ENTIRE inventory from ONE document with FALLBACK ---
     fun loadInventoryReport(reset: Boolean = false) {
         viewModelScope.launch {
@@ -362,7 +374,7 @@ class ReportsViewModel @Inject constructor(
                                 else -> "دفعة"
                             }
                             "$typeLabel (#${bill.referenceNumber}): JD ${String.format("%.3f", bill.paidAmount)}"
-                        } + representative.settlementNotes).distinct(),
+                        } + group.flatMap { it.settlementNotes }).distinct(),
                         hasManualLink = manualLinkedBills.isNotEmpty(),
                         totalActualPaid = totalOrderCost - effectiveBalance,
                         totalLinkedAmount = totalOrderCost - effectiveBalance

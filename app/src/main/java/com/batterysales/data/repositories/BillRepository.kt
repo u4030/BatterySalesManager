@@ -94,6 +94,9 @@ class BillRepository @Inject constructor(
                         "remainingBalance" to newRemaining.coerceAtLeast(0.0),
                         "isSettled" to (newRemaining <= 0.001)
                     ))
+
+                    // Update bill to record manual allocation
+                    transaction.update(docRef, "manualAllocation", allocation)
                     
                     // Only pool the SURPLUS amount
                     amountToPool = (creditToApply - allocation).coerceAtLeast(0.0)
@@ -251,6 +254,10 @@ class BillRepository @Inject constructor(
                             "isSettled" to (newRemaining <= 0.001),
                             "settlementNotes" to notes.distinct()
                         ))
+
+                        // Update bill's manual allocation record
+                        transaction.update(billRef, "manualAllocation", bill.manualAllocation + allocation)
+
                         unallocatedToAdd -= allocation
                     }
                 }
@@ -367,7 +374,35 @@ class BillRepository @Inject constructor(
                 if (freshBill.billType != BillType.CHECK && freshBill.billType != BillType.BILL) {
                     transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(paymentAmount))
                     transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-paymentAmount))
-                    transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(paymentAmount))
+
+                    var amountToPool = paymentAmount
+                    // If this specific payment was linked to an entry, we handle it
+                    if (freshBill.relatedEntryId != null) {
+                        val entryRef = firestore.collection(StockEntry.COLLECTION_NAME).document(freshBill.relatedEntryId!!)
+                        val entrySnap = transaction.get(entryRef)
+                        val entry = entrySnap.toObject(StockEntry::class.java)
+                        if (entry != null) {
+                            val currentRemaining = entry.remainingBalance ?: entry.getNetCost()
+                            val allocation = minOf(paymentAmount, currentRemaining)
+                            val newRemaining = currentRemaining - allocation
+
+                            val notes = entry.settlementNotes.toMutableList()
+                            notes.add("تسديد دفعة: JD ${String.format("%.3f", allocation)} (#${freshBill.referenceNumber})")
+
+                            transaction.update(entryRef, mapOf(
+                                "remainingBalance" to newRemaining.coerceAtLeast(0.0),
+                                "isSettled" to (newRemaining <= 0.001),
+                                "settlementNotes" to notes.distinct()
+                            ))
+
+                            transaction.update(billRef, "manualAllocation", freshBill.manualAllocation + allocation)
+                            amountToPool -= allocation
+                        }
+                    }
+
+                    if (amountToPool > 0.001) {
+                        transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(amountToPool))
+                    }
                 }
             }
 
@@ -647,12 +682,14 @@ class BillRepository @Inject constructor(
             val creditSources = (
                 supplierBills.filter { it.billType == BillType.CHECK || it.billType == BillType.BILL || it.paidAmount > 0 }
                     .map { b ->
-                        val amount = if (b.billType == BillType.CHECK || b.billType == BillType.BILL) b.amount else b.paidAmount
+                        val totalAmount = if (b.billType == BillType.CHECK || b.billType == BillType.BILL) b.amount else b.paidAmount
+                        // Important: subtract the manual allocation already used from this specific instrument
+                        val availableAmount = (totalAmount - b.manualAllocation).coerceAtLeast(0.0)
                         CreditSource(
                             id = b.id,
                             type = when(b.billType){ BillType.CHECK -> "شيك"; BillType.BILL -> "كمبيالة"; else -> "دفعة" },
                             ref = b.referenceNumber,
-                            amount = amount,
+                            amount = availableAmount,
                             date = b.createdAt
                         )
                     } +

@@ -61,6 +61,11 @@ fun SupplierDetailsScreen(
                             contentDescription = "طباعة"
                         )
                         HeaderIconButton(
+                            icon = Icons.Default.Sync,
+                            onClick = { viewModel.syncSupplier(supplierId) },
+                            contentDescription = "مزامنة وإعادة ربط"
+                        )
+                        HeaderIconButton(
                             icon = Icons.Default.Share,
                             onClick = { com.batterysales.utils.PrintUtils.shareSupplierReport(context, supplierItem!!) },
                             contentDescription = "مشاركة"
