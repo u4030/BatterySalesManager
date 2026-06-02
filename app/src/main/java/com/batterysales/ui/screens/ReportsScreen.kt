@@ -486,7 +486,7 @@ fun PurchaseOrderCard(po: com.batterysales.data.models.PurchaseOrderItem, dateFo
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            // Header Row: Date & Invoice Tag + Coverage Badge
+            // Header Row: Date & Invoice Tag
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { 
                 Column {
                     Text(
@@ -504,18 +504,12 @@ fun PurchaseOrderCard(po: com.batterysales.data.models.PurchaseOrderItem, dateFo
                     }
                 }
 
+                // Dot indicator for status
                 Surface(
-                    color = (if (isFullyCovered) (if (po.isCleared) Color(0xFF10B981) else Color(0xFF3B82F6)) else if (po.totalLinkedAmount > 0.001) Color(0xFFFB8C00) else Color(0xFFEF4444)).copy(alpha = 0.1f),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text(
-                        text = po.coverageSummary,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (isFullyCovered) Color(0xFF10B981) else if (po.totalLinkedAmount > 0.001) Color(0xFFFB8C00) else Color(0xFFEF4444),
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        fontWeight = FontWeight.Bold
-                    )
-                }
+                    color = (if (isFullyCovered) (if (po.isCleared) Color(0xFF10B981) else Color(0xFF3B82F6)) else if (po.totalLinkedAmount > 0.001) Color(0xFFFB8C00) else Color(0xFFEF4444)),
+                    shape = CircleShape,
+                    modifier = Modifier.size(12.dp)
+                ) {}
             }
 
             // Financial Summary Row
@@ -535,24 +529,34 @@ fun PurchaseOrderCard(po: com.batterysales.data.models.PurchaseOrderItem, dateFo
                 }
             }
 
-            // Settlement Details Section (Simplified)
+            // Settlement Details Section (Simplified box as per user image request)
             val allNotes = po.referenceNumbers.filter { it.isNotBlank() }
             if (allNotes.isNotEmpty()) {
+                val statusColor = if (isFullyCovered) {
+                    if (po.isCleared) Color(0xFF10B981) else Color(0xFF3B82F6)
+                } else if (po.totalLinkedAmount > 0.001) {
+                    Color(0xFFFB8C00)
+                } else {
+                    Color(0xFFEF4444)
+                }
+
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.05f),
-                    shape = RoundedCornerShape(12.dp)
+                    color = statusColor.copy(alpha = 0.1f),
+                    shape = RoundedCornerShape(16.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, statusColor.copy(alpha = 0.3f))
                 ) {
                     Row(
-                        modifier = Modifier.padding(12.dp),
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(18.dp), tint = statusColor)
+                        Spacer(modifier = Modifier.width(12.dp))
                         Text(
                             text = allNotes.first(),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = statusColor
                         )
                     }
                 }
