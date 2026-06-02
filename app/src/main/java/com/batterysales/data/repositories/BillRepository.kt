@@ -689,7 +689,7 @@ class BillRepository @Inject constructor(
         val allRawEntries = entriesSnap.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
         val supplierBills = billsSnap.documents.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) }
 
-        val supplierReturns = allRawEntries.filter { it.totalCost < 0 }.sortedBy { it.timestamp }
+        val supplierReturns = allRawEntries.filter { it.totalCost < 0 }.sortedBy { it.getEffectiveDate() }
         val positiveEntries = allRawEntries.filter { it.totalCost > 0 }
 
         val groupedOrders = positiveEntries.groupBy { it.invoiceNumber.trim().ifEmpty { it.orderId.trim().ifEmpty { it.id } }.lowercase() }

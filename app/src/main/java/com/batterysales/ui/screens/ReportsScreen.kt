@@ -535,33 +535,25 @@ fun PurchaseOrderCard(po: com.batterysales.data.models.PurchaseOrderItem, dateFo
                 }
             }
 
-            // Settlement Details Section
+            // Settlement Details Section (Simplified)
             val allNotes = po.referenceNumbers.filter { it.isNotBlank() }
             if (allNotes.isNotEmpty()) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.1f), RoundedCornerShape(12.dp))
-                        .padding(12.dp)
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.05f),
+                    shape = RoundedCornerShape(12.dp)
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("تفاصيل التغطية:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    allNotes.forEach { note ->
-                        val isManual = note.contains("ارتباط يدوي")
-                        Row(modifier = Modifier.padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                if (isManual) Icons.Default.Link else Icons.Default.AutoFixHigh,
-                                contentDescription = null,
-                                modifier = Modifier.size(12.dp),
-                                tint = if (isManual) Color(0xFFFB8C00) else Color(0xFF3B82F6)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(text = note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface, lineHeight = 18.sp)
-                        }
+                        Text(
+                            text = allNotes.first(),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }

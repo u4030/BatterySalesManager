@@ -358,46 +358,42 @@ class ReportsViewModel @Inject constructor(
                     }
 
                     var clearedAmount = 0.0
-                    val aggregatedNotes = combinedAllocations.mapNotNull { (id, amount) ->
-                        if (amount <= 0.001) return@mapNotNull null
+                    val coverageTypes = mutableSetOf<String>()
+                    combinedAllocations.forEach { (id, amount) ->
+                        if (amount <= 0.001) return@forEach
 
-                        // Use allBills for lookup to find instruments even before resetDate
                         val bill = allBills.find { it.id == id }
                         if (bill != null) {
-                            val typeLabel = when(bill.billType) {
-                                BillType.CHECK -> "شيك"
-                                BillType.BILL -> "كمبيالة"
-                                else -> "دفعة"
-                            }
-
                             if (bill.status == BillStatus.PAID || bill.billType == BillType.CASH || bill.billType == BillType.TRANSFER) {
                                 clearedAmount += amount
                             }
-
-                            val linkType = if (bill.relatedEntryId != null) "ارتباط يدوي" else "ربط تلقائي"
-                            "$typeLabel (#${bill.referenceNumber}) ($linkType): JD ${String.format("%.3f", amount)}"
+                            coverageTypes.add(when(bill.billType) {
+                                BillType.CHECK -> "شيك"
+                                BillType.BILL -> "كمبيالة"
+                                else -> "دفعة"
+                            })
                         } else {
                             val ret = allEntries.find { it.id == id && it.totalCost < 0 }
                             if (ret != null) {
                                 clearedAmount += amount
-                                "مرتجع مواد (#${ret.invoiceNumber}) (ربط تلقائي): JD ${String.format("%.3f", amount)}"
-                            } else {
-                                "مبلغ مغطى: JD ${String.format("%.3f", amount)}"
+                                coverageTypes.add("مرتجع مواد")
                             }
                         }
-                    }.distinct()
+                    }
 
                     val totalCovered = totalOrderCost - effectiveBalance
-                    val coveragePercent = if (totalOrderCost > 0) (totalCovered / totalOrderCost) * 100 else 0.0
-
                     val coverageSummary = if (totalCovered > 0.001) {
                         if (effectiveBalance <= 0.001) {
-                            if (clearedAmount >= totalOrderCost - 0.001) "مسددة بالكامل (نقداً/مرتجع)"
-                            else "مغطاة بالكامل (التزامات)"
+                            if (clearedAmount >= totalOrderCost - 0.001) "مسددة بالكامل"
+                            else "مغطاة بالكامل"
                         } else {
-                            "JD ${String.format("%.3f", totalCovered)} مغطى من إجمالي JD ${String.format("%.3f", totalOrderCost)}"
+                            "مغطاة جزئياً: JD ${String.format("%.3f", totalCovered)}"
                         }
                     } else "غير مغطاة"
+
+                    val aggregatedNotes = if (coverageTypes.isNotEmpty()) {
+                        listOf("مغطاة بواسطة: ${coverageTypes.joinToString("، ")}")
+                    } else emptyList()
 
                     PurchaseOrderItem(
                         entry = representative.copy(
