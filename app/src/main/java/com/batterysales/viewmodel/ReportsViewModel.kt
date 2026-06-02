@@ -387,7 +387,8 @@ class ReportsViewModel @Inject constructor(
                             if (clearedAmount >= totalOrderCost - 0.001) "مسددة بالكامل"
                             else "مغطاة بالكامل"
                         } else {
-                            if (clearedAmount > 0.001) "مسددة جزئياً" else "مغطاة جزئياً"
+                            val amountStr = " (JD ${String.format("%.3f", totalCovered)})"
+                            if (clearedAmount > 0.001) "مسددة جزئياً$amountStr" else "مغطاة جزئياً$amountStr"
                         }
                     } else "غير مغطاة"
 
@@ -527,8 +528,13 @@ private fun Map<String, Any>.toOrderItem(): PurchaseOrderItem {
 
     val totalCost = (this["totalCost"] as? Number)?.toDouble() ?: 0.0
     val remainingBalance = (this["remainingBalance"] as? Number)?.toDouble() ?: 0.0
-    val settlementNotes = (this["settlementNotes"] as? List<String>) ?: emptyList()
-    val referenceNumbers = (this["referenceNumbers"] as? List<String>) ?: settlementNotes
+
+    // Recalculate label even from cache to ensure no old technical strings are shown
+    val totalCovered = totalCost - remainingBalance
+    val label = if (totalCovered > 0.001) {
+        if (remainingBalance <= 0.001) "مغطاة بالكامل"
+        else "مغطاة جزئياً"
+    } else "غير مغطاة"
 
     return PurchaseOrderItem(
         entry = StockEntry(
@@ -538,12 +544,13 @@ private fun Map<String, Any>.toOrderItem(): PurchaseOrderItem {
             timestamp = timestamp,
             invoiceDate = invoiceDate,
             specification = this["specification"] as? String ?: "",
-            settlementNotes = settlementNotes
+            settlementNotes = listOf(label)
         ),
         linkedPaidAmount = totalCost - remainingBalance,
         remainingBalance = remainingBalance,
-        referenceNumbers = referenceNumbers,
+        referenceNumbers = listOf(label),
         items = orderItems,
-        totalLinkedAmount = totalCost - remainingBalance
+        totalLinkedAmount = totalCost - remainingBalance,
+        coverageSummary = label
     )
 }
