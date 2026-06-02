@@ -90,7 +90,7 @@ class BillRepository @Inject constructor(
                         BillType.TRANSFER -> "تحويل"
                         else -> "دفعة"
                     }
-                    notes.add("ارتباط يدوي ($typeLabel): JD ${String.format("%.3f", allocation)} (#${finalBill.referenceNumber})")
+                    notes.add(typeLabel)
                     
                     val allocations = entry.linkedAllocations.toMutableMap()
                     allocations[finalBill.id] = (allocations[finalBill.id] ?: 0.0) + allocation
@@ -257,7 +257,7 @@ class BillRepository @Inject constructor(
                             BillType.BILL -> "كمبيالة"
                             else -> "دفعة"
                         }
-                        notes.add("تسديد ($typeLabel): JD ${String.format("%.3f", allocation)} (#${bill.referenceNumber})")
+                        notes.add(typeLabel)
                         
                         val allocations = entry.linkedAllocations.toMutableMap()
                         allocations[bill.id] = (allocations[bill.id] ?: 0.0) + allocation
@@ -400,7 +400,7 @@ class BillRepository @Inject constructor(
                                 BillType.BILL -> "كمبيالة"
                                 else -> "دفعة"
                             }
-                            notes.add("تسديد ($typeLabel): JD ${String.format("%.3f", allocation)} (#${freshBill.referenceNumber})")
+                            notes.add(typeLabel)
 
                             val allocations = entry.linkedAllocations.toMutableMap()
                             allocations[freshBill.id] = (allocations[freshBill.id] ?: 0.0) + allocation
@@ -743,7 +743,7 @@ class BillRepository @Inject constructor(
                 val allocation = minOf(amountToDistribute, currentBal)
                 state.remainingBalance -= allocation
                 state.linkedAllocations[source.id] = (state.linkedAllocations[source.id] ?: 0.0) + allocation
-                state.settlementNotes.add("ارتباط يدوي (${source.type}): JD ${String.format("%.3f", allocation)} (#${source.ref})")
+                state.settlementNotes.add(source.type)
                 amountToDistribute -= allocation
             }
         }
@@ -764,7 +764,7 @@ class BillRepository @Inject constructor(
                     val allocation = minOf(state.remainingBalance, source.amount)
                     state.remainingBalance -= allocation
                     state.linkedAllocations[source.id] = (state.linkedAllocations[source.id] ?: 0.0) + allocation
-                    state.settlementNotes.add("${source.type}: ${source.ref} (ربط تلقائي): JD ${String.format("%.3f", allocation)}")
+                    state.settlementNotes.add(source.type)
                     activeAutoSources[0] = source.copy(amount = source.amount - allocation)
                 }
             }

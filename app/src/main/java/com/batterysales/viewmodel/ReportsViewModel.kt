@@ -391,7 +391,7 @@ class ReportsViewModel @Inject constructor(
                         }
                     } else "غير مغطاة"
 
-                    val aggregatedNotes = if (totalCovered > 0.001 || (totalOrderCost > 0.001 && totalCovered <= 0.001)) {
+                    val aggregatedNotes = if (totalOrderCost > 0.001) {
                         listOf(coverageSummary)
                     } else emptyList()
 

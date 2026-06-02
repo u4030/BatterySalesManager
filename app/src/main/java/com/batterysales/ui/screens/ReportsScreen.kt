@@ -542,20 +542,20 @@ fun PurchaseOrderCard(po: com.batterysales.data.models.PurchaseOrderItem, dateFo
 
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    color = statusColor.copy(alpha = 0.1f),
+                    color = statusColor.copy(alpha = 0.12f),
                     shape = RoundedCornerShape(16.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, statusColor.copy(alpha = 0.3f))
+                    border = androidx.compose.foundation.BorderStroke(1.5.dp, statusColor.copy(alpha = 0.4f))
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(18.dp), tint = statusColor)
+                        Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(20.dp), tint = statusColor)
                         Spacer(modifier = Modifier.width(12.dp))
                         Text(
                             text = allNotes.first(),
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.ExtraBold,
                             color = statusColor
                         )
                     }
