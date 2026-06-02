@@ -60,6 +60,11 @@ fun SupplierDetailsScreen(
                             onClick = { com.batterysales.utils.PrintUtils.printSupplierReport(context, supplierItem!!) },
                             contentDescription = "طباعة"
                         )
+                            HeaderIconButton(
+                                icon = Icons.Default.AutoFixHigh,
+                                onClick = { viewModel.triggerAutoLink(supplierId) },
+                                contentDescription = "Auto Link"
+                            )
                         HeaderIconButton(
                             icon = Icons.Default.Sync,
                             onClick = { viewModel.syncSupplier(supplierId) },

@@ -71,7 +71,7 @@ class SettingsViewModel @Inject constructor(
                 _migrationStatus.value = "جاري ترحيل البيانات وإعادة بناء الملخصات... يرجى عدم إغلاق التطبيق"
                 
                 invoiceRepository.migrateInvoices()
-                stockEntryRepository.migrateStockEntries()
+                stockEntryRepository.migrateStockEntries(billRepository)
                 stockEntryRepository.migrateAllVariants(productRepository, supplierRepository, billRepository)
                 
                 // Rebuild Summaries from scratch

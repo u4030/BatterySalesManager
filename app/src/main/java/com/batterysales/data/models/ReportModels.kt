@@ -30,7 +30,9 @@ data class PurchaseOrderItem(
     val autoLinkedAmount: Double = 0.0,
     val hasManualLink: Boolean = false,
     val totalActualPaid: Double = 0.0,
-    val totalLinkedAmount: Double = 0.0
+    val totalLinkedAmount: Double = 0.0,
+    val coverageSummary: String = "",
+    val isCleared: Boolean = false // Fully paid by cash or cleared checks
 )
 
 data class LedgerItem(

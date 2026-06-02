@@ -142,6 +142,13 @@ class ReportsViewModel @Inject constructor(
         }
     }
 
+    fun triggerAutoLink(supplierId: String) {
+        viewModelScope.launch {
+            billRepository.autoLinkBillsForSupplier(supplierId)
+            loadDetailedSupplierReport(supplierId)
+        }
+    }
+
     fun onBarcodeScanned(barcode: String?) {
         _barcodeFilter.value = barcode
         loadInventoryReport(reset = false) // Just filter locally
@@ -350,28 +357,47 @@ class ReportsViewModel @Inject constructor(
                         }
                     }
 
+                    var clearedAmount = 0.0
                     val aggregatedNotes = combinedAllocations.mapNotNull { (id, amount) ->
                         if (amount <= 0.001) return@mapNotNull null
 
-                        val bill = supplierBills.find { it.id == id }
+                        // Use allBills for lookup to find instruments even before resetDate
+                        val bill = allBills.find { it.id == id }
                         if (bill != null) {
                             val typeLabel = when(bill.billType) {
                                 BillType.CHECK -> "شيك"
                                 BillType.BILL -> "كمبيالة"
                                 else -> "دفعة"
                             }
+
+                            if (bill.status == BillStatus.PAID || bill.billType == BillType.CASH || bill.billType == BillType.TRANSFER) {
+                                clearedAmount += amount
+                            }
+
                             val linkType = if (bill.relatedEntryId != null) "ارتباط يدوي" else "ربط تلقائي"
                             "$typeLabel (#${bill.referenceNumber}) ($linkType): JD ${String.format("%.3f", amount)}"
                         } else {
                             val ret = allEntries.find { it.id == id && it.totalCost < 0 }
                             if (ret != null) {
+                                clearedAmount += amount
                                 "مرتجع مواد (#${ret.invoiceNumber}) (ربط تلقائي): JD ${String.format("%.3f", amount)}"
                             } else {
-                                // Fallback for manual link notes or direct settlement notes if id lookup fails
                                 "مبلغ مغطى: JD ${String.format("%.3f", amount)}"
                             }
                         }
                     }.distinct()
+
+                    val totalCovered = totalOrderCost - effectiveBalance
+                    val coveragePercent = if (totalOrderCost > 0) (totalCovered / totalOrderCost) * 100 else 0.0
+
+                    val coverageSummary = if (totalCovered > 0.001) {
+                        if (effectiveBalance <= 0.001) {
+                            if (clearedAmount >= totalOrderCost - 0.001) "مسددة بالكامل (نقداً/مرتجع)"
+                            else "مغطاة بالكامل (التزامات)"
+                        } else {
+                            "JD ${String.format("%.3f", totalCovered)} مغطى من إجمالي JD ${String.format("%.3f", totalOrderCost)}"
+                        }
+                    } else "غير مغطاة"
 
                     PurchaseOrderItem(
                         entry = representative.copy(
@@ -379,7 +405,7 @@ class ReportsViewModel @Inject constructor(
                             remainingBalance = effectiveBalance,
                             isSettled = effectiveBalance <= 0.001
                         ),
-                        linkedPaidAmount = totalOrderCost - effectiveBalance,
+                        linkedPaidAmount = clearedAmount,
                         autoLinkedAmount = 0.0,
                         remainingBalance = effectiveBalance,
                         items = sortedGroup.map { item ->
@@ -391,8 +417,10 @@ class ReportsViewModel @Inject constructor(
                         },
                         referenceNumbers = aggregatedNotes,
                         hasManualLink = aggregatedNotes.any { it.contains("ارتباط يدوي") },
-                        totalActualPaid = totalOrderCost - effectiveBalance,
-                        totalLinkedAmount = totalOrderCost - effectiveBalance
+                        totalActualPaid = clearedAmount,
+                        totalLinkedAmount = totalCovered,
+                        coverageSummary = coverageSummary,
+                        isCleared = clearedAmount >= totalOrderCost - 0.001
                     )
                 }
 

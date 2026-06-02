@@ -504,13 +504,12 @@ fun PurchaseOrderCard(po: com.batterysales.data.models.PurchaseOrderItem, dateFo
                     }
                 }
 
-                val isCleared = po.remainingBalance <= 0.001 && po.linkedPaidAmount >= (po.entry.totalCost - 0.001)
                 Surface(
-                    color = (if (isFullyCovered) (if (isCleared) Color(0xFF10B981) else Color(0xFF3B82F6)) else if (po.totalLinkedAmount > 0.001) Color(0xFFFB8C00) else Color(0xFFEF4444)).copy(alpha = 0.1f),
+                    color = (if (isFullyCovered) (if (po.isCleared) Color(0xFF10B981) else Color(0xFF3B82F6)) else if (po.totalLinkedAmount > 0.001) Color(0xFFFB8C00) else Color(0xFFEF4444)).copy(alpha = 0.1f),
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Text(
-                        text = if (isFullyCovered) (if (isCleared) "مسددة بالكامل" else "مغطاة (التزام)") else if (po.totalLinkedAmount > 0.001) "مغطاة جزئياً" else "غير مغطاة",
+                        text = po.coverageSummary,
                         style = MaterialTheme.typography.labelSmall,
                         color = if (isFullyCovered) Color(0xFF10B981) else if (po.totalLinkedAmount > 0.001) Color(0xFFFB8C00) else Color(0xFFEF4444),
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
@@ -546,14 +545,21 @@ fun PurchaseOrderCard(po: com.batterysales.data.models.PurchaseOrderItem, dateFo
                         .padding(12.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Payments, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                        Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("تفاصيل التغطية:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     allNotes.forEach { note ->
-                        Row(modifier = Modifier.padding(bottom = 4.dp), verticalAlignment = Alignment.Top) {
-                            Text("• ", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        val isManual = note.contains("ارتباط يدوي")
+                        Row(modifier = Modifier.padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                if (isManual) Icons.Default.Link else Icons.Default.AutoFixHigh,
+                                contentDescription = null,
+                                modifier = Modifier.size(12.dp),
+                                tint = if (isManual) Color(0xFFFB8C00) else Color(0xFF3B82F6)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text(text = note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface, lineHeight = 18.sp)
                         }
                     }
@@ -597,14 +603,14 @@ fun PurchaseOrderCard(po: com.batterysales.data.models.PurchaseOrderItem, dateFo
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
-                                    if (entry.specification.isNotEmpty()) {
+                                    if (entry.specification.trim().isNotEmpty()) {
                                         Text(
                                             text = " | ",
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                                         )
                                         Text(
-                                            text = entry.specification,
+                                            text = entry.specification.trim(),
                                             style = MaterialTheme.typography.labelSmall,
                                             fontWeight = FontWeight.Bold,
                                             color = MaterialTheme.colorScheme.primary

@@ -16,7 +16,8 @@ import javax.inject.Inject
 
 class StockEntryRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
-    private val summaryRepository: SummaryRepository
+    private val summaryRepository: SummaryRepository,
+    private val billRepository: dagger.Lazy<BillRepository>
 ) {
 
     suspend fun addStockEntry(stockEntry: StockEntry) {
@@ -131,6 +132,10 @@ class StockEntryRepository @Inject constructor(
                 ))
             }
         }.await()
+
+        if (stockEntry.status == "approved" && stockEntry.supplierId.isNotEmpty()) {
+            billRepository.get().autoLinkBillsForSupplier(stockEntry.supplierId)
+        }
     }
 
     suspend fun addStockEntries(stockEntries: List<StockEntry>) {
@@ -271,6 +276,10 @@ class StockEntryRepository @Inject constructor(
                 ))
             }
         }.await()
+
+        val suppliersToLink = stockEntries.filter { it.status == "approved" && it.supplierId.isNotEmpty() }
+            .map { it.supplierId }.distinct()
+        suppliersToLink.forEach { billRepository.get().autoLinkBillsForSupplier(it) }
     }
 
 
@@ -654,7 +663,8 @@ class StockEntryRepository @Inject constructor(
         return allEntries
     }
 
-    suspend fun migrateStockEntries() {
+    suspend fun migrateStockEntries(billRepository: BillRepository? = null) {
+        billRepository?.migrateBills()
         val snapshot = firestore.collection(StockEntry.COLLECTION_NAME).get().await()
         val suppliersSnap = firestore.collection("suppliers").get().await()
         val suppliersMap = suppliersSnap.documents.associate { (it.getString("name") ?: "").trim().lowercase() to it.id }
@@ -926,14 +936,5 @@ class StockEntryRepository @Inject constructor(
                 summaryRepository.applySupplierUpdate(transaction, snapshots, entry.supplierId, entry.productName, debitChange = -costToReturn)
             }
         }.await()
-        
-        // Trigger autoLink to immediately cover older invoices with this new credit
-        if (mode == "supplier_balance" && entry.supplierId.isNotEmpty()) {
-            val billRepository = com.batterysales.BatterySalesApp().let { 
-                // Note: Accessing repository from context/DI would be cleaner in a ViewModel,
-                // but since we are in a Repo, we assume the caller or a side-effect will handle it if DI is not available here.
-                // However, for consistency, we'll keep the logic clear.
-            }
-        }
     }
 }
