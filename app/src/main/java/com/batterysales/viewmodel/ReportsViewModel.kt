@@ -387,19 +387,12 @@ class ReportsViewModel @Inject constructor(
                             if (clearedAmount >= totalOrderCost - 0.001) "مسددة بالكامل"
                             else "مغطاة بالكامل"
                         } else {
-                            "مغطاة جزئياً"
+                            if (clearedAmount > 0.001) "مسددة جزئياً" else "مغطاة جزئياً"
                         }
                     } else "غير مغطاة"
 
-                    val aggregatedNotes = if (coverageTypes.isNotEmpty()) {
-                        val types = coverageTypes.joinToString("، ")
-                        if (coverageSummary == "مغطاة جزئياً") {
-                            listOf("$coverageSummary (بواسطة: $types)")
-                        } else {
-                            listOf(coverageSummary)
-                        }
-                    } else if (totalCovered <= 0.001 && totalOrderCost > 0.001) {
-                        listOf("غير مغطاة")
+                    val aggregatedNotes = if (totalCovered > 0.001 || (totalOrderCost > 0.001 && totalCovered <= 0.001)) {
+                        listOf(coverageSummary)
                     } else emptyList()
 
                     PurchaseOrderItem(
