@@ -716,7 +716,7 @@ class BillRepository @Inject constructor(
                     type = "مرتجع مواد",
                     ref = r.invoiceNumber,
                     amount = -r.totalCost,
-                    date = r.timestamp,
+                    date = r.getEffectiveDate(),
                     manualEntryId = null,
                     manualAllocation = 0.0
                 )
