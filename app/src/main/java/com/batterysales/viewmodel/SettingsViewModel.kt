@@ -192,6 +192,7 @@ class SettingsViewModel @Inject constructor(
                 productId = variant.productId,
                 productName = productName,
                 capacity = variant.capacity,
+                specification = variant.specification,
                 barcode = variant.barcode,
                 currentStock = totalQty,
                 weightedAverageCost = variant.weightedAverageCost,

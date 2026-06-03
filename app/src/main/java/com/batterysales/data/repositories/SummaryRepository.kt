@@ -70,6 +70,7 @@ class SummaryRepository @Inject constructor(
         updatedItemsWh[variantId] = currentItemWh.copy(
             currentStock = currentItemWh.currentStock + qtyChange,
             weightedAverageCost = variant.weightedAverageCost,
+            specification = variant.specification,
             updatedAt = Date()
         )
 
@@ -83,6 +84,7 @@ class SummaryRepository @Inject constructor(
         updatedItemsGlobal[variantId] = currentItemGlobal.copy(
             currentStock = currentItemGlobal.currentStock + qtyChange,
             weightedAverageCost = variant.weightedAverageCost,
+            specification = variant.specification,
             updatedAt = Date()
         )
 
@@ -118,6 +120,7 @@ class SummaryRepository @Inject constructor(
             updatedItemsWh[variantId] = currentItemWh.copy(
                 currentStock = currentItemWh.currentStock + qtyChange,
                 weightedAverageCost = variant.weightedAverageCost,
+                specification = variant.specification,
                 updatedAt = Date()
             )
 
@@ -130,6 +133,7 @@ class SummaryRepository @Inject constructor(
             updatedItemsGlobal[variantId] = currentItemGlobal.copy(
                 currentStock = currentItemGlobal.currentStock + qtyChange,
                 weightedAverageCost = variant.weightedAverageCost,
+                specification = variant.specification,
                 updatedAt = Date()
             )
             
@@ -214,6 +218,7 @@ class SummaryRepository @Inject constructor(
         "invoiceNumber" to entry.invoiceNumber,
         "timestamp" to entry.timestamp,
         "invoiceDate" to (entry.invoiceDate ?: entry.timestamp),
+        "specification" to entry.specification,
         "settlementNotes" to entry.settlementNotes,
         "items" to items.map { item ->
             mapOf(
