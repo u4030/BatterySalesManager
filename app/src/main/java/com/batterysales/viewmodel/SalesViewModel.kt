@@ -120,6 +120,7 @@ class SalesViewModel @Inject constructor(
                         capacity = item.capacity,
                         barcode = item.barcode,
                         sellingPrice = item.sellingPrice,
+                        specification = item.specification,
                         weightedAverageCost = item.weightedAverageCost,
                         productName = item.productName,
                         currentStock = mapOf((cachedInventorySummary?.warehouseId ?: "global") to item.currentStock)

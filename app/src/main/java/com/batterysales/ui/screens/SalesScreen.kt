@@ -161,10 +161,10 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
                             SalesDropdown(
                                 label = "اختر الصنف (السعة)",
                                 selectedValue = uiState.selectedVariant?.let { v ->
-                                    "\u200E${v.capacity} A" + if (v.specification.isNotEmpty()) " (${v.specification})" else ""
+                                    "${v.capacity}A" + if (v.specification.isNotEmpty()) " | ${v.specification}" else ""
                                 } ?: "",
                                 options = uiState.variants.map { v ->
-                                    "\u200E${v.capacity} A" + if (v.specification.isNotEmpty()) " (${v.specification})" else ""
+                                    "${v.capacity}A" + if (v.specification.isNotEmpty()) " | ${v.specification}" else ""
                                 },
                                 onOptionSelected = { index -> viewModel.onVariantSelected(uiState.variants[index]) },
                                 enabled = uiState.selectedProduct != null,
@@ -180,13 +180,14 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
                                 icon = Icons.Default.Warehouse
                             )
 
-                            val availableQty = uiState.selectedVariant?.let { 
-                                val whId = uiState.selectedWarehouse?.id ?: uiState.userWarehouseId.ifEmpty { "global" }
-                                uiState.stockLevels[Pair(it.id, whId)] ?: 0 
-                            } ?: 0
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                                Text("الكمية المتاحة: ", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f), fontSize = 14.sp)
-                                Text("$availableQty", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                            val selectedVariant = uiState.selectedVariant
+                            val selectedWarehouse = uiState.selectedWarehouse
+                            if (selectedVariant != null && selectedWarehouse != null) {
+                                val availableQty = uiState.stockLevels[Pair(selectedVariant.id, selectedWarehouse.id)] ?: 0
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                    Text("الكمية المتاحة: ", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f), fontSize = 14.sp)
+                                    Text("$availableQty", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                                }
                             }
 
                             CustomKeyboardTextField(
