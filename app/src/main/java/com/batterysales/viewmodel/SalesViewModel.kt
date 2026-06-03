@@ -110,7 +110,7 @@ class SalesViewModel @Inject constructor(
         try {
             _uiState.update { it.copy(isLoading = true, selectedProduct = product, selectedVariant = if (targetVariantId != null) it.selectedVariant else null) }
             
-            // --- ELITE STRATEGY with Fallback ---
+            // --- ELITE STRATEGY: Targeted Load from Summary Cache ---
             val summaryItems = cachedInventorySummary?.items?.values ?: emptyList()
             var variantsForProduct = summaryItems.filter { it.productId == product.id }
                 .map { item -> 
@@ -126,6 +126,7 @@ class SalesViewModel @Inject constructor(
                     )
                 }.sortedBy { it.capacity }
 
+            // Targeted Cloud Fetch ONLY if variant list is empty or incomplete
             if (variantsForProduct.isEmpty()) {
                 variantsForProduct = productVariantRepository.getVariantsForProduct(product.id)
                     .filter { !it.archived }

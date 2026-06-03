@@ -53,45 +53,59 @@ class ProductManagementViewModel @Inject constructor(
         }.launchIn(viewModelScope)
     }
 
+    private val refreshTrigger = MutableStateFlow(0)
+
     val uiState: StateFlow<ProductManagementUiState> = combine(
-        combine(
-            productRepository.getProducts(),
-            productVariantRepository.getAllVariantsFlow(),
-            _barcodeFilter
-        ) { p, v, b -> Triple(p, v, b) },
-        _selectedProduct,
-        _selectedProduct.flatMapLatest { product ->
-            if (product == null) flowOf(emptyList()) else productVariantRepository.getVariantsForProductFlow(product.id)
-        },
-        combine(
-            warehouseRepository.getWarehouses(),
-            supplierRepository.getSuppliers(),
-            _isLoading
-        ) { w, s, l -> Triple(w, s, l) }
-    ) { firstTriple, selectedProduct, variants, secondTriple ->
-        val (products, allVariants, barcodeFilter) = firstTriple
-        val (warehouses, suppliers, isLoading) = secondTriple
+        refreshTrigger,
+        _barcodeFilter,
+        _selectedProduct
+    ) { _, barcodeFilter, selectedProduct ->
+        Triple(barcodeFilter, selectedProduct, 0)
+    }.flatMapLatest { (barcodeFilter, selectedProduct, _) ->
+        _isLoading.value = true
+        flow {
+            try {
+                val products = productRepository.getProductsOnce()
+                val warehouses = warehouseRepository.getWarehousesOnce()
+                val suppliers = supplierRepository.getSuppliersOnce()
 
-        val filteredProducts = if (barcodeFilter.isBlank()) {
-            products.filter { !it.archived }
-        } else {
-            val productIdsWithMatchingBarcode = allVariants
-                .filter { it.barcode.contains(barcodeFilter, ignoreCase = true) }
-                .map { it.productId }
-                .toSet()
-            products.filter { !it.archived && (it.id in productIdsWithMatchingBarcode || it.name.contains(barcodeFilter, ignoreCase = true)) }
+                val variants = if (selectedProduct != null) {
+                    productVariantRepository.getVariantsForProduct(selectedProduct.id)
+                } else emptyList()
+
+                val filteredProducts = if (barcodeFilter.isBlank()) {
+                    products.filter { !it.archived }
+                } else {
+                    // Optimized Barcode Filter: Only fetch variants if filtering by barcode
+                    val matchingVariants = productVariantRepository.getAllVariants()
+                        .filter { it.barcode.contains(barcodeFilter, ignoreCase = true) }
+
+                    val productIdsWithMatchingBarcode = matchingVariants.map { it.productId }.toSet()
+
+                    products.filter { !it.archived && (it.id in productIdsWithMatchingBarcode || it.name.contains(barcodeFilter, ignoreCase = true)) }
+                }
+
+                emit(ProductManagementUiState(
+                    products = filteredProducts,
+                    selectedProduct = selectedProduct,
+                    variants = variants.filter { !it.archived }.sortedBy { it.capacity },
+                    warehouses = warehouses,
+                    suppliers = suppliers,
+                    isLoading = false,
+                    errorMessage = _errorMessage.value
+                ))
+            } catch (e: Exception) {
+                Log.e("ProductMgmtVM", "Error loading data", e)
+                emit(ProductManagementUiState(isLoading = false, errorMessage = "خطأ في تحميل البيانات"))
+            } finally {
+                _isLoading.value = false
+            }
         }
-
-        ProductManagementUiState(
-            products = filteredProducts,
-            selectedProduct = selectedProduct,
-            variants = variants.filter { !it.archived }.sortedBy { it.capacity },
-            warehouses = warehouses,
-            suppliers = suppliers,
-            isLoading = isLoading,
-            errorMessage = _errorMessage.value
-        )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ProductManagementUiState(isLoading = true))
+
+    fun refresh() {
+        refreshTrigger.value += 1
+    }
 
     fun onBarcodeFilterChanged(query: String) {
         _barcodeFilter.value = query

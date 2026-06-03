@@ -248,7 +248,8 @@ class InvoiceRepository @Inject constructor(
                         message = "${variant.capacity}A | الكمية الحالية: ${currentQty + netQtyChange} (الحد: $threshold)",
                         relatedId = variant.id,
                         warehouseId = finalStockEntry.warehouseId,
-                        timestamp = Date()
+                        timestamp = Date(),
+                        data = mapOf("capacity" to variant.capacity, "currentStock" to (currentQty + netQtyChange), "threshold" to threshold)
                     ))
                 }
             }

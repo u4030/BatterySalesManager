@@ -236,6 +236,7 @@ class AppNotificationManager @Inject constructor(
 
                 if (isFirstSnapshot) {
                     isFirstSnapshot = false
+                    // Optimization: On app launch/resume, we only show ONE summary notification instead of many.
                     relevantAlerts.forEach { alert ->
                         notifiedLowStockKeys.add("${alert.relatedId}:${alert.warehouseId}")
                     }

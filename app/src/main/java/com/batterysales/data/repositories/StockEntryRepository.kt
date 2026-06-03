@@ -59,7 +59,8 @@ class StockEntryRepository @Inject constructor(
                         message = "${variant.capacity}A | الكمية الحالية: $newQty (الحد: $threshold)",
                         relatedId = variant.id,
                         warehouseId = finalEntry.warehouseId,
-                        timestamp = Date()
+                        timestamp = Date(),
+                        data = mapOf("capacity" to variant.capacity, "currentStock" to newQty, "threshold" to threshold)
                     ))
                 } else if (newQty > threshold) {
                     val alertRef = firestore.collection(SystemAlert.COLLECTION_NAME).document("low_stock_${variant.id}_${finalEntry.warehouseId}")
@@ -224,7 +225,8 @@ class StockEntryRepository @Inject constructor(
                             message = "${variant.capacity}A | الكمية الحالية: $newQty (الحد: $threshold)",
                             relatedId = variant.id,
                             warehouseId = warehouseId,
-                            timestamp = Date()
+                            timestamp = Date(),
+                            data = mapOf("capacity" to variant.capacity, "currentStock" to newQty, "threshold" to threshold)
                         ))
                     } else if (newQty > threshold) {
                         val alertRef = firestore.collection(SystemAlert.COLLECTION_NAME).document("low_stock_${variant.id}_$warehouseId")
@@ -594,7 +596,8 @@ class StockEntryRepository @Inject constructor(
                     message = "${variant.capacity}A | الكمية الحالية: $newQty (الحد: $threshold)",
                     relatedId = variant.id,
                     warehouseId = entry.warehouseId,
-                    timestamp = Date()
+                    timestamp = Date(),
+                    data = mapOf("capacity" to variant.capacity, "currentStock" to newQty, "threshold" to threshold)
                 ))
             } else if (newQty > threshold) {
                 val alertRef = firestore.collection(SystemAlert.COLLECTION_NAME).document("low_stock_${variant.id}_${entry.warehouseId}")

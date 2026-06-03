@@ -134,23 +134,33 @@ class DashboardViewModel @Inject constructor(
                                 }.flatten().associateBy { it.id }
                             }
 
-                            val lowStockItems = filteredAlerts.mapNotNull { alert ->
-                                val variant = variantsMap[alert.relatedId] ?: return@mapNotNull null
-                                val whName = warehouses.find { it.id == alert.warehouseId }?.name ?: "مخزن غير معروف"
+                            val lowStockItems = filteredAlerts.map { alert ->
+                                val whName = warehouses.find { it.id == alert.warehouseId }?.name ?: alert.warehouseName ?: "مخزن غير معروف"
                                 
                                 LowStockItem(
                                     variantId = alert.relatedId,
-                                    productName = variant.productName ?: alert.title.replace("مخزون منخفض: ", ""),
-                                    capacity = variant.capacity,
-                                    currentQuantity = variant.currentStock?.get(alert.warehouseId) ?: 0,
-                                    minQuantity = variant.minQuantities[alert.warehouseId] ?: variant.minQuantity,
+                                    productName = alert.title.replace("مخزون منخفض: ", ""),
+                                    capacity = (alert.data["capacity"] as? Number)?.toInt() ?: 0,
+                                    currentQuantity = (alert.data["currentStock"] as? Number)?.toInt() ?: 0,
+                                    minQuantity = (alert.data["threshold"] as? Number)?.toInt() ?: 0,
                                     warehouseName = whName
                                 )
                             }
 
-                            updateStateWithAlerts(user, warehouses, lowStockItems, pendingCount, systemStats)
+                            // TARGETED UPDATE: Only update the alerts portion of the state
+                            _uiState.update { current ->
+                                current.copy(
+                                    lowStockVariants = lowStockItems,
+                                    notifications = constructNotifications(current.upcomingBills, current.pendingApprovalsCount, lowStockItems, todayDate = Calendar.getInstance().apply {
+                                        set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+                                    }.time)
+                                )
+                            }
                         }
                     }
+
+                // 3. Initial load of heavy data (Once per trigger)
+                loadHeavyData(user, warehouses, pendingCount, systemStats)
 
             } catch (e: Exception) {
                 Log.e("DashboardViewModel", "Error loading dashboard", e)
@@ -164,17 +174,16 @@ class DashboardViewModel @Inject constructor(
         alertsListener?.remove()
     }
 
-    private suspend fun updateStateWithAlerts(
+    private suspend fun loadHeavyData(
         user: User,
         warehouses: List<Warehouse>,
-        lowStockItems: List<LowStockItem>,
         pendingCount: Int,
         systemStats: SystemStats
     ) {
         val isAdmin = user.role == "admin"
         val userWarehouseId = user.warehouseId
         
-        // 2. Today's Collections (Server-side aggregation)
+        // 2. Today's Collections (Targeted server-side aggregation - One-time)
         val today = Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
         }
@@ -187,7 +196,7 @@ class DashboardViewModel @Inject constructor(
             WarehouseStats(warehouse.id, warehouse.name, collection, count)
         }.filter { if (isAdmin) it.todayCollection > 0 || it.todayCollectionCount > 0 else true }
 
-        // 3. Upcoming Bills
+        // 3. Upcoming Bills (One-time fetch)
         val nextWeek = Calendar.getInstance().apply {
             add(Calendar.DAY_OF_YEAR, 7)
             set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59)
@@ -202,10 +211,28 @@ class DashboardViewModel @Inject constructor(
                 .sortedBy { it.dueDate }
         }
 
-        // Construct Notifications
+        _uiState.update { current ->
+            current.copy(
+                pendingApprovalsCount = pendingCount,
+                upcomingBills = upcoming,
+                warehouseStats = warehouseStatsList,
+                notifications = constructNotifications(upcoming, pendingCount, current.lowStockVariants, today.time),
+                systemStats = systemStats,
+                isLoading = false
+            )
+        }
+    }
+
+    private fun constructNotifications(
+        upcomingBills: List<Bill>,
+        pendingCount: Int,
+        lowStockItems: List<LowStockItem>,
+        todayDate: Date
+    ): List<AppNotification> {
         val allNotifications = mutableListOf<AppNotification>()
-        upcoming.forEach { bill ->
-            val isOverdue = bill.dueDate.before(today.time)
+
+        upcomingBills.forEach { bill ->
+            val isOverdue = bill.dueDate?.before(todayDate) ?: false
             allNotifications.add(AppNotification(
                 "bill_${bill.id}",
                 if (isOverdue) "كمبيالة متأخرة" else "موعد استحقاق قريب",
@@ -214,23 +241,18 @@ class DashboardViewModel @Inject constructor(
                 "bills"
             ))
         }
+
         allNotifications.sortBy { if (it.type == NotificationType.OVERDUE_BILL) 0 else 1 }
+
         if (pendingCount > 0) {
             allNotifications.add(AppNotification("pending_approvals", "موافقات معلقة", "لديك $pendingCount طلبات بانتظار الموافقة", NotificationType.PENDING_APPROVAL, "approvals"))
         }
+
         lowStockItems.forEach { item ->
             val route = "product_ledger/${item.variantId}/${item.productName}/${item.capacity}/no_spec"
             allNotifications.add(AppNotification("low_stock_${item.variantId}_${item.warehouseName}", "مخزون منخفض: ${item.productName}", "${item.capacity}A في ${item.warehouseName}", NotificationType.LOW_STOCK, route))
         }
 
-        _uiState.value = DashboardUiState(
-            pendingApprovalsCount = pendingCount,
-            lowStockVariants = lowStockItems,
-            upcomingBills = upcoming,
-            warehouseStats = warehouseStatsList,
-            notifications = allNotifications,
-            systemStats = systemStats,
-            isLoading = false
-        )
+        return allNotifications
     }
 }

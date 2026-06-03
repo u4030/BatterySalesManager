@@ -17,7 +17,9 @@ class SupplierViewModel @Inject constructor(
     private val _searchQuery = MutableStateFlow("")
     val searchQuery = _searchQuery.asStateFlow()
 
+    private val refreshTrigger = MutableStateFlow(0)
     private val _allSuppliers = MutableStateFlow<List<Supplier>>(emptyList())
+
     val suppliers = combine(_allSuppliers, _searchQuery) { suppliers, query ->
         if (query.isBlank()) suppliers
         else suppliers.filter { it.name.contains(query, ignoreCase = true) }
@@ -30,22 +32,27 @@ class SupplierViewModel @Inject constructor(
     val error = _error.asStateFlow()
 
     init {
-        loadSuppliers()
+        refreshTrigger.onEach {
+            loadSuppliers()
+        }.launchIn(viewModelScope)
     }
 
     fun loadSuppliers() {
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                supplierRepository.getSuppliers().collect {
-                    _allSuppliers.value = it
-                    _isLoading.value = false
-                }
+                val list = supplierRepository.getSuppliersOnce()
+                _allSuppliers.value = list
             } catch (e: Exception) {
                 _error.value = "فشل تحميل الموردين: ${e.message}"
+            } finally {
                 _isLoading.value = false
             }
         }
+    }
+
+    fun refresh() {
+        refreshTrigger.value += 1
     }
 
     fun onSearchQueryChanged(query: String) {

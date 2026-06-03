@@ -13,6 +13,7 @@ import com.batterysales.data.repositories.StockEntryRepository
 import com.batterysales.data.repositories.WarehouseRepository
 import com.batterysales.data.repositories.ApprovalRepository
 import com.batterysales.data.repositories.UserRepository
+import android.util.Log
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -51,44 +52,60 @@ class ApprovalsViewModel @Inject constructor(
         loadPendingEntries()
     }
 
+    private val refreshTrigger = MutableStateFlow(0)
+
     private fun loadPendingEntries() {
         viewModelScope.launch {
             combine(
                 stockEntryRepository.getPendingEntriesFlow(),
                 approvalRepository.getPendingRequestsFlow(),
-                productRepository.getProducts(),
-                productVariantRepository.getAllVariantsFlow(),
-                warehouseRepository.getWarehouses()
-            ) { pendingEntries, requests, products, variants, warehouses ->
-                val stockItems = pendingEntries.map { entry ->
-                    val variant = variants.find { it.id == entry.productVariantId }
-                    val product = products.find { it.id == variant?.productId }
-                    val warehouse = warehouses.find { it.id == entry.warehouseId }
+                refreshTrigger
+            ) { entries, requests, _ -> Pair(entries, requests) }
+                .flatMapLatest { (pendingEntries, requests) ->
+                    flow {
+                        try {
+                            val products = productRepository.getProductsOnce()
+                            val variants = productVariantRepository.getAllVariants()
+                            val warehouses = warehouseRepository.getWarehousesOnce()
 
-                    ApprovalItem(
-                        entry = entry,
-                        productName = product?.name ?: "منتج غير معروف",
-                        variantCapacity = if (variant != null) "${variant.capacity}A" else "",
-                        warehouseName = warehouse?.name ?: "مستودع غير معروف",
-                        type = "STOCK_ENTRY"
-                    )
+                            val stockItems = pendingEntries.map { entry ->
+                                val variant = variants.find { it.id == entry.productVariantId }
+                                val product = products.find { it.id == variant?.productId }
+                                val warehouse = warehouses.find { it.id == entry.warehouseId }
+
+                                ApprovalItem(
+                                    entry = entry,
+                                    productName = product?.name ?: "منتج غير معروف",
+                                    variantCapacity = if (variant != null) "${variant.capacity}A" else "",
+                                    warehouseName = warehouse?.name ?: "مستودع غير معروف",
+                                    type = "STOCK_ENTRY"
+                                )
+                            }
+
+                            val requestItems = requests.map { req ->
+                                ApprovalItem(
+                                    request = req,
+                                    productName = req.productName,
+                                    variantCapacity = if (req.variantCapacity.isNotEmpty()) "${req.variantCapacity}A" else "",
+                                    type = if (req.targetType == ApprovalRequest.TARGET_PRODUCT) "PRODUCT_REQUEST" else "VARIANT_REQUEST"
+                                )
+                            }
+
+                            emit((stockItems + requestItems).sortedByDescending { it.entry?.timestamp ?: it.request?.timestamp })
+                        } catch (e: Exception) {
+                            Log.e("ApprovalsVM", "Error loading approvals", e)
+                            emit(emptyList<ApprovalItem>())
+                        }
+                    }
+                }.collect { items ->
+                    _approvalItems.value = items
+                    _isLoading.value = false
                 }
-
-                val requestItems = requests.map { req ->
-                    ApprovalItem(
-                        request = req,
-                        productName = req.productName,
-                        variantCapacity = if (req.variantCapacity.isNotEmpty()) "${req.variantCapacity}A" else "",
-                        type = if (req.targetType == ApprovalRequest.TARGET_PRODUCT) "PRODUCT_REQUEST" else "VARIANT_REQUEST"
-                    )
-                }
-
-                (stockItems + requestItems).sortedByDescending { it.entry?.timestamp ?: it.request?.timestamp }
-            }.collect { items ->
-                _approvalItems.value = items
-                _isLoading.value = false
-            }
         }
+    }
+
+    fun refresh() {
+        refreshTrigger.value += 1
     }
 
     fun approveEntry(entryId: String) {
