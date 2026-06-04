@@ -450,16 +450,52 @@ private fun supplierReportSectionRedesigned(scope: androidx.compose.foundation.l
     else { scope.items(supplierItems) { item -> Box(modifier = Modifier.padding(horizontal = 16.dp)) { SupplierSummaryCard(item, onClick = { navController.navigate("supplier_details/${item.supplierId}") }) } } }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SupplierSummaryCard(item: SupplierSummaryItem, onClick: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)) {
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Text(item.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = item.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f)
+                )
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
             Spacer(modifier = Modifier.height(12.dp))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Column(modifier = Modifier.weight(1f)) { Text("مدين (مشتريات)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant); Text("JD ${String.format("%.3f", item.totalDebit)}", fontWeight = FontWeight.Bold, color = Color(0xFFFB8C00)) }
-                Column(modifier = Modifier.weight(1f)) { Text("دائن (مسدد)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant); Text("JD ${String.format("%.3f", item.totalCredit)}", fontWeight = FontWeight.Bold, color = Color(0xFF10B981)) }
-                Column(modifier = Modifier.weight(1f)) { Text("المتبقي", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant); Text("JD ${String.format("%.3f", item.currentBalance)}", fontWeight = FontWeight.ExtraBold, color = if (item.currentBalance > 0) Color(0xFFEF4444) else Color(0xFF10B981)) }
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Column(modifier = Modifier.widthIn(min = 80.dp)) {
+                    Text("مدين (مشتريات)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("JD ${String.format("%.3f", item.totalDebit)}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Color(0xFFFB8C00))
+                }
+                Column(modifier = Modifier.widthIn(min = 80.dp)) {
+                    Text("دائن (مسدد)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("JD ${String.format("%.3f", item.totalCredit)}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Color(0xFF10B981))
+                }
+                Column(modifier = Modifier.widthIn(min = 80.dp)) {
+                    Text("المتبقي", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("JD ${String.format("%.3f", item.currentBalance)}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.ExtraBold, color = if (item.currentBalance > 0) Color(0xFFEF4444) else Color(0xFF10B981))
+                }
             }
         }
     }
@@ -474,6 +510,7 @@ fun SupplierReportControls(viewModel: ReportsViewModel) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PurchaseOrderCard(po: com.batterysales.data.models.PurchaseOrderItem, dateFormatter: java.text.SimpleDateFormat, navController: NavController) {
     var expanded by remember { mutableStateOf(false) }
@@ -513,12 +550,16 @@ fun PurchaseOrderCard(po: com.batterysales.data.models.PurchaseOrderItem, dateFo
             }
 
             // Financial Summary Row
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { 
-                Column {
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Column(modifier = Modifier.widthIn(min = 120.dp)) {
                     Text("إجمالي الطلبية:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text("JD ${String.format("%,.3f", po.entry.totalCost)}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold) 
                 }
-                Column(horizontalAlignment = Alignment.End) {
+                Column(modifier = Modifier.widthIn(min = 120.dp), horizontalAlignment = Alignment.End) {
                     Text("المتبقي:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(
                         text = "JD ${String.format("%,.3f", po.remainingBalance)}", 
