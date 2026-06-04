@@ -178,10 +178,20 @@ class SalesViewModel @Inject constructor(
 
     fun onWarehouseSelected(warehouse: Warehouse) {
         _uiState.update { it.copy(selectedWarehouse = warehouse) }
-        val state = uiState.value
-        state.selectedProduct?.let { product ->
-            viewModelScope.launch {
-                loadVariantsForProduct(product, state.selectedVariant?.id)
+
+        viewModelScope.launch {
+            try {
+                _uiState.update { it.copy(isLoading = true) }
+                // ELITE STRATEGY: Refresh inventory summary for the selected warehouse
+                val summary = summaryRepository.getInventorySummary(warehouse.id)
+                cachedInventorySummary = summary
+
+                val state = uiState.value
+                state.selectedProduct?.let { product ->
+                    loadVariantsForProduct(product, state.selectedVariant?.id)
+                }
+            } finally {
+                _uiState.update { it.copy(isLoading = false) }
             }
         }
     }
