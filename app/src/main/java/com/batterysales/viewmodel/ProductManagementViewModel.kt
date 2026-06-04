@@ -35,6 +35,7 @@ data class ProductManagementUiState(
 class ProductManagementViewModel @Inject constructor(
     private val productRepository: ProductRepository,
     private val productVariantRepository: ProductVariantRepository,
+    private val summaryRepository: com.batterysales.data.repositories.SummaryRepository,
     private val warehouseRepository: WarehouseRepository,
     private val supplierRepository: SupplierRepository,
     private val userRepository: UserRepository,
@@ -279,7 +280,7 @@ class ProductManagementViewModel @Inject constructor(
                     ))
                     _errorMessage.value = "تم إرسال طلب التعديل للمدير للموافقة"
                 } else {
-                    productVariantRepository.updateVariant(variant)
+                    productVariantRepository.updateVariant(variant, summaryRepository)
                 }
             } catch (e: Exception) {
                 Log.e("ProductMgmtVM", "Error updating variant", e)
@@ -307,7 +308,7 @@ class ProductManagementViewModel @Inject constructor(
                     _errorMessage.value = "تم إرسال طلب الحذف للمدير للموافقة"
                 } else {
                     val archivedVariant = variant.copy(archived = true)
-                    productVariantRepository.updateVariant(archivedVariant)
+                    productVariantRepository.updateVariant(archivedVariant, summaryRepository)
                 }
             } catch (e: Exception) {
                 Log.e("ProductMgmtVM", "Error archiving variant", e)

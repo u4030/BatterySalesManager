@@ -50,8 +50,9 @@ class StockEntryRepository @Inject constructor(
 
                 // --- Low Stock Check (Event-Driven) ---
                 val threshold = variant.minQuantities[finalEntry.warehouseId] ?: variant.minQuantity
-                if (threshold > 0 && newQty <= threshold) {
-                    val alertRef = firestore.collection(SystemAlert.COLLECTION_NAME).document("low_stock_${variant.id}_${finalEntry.warehouseId}")
+                val alertRef = firestore.collection(SystemAlert.COLLECTION_NAME).document("low_stock_${variant.id}_${finalEntry.warehouseId}")
+
+                if (!variant.isDiscontinued && threshold > 0 && newQty <= threshold) {
                     transaction.set(alertRef, SystemAlert(
                         id = alertRef.id,
                         type = SystemAlert.TYPE_LOW_STOCK,
@@ -62,8 +63,8 @@ class StockEntryRepository @Inject constructor(
                         timestamp = Date(),
                         data = mapOf("capacity" to variant.capacity, "currentStock" to newQty, "threshold" to threshold)
                     ))
-                } else if (newQty > threshold) {
-                    val alertRef = firestore.collection(SystemAlert.COLLECTION_NAME).document("low_stock_${variant.id}_${finalEntry.warehouseId}")
+                } else {
+                    // Delete alert if stock is above threshold OR if variant is discontinued
                     transaction.delete(alertRef)
                 }
 
@@ -216,8 +217,9 @@ class StockEntryRepository @Inject constructor(
 
                     // Low Stock Check
                     val threshold = variant.minQuantities[warehouseId] ?: variant.minQuantity
-                    if (threshold > 0 && newQty <= threshold) {
-                        val alertRef = firestore.collection(SystemAlert.COLLECTION_NAME).document("low_stock_${variant.id}_$warehouseId")
+                    val alertRef = firestore.collection(SystemAlert.COLLECTION_NAME).document("low_stock_${variant.id}_$warehouseId")
+
+                    if (!variant.isDiscontinued && threshold > 0 && newQty <= threshold) {
                         transaction.set(alertRef, SystemAlert(
                             id = alertRef.id,
                             type = SystemAlert.TYPE_LOW_STOCK,
@@ -228,8 +230,7 @@ class StockEntryRepository @Inject constructor(
                             timestamp = Date(),
                             data = mapOf("capacity" to variant.capacity, "currentStock" to newQty, "threshold" to threshold)
                         ))
-                    } else if (newQty > threshold) {
-                        val alertRef = firestore.collection(SystemAlert.COLLECTION_NAME).document("low_stock_${variant.id}_$warehouseId")
+                    } else {
                         transaction.delete(alertRef)
                     }
                     
@@ -368,8 +369,9 @@ class StockEntryRepository @Inject constructor(
 
                 // Low Stock Check for Source
                 val threshold = variant.minQuantities[sourceWarehouseId] ?: variant.minQuantity
-                if (threshold > 0 && sourceNewQty <= threshold) {
-                    val alertRef = firestore.collection(SystemAlert.COLLECTION_NAME).document("low_stock_${variant.id}_$sourceWarehouseId")
+                val alertRef = firestore.collection(SystemAlert.COLLECTION_NAME).document("low_stock_${variant.id}_$sourceWarehouseId")
+
+                if (!variant.isDiscontinued && threshold > 0 && sourceNewQty <= threshold) {
                     transaction.set(alertRef, SystemAlert(
                         id = alertRef.id,
                         type = SystemAlert.TYPE_LOW_STOCK,
@@ -379,6 +381,8 @@ class StockEntryRepository @Inject constructor(
                         warehouseId = sourceWarehouseId,
                         timestamp = Date()
                     ))
+                } else {
+                    transaction.delete(alertRef)
                 }
             }
         }.await()
@@ -587,8 +591,9 @@ class StockEntryRepository @Inject constructor(
 
             // Low Stock Check
             val threshold = variant.minQuantities[entry.warehouseId] ?: variant.minQuantity
-            if (threshold > 0 && newQty <= threshold) {
-                val alertRef = firestore.collection(SystemAlert.COLLECTION_NAME).document("low_stock_${variant.id}_${entry.warehouseId}")
+            val alertRef = firestore.collection(SystemAlert.COLLECTION_NAME).document("low_stock_${variant.id}_${entry.warehouseId}")
+
+            if (!variant.isDiscontinued && threshold > 0 && newQty <= threshold) {
                 transaction.set(alertRef, SystemAlert(
                     id = alertRef.id,
                     type = SystemAlert.TYPE_LOW_STOCK,
@@ -599,8 +604,7 @@ class StockEntryRepository @Inject constructor(
                     timestamp = Date(),
                     data = mapOf("capacity" to variant.capacity, "currentStock" to newQty, "threshold" to threshold)
                 ))
-            } else if (newQty > threshold) {
-                val alertRef = firestore.collection(SystemAlert.COLLECTION_NAME).document("low_stock_${variant.id}_${entry.warehouseId}")
+            } else {
                 transaction.delete(alertRef)
             }
 

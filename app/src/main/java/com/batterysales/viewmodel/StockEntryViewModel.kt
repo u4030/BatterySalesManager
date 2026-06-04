@@ -64,6 +64,7 @@ enum class CostInputMode {
 class StockEntryViewModel @Inject constructor(
     private val productRepository: ProductRepository,
     private val productVariantRepository: ProductVariantRepository,
+    private val summaryRepository: com.batterysales.data.repositories.SummaryRepository,
     private val warehouseRepository: WarehouseRepository,
     private val stockEntryRepository: StockEntryRepository,
     private val supplierRepository: SupplierRepository,
@@ -337,7 +338,7 @@ class StockEntryViewModel @Inject constructor(
                     // Update variant minQuantity if Admin
                     if (state.isAdmin) {
                         val updatedVariant = state.selectedVariant!!.copy(minQuantity = updatedItem.minQuantity)
-                        productVariantRepository.updateVariant(updatedVariant)
+                        productVariantRepository.updateVariant(updatedVariant, summaryRepository)
                     }
                 } else {
                     val grandTotalAmperes = state.stockItems.sumOf { it.totalAmperes }
@@ -380,7 +381,7 @@ class StockEntryViewModel @Inject constructor(
                     if (state.isAdmin) {
                         state.stockItems.forEach { item ->
                             val updatedVariant = item.productVariant.copy(minQuantity = item.minQuantity)
-                            productVariantRepository.updateVariant(updatedVariant)
+                            productVariantRepository.updateVariant(updatedVariant, summaryRepository)
                         }
                     }
                 }

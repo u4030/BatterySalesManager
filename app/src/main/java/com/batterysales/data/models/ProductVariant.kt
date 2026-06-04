@@ -21,7 +21,8 @@ data class ProductVariant(
     val weightedAverageCost: Double = 0.0, // Pre-calculated average cost for reports
     val createdAt: Date = Date(),
     val updatedAt: Date = Date(),
-    val archived: Boolean = false
+    val archived: Boolean = false,
+    val isDiscontinued: Boolean = false
 ) {
     companion object {
         const val COLLECTION_NAME = "product_variants"

@@ -33,6 +33,7 @@ class ApprovalsViewModel @Inject constructor(
     private val stockEntryRepository: StockEntryRepository,
     private val productRepository: ProductRepository,
     private val productVariantRepository: ProductVariantRepository,
+    private val summaryRepository: com.batterysales.data.repositories.SummaryRepository,
     private val warehouseRepository: WarehouseRepository,
     private val approvalRepository: ApprovalRepository,
     private val billRepository: com.batterysales.data.repositories.BillRepository,
@@ -141,10 +142,10 @@ class ApprovalsViewModel @Inject constructor(
                     }
                     ApprovalRequest.TARGET_VARIANT -> {
                         if (request.actionType == ApprovalRequest.ACTION_EDIT) {
-                            request.variantData?.let { productVariantRepository.updateVariant(it) }
+                            request.variantData?.let { productVariantRepository.updateVariant(it, summaryRepository) }
                         } else if (request.actionType == ApprovalRequest.ACTION_DELETE) {
                             val variant = productVariantRepository.getVariant(request.targetId)
-                            variant?.let { productVariantRepository.updateVariant(it.copy(archived = true)) }
+                            variant?.let { productVariantRepository.updateVariant(it.copy(archived = true), summaryRepository) }
                         }
                     }
                 }

@@ -196,7 +196,8 @@ class SettingsViewModel @Inject constructor(
                 barcode = variant.barcode,
                 currentStock = totalQty,
                 weightedAverageCost = variant.weightedAverageCost,
-                sellingPrice = variant.sellingPrice
+                sellingPrice = variant.sellingPrice,
+                isDiscontinued = variant.isDiscontinued
             )
             globalItems[variant.id] = globalItem
 
@@ -206,7 +207,7 @@ class SettingsViewModel @Inject constructor(
 
                 // --- GENERATE ALERTS DURING REBUILD ---
                 val threshold = variant.minQuantities[whId] ?: variant.minQuantity
-                if (threshold > 0 && qty <= threshold) {
+                if (!variant.isDiscontinued && threshold > 0 && qty <= threshold) {
                     val alertRef = firestore.collection(SystemAlert.COLLECTION_NAME).document("low_stock_${variant.id}_$whId")
                     firestore.collection(SystemAlert.COLLECTION_NAME).document(alertRef.id).set(SystemAlert(
                         id = alertRef.id,

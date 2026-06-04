@@ -65,11 +65,51 @@ class ProductVariantRepository @Inject constructor(
         docRef.set(finalVariant).await()
     }
 
-    suspend fun updateVariant(variant: ProductVariant) {
-        firestore.collection(ProductVariant.COLLECTION_NAME)
-            .document(variant.id)
-            .set(variant)
-            .await()
+    suspend fun updateVariant(variant: ProductVariant, summaryRepository: SummaryRepository? = null) {
+        if (summaryRepository != null) {
+            val warehousesSnap = firestore.collection("warehouses").get().await()
+            val warehouseIds = warehousesSnap.documents.map { it.id }
+
+            firestore.runTransaction { transaction ->
+                val variantRef = firestore.collection(ProductVariant.COLLECTION_NAME).document(variant.id)
+
+                // 1. Reads
+                val snapshotsMap = warehouseIds.associateWith { whId ->
+                    summaryRepository.getSummarySnapshots(transaction, whId)
+                }
+
+                // 2. Writes
+                transaction.set(variantRef, variant)
+
+                // Update summaries for all warehouses
+                warehouseIds.forEach { whId ->
+                    val snapshots = snapshotsMap[whId]
+                    if (snapshots != null) {
+                        summaryRepository.applyInventoryUpdate(
+                            transaction = transaction,
+                            snapshots = snapshots,
+                            warehouseId = whId,
+                            variantId = variant.id,
+                            variant = variant,
+                            qtyChange = 0 // No stock change, just metadata/status update
+                        )
+                    }
+                }
+
+                // If discontinued, cleanup alerts
+                if (variant.isDiscontinued) {
+                    warehouseIds.forEach { whId ->
+                        val alertRef = firestore.collection("system_alerts").document("low_stock_${variant.id}_$whId")
+                        transaction.delete(alertRef)
+                    }
+                }
+            }.await()
+        } else {
+            firestore.collection(ProductVariant.COLLECTION_NAME)
+                .document(variant.id)
+                .set(variant)
+                .await()
+        }
     }
 
     suspend fun getAllVariants(): List<ProductVariant> {

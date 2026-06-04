@@ -112,7 +112,7 @@ class SalesViewModel @Inject constructor(
             
             // --- ELITE STRATEGY: Targeted Load from Summary Cache ---
             val summaryItems = cachedInventorySummary?.items?.values ?: emptyList()
-            var variantsForProduct = summaryItems.filter { it.productId == product.id }
+            var variantsForProduct = summaryItems.filter { it.productId == product.id && !it.isDiscontinued }
                 .map { item -> 
                     ProductVariant(
                         id = item.variantId,
@@ -123,6 +123,7 @@ class SalesViewModel @Inject constructor(
                         specification = item.specification,
                         weightedAverageCost = item.weightedAverageCost,
                         productName = item.productName,
+                        isDiscontinued = item.isDiscontinued,
                         currentStock = mapOf((cachedInventorySummary?.warehouseId ?: "global") to item.currentStock)
                     )
                 }.sortedBy { it.capacity }
@@ -130,7 +131,7 @@ class SalesViewModel @Inject constructor(
             // Targeted Cloud Fetch ONLY if variant list is empty or incomplete
             if (variantsForProduct.isEmpty()) {
                 variantsForProduct = productVariantRepository.getVariantsForProduct(product.id)
-                    .filter { !it.archived }
+                    .filter { !it.archived && !it.isDiscontinued }
                     .sortedBy { it.capacity }
             }
 

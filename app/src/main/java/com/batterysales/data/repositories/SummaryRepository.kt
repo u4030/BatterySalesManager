@@ -65,12 +65,13 @@ class SummaryRepository @Inject constructor(
         val currentItemWh = updatedItemsWh[variantId] ?: InventorySummaryItem(
             variantId = variantId, productId = variant.productId, productName = variant.productName ?: "Unknown",
             capacity = variant.capacity, barcode = variant.barcode, sellingPrice = variant.sellingPrice,
-            specification = variant.specification
+            specification = variant.specification, isDiscontinued = variant.isDiscontinued
         )
         updatedItemsWh[variantId] = currentItemWh.copy(
             currentStock = currentItemWh.currentStock + qtyChange,
             weightedAverageCost = variant.weightedAverageCost,
             specification = variant.specification,
+            isDiscontinued = variant.isDiscontinued,
             updatedAt = Date()
         )
 
@@ -79,12 +80,13 @@ class SummaryRepository @Inject constructor(
         val currentItemGlobal = updatedItemsGlobal[variantId] ?: InventorySummaryItem(
             variantId = variantId, productId = variant.productId, productName = variant.productName ?: "Unknown",
             capacity = variant.capacity, barcode = variant.barcode, sellingPrice = variant.sellingPrice,
-            specification = variant.specification
+            specification = variant.specification, isDiscontinued = variant.isDiscontinued
         )
         updatedItemsGlobal[variantId] = currentItemGlobal.copy(
             currentStock = currentItemGlobal.currentStock + qtyChange,
             weightedAverageCost = variant.weightedAverageCost,
             specification = variant.specification,
+            isDiscontinued = variant.isDiscontinued,
             updatedAt = Date()
         )
 
@@ -115,12 +117,13 @@ class SummaryRepository @Inject constructor(
             val currentItemWh = updatedItemsWh[variantId] ?: InventorySummaryItem(
                 variantId = variantId, productId = variant.productId, productName = variant.productName ?: "Unknown",
                 capacity = variant.capacity, barcode = variant.barcode, sellingPrice = variant.sellingPrice,
-                specification = variant.specification
+                specification = variant.specification, isDiscontinued = variant.isDiscontinued
             )
             updatedItemsWh[variantId] = currentItemWh.copy(
                 currentStock = currentItemWh.currentStock + qtyChange,
                 weightedAverageCost = variant.weightedAverageCost,
                 specification = variant.specification,
+                isDiscontinued = variant.isDiscontinued,
                 updatedAt = Date()
             )
 
@@ -128,12 +131,13 @@ class SummaryRepository @Inject constructor(
             val currentItemGlobal = updatedItemsGlobal[variantId] ?: InventorySummaryItem(
                 variantId = variantId, productId = variant.productId, productName = variant.productName ?: "Unknown",
                 capacity = variant.capacity, barcode = variant.barcode, sellingPrice = variant.sellingPrice,
-                specification = variant.specification
+                specification = variant.specification, isDiscontinued = variant.isDiscontinued
             )
             updatedItemsGlobal[variantId] = currentItemGlobal.copy(
                 currentStock = currentItemGlobal.currentStock + qtyChange,
                 weightedAverageCost = variant.weightedAverageCost,
                 specification = variant.specification,
+                isDiscontinued = variant.isDiscontinued,
                 updatedAt = Date()
             )
             
