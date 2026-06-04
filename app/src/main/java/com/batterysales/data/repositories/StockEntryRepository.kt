@@ -676,14 +676,18 @@ class StockEntryRepository @Inject constructor(
         val suppliersSnap = firestore.collection("suppliers").get().await()
         val suppliersMap = suppliersSnap.documents.associate { (it.getString("name") ?: "").trim().lowercase() to it.id }
         
+        val variantsSnap = firestore.collection(ProductVariant.COLLECTION_NAME).get().await()
+        val variantsMap = variantsSnap.documents.associate { it.id to (it.getString("specification") ?: "") }
+
         val documentsToUpdate = snapshot.documents.filter { doc ->
             val hasRemaining = doc.contains("remainingBalance")
             val hasSettled = doc.contains("isSettled")
             val hasInvoiceDate = doc.contains("invoiceDate")
             val hasTotalCost = doc.contains("totalCost")
             val hasSupplierId = (doc.getString("supplierId") ?: "").isNotEmpty()
+            val hasSpecification = (doc.getString("specification") ?: "").isNotEmpty()
             
-            !hasRemaining || !hasSettled || !hasInvoiceDate || !hasTotalCost || !hasSupplierId
+            !hasRemaining || !hasSettled || !hasInvoiceDate || !hasTotalCost || !hasSupplierId || !hasSpecification
         }
 
         if (documentsToUpdate.isEmpty()) return
@@ -713,6 +717,13 @@ class StockEntryRepository @Inject constructor(
                 }
                 if (!doc.contains("isSettled")) {
                     updates["isSettled"] = (cost <= 0)
+                }
+
+                if ((doc.getString("specification") ?: "").isEmpty()) {
+                    val vid = doc.getString("productVariantId") ?: ""
+                    if (vid.isNotEmpty() && variantsMap.containsKey(vid)) {
+                        updates["specification"] = variantsMap[vid]!!
+                    }
                 }
 
                 if (updates.isNotEmpty()) batch.update(doc.reference, updates)

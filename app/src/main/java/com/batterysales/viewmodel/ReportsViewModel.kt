@@ -327,7 +327,17 @@ class ReportsViewModel @Inject constructor(
                 val allEntries = stockEntryRepository.getEntriesBySuppliers(listOf(supplierId))
                 val allBills = billRepository.getBillsBySuppliers(listOf(supplierId))
 
-                val supplierEntries: List<StockEntry> = allEntries.filter { entry ->
+                // Fetch missing specifications for entries (Legacy data support)
+                val missingSpecVariantIds = allEntries.filter { it.specification.isBlank() }.map { it.productVariantId }.distinct()
+                val variantsCache = if (missingSpecVariantIds.isEmpty()) emptyMap() else {
+                    productVariantRepository.getAllVariants().associateBy { it.id }
+                }
+
+                val supplierEntries: List<StockEntry> = allEntries.map { entry ->
+                    if (entry.specification.isBlank() && variantsCache.containsKey(entry.productVariantId)) {
+                        entry.copy(specification = variantsCache[entry.productVariantId]?.specification ?: "")
+                    } else entry
+                }.filter { entry ->
                     entry.status == "approved" &&
                             (supplier.resetDate == null || !entry.getEffectiveDate().before(supplier.resetDate))
                 }
@@ -514,12 +524,13 @@ private fun Map<String, Any>.toOrderItem(): PurchaseOrderItem {
 
     val itemsRaw = this["items"] as? List<Map<String, Any>> ?: emptyList()
     val orderItems = itemsRaw.map { itemMap ->
+        val itemSpec = itemMap["specification"] as? String ?: ""
         StockEntry(
             id = itemMap["id"] as? String ?: "",
             productVariantId = itemMap["productVariantId"] as? String ?: "",
             productName = itemMap["productName"] as? String ?: "",
             capacity = (itemMap["capacity"] as? Number)?.toInt() ?: 0,
-            specification = itemMap["specification"] as? String ?: "",
+            specification = itemSpec,
             quantity = (itemMap["quantity"] as? Number)?.toInt() ?: 0,
             totalCost = (itemMap["totalCost"] as? Number)?.toDouble() ?: 0.0,
             linkedAllocations = (itemMap["linkedAllocations"] as? Map<String, Double>) ?: emptyMap()
