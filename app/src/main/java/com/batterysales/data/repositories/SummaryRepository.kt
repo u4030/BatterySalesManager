@@ -224,6 +224,8 @@ class SummaryRepository @Inject constructor(
         "invoiceDate" to (entry.invoiceDate ?: entry.timestamp),
         "specification" to entry.specification,
         "settlementNotes" to entry.settlementNotes,
+        "totalActualPaid" to totalActualPaid,
+        "isCleared" to isCleared,
         "items" to items.map { item ->
             mapOf(
                 "id" to item.id,

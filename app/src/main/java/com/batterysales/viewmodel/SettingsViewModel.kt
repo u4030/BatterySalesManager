@@ -196,10 +196,27 @@ class SettingsViewModel @Inject constructor(
         
         // This is a heavy operation to initialize the new Summary-First system
         val products = productRepository.getProductsOnce()
-        val variants = productVariantRepository.getAllVariants()
         val warehouses = warehouseRepository.getWarehousesOnce()
         val suppliers = supplierRepository.getSuppliersOnce()
         
+        // --- 0. Backfill Specifications in StockEntries ---
+        val variants = productVariantRepository.getAllVariants()
+        val variantsMap = variants.associate { it.id to it.specification }
+        val entriesSnap = firestore.collection(StockEntry.COLLECTION_NAME).get().await()
+        entriesSnap.documents.chunked(500).forEach { chunk ->
+            val batch = firestore.batch()
+            var count = 0
+            chunk.forEach { doc ->
+                val vid = doc.getString("productVariantId") ?: ""
+                val currentSpec = doc.getString("specification") ?: ""
+                if (vid.isNotEmpty() && currentSpec.isEmpty() && variantsMap.containsKey(vid)) {
+                    batch.update(doc.reference, "specification", variantsMap[vid])
+                    count++
+                }
+            }
+            if (count > 0) batch.commit().await()
+        }
+
         // --- 1. Clear existing alerts ---
         val alertsSnap = firestore.collection(SystemAlert.COLLECTION_NAME).get().await()
         val alertBatch = firestore.batch()

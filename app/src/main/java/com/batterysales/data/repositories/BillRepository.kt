@@ -744,14 +744,27 @@ class BillRepository @Inject constructor(
 
         val entryStates = positiveEntries.associate { it.id to MemoryEntryState(it) }.toMutableMap()
 
-        // 1. Apply Manual Links
+        // 1. Apply Manual Links (Grouped Support)
+        // Manual links typically point to ONE StockEntry ID. We find its ENTIRE group (invoice)
+        // and distribute the manualAllocation across the whole group.
         creditSources.filter { it.manualEntryId != null && it.manualAllocation > 0.001 }.forEach { source ->
-            val targetGroupId = source.manualEntryId!!
-            val groupEntries = entryStates.values.filter {
-                it.entry.invoiceNumber.trim().equals(targetGroupId.trim(), ignoreCase = true) ||
-                it.entry.id.trim() == targetGroupId.trim() ||
-                it.entry.orderId.trim() == targetGroupId.trim()
-            }.sortedBy { it.entry.timestamp }
+            val manualEntryId = source.manualEntryId!!
+            val linkedEntry = entryStates[manualEntryId]?.entry
+
+            val groupEntries = if (linkedEntry != null) {
+                val groupKey = linkedEntry.invoiceNumber.trim().ifEmpty { linkedEntry.orderId.trim().ifEmpty { linkedEntry.id } }.lowercase()
+                entryStates.values.filter {
+                    val itemKey = it.entry.invoiceNumber.trim().ifEmpty { it.entry.orderId.trim().ifEmpty { it.entry.id } }.lowercase()
+                    itemKey == groupKey
+                }.sortedBy { it.entry.timestamp }
+            } else {
+                // Fallback for direct matching
+                entryStates.values.filter {
+                    it.entry.invoiceNumber.trim().equals(manualEntryId.trim(), ignoreCase = true) ||
+                    it.entry.id.trim() == manualEntryId.trim() ||
+                    it.entry.orderId.trim() == manualEntryId.trim()
+                }.sortedBy { it.entry.timestamp }
+            }
 
             var amountToDistribute = source.manualAllocation
             for (state in groupEntries) {

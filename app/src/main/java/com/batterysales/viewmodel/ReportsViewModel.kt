@@ -550,12 +550,17 @@ private fun Map<String, Any>.toOrderItem(): PurchaseOrderItem {
 
     val totalCost = (this["totalCost"] as? Number)?.toDouble() ?: 0.0
     val remainingBalance = (this["remainingBalance"] as? Number)?.toDouble() ?: 0.0
+    val totalActualPaid = (this["totalActualPaid"] as? Number)?.toDouble() ?: 0.0
+    val isCleared = (this["isCleared"] as? Boolean) ?: (totalActualPaid >= totalCost - 0.001)
 
     // Recalculate label even from cache to ensure no old technical strings are shown
     val totalCovered = totalCost - remainingBalance
     val label = if (totalCovered > 0.001) {
-        if (remainingBalance <= 0.001) "مغطاة بالكامل"
-        else "مغطاة جزئياً"
+        if (remainingBalance <= 0.001) {
+            if (isCleared) "مسددة بالكامل" else "مغطاة بالكامل"
+        } else {
+            if (totalActualPaid > 0.001) "مسددة جزئياً" else "مغطاة جزئياً"
+        }
     } else "غير مغطاة"
 
     return PurchaseOrderItem(
@@ -568,11 +573,13 @@ private fun Map<String, Any>.toOrderItem(): PurchaseOrderItem {
             specification = this["specification"] as? String ?: "",
             settlementNotes = listOf(label)
         ),
-        linkedPaidAmount = totalCost - remainingBalance,
+        linkedPaidAmount = totalActualPaid,
         remainingBalance = remainingBalance,
         referenceNumbers = listOf(label),
         items = orderItems,
-        totalLinkedAmount = totalCost - remainingBalance,
-        coverageSummary = label
+        totalLinkedAmount = totalCovered,
+        totalActualPaid = totalActualPaid,
+        coverageSummary = label,
+        isCleared = isCleared
     )
 }
