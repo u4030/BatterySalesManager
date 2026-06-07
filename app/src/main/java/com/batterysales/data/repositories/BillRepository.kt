@@ -588,12 +588,12 @@ class BillRepository @Inject constructor(
                 "billType" to bill.billType,
                 "referenceNumber" to bill.referenceNumber,
                 "supplierId" to bill.supplierId,
+                "relatedEntryId" to (bill.relatedEntryId ?: com.google.firebase.firestore.FieldValue.delete()),
                 "updatedAt" to Date()
             )
             transaction.update(billRef, updates)
             
-            // Note: If amount changed, we might need to recalculate status, but typically 
-            // these basic updates don't change paidAmount.
+            // Note: If amount changed, we might need to recalculate status
             if (bill.amount != oldBill.amount) {
                 val newStatus = when {
                     oldBill.paidAmount >= bill.amount -> BillStatus.PAID
@@ -603,6 +603,10 @@ class BillRepository @Inject constructor(
                 transaction.update(billRef, "status", newStatus)
             }
         }.await()
+
+        if (bill.supplierId.isNotEmpty()) {
+            autoLinkBillsForSupplier(bill.supplierId)
+        }
     }
 
     /**

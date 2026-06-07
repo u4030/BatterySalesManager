@@ -230,7 +230,7 @@ class ReportsViewModel @Inject constructor(
                         .toList()
                 }
 
-                val finalItems = items.sortedBy { it.product.name }
+                val finalItems = items.sortedByDescending { it.product.name }
                 _inventoryReportItems.value = finalItems
                 _grandTotalInventoryQuantity.value = finalItems.sumOf { it.totalQuantity }
                 _grandTotalInventoryValue.value = finalItems.sumOf { it.totalCostValue }
@@ -327,16 +327,17 @@ class ReportsViewModel @Inject constructor(
                 val allEntries = stockEntryRepository.getEntriesBySuppliers(listOf(supplierId))
                 val allBills = billRepository.getBillsBySuppliers(listOf(supplierId))
 
-                // Fetch missing specifications for entries (Legacy data support)
-                val missingSpecVariantIds = allEntries.filter { it.specification.isBlank() }.map { it.productVariantId }.distinct()
-                val variantsCache = if (missingSpecVariantIds.isEmpty()) emptyMap() else {
+                // Fetch specifications for ALL entries to ensure consistency (Legacy data support)
+                val allVariantIds = allEntries.map { it.productVariantId }.distinct()
+                val variantsCache = if (allVariantIds.isEmpty()) emptyMap() else {
                     productVariantRepository.getAllVariants().associateBy { it.id }
                 }
 
                 val supplierEntries: List<StockEntry> = allEntries.map { entry ->
-                    if (entry.specification.isBlank() && variantsCache.containsKey(entry.productVariantId)) {
-                        entry.copy(specification = variantsCache[entry.productVariantId]?.specification ?: "")
-                    } else entry
+                    val spec = if (entry.specification.isBlank()) {
+                        variantsCache[entry.productVariantId]?.specification ?: ""
+                    } else entry.specification
+                    entry.copy(specification = spec)
                 }.filter { entry ->
                     entry.status == "approved" &&
                             (supplier.resetDate == null || !entry.getEffectiveDate().before(supplier.resetDate))
@@ -524,7 +525,14 @@ private fun Map<String, Any>.toOrderItem(): PurchaseOrderItem {
 
     val itemsRaw = this["items"] as? List<Map<String, Any>> ?: emptyList()
     val orderItems = itemsRaw.map { itemMap ->
-        val itemSpec = itemMap["specification"] as? String ?: ""
+        var itemSpec = itemMap["specification"] as? String ?: ""
+        // Fallback for cache generated without specifications
+        if (itemSpec.isBlank()) {
+            val name = itemMap["productName"] as? String ?: ""
+            if (name.contains("(")) {
+                itemSpec = name.substringAfter("(").substringBefore(")")
+            }
+        }
         StockEntry(
             id = itemMap["id"] as? String ?: "",
             productVariantId = itemMap["productVariantId"] as? String ?: "",

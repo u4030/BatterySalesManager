@@ -148,7 +148,11 @@ class SettingsViewModel @Inject constructor(
                 }
 
                 if (issuesFound > 0) {
-                    _migrationStatus.value = "تم العثور على $issuesFound تعارضات في البيانات. جاري إعادة بناء الملخصات تلقائياً..."
+                    _migrationStatus.value = "تم العثور على $issuesFound تعارضات في البيانات. جاري إعادة بناء الملخصات وتصحيح الارتباطات..."
+
+                    // Fix Manual Allocations on Bills before rebuilding
+                    fixBillAllocations()
+
                     rebuildAllSummaries()
                     _migrationStatus.value = "تمت معالجة التعارضات وإعادة بناء الملخصات بنجاح ✅"
                 } else {
@@ -162,6 +166,29 @@ class SettingsViewModel @Inject constructor(
                 _isMigrating.value = false
             }
         }
+    }
+
+    private suspend fun fixBillAllocations() {
+        val firestore = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+        val billsSnap = firestore.collection(Bill.COLLECTION_NAME).get().await()
+        val entriesSnap = firestore.collection(StockEntry.COLLECTION_NAME).get().await()
+
+        val entries = entriesSnap.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
+
+        val batch = firestore.batch()
+        var updates = 0
+
+        billsSnap.documents.forEach { doc ->
+            val bill = doc.toObject(Bill::class.java) ?: return@forEach
+            val actualAllocated = entries.sumOf { it.linkedAllocations[doc.id] ?: 0.0 }
+
+            if (Math.abs(actualAllocated - bill.manualAllocation) > 0.001) {
+                batch.update(doc.reference, "manualAllocation", actualAllocated)
+                updates++
+            }
+        }
+
+        if (updates > 0) batch.commit().await()
     }
 
     private suspend fun rebuildAllSummaries() {
