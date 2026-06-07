@@ -92,7 +92,7 @@ class WarehouseViewModel @Inject constructor(
                             totalCostValue = item.currentStock * item.weightedAverageCost
                         )
                     }
-                    .sortedByDescending { it.product.name }
+                    .sortedWith(compareByDescending<InventoryReportItem> { it.product.name }.thenByDescending { it.variant.capacity })
                     .toList()
             } else {
                 // Fallback filtering
@@ -111,7 +111,7 @@ class WarehouseViewModel @Inject constructor(
                             totalCostValue = qty * v.weightedAverageCost
                         )
                     }
-                    .sortedByDescending { it.product.name }
+                    .sortedWith(compareByDescending<InventoryReportItem> { it.product.name }.thenByDescending { it.variant.capacity })
                     .toList()
             }
             

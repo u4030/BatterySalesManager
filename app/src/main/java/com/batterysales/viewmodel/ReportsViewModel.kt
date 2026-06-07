@@ -230,7 +230,7 @@ class ReportsViewModel @Inject constructor(
                         .toList()
                 }
 
-                val finalItems = items.sortedByDescending { it.product.name }
+                val finalItems = items.sortedWith(compareByDescending<InventoryReportItem> { it.product.name }.thenByDescending { it.variant.capacity })
                 _inventoryReportItems.value = finalItems
                 _grandTotalInventoryQuantity.value = finalItems.sumOf { it.totalQuantity }
                 _grandTotalInventoryValue.value = finalItems.sumOf { it.totalCostValue }
@@ -417,10 +417,13 @@ class ReportsViewModel @Inject constructor(
                         autoLinkedAmount = 0.0,
                         remainingBalance = effectiveBalance,
                         items = sortedGroup.map { item ->
+                            val itemSpec = if (item.specification.isBlank()) {
+                                variantsCache[item.productVariantId]?.specification ?: ""
+                            } else item.specification
                             item.copy(
                                 productName = item.productName.trim().ifEmpty { representative.productName.trim().ifEmpty { "منتج غير معروف" } },
                                 capacity = if (item.capacity == 0) representative.capacity else item.capacity,
-                                specification = item.specification.trim().ifEmpty { representative.specification.trim() }
+                                specification = itemSpec
                             )
                         },
                         referenceNumbers = aggregatedNotes,

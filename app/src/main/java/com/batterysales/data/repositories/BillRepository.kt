@@ -171,7 +171,7 @@ class BillRepository @Inject constructor(
             val snapshots = summaryRepository.getSummarySnapshots(transaction, targetWhId)
 
             val isAlreadyCredited = bill.billType == BillType.CHECK || bill.billType == BillType.BILL
-            val entrySnap = if (bill.relatedEntryId != null && !isAlreadyCredited) {
+            val entrySnap = if (bill.relatedEntryId != null) {
                 transaction.get(firestore.collection(StockEntry.COLLECTION_NAME).document(bill.relatedEntryId!!))
             } else null
 
@@ -241,9 +241,9 @@ class BillRepository @Inject constructor(
                     transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(paymentAmount))
                     transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-paymentAmount))
                 }
-                
-                // Add to unallocated pool (Check if it has a manual link to deduct first)
-                var unallocatedToAdd = if (isAlreadyCredited) 0.0 else paymentAmount
+
+                // Track how much of THIS specific payment is manually allocated
+                var manuallyAllocatedFromThisPayment = 0.0
                 if (entrySnap != null) {
                     val entry = entrySnap.toObject(StockEntry::class.java)
                     if (entry != null) {
@@ -271,13 +271,20 @@ class BillRepository @Inject constructor(
 
                         // Update bill's manual allocation record
                         transaction.update(billRef, "manualAllocation", bill.manualAllocation + allocation)
-
-                        unallocatedToAdd -= allocation
+                        manuallyAllocatedFromThisPayment = allocation
                     }
                 }
                 
-                if (unallocatedToAdd > 0.001) {
-                    transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(unallocatedToAdd))
+                if (!isAlreadyCredited) {
+                    val unallocatedToAdd = (paymentAmount - manuallyAllocatedFromThisPayment).coerceAtLeast(0.0)
+                    if (unallocatedToAdd > 0.001) {
+                        transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(unallocatedToAdd))
+                    }
+                } else {
+                    // For pre-credited bills, if we just manually allocated more, the global unallocated pool must DECREASE
+                    if (manuallyAllocatedFromThisPayment > 0.001) {
+                        transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(-manuallyAllocatedFromThisPayment))
+                    }
                 }
             }
 
@@ -314,7 +321,7 @@ class BillRepository @Inject constructor(
 
             val snapshots = summaryRepository.getSummarySnapshots(transaction, targetWhId)
 
-            val entrySnap = if (freshBill.relatedEntryId != null && freshBill.billType != BillType.CHECK && freshBill.billType != BillType.BILL) {
+            val entrySnap = if (freshBill.relatedEntryId != null) {
                 transaction.get(firestore.collection(StockEntry.COLLECTION_NAME).document(freshBill.relatedEntryId!!))
             } else null
 
@@ -381,13 +388,15 @@ class BillRepository @Inject constructor(
             if (freshBill.supplierId.isNotEmpty()) {
                 val supplierRef = firestore.collection("suppliers").document(freshBill.supplierId)
 
-                if (freshBill.billType != BillType.CHECK && freshBill.billType != BillType.BILL) {
+                val isAlreadyCredited = freshBill.billType == BillType.CHECK || freshBill.billType == BillType.BILL
+                if (!isAlreadyCredited) {
                     transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(paymentAmount))
                     transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-paymentAmount))
+                }
 
-                    var amountToPool = paymentAmount
-                    // If this specific payment was linked to an entry, we handle it
-                    if (entrySnap != null) {
+                var manuallyAllocatedFromThisPayment = 0.0
+                // If this specific payment was linked to an entry, we handle it
+                if (entrySnap != null) {
                         val entry = entrySnap.toObject(StockEntry::class.java)
                         if (entry != null) {
                             val currentRemaining = entry.remainingBalance ?: entry.getNetCost()
@@ -413,12 +422,18 @@ class BillRepository @Inject constructor(
                             ))
 
                             transaction.update(billRef, "manualAllocation", freshBill.manualAllocation + allocation)
-                            amountToPool -= allocation
+                            manuallyAllocatedFromThisPayment = allocation
                         }
-                    }
+                }
 
-                    if (amountToPool > 0.001) {
-                        transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(amountToPool))
+                if (!isAlreadyCredited) {
+                    val unallocatedToAdd = (paymentAmount - manuallyAllocatedFromThisPayment).coerceAtLeast(0.0)
+                    if (unallocatedToAdd > 0.001) {
+                        transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(unallocatedToAdd))
+                    }
+                } else {
+                    if (manuallyAllocatedFromThisPayment > 0.001) {
+                        transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(-manuallyAllocatedFromThisPayment))
                     }
                 }
             }
@@ -733,9 +748,9 @@ class BillRepository @Inject constructor(
         creditSources.filter { it.manualEntryId != null && it.manualAllocation > 0.001 }.forEach { source ->
             val targetGroupId = source.manualEntryId!!
             val groupEntries = entryStates.values.filter {
-                it.entry.invoiceNumber.equals(targetGroupId, ignoreCase = true) ||
-                it.entry.id == targetGroupId ||
-                it.entry.orderId == targetGroupId
+                it.entry.invoiceNumber.trim().equals(targetGroupId.trim(), ignoreCase = true) ||
+                it.entry.id.trim() == targetGroupId.trim() ||
+                it.entry.orderId.trim() == targetGroupId.trim()
             }.sortedBy { it.entry.timestamp }
 
             var amountToDistribute = source.manualAllocation
