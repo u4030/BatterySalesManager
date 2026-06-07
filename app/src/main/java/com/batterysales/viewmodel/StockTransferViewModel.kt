@@ -86,7 +86,8 @@ class StockTransferViewModel @Inject constructor(
                     ProductVariant(
                         id = item.variantId, productId = item.productId, capacity = item.capacity,
                         barcode = item.barcode, weightedAverageCost = item.weightedAverageCost,
-                        productName = item.productName,
+                        productName = item.productName, specification = item.specification,
+                        isDiscontinued = item.isDiscontinued,
                         currentStock = mapOf((cachedInventorySummary?.warehouseId ?: "global") to item.currentStock)
                     )
                 }.sortedBy { it.capacity }

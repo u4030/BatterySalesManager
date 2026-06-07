@@ -228,9 +228,13 @@ class SettingsViewModel @Inject constructor(
         val warehouseItems = mutableMapOf<String, MutableMap<String, InventorySummaryItem>>()
 
         variants.forEach { variant: ProductVariant ->
-            val productName = products.find { it.id == variant.productId }?.name ?: "Unknown"
             val totalQty = variant.currentStock?.values?.sum() ?: 0
             
+            // Filter out archived variants that have zero stock to avoid "duplicate" clutter in reports
+            if (variant.archived && totalQty == 0) return@forEach
+
+            val productName = products.find { it.id == variant.productId }?.name ?: "Unknown"
+
             val globalItem = InventorySummaryItem(
                 variantId = variant.id,
                 productId = variant.productId,
