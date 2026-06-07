@@ -253,7 +253,6 @@ object PrintUtils {
     }
 
     private fun generateSupplierHtml(item: SupplierReportItem, dateFormatter: SimpleDateFormat): String {
-        // (نفس الكود الأصلي بالكامل - لم أغيره)
         val htmlContent = StringBuilder()
         htmlContent.append("""
             <html dir="rtl" lang="ar">
@@ -302,12 +301,17 @@ object PrintUtils {
          (item.regularOrders + item.obligatedOrders).forEach { po ->
             htmlContent.append("""
                 <tr>
-                    <td>${dateFormatter.format(po.entry.timestamp)}</td>
+                    <td>${dateFormatter.format(po.entry.getEffectiveDate())}</td>
                     <td>${po.entry.invoiceNumber}</td>
                     <td>JD ${String.format("%.3f", po.entry.totalCost)}</td>
                     <td>JD ${String.format("%.3f", po.linkedPaidAmount)}</td>
                     <td>JD ${String.format("%.3f", po.remainingBalance)}</td>
-                    <td>${po.referenceNumbers.joinToString("<br>")}</td>
+                    <td>
+                        <div style="font-weight: bold; color: #3b82f6;">${po.coverageSummary}</div>
+                        <div style="font-size: 10px; color: #666;">
+                            ${po.items.joinToString("<br>") { "- \${it.productName} (\${it.capacity}A \${it.specification})" }}
+                        </div>
+                    </td>
                 </tr>
             """.trimIndent())
         }

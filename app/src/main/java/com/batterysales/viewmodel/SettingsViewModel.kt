@@ -119,8 +119,11 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 _isMigrating.value = true
-                _migrationStatus.value = "جاري فحص صحة البيانات..."
+                _migrationStatus.value = "جاري فحص صحة البيانات وتنظيف التكرارات..."
                 
+                val firestore = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                com.batterysales.utils.DataSanitizer.sanitizeVariants(firestore)
+
                 // 1. Audit Inventory
                 val variants = productVariantRepository.getAllVariants()
                 val globalSummary = summaryRepository.getInventorySummary(null, forceRefresh = true)

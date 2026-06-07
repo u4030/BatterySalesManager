@@ -90,7 +90,8 @@ class BillRepository @Inject constructor(
                         BillType.TRANSFER -> "تحويل"
                         else -> "دفعة"
                     }
-                    notes.add(typeLabel)
+                    val note = if (finalBill.referenceNumber.isNotEmpty()) "$typeLabel (#${finalBill.referenceNumber})" else typeLabel
+                    notes.add(note)
                     
                     val allocations = entry.linkedAllocations.toMutableMap()
                     allocations[finalBill.id] = (allocations[finalBill.id] ?: 0.0) + allocation
@@ -257,7 +258,8 @@ class BillRepository @Inject constructor(
                             BillType.BILL -> "كمبيالة"
                             else -> "دفعة"
                         }
-                        notes.add(typeLabel)
+                        val note = if (bill.referenceNumber.isNotEmpty()) "$typeLabel (#${bill.referenceNumber})" else typeLabel
+                        notes.add(note)
                         
                         val allocations = entry.linkedAllocations.toMutableMap()
                         allocations[bill.id] = (allocations[bill.id] ?: 0.0) + allocation
@@ -409,7 +411,8 @@ class BillRepository @Inject constructor(
                                 BillType.BILL -> "كمبيالة"
                                 else -> "دفعة"
                             }
-                            notes.add(typeLabel)
+                            val note = if (freshBill.referenceNumber.isNotEmpty()) "$typeLabel (#${freshBill.referenceNumber})" else typeLabel
+                            notes.add(note)
 
                             val allocations = entry.linkedAllocations.toMutableMap()
                             allocations[freshBill.id] = (allocations[freshBill.id] ?: 0.0) + allocation
@@ -719,9 +722,11 @@ class BillRepository @Inject constructor(
             supplierBills.filter { it.billType == BillType.CHECK || it.billType == BillType.BILL || it.paidAmount > 0 }
                 .map { b ->
                     val totalAmount = if (b.billType == BillType.CHECK || b.billType == BillType.BILL) b.amount else b.paidAmount
+                    val typeLabel = when(b.billType){ BillType.CHECK -> "شيك"; BillType.BILL -> "كمبيالة"; else -> "دفعة" }
+                    val fullNote = if (b.referenceNumber.isNotEmpty()) "$typeLabel (#${b.referenceNumber})" else typeLabel
                     CreditSource(
                         id = b.id,
-                        type = when(b.billType){ BillType.CHECK -> "شيك"; BillType.BILL -> "كمبيالة"; else -> "دفعة" },
+                        type = fullNote,
                         ref = b.referenceNumber,
                         amount = totalAmount,
                         date = b.createdAt ?: Date(0),
@@ -852,8 +857,10 @@ class BillRepository @Inject constructor(
     private class MemoryEntryState(val entry: StockEntry) {
         var remainingBalance: Double = entry.getNetCost()
         // Aggressively filter out anything that looks like the old technical notes
+        // but KEEP notes that have (#number) as they are the new detailed notes
         val settlementNotes: MutableList<String> = entry.settlementNotes.filter {
-            !it.contains("JD") && !it.contains("(") && !it.contains("#")
+            val isOldTechnical = it.contains("JD") || (it.contains("(") && !it.contains("(#"))
+            !isOldTechnical
         }.toMutableList()
         val linkedAllocations: MutableMap<String, Double> = mutableMapOf()
     }

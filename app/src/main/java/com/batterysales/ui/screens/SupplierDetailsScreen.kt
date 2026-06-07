@@ -56,19 +56,14 @@ fun SupplierDetailsScreen(
                 actions = {
                     if (supplierItem != null) {
                         HeaderIconButton(
-                            icon = Icons.Default.Print,
-                            onClick = { com.batterysales.utils.PrintUtils.printSupplierReport(context, supplierItem!!) },
-                            contentDescription = "طباعة"
+                            icon = Icons.Default.AutoFixHigh,
+                            onClick = { viewModel.triggerAutoLink(supplierId) },
+                            contentDescription = "تسوية ذكية"
                         )
-                            HeaderIconButton(
-                                icon = Icons.Default.AutoFixHigh,
-                                onClick = { viewModel.triggerAutoLink(supplierId) },
-                                contentDescription = "Auto Link"
-                            )
                         HeaderIconButton(
                             icon = Icons.Default.Sync,
                             onClick = { viewModel.syncSupplier(supplierId) },
-                            contentDescription = "مزامنة وإعادة ربط"
+                            contentDescription = "مزامنة كاملة"
                         )
                         HeaderIconButton(
                             icon = Icons.Default.Share,
