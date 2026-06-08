@@ -409,7 +409,8 @@ class ReportsViewModel @Inject constructor(
                         }
                     } else "غير مغطاة"
 
-                    val aggregatedNotes = if (totalOrderCost > 0.001) {
+                    val dbNotes = group.flatMap { it.settlementNotes }.distinct().filter { it.isNotBlank() }
+                    val aggregatedNotes = if (dbNotes.isNotEmpty()) dbNotes else if (totalOrderCost > 0.001) {
                         listOf(coverageSummary)
                     } else emptyList()
 
@@ -563,6 +564,9 @@ private fun Map<String, Any>.toOrderItem(): PurchaseOrderItem {
         }
     } else "غير مغطاة"
 
+    val dbNotes = (this["settlementNotes"] as? List<String>) ?: emptyList()
+    val finalNotes = if (dbNotes.isNotEmpty()) dbNotes else listOf(label)
+
     return PurchaseOrderItem(
         entry = StockEntry(
             id = this["id"] as? String ?: "",
@@ -571,11 +575,11 @@ private fun Map<String, Any>.toOrderItem(): PurchaseOrderItem {
             timestamp = timestamp,
             invoiceDate = invoiceDate,
             specification = this["specification"] as? String ?: "",
-            settlementNotes = listOf(label)
+            settlementNotes = finalNotes
         ),
         linkedPaidAmount = totalActualPaid,
         remainingBalance = remainingBalance,
-        referenceNumbers = listOf(label),
+        referenceNumbers = finalNotes,
         items = orderItems,
         totalLinkedAmount = totalCovered,
         totalActualPaid = totalActualPaid,

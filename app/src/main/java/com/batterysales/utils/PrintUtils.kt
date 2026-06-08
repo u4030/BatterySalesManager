@@ -307,8 +307,10 @@ object PrintUtils {
                     <td>JD ${String.format("%.3f", po.linkedPaidAmount)}</td>
                     <td>JD ${String.format("%.3f", po.remainingBalance)}</td>
                     <td>
-                        <div style="font-weight: bold; color: #3b82f6;">${po.coverageSummary}</div>
-                        <div style="font-size: 10px; color: #666;">
+                        <div style="font-weight: bold; color: #3b82f6;">
+                            ${po.referenceNumbers.joinToString("<br>")}
+                        </div>
+                        <div style="font-size: 10px; color: #666; margin-top: 5px;">
                             ${po.items.joinToString("<br>") { "- \${it.productName} (\${it.capacity}A \${it.specification})" }}
                         </div>
                     </td>

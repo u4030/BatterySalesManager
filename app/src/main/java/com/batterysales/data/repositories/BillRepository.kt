@@ -643,7 +643,7 @@ class BillRepository @Inject constructor(
         val positiveEntries = allRawEntries.filter { it.totalCost > 0 }
 
         val groupedOrders = positiveEntries.groupBy { it.invoiceNumber.trim().ifEmpty { it.orderId.trim().ifEmpty { it.id } }.lowercase() }
-        val orderedGroups = groupedOrders.values.sortedBy { it.first().getEffectiveDate() }
+        val orderedGroups = groupedOrders.values.sortedWith(compareBy<List<StockEntry>> { it.first().getEffectiveDate() }.thenBy { it.first().id })
 
         // --- CALCULATION PHASE (Out of transaction for performance and scale) ---
         val creditSources = (
@@ -716,7 +716,7 @@ class BillRepository @Inject constructor(
             balanceChanged || statusChanged || allocationsChanged || notesChanged
         }
 
-        val finalUnallocated = Math.max(0.0, activeAutoSources.sumOf { it.amount as Double })
+        val finalUnallocated = Math.max(0.0, activeAutoSources.sumOf { (it.amount as Number).toDouble() })
 
         // Process updates in chunks of 450 to respect Firestore limits
         if (changedStates.isNotEmpty()) {
