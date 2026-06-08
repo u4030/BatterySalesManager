@@ -318,6 +318,8 @@ class ReportsViewModel @Inject constructor(
                 }
 
                 val supplier = supplierRepository.getSupplier(supplierId) ?: return@launch
+                val adjustedStart = start?.let { com.batterysales.utils.DateUtils.getStartOfDay(it) }
+                val adjustedEnd = end?.let { com.batterysales.utils.DateUtils.getEndOfDay(it) }
 
                 // If no cache, perform incremental sync ONLY if pool exists
                 if (supplier.unallocatedCredit > 0.001) {
@@ -340,11 +342,15 @@ class ReportsViewModel @Inject constructor(
                     entry.copy(specification = spec)
                 }.filter { entry ->
                     entry.status == "approved" &&
+                            (adjustedStart == null || !entry.getEffectiveDate().before(Date(adjustedStart))) &&
+                            (adjustedEnd == null || !entry.getEffectiveDate().after(Date(adjustedEnd))) &&
                             (supplier.resetDate == null || !entry.getEffectiveDate().before(supplier.resetDate))
                 }
 
                 val supplierBills: List<Bill> = allBills.filter { bill ->
-                    (supplier.resetDate == null || !bill.createdAt.before(supplier.resetDate))
+                    (adjustedStart == null || !bill.createdAt.before(Date(adjustedStart))) &&
+                            (adjustedEnd == null || !bill.createdAt.after(Date(adjustedEnd))) &&
+                            (supplier.resetDate == null || !bill.createdAt.before(supplier.resetDate))
                 }
 
                 val groupedEntries: Map<String, List<StockEntry>> = supplierEntries
@@ -436,7 +442,7 @@ class ReportsViewModel @Inject constructor(
                 }
 
                 val positiveOrders = purchaseOrders.filter { it.entry.totalCost > 0 }
-                    .sortedWith(compareBy<PurchaseOrderItem> { it.entry.getEffectiveDate() }.thenBy { it.entry.timestamp })
+                    .sortedWith(compareByDescending<PurchaseOrderItem> { it.entry.getEffectiveDate() }.thenByDescending { it.entry.timestamp })
 
                 val totalDebit = if (start == null && end == null) supplier.totalDebit else positiveOrders.sumOf { it.entry.totalCost }
                 val totalCredit = if (start == null && end == null) supplier.totalCredit else (
@@ -445,13 +451,7 @@ class ReportsViewModel @Inject constructor(
                 )
                 val balance = if (start == null && end == null) supplier.currentBalance else (totalDebit - totalCredit)
 
-                val adjustedStart = start?.let { com.batterysales.utils.DateUtils.getStartOfDay(it) }
-                val adjustedEnd = end?.let { com.batterysales.utils.DateUtils.getEndOfDay(it) }
-
-                val finalOrdersForDisplay = positiveOrders.filter { po ->
-                    (adjustedStart == null || po.entry.getEffectiveDate().time >= adjustedStart) &&
-                            (adjustedEnd == null || po.entry.getEffectiveDate().time <= adjustedEnd)
-                }
+                val finalOrdersForDisplay = positiveOrders
 
                 val partitionedResult = finalOrdersForDisplay.partition { po ->
                     po.totalLinkedAmount >= po.entry.totalCost - 0.001

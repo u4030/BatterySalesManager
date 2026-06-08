@@ -19,7 +19,8 @@ import javax.inject.Inject
 
 class BillRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
-    private val summaryRepository: SummaryRepository
+    private val summaryRepository: SummaryRepository,
+    private val stockEntryRepository: StockEntryRepository
 ) {
 
     suspend fun getAllBills(): List<Bill> {
@@ -66,9 +67,9 @@ class BillRepository @Inject constructor(
             // --- WRITE PHASE ---
             transaction.set(docRef, finalBill)
             
-            // For Checks and Bills, we credit the FULL amount immediately to the supplier, even if UNPAID.
-            // This allows them to cover/settle invoices immediately (FIFO).
-            val creditToApply = if (finalBill.billType == BillType.CHECK || finalBill.billType == BillType.BILL) {
+            // For Commitments (Checks/Bills) or Manually Linked payments, we credit the FULL amount immediately
+            // to the supplier's FIFO pool, even if not yet cleared. This ensures invoices are "Covered".
+            val creditToApply = if (finalBill.billType == BillType.CHECK || finalBill.billType == BillType.BILL || finalBill.relatedEntryId != null) {
                 finalBill.amount
             } else {
                 finalBill.paidAmount
@@ -606,14 +607,33 @@ class BillRepository @Inject constructor(
         return snapshot.getDouble(AggregateField.sum("paidAmount")) ?: 0.0
     }
 
-    suspend fun getBillsBySuppliers(supplierIds: List<String>): List<Bill> {
-        if (supplierIds.isEmpty()) return emptyList()
+    suspend fun getBillsBySuppliers(supplierIds: List<String>, supplierNames: List<String> = emptyList()): List<Bill> {
+        if (supplierIds.isEmpty() && supplierNames.isEmpty()) return emptyList()
         val all = mutableListOf<Bill>()
-        supplierIds.chunked(30).forEach { chunk ->
-            val snap = firestore.collection(Bill.COLLECTION_NAME)
-                .whereIn("supplierId", chunk)
-                .get().await()
-            all.addAll(snap.documents.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) })
+
+        if (supplierIds.isNotEmpty()) {
+            supplierIds.chunked(30).forEach { chunk ->
+                val snap = firestore.collection(Bill.COLLECTION_NAME)
+                    .whereIn("supplierId", chunk)
+                    .get().await()
+                all.addAll(snap.documents.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) })
+            }
+        }
+
+        if (supplierNames.isNotEmpty()) {
+            val names = supplierNames.filter { it.isNotEmpty() }
+            if (names.isNotEmpty()) {
+                names.chunked(30).forEach { chunk ->
+                    val snap = firestore.collection(Bill.COLLECTION_NAME)
+                        .whereIn("supplier", chunk)
+                        .get().await()
+
+                    val existingIds = all.map { it.id }.toSet()
+                    val legacyBills = snap.documents.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) }
+                        .filter { !existingIds.contains(it.id) }
+                    all.addAll(legacyBills)
+                }
+            }
         }
         return all
     }
@@ -704,7 +724,7 @@ class BillRepository @Inject constructor(
         // Calculate Pool
         val totalReturnCredit = returns.sumOf { -it.totalCost }
         val totalBillCredit = bills.sumOf { b ->
-            if (b.billType == BillType.CHECK || b.billType == BillType.BILL) b.amount else b.paidAmount
+            if (b.billType == BillType.CHECK || b.billType == BillType.BILL || b.relatedEntryId != null) b.amount else b.paidAmount
         }
         val totalManualAllocation = bills.sumOf { it.manualAllocation }
 
@@ -751,19 +771,15 @@ class BillRepository @Inject constructor(
     suspend fun autoLinkBillsForSupplier(supplierId: String, resetDate: Date? = null) {
         if (supplierId.isEmpty()) return
 
-        // 1. Fetch data for calculation
-        val entriesSnap = firestore.collection(StockEntry.COLLECTION_NAME)
-            .whereEqualTo("supplierId", supplierId)
-            .whereEqualTo("status", "approved")
-            .get().await()
-        if (entriesSnap.isEmpty) return
+        val supplier = firestore.collection("suppliers").document(supplierId).get().await().toObject(Supplier::class.java)
+        val supplierNames = if (supplier != null) listOf(supplier.name) else emptyList()
 
-        val billsSnap = firestore.collection(Bill.COLLECTION_NAME)
-            .whereEqualTo("supplierId", supplierId)
-            .get().await()
+        // 1. Fetch data for calculation (Including legacy name-based entries)
+        val allRawEntries = stockEntryRepository.getEntriesBySuppliers(listOf(supplierId), supplierNames)
+            .filter { it.status == "approved" }
+        if (allRawEntries.isEmpty()) return
 
-        val allRawEntries = entriesSnap.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
-        val supplierBills = billsSnap.documents.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) }
+        val supplierBills = getBillsBySuppliers(listOf(supplierId), supplierNames)
 
         val supplierReturns = allRawEntries.filter { it.totalCost < 0 }.sortedBy { it.getEffectiveDate() }
         val positiveEntries = allRawEntries.filter { it.totalCost > 0 }
@@ -773,9 +789,11 @@ class BillRepository @Inject constructor(
 
         // --- CALCULATION PHASE (Out of transaction for performance and scale) ---
         val creditSources = (
-            supplierBills.filter { it.billType == BillType.CHECK || it.billType == BillType.BILL || it.paidAmount > 0 }
+            supplierBills.filter {
+                it.billType == BillType.CHECK || it.billType == BillType.BILL || it.paidAmount > 0.001 || (it.relatedEntryId != null && it.amount > 0.001)
+            }
                 .map { b ->
-                    val totalAmount = if (b.billType == BillType.CHECK || b.billType == BillType.BILL) b.amount else b.paidAmount
+                    val totalAmount = if (b.billType == BillType.CHECK || b.billType == BillType.BILL || b.relatedEntryId != null) b.amount else b.paidAmount
                     val typeLabel = when(b.billType){ BillType.CHECK -> "شيك"; BillType.BILL -> "كمبيالة"; else -> "دفعة" }
                     val fullNote = if (b.referenceNumber.isNotEmpty()) "$typeLabel (#${b.referenceNumber})" else typeLabel
                     CreditSource(
@@ -806,7 +824,7 @@ class BillRepository @Inject constructor(
         // 1. Apply Manual Links (Grouped Support)
         // Manual links typically point to ONE StockEntry ID. We find its ENTIRE group (invoice)
         // and distribute the manualAllocation across the whole group.
-        creditSources.filter { it.manualEntryId != null && it.manualAllocation > 0.001 }.forEach { source ->
+        creditSources.filter { it.manualEntryId != null }.forEach { source ->
             val manualEntryId = source.manualEntryId!!
             val linkedEntry = entryStates[manualEntryId]?.entry
 
@@ -825,7 +843,9 @@ class BillRepository @Inject constructor(
                 }.sortedBy { it.entry.timestamp }
             }
 
-            var amountToDistribute = source.manualAllocation
+            // Use manualAllocation if set (modern), otherwise fallback to full amount (legacy/direct link)
+            var amountToDistribute = if (source.manualAllocation > 0.001) source.manualAllocation else source.amount
+
             for (state in groupEntries) {
                 if (amountToDistribute <= 0.001) break
                 val currentBal = state.remainingBalance
@@ -879,7 +899,7 @@ class BillRepository @Inject constructor(
             balanceChanged || statusChanged || allocationsChanged || notesChanged
         }
 
-        val finalUnallocated = Math.max(0.0, activeAutoSources.sumOf { it.amount })
+        val finalUnallocated = Math.max(0.0, activeAutoSources.sumOf { it.amount as Double })
 
         // Process updates in chunks of 450 to respect Firestore limits
         if (changedStates.isNotEmpty()) {
@@ -908,6 +928,16 @@ class BillRepository @Inject constructor(
         }
     }
 
+    private data class CreditSource(
+        val id: String,
+        val type: String,
+        val ref: String,
+        val amount: Double,
+        val date: Date,
+        val manualEntryId: String? = null,
+        val manualAllocation: Double = 0.0
+    )
+
     private class MemoryEntryState(val entry: StockEntry) {
         var remainingBalance: Double = entry.getNetCost()
         // Aggressively filter out anything that looks like the old technical notes
@@ -926,16 +956,6 @@ class BillRepository @Inject constructor(
             .await()
         return snapshot.documents.mapNotNull { it.getString("relatedEntryId") }.toSet()
     }
-
-    private data class CreditSource(
-        val id: String,
-        val type: String,
-        val ref: String,
-        val amount: Double,
-        val date: Date,
-        val manualEntryId: String? = null,
-        val manualAllocation: Double = 0.0
-    )
 
     suspend fun getLinkedAmounts(): Map<String, Double> {
         val snapshot = firestore.collection(Bill.COLLECTION_NAME).get().await()
