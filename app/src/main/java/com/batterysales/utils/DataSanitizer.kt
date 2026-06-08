@@ -78,4 +78,39 @@ object DataSanitizer {
             transaction.update(slaveRef, "barcode", "merged_${slave.id}_${slave.barcode}")
         }.await()
     }
+
+    /**
+     * Removes all manual links (relatedEntryId) and allocations from the database.
+     * This forces the system to rely purely on the FIFO engine.
+     */
+    suspend fun clearAllManualLinks(firestore: FirebaseFirestore) {
+        Log.d("Sanitizer", "Clearing all manual links from Bills...")
+        val billsSnap = firestore.collection(Bill.COLLECTION_NAME).get().await()
+        billsSnap.documents.chunked(500).forEach { chunk ->
+            val batch = firestore.batch()
+            chunk.forEach { doc ->
+                val updates = mutableMapOf<String, Any>()
+                if (doc.contains("relatedEntryId")) updates["relatedEntryId"] = com.google.firebase.firestore.FieldValue.delete()
+                if (doc.contains("manualAllocation")) updates["manualAllocation"] = 0.0
+                if (updates.isNotEmpty()) batch.update(doc.reference, updates)
+            }
+            batch.commit().await()
+        }
+
+        Log.d("Sanitizer", "Resetting StockEntry settlement states...")
+        val entriesSnap = firestore.collection(StockEntry.COLLECTION_NAME).get().await()
+        entriesSnap.documents.chunked(500).forEach { chunk ->
+            val batch = firestore.batch()
+            chunk.forEach { doc ->
+                val updates = mapOf(
+                    "remainingBalance" to (doc.getDouble("totalCost") ?: 0.0),
+                    "isSettled" to false,
+                    "settlementNotes" to emptyList<String>(),
+                    "linkedAllocations" to emptyMap<String, Double>()
+                )
+                batch.update(doc.reference, updates)
+            }
+            batch.commit().await()
+        }
+    }
 }

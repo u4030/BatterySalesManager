@@ -124,6 +124,16 @@ class SettingsViewModel @Inject constructor(
                 val firestore = com.google.firebase.firestore.FirebaseFirestore.getInstance()
                 com.batterysales.utils.DataSanitizer.sanitizeVariants(firestore)
 
+                // --- NEW: Reset all FIFO links to ensure pure logic ---
+                _migrationStatus.value = "جاري تصفير الارتباطات اليدوية وإعادة بناء الـ FIFO..."
+                com.batterysales.utils.DataSanitizer.clearAllManualLinks(firestore)
+
+                // Trigger full sync for all suppliers to rebuild pools
+                val suppliersList = supplierRepository.getSuppliersOnce()
+                suppliersList.forEach { s ->
+                    try { billRepository.syncSupplierFinancials(s.id) } catch (e: Exception) {}
+                }
+
                 // 1. Audit Inventory
                 val variants = productVariantRepository.getAllVariants()
                 val globalSummary = summaryRepository.getInventorySummary(null, forceRefresh = true)
@@ -139,9 +149,8 @@ class SettingsViewModel @Inject constructor(
                 }
 
                 // 2. Audit Suppliers
-                val suppliers = supplierRepository.getSuppliersOnce()
                 val suppliersOverview = summaryRepository.getSuppliersOverview(forceRefresh = true)
-                suppliers.forEach { s ->
+                suppliersList.forEach { s ->
                     val expectedBal = s.currentBalance
                     val actualBal = suppliersOverview?.suppliers?.get(s.id)?.currentBalance ?: 0.0
                     if (Math.abs(expectedBal - actualBal) > 0.001) {

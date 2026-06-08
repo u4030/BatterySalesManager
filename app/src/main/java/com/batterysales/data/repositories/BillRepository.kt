@@ -57,19 +57,15 @@ class BillRepository @Inject constructor(
         
         firestore.runTransaction { transaction ->
             // --- READ PHASE ---
-            val entrySnap = if (finalBill.relatedEntryId != null) {
-                transaction.get(firestore.collection(StockEntry.COLLECTION_NAME).document(finalBill.relatedEntryId))
-            } else null
-
             val targetWhId = finalBill.warehouseId ?: "main_treasury"
             val snapshots = summaryRepository.getSummarySnapshots(transaction, targetWhId)
 
             // --- WRITE PHASE ---
             transaction.set(docRef, finalBill)
             
-            // For Commitments (Checks/Bills) or Manually Linked payments, we credit the FULL amount immediately
+            // For Commitments (Checks/Bills), we credit the FULL amount immediately
             // to the supplier's FIFO pool, even if not yet cleared. This ensures invoices are "Covered".
-            val creditToApply = if (finalBill.billType == BillType.CHECK || finalBill.billType == BillType.BILL || finalBill.relatedEntryId != null) {
+            val creditToApply = if (finalBill.billType == BillType.CHECK || finalBill.billType == BillType.BILL) {
                 finalBill.amount
             } else {
                 finalBill.paidAmount
@@ -125,45 +121,6 @@ class BillRepository @Inject constructor(
 
             var amountToPool = creditToApply
 
-            // 1. If manually linked to a purchase order entry, settle it first
-            if (entrySnap != null && creditToApply > 0) {
-                val entry = entrySnap.toObject(StockEntry::class.java)
-                if (entry != null) {
-                    val currentRemaining = entry.remainingBalance ?: entry.getNetCost()
-                    val allocation = minOf(creditToApply, currentRemaining)
-                    
-                    val notes = entry.settlementNotes.toMutableList()
-                    val typeLabel = when(finalBill.billType) {
-                        BillType.CHECK -> "شيك"
-                        BillType.BILL -> "كمبيالة"
-                        BillType.CASH -> "نقدي"
-                        BillType.VISA -> "فيزا"
-                        BillType.E_WALLET -> "محفظة"
-                        BillType.TRANSFER -> "تحويل"
-                        else -> "دفعة"
-                    }
-                    val note = if (finalBill.referenceNumber.isNotEmpty()) "$typeLabel (#${finalBill.referenceNumber})" else typeLabel
-                    notes.add(note)
-                    
-                    val allocations = entry.linkedAllocations.toMutableMap()
-                    allocations[finalBill.id] = (allocations[finalBill.id] ?: 0.0) + allocation
-
-                    val newRemaining = (currentRemaining - allocation).coerceAtLeast(0.0)
-                    transaction.update(entrySnap.reference, mapOf(
-                        "settlementNotes" to notes.distinct(),
-                        "remainingBalance" to newRemaining,
-                        "isSettled" to (newRemaining <= 0.001),
-                        "linkedAllocations" to allocations
-                    ))
-
-                    // Update bill to record manual allocation
-                    transaction.update(docRef, "manualAllocation", allocation)
-                    
-                    // Only pool the SURPLUS amount
-                    amountToPool = (creditToApply - allocation).coerceAtLeast(0.0)
-                }
-            }
-
             // 2. Update Supplier Totals and unallocatedCredit
             if (finalBill.supplierId.isNotEmpty()) {
                 summaryRepository.invalidateSupplierReportCache(transaction, finalBill.supplierId)
@@ -171,10 +128,7 @@ class BillRepository @Inject constructor(
                 if (creditToApply > 0) {
                     transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(creditToApply))
                     transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-creditToApply))
-                    
-                    if (amountToPool > 0.001) {
-                        transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(amountToPool))
-                    }
+                    transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(creditToApply))
                 }
             }
 
@@ -223,9 +177,6 @@ class BillRepository @Inject constructor(
             val snapshots = summaryRepository.getSummarySnapshots(transaction, targetWhId)
 
             val isAlreadyCredited = bill.billType == BillType.CHECK || bill.billType == BillType.BILL
-            val entrySnap = if (bill.relatedEntryId != null) {
-                transaction.get(firestore.collection(StockEntry.COLLECTION_NAME).document(bill.relatedEntryId!!))
-            } else null
 
             // --- WRITE PHASE ---
             val newPaidAmount = bill.paidAmount + paymentAmount
@@ -293,52 +244,7 @@ class BillRepository @Inject constructor(
                 if (!isAlreadyCredited) {
                     transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(paymentAmount))
                     transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-paymentAmount))
-                }
-
-                // Track how much of THIS specific payment is manually allocated
-                var manuallyAllocatedFromThisPayment = 0.0
-                if (entrySnap != null) {
-                    val entry = entrySnap.toObject(StockEntry::class.java)
-                    if (entry != null) {
-                        val currentRemaining = entry.remainingBalance ?: entry.getNetCost()
-                        val allocation = minOf(paymentAmount, currentRemaining)
-                        val newRemaining = (currentRemaining - allocation).coerceAtLeast(0.0)
-                        
-                        val notes = entry.settlementNotes.toMutableList()
-                        val typeLabel = when(bill.billType) {
-                            BillType.CHECK -> "شيك"
-                            BillType.BILL -> "كمبيالة"
-                            else -> "دفعة"
-                        }
-                        val note = if (bill.referenceNumber.isNotEmpty()) "$typeLabel (#${bill.referenceNumber})" else typeLabel
-                        notes.add(note)
-                        
-                        val allocations = entry.linkedAllocations.toMutableMap()
-                        allocations[bill.id] = (allocations[bill.id] ?: 0.0) + allocation
-
-                        transaction.update(entrySnap.reference, mapOf(
-                            "remainingBalance" to newRemaining,
-                            "isSettled" to (newRemaining <= 0.001),
-                            "settlementNotes" to notes.distinct(),
-                            "linkedAllocations" to allocations
-                        ))
-
-                        // Update bill's manual allocation record
-                        transaction.update(billRef, "manualAllocation", bill.manualAllocation + allocation)
-                        manuallyAllocatedFromThisPayment = allocation
-                    }
-                }
-                
-                if (!isAlreadyCredited) {
-                    val unallocatedToAdd = (paymentAmount - manuallyAllocatedFromThisPayment).coerceAtLeast(0.0)
-                    if (unallocatedToAdd > 0.001) {
-                        transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(unallocatedToAdd))
-                    }
-                } else {
-                    // For pre-credited bills, if we just manually allocated more, the global unallocated pool must DECREASE
-                    if (manuallyAllocatedFromThisPayment > 0.001) {
-                        transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(-manuallyAllocatedFromThisPayment))
-                    }
+                    transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(paymentAmount))
                 }
             }
 
@@ -372,10 +278,6 @@ class BillRepository @Inject constructor(
             val targetWhId = warehouseId.ifBlank { freshBill.warehouseId ?: "main_treasury" }
 
             val snapshots = summaryRepository.getSummarySnapshots(transaction, targetWhId)
-
-            val entrySnap = if (freshBill.relatedEntryId != null) {
-                transaction.get(firestore.collection(StockEntry.COLLECTION_NAME).document(freshBill.relatedEntryId!!))
-            } else null
 
             // --- WRITE PHASE ---
             val newPaidAmount = freshBill.paidAmount + paymentAmount
@@ -445,50 +347,7 @@ class BillRepository @Inject constructor(
                 if (!isAlreadyCredited) {
                     transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(paymentAmount))
                     transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-paymentAmount))
-                }
-
-                var manuallyAllocatedFromThisPayment = 0.0
-                // If this specific payment was linked to an entry, we handle it
-                if (entrySnap != null) {
-                        val entry = entrySnap.toObject(StockEntry::class.java)
-                        if (entry != null) {
-                            val currentRemaining = entry.remainingBalance ?: entry.getNetCost()
-                            val allocation = minOf(paymentAmount, currentRemaining)
-                            val newRemaining = (currentRemaining - allocation).coerceAtLeast(0.0)
-
-                            val notes = entry.settlementNotes.toMutableList()
-                            val typeLabel = when(freshBill.billType) {
-                                BillType.CHECK -> "شيك"
-                                BillType.BILL -> "كمبيالة"
-                                else -> "دفعة"
-                            }
-                            val note = if (freshBill.referenceNumber.isNotEmpty()) "$typeLabel (#${freshBill.referenceNumber})" else typeLabel
-                            notes.add(note)
-
-                            val allocations = entry.linkedAllocations.toMutableMap()
-                            allocations[freshBill.id] = (allocations[freshBill.id] ?: 0.0) + allocation
-
-                            transaction.update(entrySnap.reference, mapOf(
-                                "remainingBalance" to newRemaining,
-                                "isSettled" to (newRemaining <= 0.001),
-                                "settlementNotes" to notes.distinct(),
-                                "linkedAllocations" to allocations
-                            ))
-
-                            transaction.update(billRef, "manualAllocation", freshBill.manualAllocation + allocation)
-                            manuallyAllocatedFromThisPayment = allocation
-                        }
-                }
-
-                if (!isAlreadyCredited) {
-                    val unallocatedToAdd = (paymentAmount - manuallyAllocatedFromThisPayment).coerceAtLeast(0.0)
-                    if (unallocatedToAdd > 0.001) {
-                        transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(unallocatedToAdd))
-                    }
-                } else {
-                    if (manuallyAllocatedFromThisPayment > 0.001) {
-                        transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(-manuallyAllocatedFromThisPayment))
-                    }
+                    transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(paymentAmount))
                 }
             }
 
@@ -680,7 +539,6 @@ class BillRepository @Inject constructor(
                 "billType" to bill.billType,
                 "referenceNumber" to bill.referenceNumber,
                 "supplierId" to bill.supplierId,
-                "relatedEntryId" to (bill.relatedEntryId ?: com.google.firebase.firestore.FieldValue.delete()),
                 "updatedAt" to Date()
             )
             transaction.update(billRef, updates)
@@ -821,49 +679,8 @@ class BillRepository @Inject constructor(
 
         val entryStates = positiveEntries.associate { it.id to MemoryEntryState(it) }.toMutableMap()
 
-        // 1. Apply Manual Links (Grouped Support)
-        // Manual links typically point to ONE StockEntry ID. We find its ENTIRE group (invoice)
-        // and distribute the manualAllocation across the whole group.
-        creditSources.filter { it.manualEntryId != null }.forEach { source ->
-            val manualEntryId = source.manualEntryId!!
-            val linkedEntry = entryStates[manualEntryId]?.entry
-
-            val groupEntries = if (linkedEntry != null) {
-                val groupKey = linkedEntry.invoiceNumber.trim().ifEmpty { linkedEntry.orderId.trim().ifEmpty { linkedEntry.id } }.lowercase()
-                entryStates.values.filter {
-                    val itemKey = it.entry.invoiceNumber.trim().ifEmpty { it.entry.orderId.trim().ifEmpty { it.entry.id } }.lowercase()
-                    itemKey == groupKey
-                }.sortedBy { it.entry.timestamp }
-            } else {
-                // Fallback for direct matching
-                entryStates.values.filter {
-                    it.entry.invoiceNumber.trim().equals(manualEntryId.trim(), ignoreCase = true) ||
-                    it.entry.id.trim() == manualEntryId.trim() ||
-                    it.entry.orderId.trim() == manualEntryId.trim()
-                }.sortedBy { it.entry.timestamp }
-            }
-
-            // Use manualAllocation if set (modern), otherwise fallback to full amount (legacy/direct link)
-            var amountToDistribute = if (source.manualAllocation > 0.001) source.manualAllocation else source.amount
-
-            for (state in groupEntries) {
-                if (amountToDistribute <= 0.001) break
-                val currentBal = state.remainingBalance
-                if (currentBal <= 0.001) continue
-
-                val allocation = minOf(amountToDistribute, currentBal)
-                state.remainingBalance -= allocation
-                state.linkedAllocations[source.id] = (state.linkedAllocations[source.id] ?: 0.0) + allocation
-                state.settlementNotes.add(source.type)
-                amountToDistribute -= allocation
-            }
-        }
-
-        // 2. FIFO Linking
-        val activeAutoSources = creditSources.map { source ->
-            val consumedInManual = entryStates.values.sumOf { it.linkedAllocations[source.id] ?: 0.0 }
-            source.copy(amount = (source.amount - consumedInManual).coerceAtLeast(0.0))
-        }.toMutableList()
+        // FIFO Linking
+        val activeAutoSources = creditSources.toMutableList()
 
         orderedGroups.forEach { group ->
             for (entry in group) {
