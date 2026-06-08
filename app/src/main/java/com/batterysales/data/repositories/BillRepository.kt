@@ -60,6 +60,9 @@ class BillRepository @Inject constructor(
                 transaction.get(firestore.collection(StockEntry.COLLECTION_NAME).document(finalBill.relatedEntryId))
             } else null
 
+            val targetWhId = finalBill.warehouseId ?: "main_treasury"
+            val snapshots = summaryRepository.getSummarySnapshots(transaction, targetWhId)
+
             // --- WRITE PHASE ---
             transaction.set(docRef, finalBill)
             
@@ -69,6 +72,54 @@ class BillRepository @Inject constructor(
                 finalBill.amount
             } else {
                 finalBill.paidAmount
+            }
+
+            // Create Financial Transaction if there is immediate payment (CASH, TRANSFER, etc.)
+            if (finalBill.paidAmount > 0.001) {
+                val typeLabel = when(finalBill.billType) {
+                    BillType.CHECK -> "شيك"
+                    BillType.BILL -> "كمبيالة"
+                    BillType.CASH -> "نقدي"
+                    BillType.TRANSFER -> "تحويل"
+                    else -> "دفعة"
+                }
+
+                if (finalBill.billType == BillType.TRANSFER) {
+                    val bankRef = firestore.collection(com.batterysales.data.models.BankTransaction.COLLECTION_NAME).document()
+                    transaction.set(bankRef, com.batterysales.data.models.BankTransaction(
+                        id = bankRef.id,
+                        billId = finalBill.id,
+                        amount = finalBill.paidAmount,
+                        type = com.batterysales.data.models.BankTransactionType.WITHDRAWAL,
+                        description = "دفعة مورد ($typeLabel): ${finalBill.description}",
+                        referenceNumber = finalBill.referenceNumber,
+                        date = Date(),
+                        isSystemManaged = true
+                    ))
+                } else if (finalBill.billType != BillType.CHECK && finalBill.billType != BillType.BILL) {
+                    // For CASH or other immediate types, deduct from treasury
+                    val treasuryRef = firestore.collection(com.batterysales.data.models.Transaction.COLLECTION_NAME).document()
+                    transaction.set(treasuryRef, com.batterysales.data.models.Transaction(
+                        id = treasuryRef.id,
+                        relatedId = finalBill.id,
+                        amount = finalBill.paidAmount,
+                        type = com.batterysales.data.models.TransactionType.EXPENSE,
+                        description = "دفعة مورد ($typeLabel): ${finalBill.description}",
+                        referenceNumber = finalBill.referenceNumber,
+                        warehouseId = targetWhId,
+                        createdAt = Date(),
+                        isSystemManaged = true
+                    ))
+                }
+
+                // Update Summaries for immediate payment
+                summaryRepository.applyFinancialUpdate(
+                    transaction = transaction,
+                    snapshots = snapshots,
+                    warehouseId = targetWhId,
+                    cashChange = if (finalBill.billType != BillType.TRANSFER && finalBill.billType != BillType.CHECK) -finalBill.paidAmount else 0.0,
+                    bankChange = if (finalBill.billType == BillType.TRANSFER) -finalBill.paidAmount else 0.0
+                )
             }
 
             var amountToPool = creditToApply
@@ -165,9 +216,7 @@ class BillRepository @Inject constructor(
             val bill = snapshot.toObject(Bill::class.java)?.copy(id = snapshot.id) ?: return@runTransaction
             
             val targetMethod = if (bill.billType == BillType.CHECK) "bank" else "cash"
-            val targetWhId = if (bill.billType == BillType.BILL) {
-                bill.warehouseId ?: "main_treasury" 
-            } else "global"
+            val targetWhId = bill.warehouseId ?: "main_treasury"
 
             val snapshots = summaryRepository.getSummarySnapshots(transaction, targetWhId)
 
@@ -317,9 +366,7 @@ class BillRepository @Inject constructor(
             val freshBill = snapshot.toObject(Bill::class.java)?.copy(id = snapshot.id) ?: return@runTransaction
             
             val targetMethod = if (freshBill.billType == BillType.CHECK) "bank" else "cash"
-            val targetWhId = if (freshBill.billType == BillType.BILL) {
-                warehouseId 
-            } else "global"
+            val targetWhId = warehouseId.ifBlank { freshBill.warehouseId ?: "main_treasury" }
 
             val snapshots = summaryRepository.getSummarySnapshots(transaction, targetWhId)
 

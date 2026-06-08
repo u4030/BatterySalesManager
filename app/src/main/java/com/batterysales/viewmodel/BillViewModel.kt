@@ -155,13 +155,20 @@ class BillViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                val bill = Bill(description = description, amount = amount, dueDate = dueDate, billType = billType, referenceNumber = referenceNumber, supplierId = supplierId, relatedEntryId = relatedEntryId, warehouseId = warehouseId, status = if (payImmediately) BillStatus.PAID else BillStatus.UNPAID, paidAmount = if (payImmediately) amount else 0.0, paidDate = if (payImmediately) Date() else null)
-                val billId = repository.addBill(bill)
-                repository.autoLinkBillsForSupplier(supplierId)
-                if (payImmediately) {
-                    val mainWhId = warehouseRepository.getWarehousesOnce().find { it.isMain }?.id ?: warehouseId
-                    accountingRepository.addTransaction(Transaction(type = TransactionType.EXPENSE, amount = amount, description = "دفع مباشر: $description", relatedId = billId, referenceNumber = referenceNumber, warehouseId = mainWhId ?: "", paymentMethod = "cash"))
-                }
+                val bill = Bill(
+                    description = description,
+                    amount = amount,
+                    dueDate = dueDate,
+                    billType = billType,
+                    referenceNumber = referenceNumber,
+                    supplierId = supplierId,
+                    relatedEntryId = relatedEntryId,
+                    warehouseId = warehouseId,
+                    status = if (payImmediately) BillStatus.PAID else BillStatus.UNPAID,
+                    paidAmount = if (payImmediately) amount else 0.0,
+                    paidDate = if (payImmediately) Date() else null
+                )
+                repository.addBill(bill)
                 loadData()
             } finally { _isLoading.value = false }
         }
