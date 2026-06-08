@@ -324,7 +324,7 @@ class ReportsViewModel @Inject constructor(
                     try { billRepository.autoLinkBillsForSupplier(supplierId) } catch (e: Exception) {}
                 }
 
-                val allEntries = stockEntryRepository.getEntriesBySuppliers(listOf(supplierId))
+                val allEntries = stockEntryRepository.getEntriesBySuppliers(listOf(supplierId), listOf(supplier.name))
                 val allBills = billRepository.getBillsBySuppliers(listOf(supplierId))
 
                 // Fetch specifications for ALL entries to ensure consistency (Legacy data support)

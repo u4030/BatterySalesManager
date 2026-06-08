@@ -98,6 +98,7 @@ class StockEntryRepository @Inject constructor(
 
                 // --- Update Supplier Denormalized Totals ---
                 if (finalEntry.supplierId.isNotEmpty()) {
+                    summaryRepository.invalidateSupplierReportCache(transaction, finalEntry.supplierId)
                     val supplierRef = firestore.collection("suppliers").document(finalEntry.supplierId)
                     val cost = finalEntry.getNetCost()
                     if (cost > 0.001) {
@@ -255,6 +256,7 @@ class StockEntryRepository @Inject constructor(
 
             val allSupplierIds = (supplierDebitChanges.keys + supplierCreditChanges.keys).distinct()
             allSupplierIds.forEach { sid ->
+                summaryRepository.invalidateSupplierReportCache(transaction, sid)
                 val ref = supplierRefs[sid] ?: return@forEach
                 val debit = supplierDebitChanges[sid] ?: 0.0
                 val credit = supplierCreditChanges[sid] ?: 0.0
@@ -513,6 +515,7 @@ class StockEntryRepository @Inject constructor(
                 ))
 
                 if (oldEntry.supplierId.isNotEmpty()) {
+                    summaryRepository.invalidateSupplierReportCache(transaction, oldEntry.supplierId)
                     val supplierRef = firestore.collection("suppliers").document(oldEntry.supplierId)
                     if (cost > 0) {
                         transaction.update(supplierRef, "totalDebit", com.google.firebase.firestore.FieldValue.increment(-cost))
@@ -610,6 +613,7 @@ class StockEntryRepository @Inject constructor(
 
             // Update Supplier Denormalized Totals
             if (entry.supplierId.isNotEmpty()) {
+                summaryRepository.invalidateSupplierReportCache(transaction, entry.supplierId)
                 val supplierRef = firestore.collection("suppliers").document(entry.supplierId)
                 val cost = entry.getNetCost()
                 if (cost > 0) {
@@ -948,6 +952,7 @@ class StockEntryRepository @Inject constructor(
             // Financial Adjustment
             val costToReturn = quantity * entry.costPrice
             if (mode == "supplier_balance" && entry.supplierId.isNotEmpty()) {
+                summaryRepository.invalidateSupplierReportCache(transaction, entry.supplierId)
                 val supplierRef = firestore.collection("suppliers").document(entry.supplierId)
                 transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-costToReturn))
                 transaction.update(supplierRef, "totalDebit", com.google.firebase.firestore.FieldValue.increment(-costToReturn))

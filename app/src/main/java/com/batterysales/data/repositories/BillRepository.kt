@@ -165,6 +165,7 @@ class BillRepository @Inject constructor(
 
             // 2. Update Supplier Totals and unallocatedCredit
             if (finalBill.supplierId.isNotEmpty()) {
+                summaryRepository.invalidateSupplierReportCache(transaction, finalBill.supplierId)
                 val supplierRef = firestore.collection("suppliers").document(finalBill.supplierId)
                 if (creditToApply > 0) {
                     transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(creditToApply))
@@ -285,6 +286,7 @@ class BillRepository @Inject constructor(
 
             // Update Supplier Denormalized Totals
             if (bill.supplierId.isNotEmpty()) {
+                summaryRepository.invalidateSupplierReportCache(transaction, bill.supplierId)
                 val supplierRef = firestore.collection("suppliers").document(bill.supplierId)
 
                 if (!isAlreadyCredited) {
@@ -435,6 +437,7 @@ class BillRepository @Inject constructor(
 
             // Update Supplier Denormalized Totals
             if (freshBill.supplierId.isNotEmpty()) {
+                summaryRepository.invalidateSupplierReportCache(transaction, freshBill.supplierId)
                 val supplierRef = firestore.collection("suppliers").document(freshBill.supplierId)
 
                 val isAlreadyCredited = freshBill.billType == BillType.CHECK || freshBill.billType == BillType.BILL
@@ -538,6 +541,7 @@ class BillRepository @Inject constructor(
 
                 // Update Supplier Denormalized Totals
                 if (bill.supplierId.isNotEmpty()) {
+                    summaryRepository.invalidateSupplierReportCache(transaction, bill.supplierId)
                     val supplierRef = firestore.collection("suppliers").document(bill.supplierId)
                     transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(-creditToRemove))
                     transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(creditToRemove))
@@ -646,6 +650,9 @@ class BillRepository @Inject constructor(
             val oldBill = oldSnap.toObject(Bill::class.java) ?: return@runTransaction
             
             // 2. Writes
+            if (bill.supplierId.isNotEmpty()) summaryRepository.invalidateSupplierReportCache(transaction, bill.supplierId)
+            if (oldBill.supplierId.isNotEmpty() && oldBill.supplierId != bill.supplierId) summaryRepository.invalidateSupplierReportCache(transaction, oldBill.supplierId)
+
             val updates = mutableMapOf<String, Any>(
                 "description" to bill.description,
                 "amount" to bill.amount,
