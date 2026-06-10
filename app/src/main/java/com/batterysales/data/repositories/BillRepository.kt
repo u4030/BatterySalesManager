@@ -50,14 +50,30 @@ class BillRepository @Inject constructor(
         awaitClose { listenerRegistration.remove() }
     }
 
+    private suspend fun getMainWarehouseId(): String {
+        return try {
+            val snapshot = firestore.collection("warehouses").get().await()
+            val warehouses = snapshot.documents.mapNotNull { it.toObject(com.batterysales.data.models.Warehouse::class.java)?.copy(id = it.id) }
+
+            warehouses.find { it.isMain }?.id
+                ?: warehouses.find { it.name.contains("رئيسي") || it.name.lowercase().contains("main") }?.id
+                ?: warehouses.firstOrNull()?.id
+                ?: "main_treasury"
+        } catch (e: Exception) {
+            "main_treasury"
+        }
+    }
+
     suspend fun addBill(bill: Bill): String {
         val docRef = if (bill.id.isNotEmpty()) firestore.collection(Bill.COLLECTION_NAME).document(bill.id)
                     else firestore.collection(Bill.COLLECTION_NAME).document()
         val finalBill = bill.copy(id = docRef.id, createdAt = Date(), updatedAt = Date())
         
+        val mainWhId = if (finalBill.warehouseId.isNullOrEmpty() || finalBill.warehouseId == "main_treasury") getMainWarehouseId() else finalBill.warehouseId!!
+
         firestore.runTransaction { transaction ->
             // --- READ PHASE ---
-            val targetWhId = finalBill.warehouseId ?: "main_treasury"
+            val targetWhId = mainWhId
             val snapshots = summaryRepository.getSummarySnapshots(transaction, targetWhId)
 
             // --- WRITE PHASE ---
@@ -104,6 +120,7 @@ class BillRepository @Inject constructor(
                         description = "دفعة مورد ($typeLabel): ${finalBill.description}",
                         referenceNumber = finalBill.referenceNumber,
                         warehouseId = targetWhId,
+                        paymentMethod = "cash",
                         createdAt = Date(),
                         isSystemManaged = true
                     ))
@@ -133,12 +150,25 @@ class BillRepository @Inject constructor(
             }
 
             // 3. Update Global System Stats
+            val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
+            val statsUpdates = mutableMapOf<String, Any>(
+                "updatedAt" to Date()
+            )
+
             if (creditToApply > 0.001) {
-                val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
-                transaction.update(statsRef, mapOf(
-                    "totalSupplierDebt" to com.google.firebase.firestore.FieldValue.increment(-creditToApply),
-                    "updatedAt" to Date()
-                ))
+                statsUpdates["totalSupplierDebt"] = com.google.firebase.firestore.FieldValue.increment(-creditToApply)
+            }
+
+            if (finalBill.paidAmount > 0.001) {
+                if (finalBill.billType == BillType.TRANSFER) {
+                    statsUpdates["totalBankBalance"] = com.google.firebase.firestore.FieldValue.increment(-finalBill.paidAmount)
+                } else if (finalBill.billType != BillType.CHECK && finalBill.billType != BillType.BILL) {
+                    statsUpdates["totalCashBalance"] = com.google.firebase.firestore.FieldValue.increment(-finalBill.paidAmount)
+                }
+            }
+
+            if (statsUpdates.size > 1) {
+                transaction.update(statsRef, statsUpdates)
             }
         }.await()
 
@@ -165,6 +195,7 @@ class BillRepository @Inject constructor(
 
     suspend fun recordPayment(billId: String, paymentAmount: Double) {
         val billRef = firestore.collection(Bill.COLLECTION_NAME).document(billId)
+        val mainWhId = getMainWarehouseId()
 
         firestore.runTransaction { transaction ->
             // --- READ PHASE ---
@@ -172,7 +203,7 @@ class BillRepository @Inject constructor(
             val bill = snapshot.toObject(Bill::class.java)?.copy(id = snapshot.id) ?: return@runTransaction
             
             val targetMethod = if (bill.billType == BillType.CHECK) "bank" else "cash"
-            val targetWhId = bill.warehouseId ?: "main_treasury"
+            val targetWhId = if (bill.warehouseId.isNullOrEmpty() || bill.warehouseId == "main_treasury") mainWhId else bill.warehouseId!!
 
             val snapshots = summaryRepository.getSummarySnapshots(transaction, targetWhId)
 
@@ -221,6 +252,7 @@ class BillRepository @Inject constructor(
                     description = "تسديد كمبيالة: ${bill.description}",
                     referenceNumber = bill.referenceNumber,
                     warehouseId = targetWhId,
+                    paymentMethod = "cash",
                     createdAt = Date(),
                     isSystemManaged = true
                 ))
@@ -250,13 +282,22 @@ class BillRepository @Inject constructor(
             }
 
             // Update Global System Stats
+            val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
+            val statsUpdates = mutableMapOf<String, Any>(
+                "updatedAt" to Date()
+            )
+
             if (!isAlreadyCredited) {
-                val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
-                transaction.update(statsRef, mapOf(
-                    "totalSupplierDebt" to com.google.firebase.firestore.FieldValue.increment(-paymentAmount),
-                    "updatedAt" to java.util.Date()
-                ))
+                statsUpdates["totalSupplierDebt"] = com.google.firebase.firestore.FieldValue.increment(-paymentAmount)
             }
+
+            if (targetMethod == "bank") {
+                statsUpdates["totalBankBalance"] = com.google.firebase.firestore.FieldValue.increment(-paymentAmount)
+            } else {
+                statsUpdates["totalCashBalance"] = com.google.firebase.firestore.FieldValue.increment(-paymentAmount)
+            }
+
+            transaction.update(statsRef, statsUpdates)
         }.await()
 
         // Trigger FIFO settlement
@@ -269,6 +310,7 @@ class BillRepository @Inject constructor(
 
     suspend fun addBillPayment(bill: Bill, paymentAmount: Double, method: String, warehouseId: String, notes: String) {
         val billRef = firestore.collection(Bill.COLLECTION_NAME).document(bill.id)
+        val mainWhId = getMainWarehouseId()
 
         firestore.runTransaction { transaction ->
             // --- READ PHASE ---
@@ -276,7 +318,11 @@ class BillRepository @Inject constructor(
             val freshBill = snapshot.toObject(Bill::class.java)?.copy(id = snapshot.id) ?: return@runTransaction
             
             val targetMethod = if (freshBill.billType == BillType.CHECK) "bank" else "cash"
-            val targetWhId = warehouseId.ifBlank { freshBill.warehouseId ?: "main_treasury" }
+            val targetWhId = if (warehouseId.isBlank() && (freshBill.warehouseId.isNullOrEmpty() || freshBill.warehouseId == "main_treasury")) {
+                mainWhId
+            } else {
+                warehouseId.ifBlank { freshBill.warehouseId ?: mainWhId }
+            }
 
             val snapshots = summaryRepository.getSummarySnapshots(transaction, targetWhId)
 
@@ -354,13 +400,23 @@ class BillRepository @Inject constructor(
             }
 
             // Update Global System Stats
-            if (freshBill.billType != BillType.CHECK && freshBill.billType != BillType.BILL) {
-                val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
-                transaction.update(statsRef, mapOf(
-                    "totalSupplierDebt" to com.google.firebase.firestore.FieldValue.increment(-paymentAmount),
-                    "updatedAt" to java.util.Date()
-                ))
+            val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
+            val statsUpdates = mutableMapOf<String, Any>(
+                "updatedAt" to Date()
+            )
+
+            val isAlreadyCredited = freshBill.billType == BillType.CHECK || freshBill.billType == BillType.BILL
+            if (!isAlreadyCredited) {
+                statsUpdates["totalSupplierDebt"] = com.google.firebase.firestore.FieldValue.increment(-paymentAmount)
             }
+
+            if (targetMethod == "bank") {
+                statsUpdates["totalBankBalance"] = com.google.firebase.firestore.FieldValue.increment(-paymentAmount)
+            } else {
+                statsUpdates["totalCashBalance"] = com.google.firebase.firestore.FieldValue.increment(-paymentAmount)
+            }
+
+            transaction.update(statsRef, statsUpdates)
         }.await()
 
         // Trigger FIFO settlement
