@@ -233,7 +233,8 @@ class BillRepository @Inject constructor(
                 warehouseId = targetWhId,
                 cashChange = if (targetMethod == "cash") -paymentAmount else 0.0,
                 bankChange = if (targetMethod == "bank") -paymentAmount else 0.0,
-                billChange = -paymentAmount
+                billChange = if (bill.billType == BillType.BILL) -paymentAmount else 0.0,
+                checkChange = if (bill.billType == BillType.CHECK) -paymentAmount else 0.0
             )
 
             // Update Supplier Denormalized Totals
@@ -335,7 +336,8 @@ class BillRepository @Inject constructor(
                 warehouseId = targetWhId,
                 cashChange = if (targetMethod == "cash") -paymentAmount else 0.0,
                 bankChange = if (targetMethod == "bank") -paymentAmount else 0.0,
-                billChange = -paymentAmount
+                billChange = if (freshBill.billType == BillType.BILL) -paymentAmount else 0.0,
+                checkChange = if (freshBill.billType == BillType.CHECK) -paymentAmount else 0.0
             )
 
             // Update Supplier Denormalized Totals

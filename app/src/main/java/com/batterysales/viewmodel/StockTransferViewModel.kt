@@ -99,9 +99,10 @@ class StockTransferViewModel @Inject constructor(
             }
 
             val newStockMap = _uiState.value.stockLevels.toMutableMap()
-            val userWhId = currentUser?.warehouseId ?: "global"
+            val targetWhId = _uiState.value.sourceWarehouse?.id ?: currentUser?.warehouseId ?: "global"
             variantsForProduct.forEach { v ->
-                newStockMap[Pair(v.id, userWhId)] = v.currentStock?.get(userWhId) ?: 0
+                val qty = v.currentStock?.get(targetWhId) ?: 0
+                newStockMap[Pair(v.id, targetWhId)] = qty
             }
 
             _uiState.update { it.copy(variants = variantsForProduct, stockLevels = newStockMap, isLoading = false) }
@@ -113,16 +114,27 @@ class StockTransferViewModel @Inject constructor(
     }
 
     fun onSourceWarehouseSelected(warehouse: Warehouse) {
-        _uiState.update { it.copy(sourceWarehouse = warehouse) }
+        _uiState.update { it.copy(sourceWarehouse = warehouse, isLoading = true) }
         
-        // Update stock levels for the newly selected warehouse
-        val variant = _uiState.value.selectedVariant
-        if (variant != null) {
-            viewModelScope.launch {
+        viewModelScope.launch {
+            try {
+                // Fetch the summary for the specific source warehouse
+                val summary = summaryRepository.getInventorySummary(warehouse.id, forceRefresh = true)
+                cachedInventorySummary = summary
+
+                // Refresh stock levels for the current list of variants based on new summary
                 val newStockMap = _uiState.value.stockLevels.toMutableMap()
-                val qty = variant.currentStock?.get(warehouse.id) ?: 0
-                newStockMap[Pair(variant.id, warehouse.id)] = qty
-                _uiState.update { it.copy(stockLevels = newStockMap) }
+                val updatedVariants = _uiState.value.variants.map { v ->
+                    val item = summary?.items?.get(v.id)
+                    val qty = item?.currentStock ?: 0
+                    newStockMap[Pair(v.id, warehouse.id)] = qty
+                    v.copy(currentStock = mapOf(warehouse.id to qty))
+                }
+
+                _uiState.update { it.copy(variants = updatedVariants, stockLevels = newStockMap, isLoading = false) }
+            } catch (e: Exception) {
+                Log.e("StockTransferVM", "Source selection error", e)
+                _uiState.update { it.copy(isLoading = false) }
             }
         }
     }

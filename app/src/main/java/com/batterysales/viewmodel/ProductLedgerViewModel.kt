@@ -82,9 +82,9 @@ class ProductLedgerViewModel @Inject constructor(
                     .filter { item ->
                         val categoryMatch = when (category) {
                             LedgerCategory.ALL -> true
-                            LedgerCategory.PURCHASES -> item.entry.quantity > 0 && item.entry.supplier != "Sale" && item.entry.costPrice > 0 && !item.entry.supplier.contains("Reversal")
-                            LedgerCategory.SALES -> item.entry.supplier == "Sale"
-                            LedgerCategory.TRANSFERS -> item.entry.costPrice == 0.0 && !item.entry.supplier.contains("Reversal")
+                            LedgerCategory.PURCHASES -> item.entry.quantity > 0 && item.entry.invoiceId == null && item.entry.supplier != "Sale" && item.entry.costPrice > 0 && !item.entry.supplier.contains("Reversal")
+                            LedgerCategory.SALES -> item.entry.invoiceId != null || item.entry.supplier == "Sale"
+                            LedgerCategory.TRANSFERS -> item.entry.costPrice == 0.0 && item.entry.invoiceId == null && item.entry.supplier != "Sale" && !item.entry.supplier.contains("Reversal")
                             LedgerCategory.RETURNS -> item.entry.supplier.contains("Reversal") || item.entry.returnedQuantity > 0
                         }
                         val searchMatch = if (query.isBlank()) true else item.entry.supplier.contains(query, ignoreCase = true) || item.warehouseName.contains(query, ignoreCase = true) || item.entry.createdByUserName.contains(query, ignoreCase = true) || item.entry.invoiceNumber.contains(query, ignoreCase = true)
