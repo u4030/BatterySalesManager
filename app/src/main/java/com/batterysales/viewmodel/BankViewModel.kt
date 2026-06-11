@@ -105,6 +105,15 @@ class BankViewModel @Inject constructor(
             loadTotals()
         }
         loadData()
+        observeFinancialStatus()
+    }
+
+    private fun observeFinancialStatus() {
+        summaryRepository.getFinancialStatusFlow()
+            .onEach { status ->
+                _balance.value = status.globalBankBalance
+            }
+            .launchIn(viewModelScope)
     }
 
     private suspend fun loadBalancesFromSummary() {

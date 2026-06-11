@@ -91,6 +91,28 @@ class AccountingViewModel @Inject constructor(
     init {
         loadInitialData()
         loadData()
+        observeFinancialStatus()
+    }
+
+    private fun observeFinancialStatus() {
+        combine(
+            summaryRepository.getFinancialStatusFlow(),
+            _selectedWarehouseId,
+            _selectedPaymentMethod
+        ) { status, whId, method ->
+            if (whId == null || whId == "all") {
+                if (method == "bank") status.globalBankBalance
+                else if (method == "cash") status.globalCashBalance
+                else status.globalCashBalance + status.globalBankBalance
+            } else {
+                val whBalance = status.warehouseBalances[whId]
+                if (method == "bank") whBalance?.bankBalance ?: 0.0
+                else if (method == "cash") whBalance?.cashBalance ?: 0.0
+                else (whBalance?.cashBalance ?: 0.0) + (whBalance?.bankBalance ?: 0.0)
+            }
+        }
+        .onEach { _balance.value = it }
+        .launchIn(viewModelScope)
     }
 
     val currentUser = userRepository.getCurrentUserFlow()

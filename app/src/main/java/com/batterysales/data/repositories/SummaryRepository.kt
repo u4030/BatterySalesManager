@@ -3,6 +3,9 @@ package com.batterysales.data.repositories
 import com.batterysales.data.models.*
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Transaction
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 import java.util.*
 import javax.inject.Inject
@@ -291,6 +294,17 @@ class SummaryRepository @Inject constructor(
         val status = snap.toObject(FinancialStatus::class.java)
         cachedFinancialStatus = status
         return status
+    }
+
+    fun getFinancialStatusFlow(): Flow<FinancialStatus> = callbackFlow {
+        val listener = summariesCollection.document("financial_status")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) return@addSnapshotListener
+                val status = snapshot?.toObject(FinancialStatus::class.java) ?: FinancialStatus()
+                cachedFinancialStatus = status
+                trySend(status)
+            }
+        awaitClose { listener.remove() }
     }
 
     private suspend fun shouldSkipFetch(type: String): Boolean {
