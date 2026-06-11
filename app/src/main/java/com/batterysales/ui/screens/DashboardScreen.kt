@@ -243,6 +243,11 @@ fun DashboardScreen(
                         }
                     }
 
+                    if (isAdmin) {
+                        FinancialStatsGrid(dashboardState.systemStats)
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
+
                     if (dashboardState.warehouseStats.isNotEmpty()) {
                         androidx.compose.foundation.lazy.LazyRow(
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -523,6 +528,38 @@ fun SummaryCard(title: String, value: String, modifier: Modifier = Modifier) {
             Text(title, color = Color.White.copy(alpha = 0.9f), fontSize = 12.sp)
             Spacer(modifier = Modifier.height(4.dp))
             Text(value, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun FinancialStatsGrid(stats: com.batterysales.data.models.SystemStats) {
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        val items = listOf(
+            Triple("رصيد الخزينة", "JD ${String.format("%,.3f", stats.totalCashBalance)}", Color(0xFF8B5CF6)),
+            Triple("رصيد البنك", "JD ${String.format("%,.3f", stats.totalBankBalance)}", Color(0xFF06B6D4)),
+            Triple("شيكات معلقة", "JD ${String.format("%,.3f", stats.totalUnpaidChecks)}", Color(0xFFF97316)),
+            Triple("كمبيالات معلقة", "JD ${String.format("%,.3f", stats.totalUnpaidBills)}", Color(0xFFF59E0B))
+        )
+
+        items.forEach { (title, value, color) ->
+            Card(
+                modifier = Modifier.weight(1f).widthIn(min = 150.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.1f)),
+                border = androidx.compose.foundation.BorderStroke(1.dp, color.copy(alpha = 0.2f))
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(title, style = MaterialTheme.typography.labelSmall, color = color, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onSurface)
+                }
+            }
         }
     }
 }

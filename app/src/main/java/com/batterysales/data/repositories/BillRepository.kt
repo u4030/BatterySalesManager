@@ -159,6 +159,19 @@ class BillRepository @Inject constructor(
                 statsUpdates["totalSupplierDebt"] = com.google.firebase.firestore.FieldValue.increment(-creditToApply)
             }
 
+            // Track Commitments in stats
+            val commitmentChange = if (finalBill.billType == BillType.CHECK || finalBill.billType == BillType.BILL) {
+                finalBill.amount - finalBill.paidAmount
+            } else 0.0
+
+            if (commitmentChange > 0.001) {
+                if (finalBill.billType == BillType.CHECK) {
+                    statsUpdates["totalUnpaidChecks"] = com.google.firebase.firestore.FieldValue.increment(commitmentChange)
+                } else {
+                    statsUpdates["totalUnpaidBills"] = com.google.firebase.firestore.FieldValue.increment(commitmentChange)
+                }
+            }
+
             if (finalBill.paidAmount > 0.001) {
                 if (finalBill.billType == BillType.TRANSFER) {
                     statsUpdates["totalBankBalance"] = com.google.firebase.firestore.FieldValue.increment(-finalBill.paidAmount)
@@ -291,6 +304,15 @@ class BillRepository @Inject constructor(
                 statsUpdates["totalSupplierDebt"] = com.google.firebase.firestore.FieldValue.increment(-paymentAmount)
             }
 
+            // Adjust Unpaid commitments
+            if (isAlreadyCredited) {
+                if (bill.billType == BillType.CHECK) {
+                    statsUpdates["totalUnpaidChecks"] = com.google.firebase.firestore.FieldValue.increment(-paymentAmount)
+                } else if (bill.billType == BillType.BILL) {
+                    statsUpdates["totalUnpaidBills"] = com.google.firebase.firestore.FieldValue.increment(-paymentAmount)
+                }
+            }
+
             if (targetMethod == "bank") {
                 statsUpdates["totalBankBalance"] = com.google.firebase.firestore.FieldValue.increment(-paymentAmount)
             } else {
@@ -410,6 +432,15 @@ class BillRepository @Inject constructor(
                 statsUpdates["totalSupplierDebt"] = com.google.firebase.firestore.FieldValue.increment(-paymentAmount)
             }
 
+            // Adjust Unpaid commitments
+            if (isAlreadyCredited) {
+                if (freshBill.billType == BillType.CHECK) {
+                    statsUpdates["totalUnpaidChecks"] = com.google.firebase.firestore.FieldValue.increment(-paymentAmount)
+                } else if (freshBill.billType == BillType.BILL) {
+                    statsUpdates["totalUnpaidBills"] = com.google.firebase.firestore.FieldValue.increment(-paymentAmount)
+                }
+            }
+
             if (targetMethod == "bank") {
                 statsUpdates["totalBankBalance"] = com.google.firebase.firestore.FieldValue.increment(-paymentAmount)
             } else {
@@ -485,6 +516,16 @@ class BillRepository @Inject constructor(
                 transaction.update(statsRef, "totalCashBalance", com.google.firebase.firestore.FieldValue.increment(amt))
                 summaryRepository.applyFinancialUpdate(transaction, snapshots, bill.warehouseId ?: "global", cashChange = amt)
                 transaction.delete(doc.reference)
+            }
+
+            // --- Reverse Unpaid Commitments in stats ---
+            val remainingCommitment = bill.amount - bill.paidAmount
+            if (remainingCommitment > 0.001) {
+                if (bill.billType == BillType.CHECK) {
+                    transaction.update(statsRef, "totalUnpaidChecks", com.google.firebase.firestore.FieldValue.increment(-remainingCommitment))
+                } else if (bill.billType == BillType.BILL) {
+                    transaction.update(statsRef, "totalUnpaidBills", com.google.firebase.firestore.FieldValue.increment(-remainingCommitment))
+                }
             }
         }.await()
 
@@ -664,6 +705,17 @@ class BillRepository @Inject constructor(
                     }
                 }
                 transaction.update(doc.reference, updates)
+            }
+
+            // Adjust Unpaid commitments in stats if amount changed
+            if (bill.billType == BillType.CHECK || bill.billType == BillType.BILL) {
+                val oldRemaining = oldBill.amount - oldBill.paidAmount
+                val newRemaining = bill.amount - oldBill.paidAmount
+                val diff = newRemaining - oldRemaining
+                if (Math.abs(diff) > 0.001) {
+                    val field = if (bill.billType == BillType.CHECK) "totalUnpaidChecks" else "totalUnpaidBills"
+                    transaction.update(statsRef, field, com.google.firebase.firestore.FieldValue.increment(diff))
+                }
             }
 
             // --- Propagate to Treasury Transactions ---

@@ -26,6 +26,11 @@ class StockEntryRepository @Inject constructor(
             val variantRef = firestore.collection(ProductVariant.COLLECTION_NAME).document(stockEntry.productVariantId)
             val variantSnap = transaction.get(variantRef)
             val variant = variantSnap.toObject(ProductVariant::class.java)?.copy(id = variantSnap.id)
+
+            val warehouseRef = firestore.collection("warehouses").document(stockEntry.warehouseId)
+            val warehouseSnap = transaction.get(warehouseRef)
+            val whName = warehouseSnap.getString("name") ?: "مخزن غير معروف"
+
             val snapshots = summaryRepository.getSummarySnapshots(transaction, stockEntry.warehouseId)
 
             // 2. Writes
@@ -53,15 +58,22 @@ class StockEntryRepository @Inject constructor(
                 val alertRef = firestore.collection(SystemAlert.COLLECTION_NAME).document("low_stock_${variant.id}_${finalEntry.warehouseId}")
 
                 if (!variant.isDiscontinued && threshold > 0 && newQty <= threshold) {
+                    val specSuffix = if (variant.specification.isNotBlank()) " | ${variant.specification}" else ""
                     transaction.set(alertRef, SystemAlert(
                         id = alertRef.id,
                         type = SystemAlert.TYPE_LOW_STOCK,
                         title = "مخزون منخفض: ${variant.productName ?: ""}",
-                        message = "${variant.capacity}A | الكمية الحالية: $newQty (الحد: $threshold)",
+                        message = "${variant.capacity}A$specSuffix في $whName | الكمية: $newQty (الحد: $threshold)",
                         relatedId = variant.id,
                         warehouseId = finalEntry.warehouseId,
+                        warehouseName = whName,
                         timestamp = Date(),
-                        data = mapOf("capacity" to variant.capacity, "currentStock" to newQty, "threshold" to threshold)
+                        data = mapOf(
+                            "capacity" to variant.capacity,
+                            "specification" to variant.specification,
+                            "currentStock" to newQty,
+                            "threshold" to threshold
+                        )
                     ))
                 } else {
                     // Delete alert if stock is above threshold OR if variant is discontinued
@@ -144,6 +156,13 @@ class StockEntryRepository @Inject constructor(
     suspend fun addStockEntries(stockEntries: List<StockEntry>) {
         if (stockEntries.isEmpty()) return
         firestore.runTransaction { transaction ->
+            // Pre-fetch warehouse names involved
+            val involvedWhIds = stockEntries.map { it.warehouseId }.distinct()
+            val warehouseNamesMap = involvedWhIds.associateWith { whId ->
+                val snap = transaction.get(firestore.collection("warehouses").document(whId))
+                snap.getString("name") ?: "مخزن غير معروف"
+            }
+
             val variantIds = stockEntries.map { it.productVariantId }.distinct()
             val variantRefs = variantIds.associateWith { firestore.collection(ProductVariant.COLLECTION_NAME).document(it) }
             val variantsMap = variantRefs.mapValues { (_, ref) -> 
@@ -221,15 +240,23 @@ class StockEntryRepository @Inject constructor(
                     val alertRef = firestore.collection(SystemAlert.COLLECTION_NAME).document("low_stock_${variant.id}_$warehouseId")
 
                     if (!variant.isDiscontinued && threshold > 0 && newQty <= threshold) {
+                        val whName = warehouseNamesMap[warehouseId] ?: "مخزن غير معروف"
+                        val specSuffix = if (variant.specification.isNotBlank()) " | ${variant.specification}" else ""
                         transaction.set(alertRef, SystemAlert(
                             id = alertRef.id,
                             type = SystemAlert.TYPE_LOW_STOCK,
                             title = "مخزون منخفض: ${variant.productName ?: ""}",
-                            message = "${variant.capacity}A | الكمية الحالية: $newQty (الحد: $threshold)",
+                            message = "${variant.capacity}A$specSuffix في $whName | الكمية: $newQty (الحد: $threshold)",
                             relatedId = variant.id,
                             warehouseId = warehouseId,
+                            warehouseName = whName,
                             timestamp = Date(),
-                            data = mapOf("capacity" to variant.capacity, "currentStock" to newQty, "threshold" to threshold)
+                            data = mapOf(
+                                "capacity" to variant.capacity,
+                                "specification" to variant.specification,
+                                "currentStock" to newQty,
+                                "threshold" to threshold
+                            )
                         ))
                     } else {
                         transaction.delete(alertRef)
@@ -328,6 +355,9 @@ class StockEntryRepository @Inject constructor(
             val variantRef = firestore.collection(ProductVariant.COLLECTION_NAME).document(productVariantId)
             val variant = transaction.get(variantRef).toObject(ProductVariant::class.java)
 
+            val sourceWhSnap = transaction.get(firestore.collection("warehouses").document(sourceWarehouseId))
+            val sourceWhName = sourceWhSnap.getString("name") ?: "مخزن غير معروف"
+
             val sourceDocRef = firestore.collection(StockEntry.COLLECTION_NAME).document()
             val sourceStockEntry = StockEntry(
                 id = sourceDocRef.id,
@@ -374,14 +404,22 @@ class StockEntryRepository @Inject constructor(
                 val alertRef = firestore.collection(SystemAlert.COLLECTION_NAME).document("low_stock_${variant.id}_$sourceWarehouseId")
 
                 if (!variant.isDiscontinued && threshold > 0 && sourceNewQty <= threshold) {
+                    val specSuffix = if (variant.specification.isNotBlank()) " | ${variant.specification}" else ""
                     transaction.set(alertRef, SystemAlert(
                         id = alertRef.id,
                         type = SystemAlert.TYPE_LOW_STOCK,
                         title = "مخزون منخفض: ${variant.productName ?: ""}",
-                        message = "${variant.capacity}A | الكمية الحالية: $sourceNewQty (الحد: $threshold)",
+                        message = "${variant.capacity}A$specSuffix في $sourceWhName | الكمية: $sourceNewQty (الحد: $threshold)",
                         relatedId = variant.id,
                         warehouseId = sourceWarehouseId,
-                        timestamp = Date()
+                        warehouseName = sourceWhName,
+                        timestamp = Date(),
+                        data = mapOf(
+                            "capacity" to variant.capacity,
+                            "specification" to variant.specification,
+                            "currentStock" to sourceNewQty,
+                            "threshold" to threshold
+                        )
                     ))
                 } else {
                     transaction.delete(alertRef)
@@ -543,6 +581,16 @@ class StockEntryRepository @Inject constructor(
                         if (bill.billType == BillType.CASH) statsUpdates["totalCashBalance"] = com.google.firebase.firestore.FieldValue.increment(bill.paidAmount)
                         else if (bill.billType == BillType.TRANSFER) statsUpdates["totalBankBalance"] = com.google.firebase.firestore.FieldValue.increment(bill.paidAmount)
                     }
+
+                    // Reverse commitments
+                    val commitment = bill.amount - bill.paidAmount
+                    if (commitment > 0.001) {
+                        if (bill.billType == BillType.CHECK) {
+                            statsUpdates["totalUnpaidChecks"] = com.google.firebase.firestore.FieldValue.increment(-commitment)
+                        } else if (bill.billType == BillType.BILL) {
+                            statsUpdates["totalUnpaidBills"] = com.google.firebase.firestore.FieldValue.increment(-commitment)
+                        }
+                    }
                 }
 
                 bankTransactions.forEach { transaction.delete(it.reference) }
@@ -599,6 +647,9 @@ class StockEntryRepository @Inject constructor(
 
             if (entry.status == "approved") return@runTransaction
 
+            val whSnap = transaction.get(firestore.collection("warehouses").document(entry.warehouseId))
+            val whName = whSnap.getString("name") ?: "مخزن غير معروف"
+
             val variantRef = firestore.collection(ProductVariant.COLLECTION_NAME).document(entry.productVariantId)
             val variantSnap = transaction.get(variantRef)
             val variant = variantSnap.toObject(ProductVariant::class.java)?.copy(id = variantSnap.id) ?: return@runTransaction
@@ -633,15 +684,22 @@ class StockEntryRepository @Inject constructor(
             val alertRef = firestore.collection(SystemAlert.COLLECTION_NAME).document("low_stock_${variant.id}_${entry.warehouseId}")
 
             if (!variant.isDiscontinued && threshold > 0 && newQty <= threshold) {
+                val specSuffix = if (variant.specification.isNotBlank()) " | ${variant.specification}" else ""
                 transaction.set(alertRef, SystemAlert(
                     id = alertRef.id,
                     type = SystemAlert.TYPE_LOW_STOCK,
                     title = "مخزون منخفض: ${variant.productName ?: ""}",
-                    message = "${variant.capacity}A | الكمية الحالية: $newQty (الحد: $threshold)",
+                    message = "${variant.capacity}A$specSuffix في $whName | الكمية: $newQty (الحد: $threshold)",
                     relatedId = variant.id,
                     warehouseId = entry.warehouseId,
+                    warehouseName = whName,
                     timestamp = Date(),
-                    data = mapOf("capacity" to variant.capacity, "currentStock" to newQty, "threshold" to threshold)
+                    data = mapOf(
+                        "capacity" to variant.capacity,
+                        "specification" to variant.specification,
+                        "currentStock" to newQty,
+                        "threshold" to threshold
+                    )
                 ))
             } else {
                 transaction.delete(alertRef)

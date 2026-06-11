@@ -50,6 +50,7 @@ data class LowStockItem(
     val variantId: String,
     val productName: String,
     val capacity: Int,
+    val specification: String,
     val currentQuantity: Int,
     val minQuantity: Int,
     val warehouseName: String
@@ -83,6 +84,7 @@ class DashboardViewModel @Inject constructor(
 
     private var dashboardJob: kotlinx.coroutines.Job? = null
     private var alertsListener: com.google.firebase.firestore.ListenerRegistration? = null
+    private var statsListener: com.google.firebase.firestore.ListenerRegistration? = null
 
     private fun loadDashboardData() {
         dashboardJob?.cancel()
@@ -102,9 +104,6 @@ class DashboardViewModel @Inject constructor(
                 val userWarehouseId = user.warehouseId
 
                 // 1. Initial Static Data Fetch
-                val systemStats = firestore.collection(SystemStats.COLLECTION_NAME).document(SystemStats.DOCUMENT_ID).get().await()
-                        .toObject(SystemStats::class.java) ?: SystemStats()
-                
                 val (pendingCount, warehouses) = if (isAdmin) {
                     val pEntries = stockEntryRepository.getPendingCount()
                     val pReqs = approvalRepository.getPendingRequestsFlow().take(1).first()
@@ -113,7 +112,16 @@ class DashboardViewModel @Inject constructor(
                     Pair(0, warehouseRepository.getWarehousesOnce())
                 }
 
-                // 2. Real-time Snapshot Listener for Alerts
+                // 2. Real-time Snapshot Listener for Stats
+                statsListener?.remove()
+                statsListener = firestore.collection(SystemStats.COLLECTION_NAME).document(SystemStats.DOCUMENT_ID)
+                    .addSnapshotListener { snapshot, e ->
+                        if (e != null || snapshot == null) return@addSnapshotListener
+                        val stats = snapshot.toObject(SystemStats::class.java) ?: SystemStats()
+                        _uiState.update { it.copy(systemStats = stats) }
+                    }
+
+                // 3. Real-time Snapshot Listener for Alerts
                 alertsListener?.remove()
                 alertsListener = firestore.collection(SystemAlert.COLLECTION_NAME)
                     .whereEqualTo("type", SystemAlert.TYPE_LOW_STOCK)
@@ -135,14 +143,16 @@ class DashboardViewModel @Inject constructor(
                             }
 
                             val lowStockItems = filteredAlerts.map { alert ->
+                                val variant = variantsMap[alert.relatedId]
                                 val whName = warehouses.find { it.id == alert.warehouseId }?.name ?: alert.warehouseName ?: "مخزن غير معروف"
                                 
                                 LowStockItem(
                                     variantId = alert.relatedId,
-                                    productName = alert.title.replace("مخزون منخفض: ", ""),
-                                    capacity = (alert.data["capacity"] as? Number)?.toInt() ?: 0,
+                                    productName = variant?.productName ?: alert.title.replace("مخزون منخفض: ", ""),
+                                    capacity = variant?.capacity ?: (alert.data["capacity"] as? Number)?.toInt() ?: 0,
+                                    specification = variant?.specification ?: (alert.data["specification"] as? String) ?: "",
                                     currentQuantity = (alert.data["currentStock"] as? Number)?.toInt() ?: 0,
-                                    minQuantity = (alert.data["threshold"] as? Number)?.toInt() ?: 0,
+                                    minQuantity = variant?.minQuantities?.get(alert.warehouseId) ?: variant?.minQuantity ?: (alert.data["threshold"] as? Number)?.toInt() ?: 0,
                                     warehouseName = whName
                                 )
                             }
@@ -159,8 +169,8 @@ class DashboardViewModel @Inject constructor(
                         }
                     }
 
-                // 3. Initial load of heavy data (Once per trigger)
-                loadHeavyData(user, warehouses, pendingCount, systemStats)
+                // 4. Initial load of heavy data (Once per trigger)
+                loadHeavyData(user, warehouses, pendingCount)
 
             } catch (e: Exception) {
                 Log.e("DashboardViewModel", "Error loading dashboard", e)
@@ -172,13 +182,13 @@ class DashboardViewModel @Inject constructor(
     override fun onCleared() {
         super.onCleared()
         alertsListener?.remove()
+        statsListener?.remove()
     }
 
     private suspend fun loadHeavyData(
         user: User,
         warehouses: List<Warehouse>,
-        pendingCount: Int,
-        systemStats: SystemStats
+        pendingCount: Int
     ) {
         val isAdmin = user.role == "admin"
         val userWarehouseId = user.warehouseId
@@ -217,7 +227,6 @@ class DashboardViewModel @Inject constructor(
                 upcomingBills = upcoming,
                 warehouseStats = warehouseStatsList,
                 notifications = constructNotifications(upcoming, pendingCount, current.lowStockVariants, today.time),
-                systemStats = systemStats,
                 isLoading = false
             )
         }
@@ -249,8 +258,15 @@ class DashboardViewModel @Inject constructor(
         }
 
         lowStockItems.forEach { item ->
-            val route = "product_ledger/${item.variantId}/${item.productName}/${item.capacity}/no_spec"
-            allNotifications.add(AppNotification("low_stock_${item.variantId}_${item.warehouseName}", "مخزون منخفض: ${item.productName}", "${item.capacity}A في ${item.warehouseName}", NotificationType.LOW_STOCK, route))
+            val specSuffix = if (item.specification.isNotBlank()) " | ${item.specification}" else ""
+            val route = "product_ledger/${item.variantId}/${item.productName}/${item.capacity}/${item.specification.ifEmpty { "no_spec" }}"
+            allNotifications.add(AppNotification(
+                "low_stock_${item.variantId}_${item.warehouseName}",
+                "مخزون منخفض: ${item.productName}",
+                "${item.capacity}A$specSuffix في ${item.warehouseName}",
+                NotificationType.LOW_STOCK,
+                route
+            ))
         }
 
         return allNotifications

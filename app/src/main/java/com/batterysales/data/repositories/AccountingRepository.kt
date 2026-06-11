@@ -158,9 +158,11 @@ class AccountingRepository @Inject constructor(
                 bankChange = if (finalTransaction.paymentMethod == "bank") change else 0.0
             )
 
-            // Update Global Cash Balance
+            // Update Global Balances
             if (finalTransaction.paymentMethod == "cash") {
                 transactionOp.update(statsRef, "totalCashBalance", com.google.firebase.firestore.FieldValue.increment(change))
+            } else if (finalTransaction.paymentMethod == "bank") {
+                transactionOp.update(statsRef, "totalBankBalance", com.google.firebase.firestore.FieldValue.increment(change))
             }
         }.await()
 
@@ -210,9 +212,11 @@ class AccountingRepository @Inject constructor(
                 bankChange = if (transactionData.paymentMethod == "bank") -transactionData.amount else 0.0
             )
 
-            // Update Global Cash Balance
+            // Update Global Balances
             if (transactionData.paymentMethod == "cash") {
                 transactionOp.update(statsRef, "totalCashBalance", com.google.firebase.firestore.FieldValue.increment(-transactionData.amount))
+            } else if (transactionData.paymentMethod == "bank") {
+                transactionOp.update(statsRef, "totalBankBalance", com.google.firebase.firestore.FieldValue.increment(-transactionData.amount))
             }
         }.await()
     }
@@ -258,9 +262,11 @@ class AccountingRepository @Inject constructor(
                 bankChange = if (transaction.paymentMethod == "bank") totalChange else 0.0
             )
 
-            // Update Global Cash Balance
+            // Update Global Balances
             if (transaction.paymentMethod == "cash") {
                 transactionOp.update(statsRef, "totalCashBalance", com.google.firebase.firestore.FieldValue.increment(totalChange))
+            } else if (transaction.paymentMethod == "bank") {
+                transactionOp.update(statsRef, "totalBankBalance", com.google.firebase.firestore.FieldValue.increment(totalChange))
             }
         }.await()
 
@@ -322,10 +328,13 @@ class AccountingRepository @Inject constructor(
                     bankChange = if (trans.paymentMethod == "bank") change else 0.0
                 )
 
-                // Update Global Cash Balance
+                // Update Global Balances
                 if (trans.paymentMethod == "cash") {
                     val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
                     transactionOp.update(statsRef, "totalCashBalance", com.google.firebase.firestore.FieldValue.increment(change))
+                } else if (trans.paymentMethod == "bank") {
+                    val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
+                    transactionOp.update(statsRef, "totalBankBalance", com.google.firebase.firestore.FieldValue.increment(change))
                 }
             }
             relId

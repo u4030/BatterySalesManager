@@ -2,6 +2,7 @@ package com.batterysales.data.repositories
 
 import com.batterysales.data.models.BankTransaction
 import com.batterysales.data.models.BankTransactionType
+import com.batterysales.data.models.SystemStats
 import com.google.firebase.firestore.AggregateField
 import com.google.firebase.firestore.AggregateSource
 import com.google.firebase.firestore.DocumentSnapshot
@@ -37,11 +38,16 @@ class BankRepository @Inject constructor(
         firestore.runTransaction { transactionOp ->
             // 1. Reads
             val snapshots = summaryRepository.getSummarySnapshots(transactionOp, "global")
+            val statsRef = firestore.collection(SystemStats.COLLECTION_NAME).document(SystemStats.DOCUMENT_ID)
 
             // 2. Writes
             transactionOp.set(docRef, finalTransaction)
             val change = if (finalTransaction.type == BankTransactionType.DEPOSIT) finalTransaction.amount else -finalTransaction.amount
+
             summaryRepository.applyFinancialUpdate(transactionOp, snapshots, warehouseId = "global", bankChange = change)
+
+            // Update Global Stats
+            transactionOp.update(statsRef, "totalBankBalance", com.google.firebase.firestore.FieldValue.increment(change))
         }.await()
 
         return docRef.id
@@ -58,14 +64,19 @@ class BankRepository @Inject constructor(
             }
 
             val snapshots = summaryRepository.getSummarySnapshots(transactionOp, "global")
+            val statsRef = firestore.collection(SystemStats.COLLECTION_NAME).document(SystemStats.DOCUMENT_ID)
 
             // 2. Writes
             transactionOp.set(docRef, transaction)
             
             val oldChange = if (oldTrans?.type == BankTransactionType.DEPOSIT) -(oldTrans.amount) else (oldTrans?.amount ?: 0.0)
             val newChange = if (transaction.type == BankTransactionType.DEPOSIT) transaction.amount else -transaction.amount
+            val totalBankChange = oldChange + newChange
+
+            summaryRepository.applyFinancialUpdate(transactionOp, snapshots, warehouseId = "global", bankChange = totalBankChange)
             
-            summaryRepository.applyFinancialUpdate(transactionOp, snapshots, warehouseId = "global", bankChange = oldChange + newChange)
+            // Update Global Stats
+            transactionOp.update(statsRef, "totalBankBalance", com.google.firebase.firestore.FieldValue.increment(totalBankChange))
         }.await()
     }
 
@@ -144,19 +155,18 @@ class BankRepository @Inject constructor(
                 throw Exception("هذا القيد مدار من قبل النظام (فاتورة/شيك)، يرجى حذفه من المصدر لضمان دقة البيانات.")
             }
             val snapshots = summaryRepository.getSummarySnapshots(transactionOp, "global")
+            val statsRef = firestore.collection(SystemStats.COLLECTION_NAME).document(SystemStats.DOCUMENT_ID)
 
             // 2. Writes
             transactionOp.delete(docRef)
             
             if (oldTrans != null) {
-                val oldChange = if (oldTrans.type == BankTransactionType.DEPOSIT) -(oldTrans.amount) else oldTrans.amount
+                val bankChange = if (oldTrans.type == BankTransactionType.DEPOSIT) -(oldTrans.amount) else oldTrans.amount
+
+                summaryRepository.applyFinancialUpdate(transactionOp, snapshots, warehouseId = "global", bankChange = bankChange)
                 
-                if (snapshots.financialStatus != null) {
-                    summaryRepository.applyFinancialUpdate(transactionOp, snapshots, warehouseId = "global", bankChange = oldChange)
-                } else {
-                    // Force update if summary is missing (Summary system init)
-                    summaryRepository.incrementSyncVersion(transactionOp, "financial")
-                }
+                // Update Global Stats
+                transactionOp.update(statsRef, "totalBankBalance", com.google.firebase.firestore.FieldValue.increment(bankChange))
             }
         }.await()
     }
