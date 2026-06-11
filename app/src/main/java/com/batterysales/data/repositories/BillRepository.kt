@@ -430,13 +430,22 @@ class BillRepository @Inject constructor(
         
         var supplierIdToSync: String? = null
 
+        // Find linked entries outside the transaction
+        val bankTransactions = firestore.collection(com.batterysales.data.models.BankTransaction.COLLECTION_NAME)
+            .whereEqualTo("billId", billId)
+            .get().await()
+
+        val treasuryTransactions = firestore.collection(com.batterysales.data.models.Transaction.COLLECTION_NAME)
+            .whereEqualTo("relatedId", billId)
+            .get().await()
+
         firestore.runTransaction { transaction ->
             // 1. Reads
             val billSnap = transaction.get(billRef)
             val bill = billSnap.toObject(Bill::class.java) ?: return@runTransaction
             supplierIdToSync = bill.supplierId
 
-            val snapshots = summaryRepository.getSummarySnapshots(transaction, "global")
+            val snapshots = summaryRepository.getSummarySnapshots(transaction, bill.warehouseId ?: "global")
             val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
 
             // 2. Writes
@@ -450,12 +459,8 @@ class BillRepository @Inject constructor(
             }
 
             if (creditToRemove > 0) {
-                summaryRepository.applyFinancialUpdate(
-                    transaction = transaction,
-                    snapshots = snapshots,
-                    warehouseId = "global",
-                    billChange = -bill.paidAmount // Reversing the actual financial clearing (was -amt, now +amt)
-                )
+                // Adjust totalSupplierDebt in SystemStats
+                transaction.update(statsRef, "totalSupplierDebt", com.google.firebase.firestore.FieldValue.increment(creditToRemove))
 
                 // Update Supplier Denormalized Totals
                 if (bill.supplierId.isNotEmpty()) {
@@ -463,12 +468,23 @@ class BillRepository @Inject constructor(
                     val supplierRef = firestore.collection("suppliers").document(bill.supplierId)
                     transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(-creditToRemove))
                     transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(creditToRemove))
-
-                    // Note: unallocatedCredit will be fully recalculated by the auto-link trigger below
                 }
+            }
 
-                // Update System Stats
-                transaction.update(statsRef, "totalSupplierDebt", com.google.firebase.firestore.FieldValue.increment(creditToRemove))
+            // --- Reverse Ledger Impacts ---
+            // These totals represent actual money spent (paidAmount)
+            bankTransactions.documents.forEach { doc ->
+                val amt = doc.getDouble("amount") ?: 0.0
+                transaction.update(statsRef, "totalBankBalance", com.google.firebase.firestore.FieldValue.increment(amt))
+                summaryRepository.applyFinancialUpdate(transaction, snapshots, bill.warehouseId ?: "global", bankChange = amt)
+                transaction.delete(doc.reference)
+            }
+
+            treasuryTransactions.documents.forEach { doc ->
+                val amt = doc.getDouble("amount") ?: 0.0
+                transaction.update(statsRef, "totalCashBalance", com.google.firebase.firestore.FieldValue.increment(amt))
+                summaryRepository.applyFinancialUpdate(transaction, snapshots, bill.warehouseId ?: "global", cashChange = amt)
+                transaction.delete(doc.reference)
             }
         }.await()
 
@@ -581,16 +597,34 @@ class BillRepository @Inject constructor(
     suspend fun updateBill(bill: Bill) {
         val billRef = firestore.collection(Bill.COLLECTION_NAME).document(bill.id)
         
+        // Find linked entries outside the transaction
+        val bankTransactions = firestore.collection(com.batterysales.data.models.BankTransaction.COLLECTION_NAME)
+            .whereEqualTo("billId", bill.id)
+            .get().await()
+
+        val treasuryTransactions = firestore.collection(com.batterysales.data.models.Transaction.COLLECTION_NAME)
+            .whereEqualTo("relatedId", bill.id)
+            .get().await()
+
         firestore.runTransaction { transaction ->
             // 1. Reads
             val oldSnap = transaction.get(billRef)
             val oldBill = oldSnap.toObject(Bill::class.java) ?: return@runTransaction
+            val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
             
-            // 2. Writes
-            if (bill.supplierId.isNotEmpty()) summaryRepository.invalidateSupplierReportCache(transaction, bill.supplierId)
-            if (oldBill.supplierId.isNotEmpty() && oldBill.supplierId != bill.supplierId) summaryRepository.invalidateSupplierReportCache(transaction, oldBill.supplierId)
+            val snapshots = summaryRepository.getSummarySnapshots(transaction, bill.warehouseId ?: "global")
 
-            val updates = mutableMapOf<String, Any>(
+            // 2. Calculate Differences
+            val amountDiff = bill.amount - oldBill.amount
+            val supplierIdChanged = oldBill.supplierId != bill.supplierId
+
+            // 3. Writes
+            // Clear caches
+            if (bill.supplierId.isNotEmpty()) summaryRepository.invalidateSupplierReportCache(transaction, bill.supplierId)
+            if (supplierIdChanged && oldBill.supplierId.isNotEmpty()) summaryRepository.invalidateSupplierReportCache(transaction, oldBill.supplierId)
+
+            // Update the Bill document
+            val finalUpdates = mutableMapOf<String, Any>(
                 "description" to bill.description,
                 "amount" to bill.amount,
                 "dueDate" to bill.dueDate,
@@ -599,21 +633,94 @@ class BillRepository @Inject constructor(
                 "supplierId" to bill.supplierId,
                 "updatedAt" to Date()
             )
-            transaction.update(billRef, updates)
             
-            // Note: If amount changed, we might need to recalculate status
+            // Recalculate status if amount changed
             if (bill.amount != oldBill.amount) {
                 val newStatus = when {
                     oldBill.paidAmount >= bill.amount -> BillStatus.PAID
                     oldBill.paidAmount > 0 -> BillStatus.PARTIAL
                     else -> BillStatus.UNPAID
                 }
-                transaction.update(billRef, "status", newStatus)
+                finalUpdates["status"] = newStatus
+            }
+            transaction.update(billRef, finalUpdates)
+
+            // --- Propagate to Bank Transactions ---
+            bankTransactions.documents.forEach { doc ->
+                val updates = mutableMapOf<String, Any>(
+                    "description" to "دفعة مورد (${if(bill.billType == BillType.CHECK) "شيك" else "تحويل"}): ${bill.description}",
+                    "referenceNumber" to bill.referenceNumber,
+                    "date" to (bill.dueDate ?: Date())
+                )
+                // For Transfer, the bank amount is the bill amount
+                if (bill.billType == BillType.TRANSFER) {
+                    updates["amount"] = bill.amount
+                    val bankDiff = bill.amount - (doc.getDouble("amount") ?: 0.0)
+                    if (Math.abs(bankDiff) > 0.001) {
+                        transaction.update(statsRef, "totalBankBalance", com.google.firebase.firestore.FieldValue.increment(-bankDiff))
+                        summaryRepository.applyFinancialUpdate(transaction, snapshots, bill.warehouseId ?: "global", bankChange = -bankDiff)
+                    }
+                }
+                transaction.update(doc.reference, updates)
+            }
+
+            // --- Propagate to Treasury Transactions ---
+            treasuryTransactions.documents.forEach { doc ->
+                val updates = mutableMapOf<String, Any>(
+                    "description" to "دفعة مورد: ${bill.description}",
+                    "referenceNumber" to bill.referenceNumber,
+                    "createdAt" to (bill.dueDate ?: Date())
+                )
+                if (bill.billType == BillType.CASH) {
+                    updates["amount"] = bill.amount
+                    val cashDiff = bill.amount - (doc.getDouble("amount") ?: 0.0)
+                    if (Math.abs(cashDiff) > 0.001) {
+                        transaction.update(statsRef, "totalCashBalance", com.google.firebase.firestore.FieldValue.increment(-cashDiff))
+                        summaryRepository.applyFinancialUpdate(transaction, snapshots, bill.warehouseId ?: "global", cashChange = -cashDiff)
+                    }
+                }
+                transaction.update(doc.reference, updates)
+            }
+
+            // --- Update Global Balances & Supplier Debt ---
+            if (Math.abs(amountDiff) > 0.001 || supplierIdChanged) {
+                // Adjust totalSupplierDebt in SystemStats
+                transaction.update(statsRef, "totalSupplierDebt", com.google.firebase.firestore.FieldValue.increment(-amountDiff))
+
+                // Adjust Supplier Balances
+                if (!supplierIdChanged) {
+                    if (bill.supplierId.isNotEmpty()) {
+                        val sRef = firestore.collection("suppliers").document(bill.supplierId)
+                        transaction.update(sRef, mapOf(
+                            "totalCredit" to com.google.firebase.firestore.FieldValue.increment(amountDiff),
+                            "currentBalance" to com.google.firebase.firestore.FieldValue.increment(-amountDiff)
+                        ))
+                    }
+                } else {
+                    // Full swap
+                    if (oldBill.supplierId.isNotEmpty()) {
+                        val oldSRef = firestore.collection("suppliers").document(oldBill.supplierId)
+                        transaction.update(oldSRef, mapOf(
+                            "totalCredit" to com.google.firebase.firestore.FieldValue.increment(-oldBill.amount),
+                            "currentBalance" to com.google.firebase.firestore.FieldValue.increment(oldBill.amount)
+                        ))
+                    }
+                    if (bill.supplierId.isNotEmpty()) {
+                        val newSRef = firestore.collection("suppliers").document(bill.supplierId)
+                        transaction.update(newSRef, mapOf(
+                            "totalCredit" to com.google.firebase.firestore.FieldValue.increment(bill.amount),
+                            "currentBalance" to com.google.firebase.firestore.FieldValue.increment(-bill.amount)
+                        ))
+                    }
+                }
             }
         }.await()
 
         if (bill.supplierId.isNotEmpty()) {
             autoLinkBillsForSupplier(bill.supplierId)
+        }
+        if (oldBill.supplierId.isNotEmpty() && oldBill.supplierId != bill.supplierId) {
+            autoLinkBillsForSupplier(oldBill.supplierId)
         }
     }
 

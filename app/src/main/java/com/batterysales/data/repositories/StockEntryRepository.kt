@@ -515,7 +515,7 @@ class StockEntryRepository @Inject constructor(
                 )
 
                 // Reverse any cash impact from immediate payments linked to this entry
-                // Find bills linked to this orderId or entryId
+                // Find bills linked to this entry via referenceNumber or other identifiers
                 val linkedBillsQuery = firestore.collection(Bill.COLLECTION_NAME)
                     .whereEqualTo("referenceNumber", oldEntry.invoiceNumber)
                     .whereEqualTo("supplierId", oldEntry.supplierId)
@@ -523,9 +523,25 @@ class StockEntryRepository @Inject constructor(
 
                 linkedBillsQuery.documents.forEach { bDoc ->
                     val b = bDoc.toObject(Bill::class.java)
-                    if (b != null && b.status == BillStatus.PAID) {
-                        if (b.billType == BillType.CASH) statsUpdates["totalCashBalance"] = com.google.firebase.firestore.FieldValue.increment(b.paidAmount)
-                        else if (b.billType == BillType.TRANSFER) statsUpdates["totalBankBalance"] = com.google.firebase.firestore.FieldValue.increment(b.paidAmount)
+                    if (b != null) {
+                        // We must delete the linked bill to ensure treasury integrity
+                        // Deleting the bill via repository or manually in transaction
+                        transaction.delete(bDoc.reference)
+
+                        // Reverse the financial impact of the bill's PAID amount
+                        if (b.paidAmount > 0.001) {
+                            if (b.billType == BillType.CASH) statsUpdates["totalCashBalance"] = com.google.firebase.firestore.FieldValue.increment(b.paidAmount)
+                            else if (b.billType == BillType.TRANSFER) statsUpdates["totalBankBalance"] = com.google.firebase.firestore.FieldValue.increment(b.paidAmount)
+                        }
+
+                        // Also delete linked Bank/Treasury transactions for this bill
+                        val bankTrans = firestore.collection(com.batterysales.data.models.BankTransaction.COLLECTION_NAME)
+                            .whereEqualTo("billId", b.id).get().await()
+                        bankTrans.documents.forEach { transaction.delete(it.reference) }
+
+                        val treasuryTrans = firestore.collection(com.batterysales.data.models.Transaction.COLLECTION_NAME)
+                            .whereEqualTo("relatedId", b.id).get().await()
+                        treasuryTrans.documents.forEach { transaction.delete(it.reference) }
                     }
                 }
 

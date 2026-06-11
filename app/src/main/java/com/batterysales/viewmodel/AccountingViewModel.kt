@@ -225,6 +225,9 @@ class AccountingViewModel @Inject constructor(
             try {
                 repository.updateTransaction(transaction)
                 loadData(reset = true)
+            } catch (e: Exception) {
+                _errorMessage.value = e.message
+                Log.e("AccountingViewModel", "Error updating transaction", e)
             } finally { _isLoading.value = false }
         }
     }
@@ -256,8 +259,15 @@ class AccountingViewModel @Inject constructor(
 
     fun deleteTransaction(id: String) {
         viewModelScope.launch {
-            repository.deleteTransaction(id)
-            loadData(reset = true)
+            _isLoading.value = true
+            try {
+                repository.deleteTransaction(id)
+                loadData(reset = true)
+            } catch (e: Exception) {
+                _errorMessage.value = e.message
+            } finally {
+                _isLoading.value = false
+            }
         }
     }
 }

@@ -326,7 +326,37 @@ class InvoiceRepository @Inject constructor(
 
             // 2. Writes
             val paymentRef = firestore.collection(Payment.COLLECTION_NAME).document()
-            transaction.set(paymentRef, payment.copy(id = paymentRef.id, invoiceId = invoiceId))
+            val finalPayment = payment.copy(id = paymentRef.id, invoiceId = invoiceId)
+            transaction.set(paymentRef, finalPayment)
+
+            // Create Ledger Entry (Treasury or Bank)
+            if (finalPayment.paymentMethod == "bank") {
+                val bankRef = firestore.collection(com.batterysales.data.models.BankTransaction.COLLECTION_NAME).document()
+                transaction.set(bankRef, com.batterysales.data.models.BankTransaction(
+                    id = bankRef.id,
+                    amount = finalPayment.amount,
+                    type = com.batterysales.data.models.BankTransactionType.DEPOSIT,
+                    description = "دفعة من زبون: ${invoice.customerName} - فاتورة #${invoice.invoiceNumber}",
+                    date = finalPayment.paymentDate,
+                    notes = finalPayment.notes,
+                    isSystemManaged = true
+                    // Note: We don't have a specific paymentId field in BankTransaction yet,
+                    // but we can use description or reference for now, or add it later.
+                ))
+            } else {
+                val treasuryRef = firestore.collection(com.batterysales.data.models.Transaction.COLLECTION_NAME).document()
+                transaction.set(treasuryRef, com.batterysales.data.models.Transaction(
+                    id = treasuryRef.id,
+                    type = com.batterysales.data.models.TransactionType.PAYMENT,
+                    amount = finalPayment.amount,
+                    description = "دفعة من زبون: ${invoice.customerName} - فاتورة #${invoice.invoiceNumber}",
+                    relatedId = finalPayment.id, // Use payment ID for direct linking
+                    warehouseId = invoice.warehouseId,
+                    paymentMethod = finalPayment.paymentMethod,
+                    createdAt = finalPayment.paymentDate,
+                    isSystemManaged = true
+                ))
+            }
             
             val newTotalPaid = invoice.paidAmount + payment.amount
             val newRemaining = invoice.totalAmount - newTotalPaid
@@ -366,6 +396,11 @@ class InvoiceRepository @Inject constructor(
 
     suspend fun updatePayment(payment: Payment) {
         val invoiceRef = firestore.collection(Invoice.COLLECTION_NAME).document(payment.invoiceId)
+
+        // Find linked ledger entries
+        val treasuryTransactions = firestore.collection(com.batterysales.data.models.Transaction.COLLECTION_NAME)
+            .whereEqualTo("relatedId", payment.id).get().await()
+
         firestore.runTransaction { transaction ->
             // 1. Reads
             val invoiceSnap = transaction.get(invoiceRef)
@@ -379,6 +414,15 @@ class InvoiceRepository @Inject constructor(
             // 2. Writes
             val diff = payment.amount - oldPayment.amount
             transaction.set(paymentRef, payment)
+
+            // Update linked ledger entries
+            treasuryTransactions.documents.forEach { doc ->
+                transaction.update(doc.reference, mapOf(
+                    "amount" to payment.amount,
+                    "createdAt" to payment.paymentDate,
+                    "description" to "دفعة من زبون: ${invoice.customerName} - فاتورة #${invoice.invoiceNumber}"
+                ))
+            }
             
             val newTotalPaid = invoice.paidAmount + diff
             val newRemaining = invoice.totalAmount - newTotalPaid
@@ -438,6 +482,11 @@ class InvoiceRepository @Inject constructor(
 
     suspend fun deletePayment(paymentId: String, invoiceId: String) {
         val invoiceRef = firestore.collection(Invoice.COLLECTION_NAME).document(invoiceId)
+
+        // Find linked ledger entries
+        val treasuryTransactions = firestore.collection(com.batterysales.data.models.Transaction.COLLECTION_NAME)
+            .whereEqualTo("relatedId", paymentId).get().await()
+
         firestore.runTransaction { transaction ->
             // 1. Reads
             val invoiceSnap = transaction.get(invoiceRef)
@@ -450,6 +499,11 @@ class InvoiceRepository @Inject constructor(
 
             // 2. Writes
             transaction.delete(paymentRef)
+
+            // Delete linked ledger entries
+            treasuryTransactions.documents.forEach { doc ->
+                transaction.delete(doc.reference)
+            }
             
             val newTotalPaid = invoice.paidAmount - oldPayment.amount
             val newRemaining = invoice.totalAmount - newTotalPaid
