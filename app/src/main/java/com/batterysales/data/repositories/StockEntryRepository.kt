@@ -484,28 +484,49 @@ class StockEntryRepository @Inject constructor(
     }
 
     suspend fun deleteStockEntry(entryId: String) {
-        firestore.runTransaction { transaction ->
-            val docRef = firestore.collection(StockEntry.COLLECTION_NAME).document(entryId)
-            val oldSnap = transaction.get(docRef)
-            val oldEntry = oldSnap.toObject(StockEntry::class.java)?.copy(id = oldSnap.id)
+        // Find documents outside transaction to avoid coroutine suspension inside runTransaction
+        val entryRef = firestore.collection(StockEntry.COLLECTION_NAME).document(entryId)
+        val oldEntry = entryRef.get().await().toObject(StockEntry::class.java)?.copy(id = entryId)
 
-            val variantRef = oldEntry?.let { firestore.collection(ProductVariant.COLLECTION_NAME).document(it.productVariantId) }
+        val linkedBills = if (oldEntry != null) {
+            firestore.collection(Bill.COLLECTION_NAME)
+                .whereEqualTo("referenceNumber", oldEntry.invoiceNumber)
+                .whereEqualTo("supplierId", oldEntry.supplierId)
+                .get().await().documents.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) }
+        } else emptyList()
+
+        val billIds = linkedBills.map { it.id }
+        val bankTransactions = if (billIds.isNotEmpty()) {
+            firestore.collection(com.batterysales.data.models.BankTransaction.COLLECTION_NAME)
+                .whereIn("billId", billIds).get().await().documents
+        } else emptyList()
+
+        val treasuryTransactions = if (billIds.isNotEmpty()) {
+            firestore.collection(com.batterysales.data.models.Transaction.COLLECTION_NAME)
+                .whereIn("relatedId", billIds).get().await().documents
+        } else emptyList()
+
+        firestore.runTransaction { transaction ->
+            val oldSnap = transaction.get(entryRef)
+            val entry = oldSnap.toObject(StockEntry::class.java)?.copy(id = oldSnap.id)
+
+            val variantRef = entry?.let { firestore.collection(ProductVariant.COLLECTION_NAME).document(it.productVariantId) }
             val variant = variantRef?.let { 
                 val vSnap = transaction.get(it)
                 vSnap.toObject(ProductVariant::class.java)?.copy(id = vSnap.id)
             }
 
-            transaction.delete(docRef)
+            transaction.delete(entryRef)
 
-            if (oldEntry != null && oldEntry.status == "approved" && variant != null && variantRef != null) {
+            if (entry != null && entry.status == "approved" && variant != null && variantRef != null) {
                 val currentStockMap = variant.currentStock ?: emptyMap()
                 val newStockMap = currentStockMap.toMutableMap()
-                newStockMap[oldEntry.warehouseId] = (newStockMap[oldEntry.warehouseId] ?: 0) - (oldEntry.quantity - oldEntry.returnedQuantity)
+                newStockMap[entry.warehouseId] = (newStockMap[entry.warehouseId] ?: 0) - (entry.quantity - entry.returnedQuantity)
                 transaction.update(variantRef, "currentStock", newStockMap)
 
                 val statsRef = firestore.collection(SystemStats.COLLECTION_NAME).document(SystemStats.DOCUMENT_ID)
-                val cost = oldEntry.getNetCost()
-                val qty = oldEntry.quantity - oldEntry.returnedQuantity
+                val cost = entry.getNetCost()
+                val qty = entry.quantity - entry.returnedQuantity
                 
                 val statsUpdates = mutableMapOf<String, Any>(
                     "totalInventoryQuantity" to com.google.firebase.firestore.FieldValue.increment(-qty.toLong()),
@@ -514,40 +535,22 @@ class StockEntryRepository @Inject constructor(
                     "updatedAt" to Date()
                 )
 
-                // Reverse any cash impact from immediate payments linked to this entry
-                // Find bills linked to this entry via referenceNumber or other identifiers
-                val linkedBillsQuery = firestore.collection(Bill.COLLECTION_NAME)
-                    .whereEqualTo("referenceNumber", oldEntry.invoiceNumber)
-                    .whereEqualTo("supplierId", oldEntry.supplierId)
-                    .get().await()
+                // Process linked bills collected outside the transaction
+                linkedBills.forEach { bill ->
+                    transaction.delete(firestore.collection(Bill.COLLECTION_NAME).document(bill.id))
 
-                linkedBillsQuery.documents.forEach { bDoc ->
-                    val b = bDoc.toObject(Bill::class.java)
-                    if (b != null) {
-                        // We must delete the linked bill to ensure treasury integrity
-                        // Deleting the bill via repository or manually in transaction
-                        transaction.delete(bDoc.reference)
-
-                        // Reverse the financial impact of the bill's PAID amount
-                        if (b.paidAmount > 0.001) {
-                            if (b.billType == BillType.CASH) statsUpdates["totalCashBalance"] = com.google.firebase.firestore.FieldValue.increment(b.paidAmount)
-                            else if (b.billType == BillType.TRANSFER) statsUpdates["totalBankBalance"] = com.google.firebase.firestore.FieldValue.increment(b.paidAmount)
-                        }
-
-                        // Also delete linked Bank/Treasury transactions for this bill
-                        val bankTrans = firestore.collection(com.batterysales.data.models.BankTransaction.COLLECTION_NAME)
-                            .whereEqualTo("billId", b.id).get().await()
-                        bankTrans.documents.forEach { transaction.delete(it.reference) }
-
-                        val treasuryTrans = firestore.collection(com.batterysales.data.models.Transaction.COLLECTION_NAME)
-                            .whereEqualTo("relatedId", b.id).get().await()
-                        treasuryTrans.documents.forEach { transaction.delete(it.reference) }
+                    if (bill.paidAmount > 0.001) {
+                        if (bill.billType == BillType.CASH) statsUpdates["totalCashBalance"] = com.google.firebase.firestore.FieldValue.increment(bill.paidAmount)
+                        else if (bill.billType == BillType.TRANSFER) statsUpdates["totalBankBalance"] = com.google.firebase.firestore.FieldValue.increment(bill.paidAmount)
                     }
                 }
 
+                bankTransactions.forEach { transaction.delete(it.reference) }
+                treasuryTransactions.forEach { transaction.delete(it.reference) }
+
                 transaction.update(statsRef, statsUpdates)
 
-                if (oldEntry.supplierId.isNotEmpty()) {
+                if (oldEntry != null && oldEntry.supplierId.isNotEmpty()) {
                     summaryRepository.invalidateSupplierReportCache(transaction, oldEntry.supplierId)
                     val supplierRef = firestore.collection("suppliers").document(oldEntry.supplierId)
                     if (cost > 0) {

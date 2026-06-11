@@ -606,10 +606,12 @@ class BillRepository @Inject constructor(
             .whereEqualTo("relatedId", bill.id)
             .get().await()
 
+        var oldSupplierId: String? = null
         firestore.runTransaction { transaction ->
             // 1. Reads
             val oldSnap = transaction.get(billRef)
             val oldBill = oldSnap.toObject(Bill::class.java) ?: return@runTransaction
+            oldSupplierId = oldBill.supplierId
             val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
             
             val snapshots = summaryRepository.getSummarySnapshots(transaction, bill.warehouseId ?: "global")
@@ -719,8 +721,8 @@ class BillRepository @Inject constructor(
         if (bill.supplierId.isNotEmpty()) {
             autoLinkBillsForSupplier(bill.supplierId)
         }
-        if (oldBill.supplierId.isNotEmpty() && oldBill.supplierId != bill.supplierId) {
-            autoLinkBillsForSupplier(oldBill.supplierId)
+        if (!oldSupplierId.isNullOrEmpty() && oldSupplierId != bill.supplierId) {
+            autoLinkBillsForSupplier(oldSupplierId!!)
         }
     }
 
