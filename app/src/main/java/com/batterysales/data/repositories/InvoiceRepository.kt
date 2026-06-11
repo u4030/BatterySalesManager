@@ -259,12 +259,20 @@ class InvoiceRepository @Inject constructor(
             val valueChange = qty * (variant?.weightedAverageCost ?: 0.0)
             val customerDebtChange = invoice.remainingAmount
 
-            transaction.update(statsRef, mapOf(
+            val statsUpdates = mutableMapOf<String, Any>(
                 "totalInventoryQuantity" to com.google.firebase.firestore.FieldValue.increment(qty.toLong()),
                 "totalInventoryValue" to com.google.firebase.firestore.FieldValue.increment(valueChange),
                 "totalCustomerDebt" to com.google.firebase.firestore.FieldValue.increment(customerDebtChange),
                 "updatedAt" to java.util.Date()
-            ))
+            )
+
+            if (payment != null && payment.paymentMethod == "cash") {
+                statsUpdates["totalCashBalance"] = com.google.firebase.firestore.FieldValue.increment(payment.amount)
+            } else if (payment != null && payment.paymentMethod == "bank") {
+                statsUpdates["totalBankBalance"] = com.google.firebase.firestore.FieldValue.increment(payment.amount)
+            }
+
+            transaction.update(statsRef, statsUpdates)
 
             if (payment != null) {
                 val paymentRef = firestore.collection(com.batterysales.data.models.Payment.COLLECTION_NAME).document()
@@ -342,7 +350,17 @@ class InvoiceRepository @Inject constructor(
             )
 
             // Update System Stats
-            transaction.update(statsRef, "totalCustomerDebt", com.google.firebase.firestore.FieldValue.increment(-payment.amount))
+            val statsUpdates = mutableMapOf<String, Any>(
+                "totalCustomerDebt" to com.google.firebase.firestore.FieldValue.increment(-payment.amount)
+            )
+
+            if (payment.paymentMethod == "cash") {
+                statsUpdates["totalCashBalance"] = com.google.firebase.firestore.FieldValue.increment(payment.amount)
+            } else if (payment.paymentMethod == "bank") {
+                statsUpdates["totalBankBalance"] = com.google.firebase.firestore.FieldValue.increment(payment.amount)
+            }
+
+            transaction.update(statsRef, statsUpdates)
         }.await()
     }
 
@@ -384,7 +402,17 @@ class InvoiceRepository @Inject constructor(
             )
 
             // Update System Stats
-            transaction.update(statsRef, "totalCustomerDebt", com.google.firebase.firestore.FieldValue.increment(-diff))
+            val statsUpdates = mutableMapOf<String, Any>(
+                "totalCustomerDebt" to com.google.firebase.firestore.FieldValue.increment(-diff)
+            )
+
+            if (payment.paymentMethod == "cash") {
+                statsUpdates["totalCashBalance"] = com.google.firebase.firestore.FieldValue.increment(diff)
+            } else if (payment.paymentMethod == "bank") {
+                statsUpdates["totalBankBalance"] = com.google.firebase.firestore.FieldValue.increment(diff)
+            }
+
+            transaction.update(statsRef, statsUpdates)
         }.await()
     }
 
@@ -445,7 +473,17 @@ class InvoiceRepository @Inject constructor(
             )
 
             // Update System Stats
-            transaction.update(statsRef, "totalCustomerDebt", com.google.firebase.firestore.FieldValue.increment(oldPayment.amount))
+            val statsUpdates = mutableMapOf<String, Any>(
+                "totalCustomerDebt" to com.google.firebase.firestore.FieldValue.increment(oldPayment.amount)
+            )
+
+            if (oldPayment.paymentMethod == "cash") {
+                statsUpdates["totalCashBalance"] = com.google.firebase.firestore.FieldValue.increment(-oldPayment.amount)
+            } else if (oldPayment.paymentMethod == "bank") {
+                statsUpdates["totalBankBalance"] = com.google.firebase.firestore.FieldValue.increment(-oldPayment.amount)
+            }
+
+            transaction.update(statsRef, statsUpdates)
         }.await()
     }
 }

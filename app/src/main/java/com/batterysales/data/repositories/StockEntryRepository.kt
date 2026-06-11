@@ -507,12 +507,29 @@ class StockEntryRepository @Inject constructor(
                 val cost = oldEntry.getNetCost()
                 val qty = oldEntry.quantity - oldEntry.returnedQuantity
                 
-                transaction.update(statsRef, mapOf(
+                val statsUpdates = mutableMapOf<String, Any>(
                     "totalInventoryQuantity" to com.google.firebase.firestore.FieldValue.increment(-qty.toLong()),
                     "totalInventoryValue" to com.google.firebase.firestore.FieldValue.increment(-cost),
                     "totalSupplierDebt" to com.google.firebase.firestore.FieldValue.increment(-cost),
                     "updatedAt" to Date()
-                ))
+                )
+
+                // Reverse any cash impact from immediate payments linked to this entry
+                // Find bills linked to this orderId or entryId
+                val linkedBillsQuery = firestore.collection(Bill.COLLECTION_NAME)
+                    .whereEqualTo("referenceNumber", oldEntry.invoiceNumber)
+                    .whereEqualTo("supplierId", oldEntry.supplierId)
+                    .get().await()
+
+                linkedBillsQuery.documents.forEach { bDoc ->
+                    val b = bDoc.toObject(Bill::class.java)
+                    if (b != null && b.status == BillStatus.PAID) {
+                        if (b.billType == BillType.CASH) statsUpdates["totalCashBalance"] = com.google.firebase.firestore.FieldValue.increment(b.paidAmount)
+                        else if (b.billType == BillType.TRANSFER) statsUpdates["totalBankBalance"] = com.google.firebase.firestore.FieldValue.increment(b.paidAmount)
+                    }
+                }
+
+                transaction.update(statsRef, statsUpdates)
 
                 if (oldEntry.supplierId.isNotEmpty()) {
                     summaryRepository.invalidateSupplierReportCache(transaction, oldEntry.supplierId)
