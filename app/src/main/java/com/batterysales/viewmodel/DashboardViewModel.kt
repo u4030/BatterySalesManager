@@ -84,7 +84,6 @@ class DashboardViewModel @Inject constructor(
 
     private var dashboardJob: kotlinx.coroutines.Job? = null
     private var alertsListener: com.google.firebase.firestore.ListenerRegistration? = null
-    private var statsListener: com.google.firebase.firestore.ListenerRegistration? = null
 
     private fun loadDashboardData() {
         dashboardJob?.cancel()
@@ -111,15 +110,6 @@ class DashboardViewModel @Inject constructor(
                 } else {
                     Pair(0, warehouseRepository.getWarehousesOnce())
                 }
-
-                // 2. Real-time Snapshot Listener for Stats
-                statsListener?.remove()
-                statsListener = firestore.collection(SystemStats.COLLECTION_NAME).document(SystemStats.DOCUMENT_ID)
-                    .addSnapshotListener { snapshot, e ->
-                        if (e != null || snapshot == null) return@addSnapshotListener
-                        val stats = snapshot.toObject(SystemStats::class.java) ?: SystemStats()
-                        _uiState.update { it.copy(systemStats = stats) }
-                    }
 
                 // 3. Real-time Snapshot Listener for Alerts
                 alertsListener?.remove()
@@ -182,7 +172,6 @@ class DashboardViewModel @Inject constructor(
     override fun onCleared() {
         super.onCleared()
         alertsListener?.remove()
-        statsListener?.remove()
     }
 
     private suspend fun loadHeavyData(
