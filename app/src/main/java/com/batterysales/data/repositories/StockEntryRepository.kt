@@ -519,6 +519,10 @@ class StockEntryRepository @Inject constructor(
                 transaction.update(variantRefs[vid]!!, "currentStock", newMap)
             }
         }.await()
+
+        if (entry.status == "approved" && entry.supplierId.isNotEmpty()) {
+            billRepository.get().autoLinkBillsForSupplier(entry.supplierId)
+        }
     }
 
     suspend fun deleteStockEntry(entryId: String) {
@@ -1053,5 +1057,9 @@ class StockEntryRepository @Inject constructor(
                 summaryRepository.applySupplierUpdate(transaction, snapshots, entry.supplierId, entry.productName, debitChange = -costToReturn)
             }
         }.await()
+
+        if (mode == "supplier_balance" && entry.supplierId.isNotEmpty()) {
+            billRepository.get().autoLinkBillsForSupplier(entry.supplierId)
+        }
     }
 }
