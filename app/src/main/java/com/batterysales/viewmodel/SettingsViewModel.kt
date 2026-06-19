@@ -26,6 +26,7 @@ class SettingsViewModel @Inject constructor(
     private val accountingRepository: AccountingRepository,
     private val bankRepository: BankRepository,
     private val invoiceRepository: InvoiceRepository,
+    private val paymentRepository: PaymentRepository,
     private val userRepository: UserRepository
 ) : ViewModel() {
 
@@ -311,11 +312,16 @@ class SettingsViewModel @Inject constructor(
             val bank = accountingRepository.getCurrentBalance(wh.id, "bank")
             val debt = invoiceRepository.getTotalDebtForWarehouse(wh.id)
             
+            val startOfToday = com.batterysales.utils.DateUtils.getStartOfDay(System.currentTimeMillis())
+            val todayStats = paymentRepository.getTodayStats(wh.id, startOfToday)
+
             wh.id to WarehouseBalance(
                 warehouseId = wh.id,
                 cashBalance = cash,
                 bankBalance = bank,
-                pendingCollection = debt
+                pendingCollection = debt,
+                todayCollection = todayStats.first,
+                todayCollectionCount = todayStats.second
             )
         }
         

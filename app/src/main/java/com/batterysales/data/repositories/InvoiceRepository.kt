@@ -283,9 +283,12 @@ class InvoiceRepository @Inject constructor(
                     transaction = transaction,
                     snapshots = summarySnapshots,
                     warehouseId = stockEntry.warehouseId,
+                    date = finalInvoice.invoiceDate ?: Date(),
                     cashChange = if (payment.paymentMethod == "cash") payment.amount else 0.0,
                     bankChange = if (payment.paymentMethod == "bank") payment.amount else 0.0,
-                    pendingCollectionChange = finalInvoice.remainingAmount
+                    pendingCollectionChange = finalInvoice.remainingAmount,
+                    todayCollectionChange = payment.amount,
+                    todayCollectionCountChange = 1
                 )
             } else {
                 // Just update pending collection
@@ -293,7 +296,9 @@ class InvoiceRepository @Inject constructor(
                     transaction = transaction,
                     snapshots = summarySnapshots,
                     warehouseId = stockEntry.warehouseId,
-                    pendingCollectionChange = finalInvoice.remainingAmount
+                    date = finalInvoice.invoiceDate ?: Date(),
+                    pendingCollectionChange = finalInvoice.remainingAmount,
+                    todayCollectionCountChange = 1 // Still an invoice count even if no payment
                 )
             }
 
@@ -374,9 +379,12 @@ class InvoiceRepository @Inject constructor(
                 transaction = transaction,
                 snapshots = summarySnapshots,
                 warehouseId = invoice.warehouseId,
+                date = payment.paymentDate,
                 cashChange = if (payment.paymentMethod == "cash") payment.amount else 0.0,
                 bankChange = if (payment.paymentMethod == "bank") payment.amount else 0.0,
-                pendingCollectionChange = -payment.amount
+                pendingCollectionChange = -payment.amount,
+                todayCollectionChange = payment.amount
+                // Count doesn't change for just a payment on existing invoice
             )
 
             // Update System Stats
@@ -440,9 +448,11 @@ class InvoiceRepository @Inject constructor(
                 transaction = transaction,
                 snapshots = summarySnapshots,
                 warehouseId = invoice.warehouseId,
+                date = payment.paymentDate,
                 cashChange = if (payment.paymentMethod == "cash") diff else 0.0,
                 bankChange = if (payment.paymentMethod == "bank") diff else 0.0,
-                pendingCollectionChange = -diff
+                pendingCollectionChange = -diff,
+                todayCollectionChange = diff
             )
 
             // Update System Stats
@@ -521,9 +531,11 @@ class InvoiceRepository @Inject constructor(
                 transaction = transaction,
                 snapshots = summarySnapshots,
                 warehouseId = invoice.warehouseId,
+                date = oldPayment.paymentDate,
                 cashChange = if (oldPayment.paymentMethod == "cash") -oldPayment.amount else 0.0,
                 bankChange = if (oldPayment.paymentMethod == "bank") -oldPayment.amount else 0.0,
-                pendingCollectionChange = oldPayment.amount
+                pendingCollectionChange = oldPayment.amount,
+                todayCollectionChange = -oldPayment.amount
             )
 
             // Update System Stats

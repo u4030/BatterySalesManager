@@ -66,6 +66,7 @@ class DashboardViewModel @Inject constructor(
     private val warehouseRepository: WarehouseRepository,
     private val userRepository: UserRepository,
     private val paymentRepository: PaymentRepository,
+    private val summaryRepository: SummaryRepository,
     private val firestore: com.google.firebase.firestore.FirebaseFirestore
 ) : ViewModel() {
 
@@ -84,6 +85,7 @@ class DashboardViewModel @Inject constructor(
 
     private var dashboardJob: kotlinx.coroutines.Job? = null
     private var alertsListener: com.google.firebase.firestore.ListenerRegistration? = null
+    private var financialListener: com.google.firebase.firestore.ListenerRegistration? = null
 
     private fun loadDashboardData() {
         dashboardJob?.cancel()
@@ -102,14 +104,41 @@ class DashboardViewModel @Inject constructor(
                 val isAdmin = user.role == "admin"
                 val userWarehouseId = user.warehouseId
 
+                // Fetch warehouses ONCE and share across listeners to save quota
+                val warehouses = warehouseRepository.getWarehousesOnce()
+
+                // 3. Real-time Snapshot Listener for Financial Status (Quota-efficient: single document)
+                financialListener?.remove()
+                financialListener = firestore.collection("summaries").document("financial_status")
+                    .addSnapshotListener { financialSnap, e ->
+                        if (e != null || financialSnap == null) return@addSnapshotListener
+
+                        val status = financialSnap.toObject(FinancialStatus::class.java) ?: return@addSnapshotListener
+
+                        val relevantWhs = if (isAdmin) warehouses
+                                         else warehouses.filter { it.id == userWarehouseId }
+
+                        val isStatsFromToday = com.batterysales.utils.DateUtils.isSameDay(status.lastUpdated, Date())
+
+                        val warehouseStatsList = relevantWhs.map { wh ->
+                            val whBalance = status.warehouseBalances[wh.id] ?: WarehouseBalance(warehouseId = wh.id)
+                            WarehouseStats(
+                                warehouseId = wh.id,
+                                warehouseName = wh.name,
+                                todayCollection = if (isStatsFromToday) whBalance.todayCollection else 0.0,
+                                todayCollectionCount = if (isStatsFromToday) whBalance.todayCollectionCount else 0
+                            )
+                        }.filter { if (isAdmin) it.todayCollection > 0 || it.todayCollectionCount > 0 else true }
+
+                        _uiState.update { it.copy(warehouseStats = warehouseStatsList) }
+                    }
+
                 // 1. Initial Static Data Fetch
-                val (pendingCount, warehouses) = if (isAdmin) {
+                val pendingCount = if (isAdmin) {
                     val pEntries = stockEntryRepository.getPendingCount()
                     val pReqs = approvalRepository.getPendingRequestsFlow().take(1).first()
-                    Pair(pEntries + pReqs.size, warehouseRepository.getWarehousesOnce())
-                } else {
-                    Pair(0, warehouseRepository.getWarehousesOnce())
-                }
+                    pEntries + pReqs.size
+                } else 0
 
                 // 3. Real-time Snapshot Listener for Alerts
                 alertsListener?.remove()
@@ -118,36 +147,24 @@ class DashboardViewModel @Inject constructor(
                     .addSnapshotListener { alertsSnap, e ->
                         if (e != null || alertsSnap == null) return@addSnapshotListener
                         
-                        this@DashboardViewModel.viewModelScope.launch {
-                            val filteredAlerts = alertsSnap.documents.mapNotNull { it.toObject(SystemAlert::class.java) }
-                                .filter { isAdmin || it.warehouseId == userWarehouseId }
+                        val filteredAlerts = alertsSnap.documents.mapNotNull { it.toObject(SystemAlert::class.java) }
+                            .filter { isAdmin || it.warehouseId == userWarehouseId }
 
-                            val variantIds = filteredAlerts.map { it.relatedId }.distinct()
-                            val variantsMap = if (variantIds.isEmpty()) emptyMap() else {
-                                variantIds.chunked(30).map { chunk ->
-                                    firestore.collection(ProductVariant.COLLECTION_NAME)
-                                        .whereIn(com.google.firebase.firestore.FieldPath.documentId(), chunk)
-                                        .get().await()
-                                        .documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }
-                                }.flatten().associateBy { it.id }
-                            }
+                        val lowStockItems = filteredAlerts.map { alert ->
+                            val whName = warehouses.find { it.id == alert.warehouseId }?.name ?: alert.warehouseName ?: "مخزن غير معروف"
 
-                            val lowStockItems = filteredAlerts.map { alert ->
-                                val variant = variantsMap[alert.relatedId]
-                                val whName = warehouses.find { it.id == alert.warehouseId }?.name ?: alert.warehouseName ?: "مخزن غير معروف"
-                                
-                                LowStockItem(
-                                    variantId = alert.relatedId,
-                                    productName = variant?.productName ?: alert.title.replace("مخزون منخفض: ", ""),
-                                    capacity = variant?.capacity ?: (alert.data["capacity"] as? Number)?.toInt() ?: 0,
-                                    specification = variant?.specification ?: (alert.data["specification"] as? String) ?: "",
-                                    currentQuantity = (alert.data["currentStock"] as? Number)?.toInt() ?: 0,
-                                    minQuantity = variant?.minQuantities?.get(alert.warehouseId) ?: variant?.minQuantity ?: (alert.data["threshold"] as? Number)?.toInt() ?: 0,
-                                    warehouseName = whName
-                                )
-                            }
+                            LowStockItem(
+                                variantId = alert.relatedId,
+                                productName = alert.title.replace("مخزون منخفض: ", "").trim(),
+                                capacity = (alert.data["capacity"] as? Number)?.toInt() ?: 0,
+                                specification = (alert.data["specification"] as? String) ?: "",
+                                currentQuantity = (alert.data["currentStock"] as? Number)?.toInt() ?: 0,
+                                minQuantity = (alert.data["threshold"] as? Number)?.toInt() ?: 0,
+                                warehouseName = whName
+                            )
+                        }
 
-                            // TARGETED UPDATE: Only update the alerts portion of the state
+                        // TARGETED UPDATE: Only update the alerts portion of the state
                             _uiState.update { current ->
                                 current.copy(
                                     lowStockVariants = lowStockItems,
@@ -156,7 +173,6 @@ class DashboardViewModel @Inject constructor(
                                     }.time)
                                 )
                             }
-                        }
                     }
 
                 // 4. Initial load of heavy data (Once per trigger)
@@ -172,6 +188,7 @@ class DashboardViewModel @Inject constructor(
     override fun onCleared() {
         super.onCleared()
         alertsListener?.remove()
+        financialListener?.remove()
     }
 
     private suspend fun loadHeavyData(

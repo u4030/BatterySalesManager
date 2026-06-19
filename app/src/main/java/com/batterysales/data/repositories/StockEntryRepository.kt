@@ -644,10 +644,12 @@ class StockEntryRepository @Inject constructor(
     }
 
     suspend fun approveEntry(entryId: String) {
+        var supplierIdToLink: String? = null
         firestore.runTransaction { transaction ->
             val docRef = firestore.collection(StockEntry.COLLECTION_NAME).document(entryId)
             val entrySnap = transaction.get(docRef)
             val entry = entrySnap.toObject(StockEntry::class.java)?.copy(id = entrySnap.id) ?: return@runTransaction
+            supplierIdToLink = entry.supplierId
 
             if (entry.status == "approved") return@runTransaction
 
@@ -738,6 +740,10 @@ class StockEntryRepository @Inject constructor(
                 "updatedAt" to Date()
             ))
         }.await()
+
+        if (!supplierIdToLink.isNullOrEmpty()) {
+            billRepository.get().autoLinkBillsForSupplier(supplierIdToLink!!)
+        }
     }
 
     suspend fun getEntriesBySuppliers(supplierIds: List<String>, supplierNames: List<String> = emptyList()): List<StockEntry> {

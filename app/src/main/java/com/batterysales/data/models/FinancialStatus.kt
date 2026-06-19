@@ -21,5 +21,7 @@ data class WarehouseBalance(
     val warehouseId: String = "",
     val cashBalance: Double = 0.0,
     val bankBalance: Double = 0.0,
-    val pendingCollection: Double = 0.0 // Total unpaid customer invoices
+    val pendingCollection: Double = 0.0, // Total unpaid customer invoices
+    val todayCollection: Double = 0.0,
+    val todayCollectionCount: Int = 0
 )

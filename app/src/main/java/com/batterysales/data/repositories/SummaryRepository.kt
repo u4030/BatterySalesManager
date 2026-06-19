@@ -179,20 +179,35 @@ class SummaryRepository @Inject constructor(
         transaction: Transaction,
         snapshots: SummarySnapshots,
         warehouseId: String,
+        date: Date = Date(),
         cashChange: Double = 0.0,
         bankChange: Double = 0.0,
         pendingCollectionChange: Double = 0.0,
         billChange: Double = 0.0,
-        checkChange: Double = 0.0
+        checkChange: Double = 0.0,
+        todayCollectionChange: Double = 0.0,
+        todayCollectionCountChange: Int = 0
     ) {
         val status = snapshots.financialStatus ?: FinancialStatus()
-        val updatedWarehouses = status.warehouseBalances.toMutableMap()
+        val now = Date()
+        val isStoredToday = com.batterysales.utils.DateUtils.isSameDay(status.lastUpdated, now)
+        val isUpdateToday = com.batterysales.utils.DateUtils.isSameDay(date, now)
+
+        val updatedWarehouses = if (!isStoredToday) {
+            // New day: Reset all today stats
+            status.warehouseBalances.mapValues { it.value.copy(todayCollection = 0.0, todayCollectionCount = 0) }.toMutableMap()
+        } else {
+            status.warehouseBalances.toMutableMap()
+        }
+
         val currentWh = updatedWarehouses[warehouseId] ?: WarehouseBalance(warehouseId = warehouseId)
         
         updatedWarehouses[warehouseId] = currentWh.copy(
             cashBalance = currentWh.cashBalance + cashChange,
             bankBalance = currentWh.bankBalance + bankChange,
-            pendingCollection = currentWh.pendingCollection + pendingCollectionChange
+            pendingCollection = currentWh.pendingCollection + pendingCollectionChange,
+            todayCollection = if (isUpdateToday) currentWh.todayCollection + todayCollectionChange else currentWh.todayCollection,
+            todayCollectionCount = if (isUpdateToday) currentWh.todayCollectionCount + todayCollectionCountChange else currentWh.todayCollectionCount
         )
 
         transaction.set(summariesCollection.document("financial_status"), status.copy(
@@ -201,7 +216,7 @@ class SummaryRepository @Inject constructor(
             globalBankBalance = status.globalBankBalance + bankChange,
             totalUnpaidBills = status.totalUnpaidBills + billChange,
             totalUnpaidChecks = status.totalUnpaidChecks + checkChange,
-            lastUpdated = Date(),
+            lastUpdated = now,
             version = status.version + 1
         ))
         
