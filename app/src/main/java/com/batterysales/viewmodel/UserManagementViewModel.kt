@@ -28,19 +28,36 @@ class UserManagementViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(UserManagementUiState())
     val uiState: StateFlow<UserManagementUiState> = _uiState.asStateFlow()
 
+    private val refreshTrigger = MutableStateFlow(0)
+
     init {
+        refreshTrigger.onEach {
+            loadData()
+        }.launchIn(viewModelScope)
+    }
+
+    private fun loadData() {
         viewModelScope.launch {
-            combine(
-                userRepository.getAllUsersFlow(),
-                warehouseRepository.getWarehouses()
-            ) { users, warehouses ->
-                _uiState.update { it.copy(
-                    users = users,
-                    warehouses = warehouses,
-                    isLoading = false
-                ) }
-            }.collect()
+            _uiState.update { it.copy(isLoading = true) }
+            try {
+                // Use snapshot listener for users as it's a small collection and changes are rare but important
+                // However, for warehouses, use one-time fetch.
+                val warehouses = warehouseRepository.getWarehousesOnce()
+                userRepository.getAllUsersFlow().collect { users ->
+                    _uiState.update { it.copy(
+                        users = users,
+                        warehouses = warehouses,
+                        isLoading = false
+                    ) }
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(isLoading = false, errorMessage = "خطأ في تحميل البيانات") }
+            }
         }
+    }
+
+    fun refresh() {
+        refreshTrigger.value += 1
     }
 
     fun updateUserRole(user: User, newRole: String) {

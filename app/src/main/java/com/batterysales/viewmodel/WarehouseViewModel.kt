@@ -85,14 +85,14 @@ class WarehouseViewModel @Inject constructor(
                     .map { item ->
                         InventoryReportItem(
                             product = Product(id = item.productId, name = item.productName),
-                            variant = ProductVariant(id = item.variantId, productId = item.productId, capacity = item.capacity, barcode = item.barcode, weightedAverageCost = item.weightedAverageCost, sellingPrice = item.sellingPrice, specification = item.specification),
+                            variant = ProductVariant(id = item.variantId, productId = item.productId, capacity = item.capacity, barcode = item.barcode, weightedAverageCost = item.weightedAverageCost, sellingPrice = item.sellingPrice, specification = item.specification, productName = item.productName, isDiscontinued = item.isDiscontinued),
                             warehouseQuantities = mapOf(targetWhId to item.currentStock),
                             totalQuantity = item.currentStock,
                             averageCost = item.weightedAverageCost,
                             totalCostValue = item.currentStock * item.weightedAverageCost
                         )
                     }
-                    .sortedBy { it.product.name }
+                    .sortedWith(compareByDescending<InventoryReportItem> { it.product.name }.thenByDescending { it.variant.capacity })
                     .toList()
             } else {
                 // Fallback filtering
@@ -111,7 +111,7 @@ class WarehouseViewModel @Inject constructor(
                             totalCostValue = qty * v.weightedAverageCost
                         )
                     }
-                    .sortedBy { it.product.name }
+                    .sortedWith(compareByDescending<InventoryReportItem> { it.product.name }.thenByDescending { it.variant.capacity })
                     .toList()
             }
             

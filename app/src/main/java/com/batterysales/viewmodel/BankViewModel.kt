@@ -105,6 +105,15 @@ class BankViewModel @Inject constructor(
             loadTotals()
         }
         loadData()
+        observeFinancialStatus()
+    }
+
+    private fun observeFinancialStatus() {
+        summaryRepository.getFinancialStatusFlow()
+            .onEach { status ->
+                _balance.value = status.globalBankBalance
+            }
+            .launchIn(viewModelScope)
     }
 
     private suspend fun loadBalancesFromSummary() {
@@ -172,6 +181,8 @@ class BankViewModel @Inject constructor(
             try {
                 repository.updateTransaction(transaction)
                 loadData()
+            } catch (e: Exception) {
+                _errorMessage.value = e.message
             } finally {
                 _isLoading.value = false
             }
@@ -206,9 +217,16 @@ class BankViewModel @Inject constructor(
 
     fun deleteTransaction(id: String) {
         viewModelScope.launch {
-            repository.deleteTransaction(id)
-            accountingRepository.deleteTransactionsByRelatedId(id)
-            loadData()
+            _isLoading.value = true
+            try {
+                repository.deleteTransaction(id)
+                accountingRepository.deleteTransactionsByRelatedId(id)
+                loadData()
+            } catch (e: Exception) {
+                _errorMessage.value = e.message
+            } finally {
+                _isLoading.value = false
+            }
         }
     }
 }

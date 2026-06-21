@@ -355,12 +355,30 @@ fun ReportItemCard(item: com.batterysales.data.models.InventoryReportItem, wareh
         Column(modifier = Modifier.padding(20.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(text = "\u200F${item.product.name}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                    Text(
+                        text = item.product.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(text = "\u200E${item.variant.capacity} A", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            text = "${item.variant.capacity}A",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                         if (item.variant.specification.isNotEmpty()) {
-                            Text(text = " | ", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
-                            Text(text = item.variant.specification, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                            Text(
+                                text = " | ",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                            )
+                            Text(
+                                text = item.variant.specification,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
                         }
                     }
                 }
@@ -432,16 +450,52 @@ private fun supplierReportSectionRedesigned(scope: androidx.compose.foundation.l
     else { scope.items(supplierItems) { item -> Box(modifier = Modifier.padding(horizontal = 16.dp)) { SupplierSummaryCard(item, onClick = { navController.navigate("supplier_details/${item.supplierId}") }) } } }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SupplierSummaryCard(item: SupplierSummaryItem, onClick: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)) {
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Text(item.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = item.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f)
+                )
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
             Spacer(modifier = Modifier.height(12.dp))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Column(modifier = Modifier.weight(1f)) { Text("مدين (مشتريات)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant); Text("JD ${String.format("%.3f", item.totalDebit)}", fontWeight = FontWeight.Bold, color = Color(0xFFFB8C00)) }
-                Column(modifier = Modifier.weight(1f)) { Text("دائن (مسدد)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant); Text("JD ${String.format("%.3f", item.totalCredit)}", fontWeight = FontWeight.Bold, color = Color(0xFF10B981)) }
-                Column(modifier = Modifier.weight(1f)) { Text("المتبقي", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant); Text("JD ${String.format("%.3f", item.currentBalance)}", fontWeight = FontWeight.ExtraBold, color = if (item.currentBalance > 0) Color(0xFFEF4444) else Color(0xFF10B981)) }
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Column(modifier = Modifier.widthIn(min = 80.dp)) {
+                    Text("مدين (مشتريات)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("JD ${String.format("%.3f", item.totalDebit)}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Color(0xFFFB8C00))
+                }
+                Column(modifier = Modifier.widthIn(min = 80.dp)) {
+                    Text("دائن (مسدد)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("JD ${String.format("%.3f", item.totalCredit)}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Color(0xFF10B981))
+                }
+                Column(modifier = Modifier.widthIn(min = 80.dp)) {
+                    Text("المتبقي", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("JD ${String.format("%.3f", item.currentBalance)}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.ExtraBold, color = if (item.currentBalance > 0) Color(0xFFEF4444) else Color(0xFF10B981))
+                }
             }
         }
     }
@@ -456,6 +510,7 @@ fun SupplierReportControls(viewModel: ReportsViewModel) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PurchaseOrderCard(po: com.batterysales.data.models.PurchaseOrderItem, dateFormatter: java.text.SimpleDateFormat, navController: NavController) {
     var expanded by remember { mutableStateOf(false) }
@@ -470,32 +525,41 @@ fun PurchaseOrderCard(po: com.batterysales.data.models.PurchaseOrderItem, dateFo
         Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             // Header Row: Date & Invoice Tag
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { 
-                Text(
-                    text = dateFormatter.format(po.entry.getEffectiveDate()), 
-                    style = MaterialTheme.typography.titleMedium, 
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                if (po.entry.invoiceNumber.isNotEmpty()) { 
-                    Surface(color = Color(0xFFFB8C00).copy(alpha = 0.1f), shape = RoundedCornerShape(12.dp)) { 
+                Column {
+                    Text(
+                        text = dateFormatter.format(po.entry.getEffectiveDate()),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    if (po.entry.invoiceNumber.isNotEmpty()) {
                         Text(
-                            text = "فاتورة: ${po.entry.invoiceNumber}", 
-                            style = MaterialTheme.typography.labelSmall, 
-                            color = Color(0xFFFB8C00), 
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            fontWeight = FontWeight.Bold
-                        ) 
-                    } 
-                } 
+                            text = "فاتورة: ${po.entry.invoiceNumber}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                // Dot indicator for status
+                Surface(
+                    color = (if (isFullyCovered) (if (po.isCleared) Color(0xFF10B981) else Color(0xFF3B82F6)) else if (po.totalLinkedAmount > 0.001) Color(0xFFFB8C00) else Color(0xFFEF4444)),
+                    shape = CircleShape,
+                    modifier = Modifier.size(12.dp)
+                ) {}
             }
 
             // Financial Summary Row
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { 
-                Column {
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Column(modifier = Modifier.widthIn(min = 120.dp)) {
                     Text("إجمالي الطلبية:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text("JD ${String.format("%,.3f", po.entry.totalCost)}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold) 
                 }
-                Column(horizontalAlignment = Alignment.End) {
+                Column(modifier = Modifier.widthIn(min = 120.dp), horizontalAlignment = Alignment.End) {
                     Text("المتبقي:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(
                         text = "JD ${String.format("%,.3f", po.remainingBalance)}", 
@@ -506,53 +570,40 @@ fun PurchaseOrderCard(po: com.batterysales.data.models.PurchaseOrderItem, dateFo
                 }
             }
 
-            // Coverage Status Badge (Image match)
-            val coverageAmount = po.entry.totalCost - po.remainingBalance
-            if (coverageAmount > 0.001) {
-                Surface(
-                    color = (if (isFullyCovered) Color(0xFF10B981) else Color(0xFFFB8C00)).copy(alpha = 0.1f), 
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            Icons.Default.Info, 
-                            contentDescription = null, 
-                            tint = if (isFullyCovered) Color(0xFF10B981) else Color(0xFFFB8C00),
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = if (isFullyCovered) "مغطاة بالكامل من شيكات غير مرتبطة" 
-                                   else "من شيكات مرتبطة جزئياً بمبلغ JD ${String.format("%.3f", coverageAmount)}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (isFullyCovered) Color(0xFF10B981) else Color(0xFFFB8C00),
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
+            // Settlement Details Section (Simplified box as per user image request)
+            val allNotes = po.referenceNumbers.filter { it.isNotBlank() }
+            if (allNotes.isNotEmpty()) {
+                val statusColor = if (isFullyCovered) {
+                    if (po.isCleared) Color(0xFF10B981) else Color(0xFF3B82F6)
+                } else if (po.totalLinkedAmount > 0.001) {
+                    Color(0xFFFB8C00)
+                } else {
+                    Color(0xFFEF4444)
                 }
-            }
 
-            // Settlement Traceability Notes (Image match)
-            if (po.referenceNumbers.isNotEmpty() || po.entry.settlementNotes.isNotEmpty()) {
-                val allNotes = (po.referenceNumbers + po.entry.settlementNotes).distinct()
-                Row(verticalAlignment = Alignment.Top, modifier = Modifier.padding(top = 4.dp)) {
-                    Icon(
-                        Icons.Default.Payments, 
-                        contentDescription = null, 
-                        modifier = Modifier.size(18.dp).padding(top = 2.dp), 
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = allNotes.joinToString(", "), 
-                        style = MaterialTheme.typography.bodySmall, 
-                        color = MaterialTheme.colorScheme.primary, 
-                        fontWeight = FontWeight.Bold,
-                        lineHeight = 20.sp
-                    )
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = statusColor.copy(alpha = 0.12f),
+                    shape = RoundedCornerShape(16.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.5.dp, statusColor.copy(alpha = 0.4f))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        allNotes.forEach { note ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(16.dp), tint = statusColor)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = note,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = statusColor
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
@@ -573,7 +624,8 @@ fun PurchaseOrderCard(po: com.batterysales.data.models.PurchaseOrderItem, dateFo
                 po.items.forEach { entry ->
                     Card(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable {
-                            navController.navigate("product_ledger/${entry.productVariantId}/${entry.productName}/${entry.capacity}/no_spec")
+                            val spec = entry.specification.ifEmpty { "no_spec" }
+                            navController.navigate("product_ledger/${entry.productVariantId}/${entry.productName}/${entry.capacity}/$spec?highlightEntryId=${entry.id}")
                         },
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                         shape = RoundedCornerShape(8.dp),
@@ -581,12 +633,29 @@ fun PurchaseOrderCard(po: com.batterysales.data.models.PurchaseOrderItem, dateFo
                     ) {
                         Row(modifier = Modifier.padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(entry.productName, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                Text(
+                                    text = entry.productName,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Bold
+                                )
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("${entry.capacity}A", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    if (entry.specification.isNotEmpty()) {
-                                        Text(" | ", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
-                                        Text(entry.specification, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                    Text(
+                                        text = "${entry.capacity}A",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    if (entry.specification.trim().isNotEmpty()) {
+                                        Text(
+                                            text = " | ",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                        )
+                                        Text(
+                                            text = entry.specification.trim(),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
                                     }
                                 }
                             }

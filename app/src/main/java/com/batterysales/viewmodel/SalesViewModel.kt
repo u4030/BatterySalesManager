@@ -110,9 +110,9 @@ class SalesViewModel @Inject constructor(
         try {
             _uiState.update { it.copy(isLoading = true, selectedProduct = product, selectedVariant = if (targetVariantId != null) it.selectedVariant else null) }
             
-            // --- ELITE STRATEGY with Fallback ---
+            // --- ELITE STRATEGY: Targeted Load from Summary Cache ---
             val summaryItems = cachedInventorySummary?.items?.values ?: emptyList()
-            var variantsForProduct = summaryItems.filter { it.productId == product.id }
+            var variantsForProduct = summaryItems.filter { it.productId == product.id && !it.isDiscontinued }
                 .map { item -> 
                     ProductVariant(
                         id = item.variantId,
@@ -120,15 +120,18 @@ class SalesViewModel @Inject constructor(
                         capacity = item.capacity,
                         barcode = item.barcode,
                         sellingPrice = item.sellingPrice,
+                        specification = item.specification,
                         weightedAverageCost = item.weightedAverageCost,
                         productName = item.productName,
+                        isDiscontinued = item.isDiscontinued,
                         currentStock = mapOf((cachedInventorySummary?.warehouseId ?: "global") to item.currentStock)
                     )
                 }.sortedBy { it.capacity }
 
+            // Targeted Cloud Fetch ONLY if variant list is empty or incomplete
             if (variantsForProduct.isEmpty()) {
                 variantsForProduct = productVariantRepository.getVariantsForProduct(product.id)
-                    .filter { !it.archived }
+                    .filter { !it.archived && !it.isDiscontinued }
                     .sortedBy { it.capacity }
             }
 
@@ -176,10 +179,20 @@ class SalesViewModel @Inject constructor(
 
     fun onWarehouseSelected(warehouse: Warehouse) {
         _uiState.update { it.copy(selectedWarehouse = warehouse) }
-        val state = uiState.value
-        state.selectedProduct?.let { product ->
-            viewModelScope.launch {
-                loadVariantsForProduct(product, state.selectedVariant?.id)
+
+        viewModelScope.launch {
+            try {
+                _uiState.update { it.copy(isLoading = true) }
+                // ELITE STRATEGY: Refresh inventory summary for the selected warehouse
+                val summary = summaryRepository.getInventorySummary(warehouse.id)
+                cachedInventorySummary = summary
+
+                val state = uiState.value
+                state.selectedProduct?.let { product ->
+                    loadVariantsForProduct(product, state.selectedVariant?.id)
+                }
+            } finally {
+                _uiState.update { it.copy(isLoading = false) }
             }
         }
     }

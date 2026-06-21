@@ -33,6 +33,12 @@ class BillViewModel @Inject constructor(
     private val _searchQuery = MutableStateFlow("")
     val searchQuery = _searchQuery.asStateFlow()
 
+    private val _selectedSupplierId = MutableStateFlow<String?>(null)
+    val selectedSupplierId = _selectedSupplierId.asStateFlow()
+
+    private val _selectedSupplierBalance = MutableStateFlow<Double?>(null)
+    val selectedSupplierBalance = _selectedSupplierBalance.asStateFlow()
+
     private val _suppliers = MutableStateFlow<List<Supplier>>(emptyList())
     val suppliers = _suppliers.asStateFlow()
 
@@ -47,12 +53,12 @@ class BillViewModel @Inject constructor(
     private val _isDataLoaded = MutableStateFlow(false)
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    val bills: Flow<PagingData<Bill>> = combine(_searchQuery, refreshTrigger, _isDataLoaded) { query, _, loaded ->
-        if (!loaded && query.isEmpty()) return@combine null
-        query
-    }.filterNotNull().flatMapLatest { query ->
+    val bills: Flow<PagingData<Bill>> = combine(_searchQuery, _selectedSupplierId, refreshTrigger, _isDataLoaded) { query, supplierId, _, loaded ->
+        if (!loaded && query.isEmpty() && supplierId == null) return@combine null
+        Triple(query, supplierId, loaded)
+    }.filterNotNull().flatMapLatest { (query, supplierId, _) ->
         Pager(PagingConfig(pageSize = 25)) {
-            BillPagingSource(repository, query.ifBlank { null })
+            BillPagingSource(repository, query.ifBlank { null }, supplierId)
         }.flow.cachedIn(viewModelScope)
     }
 
@@ -102,6 +108,19 @@ class BillViewModel @Inject constructor(
         if (query.isNotEmpty()) _isDataLoaded.value = true
     }
 
+    fun onSupplierSelected(supplierId: String?) {
+        _selectedSupplierId.value = supplierId
+        _isDataLoaded.value = true
+        if (supplierId != null) {
+            viewModelScope.launch {
+                val supplier = supplierRepository.getSupplier(supplierId)
+                _selectedSupplierBalance.value = supplier?.currentBalance
+            }
+        } else {
+            _selectedSupplierBalance.value = null
+        }
+    }
+
     fun updateBill(bill: Bill) {
         viewModelScope.launch {
             _isLoading.value = true
@@ -136,13 +155,20 @@ class BillViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                val bill = Bill(description = description, amount = amount, dueDate = dueDate, billType = billType, referenceNumber = referenceNumber, supplierId = supplierId, relatedEntryId = relatedEntryId, warehouseId = warehouseId, status = if (payImmediately) BillStatus.PAID else BillStatus.UNPAID, paidAmount = if (payImmediately) amount else 0.0, paidDate = if (payImmediately) Date() else null)
-                val billId = repository.addBill(bill)
-                repository.autoLinkBillsForSupplier(supplierId)
-                if (payImmediately) {
-                    val mainWhId = warehouseRepository.getWarehousesOnce().find { it.isMain }?.id ?: warehouseId
-                    accountingRepository.addTransaction(Transaction(type = TransactionType.EXPENSE, amount = amount, description = "دفع مباشر: $description", relatedId = billId, referenceNumber = referenceNumber, warehouseId = mainWhId ?: "", paymentMethod = "cash"))
-                }
+                val bill = Bill(
+                    description = description,
+                    amount = amount,
+                    dueDate = dueDate,
+                    billType = billType,
+                    referenceNumber = referenceNumber,
+                    supplierId = supplierId,
+                    relatedEntryId = relatedEntryId,
+                    warehouseId = warehouseId,
+                    status = if (payImmediately) BillStatus.PAID else BillStatus.UNPAID,
+                    paidAmount = if (payImmediately) amount else 0.0,
+                    paidDate = if (payImmediately) Date() else null
+                )
+                repository.addBill(bill)
                 loadData()
             } finally { _isLoading.value = false }
         }

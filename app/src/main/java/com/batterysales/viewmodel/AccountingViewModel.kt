@@ -91,6 +91,28 @@ class AccountingViewModel @Inject constructor(
     init {
         loadInitialData()
         loadData()
+        observeFinancialStatus()
+    }
+
+    private fun observeFinancialStatus() {
+        combine(
+            summaryRepository.getFinancialStatusFlow(),
+            _selectedWarehouseId,
+            _selectedPaymentMethod
+        ) { status, whId, method ->
+            if (whId == null || whId == "all") {
+                if (method == "bank") status.globalBankBalance
+                else if (method == "cash") status.globalCashBalance
+                else status.globalCashBalance + status.globalBankBalance
+            } else {
+                val whBalance = status.warehouseBalances[whId]
+                if (method == "bank") whBalance?.bankBalance ?: 0.0
+                else if (method == "cash") whBalance?.cashBalance ?: 0.0
+                else (whBalance?.cashBalance ?: 0.0) + (whBalance?.bankBalance ?: 0.0)
+            }
+        }
+        .onEach { _balance.value = it }
+        .launchIn(viewModelScope)
     }
 
     val currentUser = userRepository.getCurrentUserFlow()
@@ -225,6 +247,9 @@ class AccountingViewModel @Inject constructor(
             try {
                 repository.updateTransaction(transaction)
                 loadData(reset = true)
+            } catch (e: Exception) {
+                _errorMessage.value = e.message
+                Log.e("AccountingViewModel", "Error updating transaction", e)
             } finally { _isLoading.value = false }
         }
     }
@@ -256,8 +281,15 @@ class AccountingViewModel @Inject constructor(
 
     fun deleteTransaction(id: String) {
         viewModelScope.launch {
-            repository.deleteTransaction(id)
-            loadData(reset = true)
+            _isLoading.value = true
+            try {
+                repository.deleteTransaction(id)
+                loadData(reset = true)
+            } catch (e: Exception) {
+                _errorMessage.value = e.message
+            } finally {
+                _isLoading.value = false
+            }
         }
     }
 }

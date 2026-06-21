@@ -25,6 +25,7 @@ class SettingsViewModel @Inject constructor(
     private val summaryRepository: SummaryRepository,
     private val accountingRepository: AccountingRepository,
     private val bankRepository: BankRepository,
+    private val paymentRepository: PaymentRepository,
     private val invoiceRepository: InvoiceRepository,
     private val userRepository: UserRepository
 ) : ViewModel() {
@@ -71,7 +72,7 @@ class SettingsViewModel @Inject constructor(
                 _migrationStatus.value = "جاري ترحيل البيانات وإعادة بناء الملخصات... يرجى عدم إغلاق التطبيق"
                 
                 invoiceRepository.migrateInvoices()
-                stockEntryRepository.migrateStockEntries()
+                stockEntryRepository.migrateStockEntries(billRepository)
                 stockEntryRepository.migrateAllVariants(productRepository, supplierRepository, billRepository)
                 
                 // Rebuild Summaries from scratch
@@ -119,8 +120,21 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 _isMigrating.value = true
-                _migrationStatus.value = "جاري فحص صحة البيانات..."
+                _migrationStatus.value = "جاري فحص صحة البيانات وتنظيف التكرارات..."
                 
+                val firestore = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                com.batterysales.utils.DataSanitizer.sanitizeVariants(firestore)
+
+                // --- NEW: Reset all FIFO links to ensure pure logic ---
+                _migrationStatus.value = "جاري تصفير الارتباطات اليدوية وإعادة بناء الـ FIFO..."
+                com.batterysales.utils.DataSanitizer.clearAllManualLinks(firestore)
+
+                // Trigger full sync for all suppliers to rebuild pools
+                val suppliersList = supplierRepository.getSuppliersOnce()
+                suppliersList.forEach { s ->
+                    try { billRepository.syncSupplierFinancials(s.id) } catch (e: Exception) {}
+                }
+
                 // 1. Audit Inventory
                 val variants = productVariantRepository.getAllVariants()
                 val globalSummary = summaryRepository.getInventorySummary(null, forceRefresh = true)
@@ -136,9 +150,8 @@ class SettingsViewModel @Inject constructor(
                 }
 
                 // 2. Audit Suppliers
-                val suppliers = supplierRepository.getSuppliersOnce()
                 val suppliersOverview = summaryRepository.getSuppliersOverview(forceRefresh = true)
-                suppliers.forEach { s ->
+                suppliersList.forEach { s ->
                     val expectedBal = s.currentBalance
                     val actualBal = suppliersOverview?.suppliers?.get(s.id)?.currentBalance ?: 0.0
                     if (Math.abs(expectedBal - actualBal) > 0.001) {
@@ -148,7 +161,11 @@ class SettingsViewModel @Inject constructor(
                 }
 
                 if (issuesFound > 0) {
-                    _migrationStatus.value = "تم العثور على $issuesFound تعارضات في البيانات. جاري إعادة بناء الملخصات تلقائياً..."
+                    _migrationStatus.value = "تم العثور على $issuesFound تعارضات في البيانات. جاري إعادة بناء الملخصات وتصحيح الارتباطات..."
+
+                    // Fix Manual Allocations on Bills before rebuilding
+                    fixBillAllocations()
+
                     rebuildAllSummaries()
                     _migrationStatus.value = "تمت معالجة التعارضات وإعادة بناء الملخصات بنجاح ✅"
                 } else {
@@ -164,15 +181,55 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    private suspend fun fixBillAllocations() {
+        val firestore = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+        val billsSnap = firestore.collection(Bill.COLLECTION_NAME).get().await()
+        val entriesSnap = firestore.collection(StockEntry.COLLECTION_NAME).get().await()
+
+        val entries = entriesSnap.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
+
+        val batch = firestore.batch()
+        var updates = 0
+
+        billsSnap.documents.forEach { doc ->
+            val bill = doc.toObject(Bill::class.java) ?: return@forEach
+            val actualAllocated = entries.sumOf { it.linkedAllocations[doc.id] ?: 0.0 }
+
+            if (Math.abs(actualAllocated - bill.manualAllocation) > 0.001) {
+                batch.update(doc.reference, "manualAllocation", actualAllocated)
+                updates++
+            }
+        }
+
+        if (updates > 0) batch.commit().await()
+    }
+
     private suspend fun rebuildAllSummaries() {
         val firestore = com.google.firebase.firestore.FirebaseFirestore.getInstance()
         
         // This is a heavy operation to initialize the new Summary-First system
         val products = productRepository.getProductsOnce()
-        val variants = productVariantRepository.getAllVariants()
         val warehouses = warehouseRepository.getWarehousesOnce()
         val suppliers = supplierRepository.getSuppliersOnce()
         
+        // --- 0. Backfill Specifications in StockEntries ---
+        val variants = productVariantRepository.getAllVariants()
+        val variantsMap = variants.associate { it.id to it.specification }
+        val entriesSnap = firestore.collection(StockEntry.COLLECTION_NAME).get().await()
+        entriesSnap.documents.chunked(500).forEach { chunk ->
+            val batch = firestore.batch()
+            var count = 0
+            chunk.forEach { doc ->
+                val vid = doc.getString("productVariantId") ?: ""
+                val currentSpec = doc.getString("specification") ?: ""
+                if (vid.isNotEmpty() && currentSpec.isEmpty() && variantsMap.containsKey(vid)) {
+                    batch.update(doc.reference, "specification", variantsMap[vid])
+                    count++
+                }
+            }
+            if (count > 0) batch.commit().await()
+        }
+
         // --- 1. Clear existing alerts ---
         val alertsSnap = firestore.collection(SystemAlert.COLLECTION_NAME).get().await()
         val alertBatch = firestore.batch()
@@ -184,18 +241,24 @@ class SettingsViewModel @Inject constructor(
         val warehouseItems = mutableMapOf<String, MutableMap<String, InventorySummaryItem>>()
 
         variants.forEach { variant: ProductVariant ->
-            val productName = products.find { it.id == variant.productId }?.name ?: "Unknown"
             val totalQty = variant.currentStock?.values?.sum() ?: 0
             
+            // Filter out archived variants that have zero stock to avoid "duplicate" clutter in reports
+            if (variant.archived && totalQty == 0) return@forEach
+
+            val productName = products.find { it.id == variant.productId }?.name ?: "Unknown"
+
             val globalItem = InventorySummaryItem(
                 variantId = variant.id,
                 productId = variant.productId,
                 productName = productName,
                 capacity = variant.capacity,
+                specification = variant.specification,
                 barcode = variant.barcode,
                 currentStock = totalQty,
                 weightedAverageCost = variant.weightedAverageCost,
-                sellingPrice = variant.sellingPrice
+                sellingPrice = variant.sellingPrice,
+                isDiscontinued = variant.isDiscontinued
             )
             globalItems[variant.id] = globalItem
 
@@ -205,7 +268,7 @@ class SettingsViewModel @Inject constructor(
 
                 // --- GENERATE ALERTS DURING REBUILD ---
                 val threshold = variant.minQuantities[whId] ?: variant.minQuantity
-                if (threshold > 0 && qty <= threshold) {
+                if (!variant.isDiscontinued && threshold > 0 && qty <= threshold) {
                     val alertRef = firestore.collection(SystemAlert.COLLECTION_NAME).document("low_stock_${variant.id}_$whId")
                     firestore.collection(SystemAlert.COLLECTION_NAME).document(alertRef.id).set(SystemAlert(
                         id = alertRef.id,
@@ -221,13 +284,15 @@ class SettingsViewModel @Inject constructor(
         }
 
         // Save Global
+        val globalTotalValue = globalItems.values.sumOf { it.currentStock * it.weightedAverageCost }
         firestore.collection("summaries").document("inventory_global")
-            .set(InventorySummary(id = "inventory_global", items = globalItems)).await()
+            .set(InventorySummary(id = "inventory_global", items = globalItems, totalValue = globalTotalValue)).await()
 
         // Save Warehouses
         warehouseItems.forEach { (whId, items) ->
+            val whTotalValue = items.values.sumOf { it.currentStock * it.weightedAverageCost }
             firestore.collection("summaries").document("inventory_wh_$whId")
-                .set(InventorySummary(id = "inventory_wh_$whId", warehouseId = whId, items = items)).await()
+                .set(InventorySummary(id = "inventory_wh_$whId", warehouseId = whId, items = items, totalValue = whTotalValue)).await()
         }
 
         // 3. Rebuild Suppliers Overview
@@ -240,32 +305,45 @@ class SettingsViewModel @Inject constructor(
                 totalCredit = s.totalCredit
             )
         }
+        val totalSuppDebt = supplierItems.values.sumOf { it.currentBalance }
         firestore.collection("summaries").document("suppliers_overview")
-            .set(SuppliersOverview(suppliers = supplierItems)).await()
+            .set(SuppliersOverview(suppliers = supplierItems, totalSupplierDebt = totalSuppDebt)).await()
 
         // 4. Rebuild Financial Status (High Precision Calculation)
+        val today = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }
+        val startOfToday = today.time.time
+
         val warehouseBalances = warehouses.associate { wh ->
             val cash = accountingRepository.getCurrentBalance(wh.id, "cash")
             val bank = accountingRepository.getCurrentBalance(wh.id, "bank")
             val debt = invoiceRepository.getTotalDebtForWarehouse(wh.id)
+            val (collVal, collCount) = paymentRepository.getTodayStats(wh.id, startOfToday)
             
             wh.id to WarehouseBalance(
                 warehouseId = wh.id,
                 cashBalance = cash,
                 bankBalance = bank,
-                pendingCollection = debt
+                pendingCollection = debt,
+                todayCollection = collVal,
+                todayCollectionCount = collCount
             )
         }
         
         // Calculate Globals via raw aggregation to be 100% sure
         val globalCash = accountingRepository.getCurrentBalance(null, "cash")
         val globalBank = bankRepository.getCurrentBalance()
+        val totalTodayCollVal = warehouseBalances.values.sumOf { it.todayCollection }
+        val totalTodayCollCount = warehouseBalances.values.sumOf { it.todayCollectionCount }
         
         firestore.collection("summaries").document("financial_status")
             .set(FinancialStatus(
                 warehouseBalances = warehouseBalances,
                 globalCashBalance = globalCash,
                 globalBankBalance = globalBank,
+                todayCollection = totalTodayCollVal,
+                todayCollectionCount = totalTodayCollCount,
                 lastUpdated = Date()
             )).await()
 

@@ -16,7 +16,8 @@ data class InventorySummaryItem(
     val minQuantity: Int = 0,
     val weightedAverageCost: Double = 0.0,
     val sellingPrice: Double = 0.0,
-    val updatedAt: Date = Date()
+    val updatedAt: Date = Date(),
+    val isDiscontinued: Boolean = false
 )
 
 /**

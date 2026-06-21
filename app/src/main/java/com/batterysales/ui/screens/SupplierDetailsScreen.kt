@@ -26,7 +26,7 @@ import com.batterysales.ui.components.TabItem
 import com.batterysales.viewmodel.ReportsViewModel
 import com.batterysales.ui.components.AppDateRangePickerDialog
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SupplierDetailsScreen(
     supplierId: String,
@@ -56,9 +56,14 @@ fun SupplierDetailsScreen(
                 actions = {
                     if (supplierItem != null) {
                         HeaderIconButton(
-                            icon = Icons.Default.Print,
-                            onClick = { com.batterysales.utils.PrintUtils.printSupplierReport(context, supplierItem!!) },
-                            contentDescription = "طباعة"
+                            icon = Icons.Default.AutoFixHigh,
+                            onClick = { viewModel.triggerAutoLink(supplierId) },
+                            contentDescription = "تسوية ذكية"
+                        )
+                        HeaderIconButton(
+                            icon = Icons.Default.Sync,
+                            onClick = { viewModel.syncSupplier(supplierId) },
+                            contentDescription = "مزامنة كاملة"
                         )
                         HeaderIconButton(
                             icon = Icons.Default.Share,
@@ -117,11 +122,15 @@ fun SupplierDetailsScreen(
                         Column(modifier = Modifier.padding(20.dp)) {
                             Text("ملخص الحساب", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                             Spacer(modifier = Modifier.height(16.dp))
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Column(modifier = Modifier.weight(1f)) {
+                            FlowRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Box(modifier = Modifier.weight(1f).widthIn(min = 140.dp)) {
                                     InfoBadge(label = "إجمالي مدين", value = "JD ${String.format("%.3f", item.totalDebit)}", color = Color(0xFFFB8C00))
                                 }
-                                Column(modifier = Modifier.weight(1f)) {
+                                Box(modifier = Modifier.weight(1f).widthIn(min = 140.dp)) {
                                     InfoBadge(label = "إجمالي دائن", value = "JD ${String.format("%.3f", item.totalCredit)}", color = Color(0xFF10B981))
                                 }
                             }
@@ -130,13 +139,22 @@ fun SupplierDetailsScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 colors = CardDefaults.cardColors(containerColor = if (item.balance > 0) Color(0xFFEF4444).copy(alpha = 0.1f) else Color(0xFF10B981).copy(alpha = 0.1f))
                             ) {
-                                Row(
+                                FlowRow(
                                     modifier = Modifier.padding(16.dp).fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                                    verticalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
-                                    Text("المتبقي بذمة المورد:", fontWeight = FontWeight.Bold)
-                                    Text("JD ${String.format("%.3f", item.balance)}", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold, color = if (item.balance > 0) Color(0xFFEF4444) else Color(0xFF10B981))
+                                    Text(
+                                        text = "المتبقي بذمة المورد:",
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(vertical = 4.dp)
+                                    )
+                                    Text(
+                                        text = "JD ${String.format("%.3f", item.balance)}",
+                                        style = MaterialTheme.typography.headlineSmall,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = if (item.balance > 0) Color(0xFFEF4444) else Color(0xFF10B981)
+                                    )
                                 }
                             }
                         }
@@ -157,7 +175,7 @@ fun SupplierDetailsScreen(
                                 modifier = Modifier.weight(1f)
                             )
                             TabItem(
-                                title = "طلبيات مسددة",
+                                title = "طلبيات مغطاة/مسددة",
                                 isSelected = selectedSubTab == 1,
                                 onClick = { selectedSubTab = 1 },
                                 modifier = Modifier.weight(1f)

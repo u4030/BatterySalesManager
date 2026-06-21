@@ -142,6 +142,13 @@ class ReportsViewModel @Inject constructor(
         }
     }
 
+    fun triggerAutoLink(supplierId: String) {
+        viewModelScope.launch {
+            billRepository.autoLinkBillsForSupplier(supplierId)
+            loadDetailedSupplierReport(supplierId)
+        }
+    }
+
     fun onBarcodeScanned(barcode: String?) {
         _barcodeFilter.value = barcode
         loadInventoryReport(reset = false) // Just filter locally
@@ -162,6 +169,18 @@ class ReportsViewModel @Inject constructor(
     fun onSupplierSearchQueryChanged(query: String) {
         _supplierSearchQuery.value = query
         loadSuppliersOverview()
+    }
+
+    fun syncSupplier(supplierId: String) {
+        viewModelScope.launch {
+            _isSupplierLoading.value = true
+            try {
+                billRepository.syncSupplierFinancials(supplierId)
+                loadDetailedSupplierReport(supplierId)
+            } finally {
+                _isSupplierLoading.value = false
+            }
+        }
     }
 
     // --- NUCLEAR STRATEGY: Load ENTIRE inventory from ONE document with FALLBACK ---
@@ -211,7 +230,7 @@ class ReportsViewModel @Inject constructor(
                         .toList()
                 }
 
-                val finalItems = items.sortedBy { it.product.name }
+                val finalItems = items.sortedWith(compareByDescending<InventoryReportItem> { it.product.name }.thenByDescending { it.variant.capacity })
                 _inventoryReportItems.value = finalItems
                 _grandTotalInventoryQuantity.value = finalItems.sumOf { it.totalQuantity }
                 _grandTotalInventoryValue.value = finalItems.sumOf { it.totalCostValue }
@@ -268,87 +287,172 @@ class ReportsViewModel @Inject constructor(
         supplierJob = viewModelScope.launch {
             try {
                 _isSupplierLoading.value = true
+
                 val start = _startDate.value
                 val end = _endDate.value
-                val supplier = supplierRepository.getSupplier(supplierId) ?: return@launch
 
+                // 1. Prioritize Cache for speed and lower quota usage
                 if (start == null && end == null) {
-                    val cache = summaryRepository.getSupplierReportCache(supplierId)
-                    if (cache != null) {
+                    val cachedReport = summaryRepository.getSupplierReportCache(supplierId)
+                    val supplier = supplierRepository.getSupplier(supplierId)
+                    if (cachedReport != null && supplier != null) {
                         _selectedSupplierReport.value = SupplierReportItem(
                             supplier = supplier,
-                            totalDebit = cache.totalDebit,
-                            totalCredit = cache.totalCredit,
-                            balance = cache.balance,
-                            targetProgress = if (supplier.yearlyTarget > 0) cache.totalDebit / supplier.yearlyTarget else 0.0,
-                            regularOrders = cache.regularOrders.map { it.toOrderItem() },
-                            obligatedOrders = cache.obligatedOrders.map { it.toOrderItem() }
+                            totalDebit = cachedReport.totalDebit,
+                            totalCredit = cachedReport.totalCredit,
+                            balance = cachedReport.balance,
+                            targetProgress = if (supplier.yearlyTarget > 0) cachedReport.totalDebit / supplier.yearlyTarget else 0.0,
+                            regularOrders = cachedReport.regularOrders.map { it.toOrderItem() },
+                            obligatedOrders = cachedReport.obligatedOrders.map { it.toOrderItem() }
                         )
                         _isSupplierLoading.value = false
+
+                        // Background incremental sync only if there is unallocated credit
+                        if (supplier.unallocatedCredit > 0.001) {
+                            viewModelScope.launch {
+                                try { billRepository.autoLinkBillsForSupplier(supplierId) } catch (e: Exception) {}
+                            }
+                        }
                         return@launch
                     }
                 }
 
-                val allEntries = stockEntryRepository.getEntriesBySuppliers(listOf(supplierId))
+                val supplier = supplierRepository.getSupplier(supplierId) ?: return@launch
+                val adjustedStart = start?.let { com.batterysales.utils.DateUtils.getStartOfDay(it) }
+                val adjustedEnd = end?.let { com.batterysales.utils.DateUtils.getEndOfDay(it) }
+
+                // If no cache, perform incremental sync ONLY if pool exists
+                if (supplier.unallocatedCredit > 0.001) {
+                    try { billRepository.autoLinkBillsForSupplier(supplierId) } catch (e: Exception) {}
+                }
+
+                val allEntries = stockEntryRepository.getEntriesBySuppliers(listOf(supplierId), listOf(supplier.name))
                 val allBills = billRepository.getBillsBySuppliers(listOf(supplierId))
 
-                val supplierEntries: List<StockEntry> = allEntries.filter { entry ->
+                // Fetch specifications for ALL entries to ensure consistency (Legacy data support)
+                val allVariantIds = allEntries.map { it.productVariantId }.distinct()
+                val variantsCache = if (allVariantIds.isEmpty()) emptyMap() else {
+                    productVariantRepository.getAllVariants().associateBy { it.id }
+                }
+
+                val supplierEntries: List<StockEntry> = allEntries.map { entry ->
+                    val spec = if (entry.specification.isBlank()) {
+                        variantsCache[entry.productVariantId]?.specification ?: ""
+                    } else entry.specification
+                    entry.copy(specification = spec)
+                }.filter { entry ->
                     entry.status == "approved" &&
+                            (adjustedStart == null || !entry.getEffectiveDate().before(Date(adjustedStart))) &&
+                            (adjustedEnd == null || !entry.getEffectiveDate().after(Date(adjustedEnd))) &&
                             (supplier.resetDate == null || !entry.getEffectiveDate().before(supplier.resetDate))
                 }
 
                 val supplierBills: List<Bill> = allBills.filter { bill ->
-                    (supplier.resetDate == null || !bill.createdAt.before(supplier.resetDate))
+                    (adjustedStart == null || !bill.createdAt.before(Date(adjustedStart))) &&
+                            (adjustedEnd == null || !bill.createdAt.after(Date(adjustedEnd))) &&
+                            (supplier.resetDate == null || !bill.createdAt.before(supplier.resetDate))
                 }
 
                 val groupedEntries: Map<String, List<StockEntry>> = supplierEntries
                     .groupBy { it.invoiceNumber.trim().ifEmpty { it.orderId.trim().ifEmpty { it.id } } }
 
-                val purchaseOrders: List<PurchaseOrderItem> = groupedEntries.map { (key, group) ->
+                val purchaseOrders: List<PurchaseOrderItem> = groupedEntries.map { (_, group) ->
                     val sortedGroup = group.sortedBy { it.timestamp }
                     val representative = sortedGroup.first()
+
+                    // Correctly calculate total group cost and remaining balance from DB state
                     val totalOrderCost = group.sumOf { it.getNetCost() }
-                    val effectiveBalance = if (representative.isSettled) 0.0 else (representative.remainingBalance ?: 0.0)
+                    val effectiveBalance = group.sumOf { item ->
+                        if (item.isSettled) 0.0 else (item.remainingBalance ?: item.getNetCost())
+                    }
 
-                    val manualLinkedBills = supplierBills.filter { bill ->
-                        val ref = bill.referenceNumber.trim()
-                        bill.relatedEntryId == key || ref == key || (ref.isNotEmpty() && ref == representative.invoiceNumber.trim())
-                    }.distinctBy { it.id }
+                    // Aggregate allocations across the whole order group for accurate coverage reporting
+                    val combinedAllocations = mutableMapOf<String, Double>()
+                    group.forEach { entry ->
+                        entry.linkedAllocations.forEach { (id, amount) ->
+                            combinedAllocations[id] = (combinedAllocations[id] ?: 0.0) + amount
+                        }
+                    }
 
-                    PurchaseOrderItem(
-                        entry = representative.copy(totalCost = totalOrderCost),
-                        linkedPaidAmount = manualLinkedBills.sumOf { it.paidAmount },
-                        remainingBalance = effectiveBalance,
-                        items = sortedGroup,
-                        referenceNumbers = manualLinkedBills.map { bill ->
-                            val typeLabel = when(bill.billType) {
+                    var clearedAmount = 0.0
+                    val coverageTypes = mutableSetOf<String>()
+                    combinedAllocations.forEach { (id, amount) ->
+                        if (amount <= 0.001) return@forEach
+
+                        val bill = allBills.find { it.id == id }
+                        if (bill != null) {
+                            if (bill.status == BillStatus.PAID || bill.billType == BillType.CASH || bill.billType == BillType.TRANSFER) {
+                                clearedAmount += amount
+                            }
+                            coverageTypes.add(when(bill.billType) {
                                 BillType.CHECK -> "شيك"
                                 BillType.BILL -> "كمبيالة"
-                                BillType.CASH -> "نقدي"
                                 else -> "دفعة"
+                            })
+                        } else {
+                            val ret = allEntries.find { it.id == id && it.totalCost < 0 }
+                            if (ret != null) {
+                                clearedAmount += amount
+                                coverageTypes.add("مرتجع مواد")
                             }
-                            "$typeLabel (#${bill.referenceNumber}): JD ${String.format("%.3f", bill.paidAmount)}"
+                        }
+                    }
+
+                    val totalCovered = totalOrderCost - effectiveBalance
+                    val coverageSummary = if (totalCovered > 0.001) {
+                        if (effectiveBalance <= 0.001) {
+                            if (clearedAmount >= totalOrderCost - 0.001) "مسددة بالكامل"
+                            else "مغطاة بالكامل"
+                        } else {
+                            val amountStr = " (JD ${String.format("%.3f", totalCovered)})"
+                            if (clearedAmount > 0.001) "مسددة جزئياً$amountStr" else "مغطاة جزئياً$amountStr"
+                        }
+                    } else "غير مغطاة"
+
+                    val dbNotes = group.flatMap { it.settlementNotes }.distinct().filter { it.isNotBlank() }
+                    val aggregatedNotes = if (dbNotes.isNotEmpty()) dbNotes else if (totalOrderCost > 0.001) {
+                        listOf(coverageSummary)
+                    } else emptyList()
+
+                    PurchaseOrderItem(
+                        entry = representative.copy(
+                            totalCost = totalOrderCost,
+                            remainingBalance = effectiveBalance,
+                            isSettled = effectiveBalance <= 0.001
+                        ),
+                        linkedPaidAmount = clearedAmount,
+                        autoLinkedAmount = 0.0,
+                        remainingBalance = effectiveBalance,
+                        items = sortedGroup.map { item ->
+                            val itemSpec = if (item.specification.isBlank()) {
+                                variantsCache[item.productVariantId]?.specification ?: ""
+                            } else item.specification
+                            item.copy(
+                                productName = item.productName.trim().ifEmpty { representative.productName.trim().ifEmpty { "منتج غير معروف" } },
+                                capacity = if (item.capacity == 0) representative.capacity else item.capacity,
+                                specification = itemSpec
+                            )
                         },
-                        hasManualLink = manualLinkedBills.isNotEmpty(),
-                        totalActualPaid = totalOrderCost - effectiveBalance,
-                        totalLinkedAmount = maxOf(manualLinkedBills.sumOf { it.amount }, totalOrderCost - effectiveBalance)
+                        referenceNumbers = aggregatedNotes,
+                        hasManualLink = aggregatedNotes.any { it.contains("ارتباط يدوي") },
+                        totalActualPaid = clearedAmount,
+                        totalLinkedAmount = totalCovered,
+                        coverageSummary = coverageSummary,
+                        isCleared = clearedAmount >= totalOrderCost - 0.001
                     )
                 }
 
                 val positiveOrders = purchaseOrders.filter { it.entry.totalCost > 0 }
-                    .sortedWith(compareBy<PurchaseOrderItem> { it.entry.getEffectiveDate() }.thenBy { it.entry.timestamp })
+                    .sortedWith(compareByDescending<PurchaseOrderItem> { it.entry.getEffectiveDate() }.thenByDescending { it.entry.timestamp })
 
                 val totalDebit = if (start == null && end == null) supplier.totalDebit else positiveOrders.sumOf { it.entry.totalCost }
-                val totalCredit = if (start == null && end == null) supplier.totalCredit else (supplierBills.sumOf { it.paidAmount } + purchaseOrders.filter { it.entry.totalCost < 0 }.sumOf { -it.entry.totalCost })
+                val totalCredit = if (start == null && end == null) supplier.totalCredit else (
+                    supplierBills.sumOf { b -> if (b.billType == BillType.CHECK || b.billType == BillType.BILL) b.amount else b.paidAmount }
+                    + purchaseOrders.filter { it.entry.totalCost < 0 }.sumOf { -it.entry.totalCost }
+                )
                 val balance = if (start == null && end == null) supplier.currentBalance else (totalDebit - totalCredit)
 
-                val adjustedStart = start?.let { com.batterysales.utils.DateUtils.getStartOfDay(it) }
-                val adjustedEnd = end?.let { com.batterysales.utils.DateUtils.getEndOfDay(it) }
-
-                val finalOrdersForDisplay = positiveOrders.filter { po ->
-                    (adjustedStart == null || po.entry.getEffectiveDate().time >= adjustedStart) &&
-                            (adjustedEnd == null || po.entry.getEffectiveDate().time <= adjustedEnd)
-                }
+                val finalOrdersForDisplay = positiveOrders
 
                 val partitionedResult = finalOrdersForDisplay.partition { po ->
                     po.totalLinkedAmount >= po.entry.totalCost - 0.001
@@ -423,18 +527,63 @@ private fun Map<String, Any>.toOrderItem(): PurchaseOrderItem {
         else -> null
     }
 
+    val itemsRaw = this["items"] as? List<Map<String, Any>> ?: emptyList()
+    val orderItems = itemsRaw.map { itemMap ->
+        var itemSpec = itemMap["specification"] as? String ?: ""
+        // Fallback for cache generated without specifications
+        if (itemSpec.isBlank()) {
+            val name = itemMap["productName"] as? String ?: ""
+            if (name.contains("(")) {
+                itemSpec = name.substringAfter("(").substringBefore(")")
+            }
+        }
+        StockEntry(
+            id = itemMap["id"] as? String ?: "",
+            productVariantId = itemMap["productVariantId"] as? String ?: "",
+            productName = itemMap["productName"] as? String ?: "",
+            capacity = (itemMap["capacity"] as? Number)?.toInt() ?: 0,
+            specification = itemSpec,
+            quantity = (itemMap["quantity"] as? Number)?.toInt() ?: 0,
+            totalCost = (itemMap["totalCost"] as? Number)?.toDouble() ?: 0.0,
+            linkedAllocations = (itemMap["linkedAllocations"] as? Map<String, Double>) ?: emptyMap()
+        )
+    }
+
+    val totalCost = (this["totalCost"] as? Number)?.toDouble() ?: 0.0
+    val remainingBalance = (this["remainingBalance"] as? Number)?.toDouble() ?: 0.0
+    val totalActualPaid = (this["totalActualPaid"] as? Number)?.toDouble() ?: 0.0
+    val isCleared = (this["isCleared"] as? Boolean) ?: (totalActualPaid >= totalCost - 0.001)
+
+    // Recalculate label even from cache to ensure no old technical strings are shown
+    val totalCovered = totalCost - remainingBalance
+    val label = if (totalCovered > 0.001) {
+        if (remainingBalance <= 0.001) {
+            if (isCleared) "مسددة بالكامل" else "مغطاة بالكامل"
+        } else {
+            if (totalActualPaid > 0.001) "مسددة جزئياً" else "مغطاة جزئياً"
+        }
+    } else "غير مغطاة"
+
+    val dbNotes = (this["settlementNotes"] as? List<String>) ?: emptyList()
+    val finalNotes = if (dbNotes.isNotEmpty()) dbNotes else listOf(label)
+
     return PurchaseOrderItem(
         entry = StockEntry(
             id = this["id"] as? String ?: "",
-            totalCost = (this["totalCost"] as? Number)?.toDouble() ?: 0.0,
+            totalCost = totalCost,
             invoiceNumber = this["invoiceNumber"] as? String ?: "",
             timestamp = timestamp,
             invoiceDate = invoiceDate,
             specification = this["specification"] as? String ?: "",
-            settlementNotes = (this["settlementNotes"] as? List<String>) ?: emptyList()
+            settlementNotes = finalNotes
         ),
-        linkedPaidAmount = 0.0,
-        remainingBalance = (this["remainingBalance"] as? Number)?.toDouble() ?: 0.0,
-        referenceNumbers = (this["referenceNumbers"] as? List<String>) ?: emptyList()
+        linkedPaidAmount = totalActualPaid,
+        remainingBalance = remainingBalance,
+        referenceNumbers = finalNotes,
+        items = orderItems,
+        totalLinkedAmount = totalCovered,
+        totalActualPaid = totalActualPaid,
+        coverageSummary = label,
+        isCleared = isCleared
     )
 }

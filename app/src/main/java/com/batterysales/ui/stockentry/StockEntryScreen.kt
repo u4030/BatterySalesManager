@@ -295,6 +295,38 @@ fun StockEntryContent(
         if (uiState.isAdmin) {
             CostCalculationSection(uiState = uiState, viewModel = viewModel)
 
+            // --- Integrated Payment Section (New) ---
+            if (!uiState.isEditMode) {
+                Card(
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("تسديد فوري (اختياري)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { viewModel.onPaymentMethodChanged("cash") }) {
+                                RadioButton(selected = uiState.paymentMethod == "cash", onClick = { viewModel.onPaymentMethodChanged("cash") })
+                                Text("نقدي", style = MaterialTheme.typography.bodySmall)
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { viewModel.onPaymentMethodChanged("transfer") }) {
+                                RadioButton(selected = uiState.paymentMethod == "transfer", onClick = { viewModel.onPaymentMethodChanged("transfer") })
+                                Text("تحويل بنكي", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+
+                        CustomKeyboardTextField(
+                            value = uiState.paymentAmount,
+                            onValueChange = viewModel::onPaymentAmountChanged,
+                            label = "المبلغ المسدد حالياً",
+                            modifier = Modifier.fillMaxWidth(),
+                            keyboardType = KeyboardLanguage.NUMERIC
+                        )
+                    }
+                }
+            }
+
             if (uiState.isEditMode) {
                 CustomKeyboardTextField(
                     value = uiState.returnedQuantity,

@@ -68,6 +68,8 @@ fun BillsScreen(
         }
     }
     val searchQuery by viewModel.searchQuery.collectAsState()
+    val selectedSupplierId by viewModel.selectedSupplierId.collectAsState()
+    val selectedSupplierBalance by viewModel.selectedSupplierBalance.collectAsState()
     val suppliers by viewModel.suppliers.collectAsState()
     val pendingPurchases by viewModel.pendingPurchases.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -125,13 +127,57 @@ fun BillsScreen(
                     }
                 )
 
-                Column(modifier = Modifier.padding(16.dp)) {
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                     CustomKeyboardTextField(
                         value = searchQuery,
                         onValueChange = viewModel::onSearchQueryChanged,
-                        label = "بحث باسم المورد أو رقم السند...",
+                        label = "بحث برقم السند...",
                         modifier = Modifier.fillMaxWidth()
                     )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilterChip(
+                            selected = selectedSupplierId == null,
+                            onClick = { viewModel.onSupplierSelected(null) },
+                            label = { Text("الكل") },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = Color(0xFFFB8C00),
+                                selectedLabelColor = Color.White
+                            )
+                        )
+                        suppliers.forEach { supplier ->
+                            FilterChip(
+                                selected = selectedSupplierId == supplier.id,
+                                onClick = { viewModel.onSupplierSelected(supplier.id) },
+                                label = { Text(supplier.name) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = Color(0xFFFB8C00),
+                                    selectedLabelColor = Color.White
+                                )
+                            )
+                        }
+                    }
+
+                    if (selectedSupplierId != null && selectedSupplierBalance != null) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Row(modifier = Modifier.padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text("إجمالي رصيد المورد المتبقي:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                                Text("JD ${String.format("%.3f", selectedSupplierBalance)}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, color = if ((selectedSupplierBalance ?: 0.0) > 0) Color(0xFFEF4444) else Color(0xFF10B981))
+                            }
+                        }
+                    }
                 }
             }
 
@@ -239,7 +285,7 @@ fun BillsScreen(
             currentUser = user,
             onDismiss = { showAddBillDialog = false },
             onAdd = { desc, amount, date, type, ref, supplierId, relatedEntryId, warehouseId, payImmediately ->
-                viewModel.addBill(desc, amount, date, type, ref, supplierId, relatedEntryId, warehouseId, payImmediately)
+                viewModel.addBill(desc, amount, date, type, ref, supplierId, null, warehouseId, payImmediately)
                 showAddBillDialog = false
             }
         )
@@ -432,7 +478,6 @@ fun AddBillDialog(
 ) {
     var description by remember { mutableStateOf("") }
     var selectedSupplier by remember { mutableStateOf<com.batterysales.data.models.Supplier?>(null) }
-    var selectedPurchase by remember { mutableStateOf<com.batterysales.data.models.StockEntry?>(null) }
     var selectedWarehouseId by remember { mutableStateOf<String?>(null) }
     var amount by remember { mutableStateOf("") }
     var refNum by remember { mutableStateOf("") }
@@ -464,7 +509,7 @@ fun AddBillDialog(
                         errorMessage = "الرجاء إدخال مبلغ صحيح"
                         return@Button
                     }
-                    onAdd(description, amt, selectedDate, selectedType, refNum, selectedSupplier?.id ?: "", selectedPurchase?.id, selectedWarehouseId, payImmediately)
+                    onAdd(description, amt, selectedDate, selectedType, refNum, selectedSupplier?.id ?: "", null, selectedWarehouseId, payImmediately)
                 },
                 enabled = isOnline
             ) { Text("إضافة") }
@@ -485,43 +530,9 @@ fun AddBillDialog(
             options = listOf("بدون مورد") + suppliers.map { it.name },
             onOptionSelected = { index ->
                 selectedSupplier = if (index == 0) null else suppliers[index - 1]
-                selectedPurchase = null // Reset purchase if supplier changes
             },
             enabled = true
         )
-
-        val supplierPurchases = pendingPurchases.filter { entry ->
-            val matchId = entry.supplierId.isNotEmpty() && entry.supplierId == selectedSupplier?.id
-            val matchName = entry.supplier.isNotBlank() &&
-                    entry.supplier.trim().equals(selectedSupplier?.name?.trim(), ignoreCase = true)
-            matchId || matchName
-        }.sortedByDescending { it.timestamp }
-        if (supplierPurchases.isNotEmpty()) {
-            val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
-            com.batterysales.ui.stockentry.Dropdown(
-                label = "ربط بطلبية شراء (اختياري)",
-                selectedValue = selectedPurchase?.let { "طلبية: ${dateFormatter.format(it.timestamp)} - المتبقي: JD ${String.format("%.3f", it.totalCost)}" } ?: "غير مرتبط",
-                options = listOf("غير مرتبط") + supplierPurchases.map { "طلبية: ${dateFormatter.format(it.timestamp)} - المتبقي: JD ${String.format("%.3f", it.totalCost)}" },
-                onOptionSelected = { index ->
-                    selectedPurchase = if (index == 0) null else supplierPurchases[index - 1]
-                    // Auto-fill amount if linked
-                    selectedPurchase?.let {
-                        amount = String.format("%.3f", it.totalCost)
-                        if (description.isEmpty()) description = "تسديد لطلبية شراء بتاريخ ${dateFormatter.format(it.timestamp)}"
-                    }
-                },
-                enabled = true
-            )
-
-            if (selectedPurchase != null) {
-                Text(
-                    text = "إجمالي الطلبية: JD ${String.format("%.3f", selectedPurchase!!.grandTotalCost)} | المتبقي: JD ${String.format("%.3f", selectedPurchase!!.totalCost)}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFFFB8C00),
-                    modifier = Modifier.padding(horizontal = 4.dp)
-                )
-            }
-        }
 
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = amount,

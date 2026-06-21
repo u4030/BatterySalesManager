@@ -134,19 +134,20 @@ class InvoiceRepository @Inject constructor(
     }
 
     suspend fun deleteInvoice(invoiceId: String) {
-        val payments = firestore.collection(Payment.COLLECTION_NAME)
+        val paymentsSnap = firestore.collection(Payment.COLLECTION_NAME)
             .whereEqualTo("invoiceId", invoiceId)
             .get()
             .await()
 
-        val stockEntries = firestore.collection(com.batterysales.data.models.StockEntry.COLLECTION_NAME)
+        val stockEntriesSnap = firestore.collection(com.batterysales.data.models.StockEntry.COLLECTION_NAME)
             .whereEqualTo("invoiceId", invoiceId)
             .get()
             .await()
 
-        val entries = stockEntries.documents.mapNotNull { it.toObject(com.batterysales.data.models.StockEntry::class.java)?.copy(id = it.id) }
+        val entries = stockEntriesSnap.documents.mapNotNull { it.toObject(com.batterysales.data.models.StockEntry::class.java)?.copy(id = it.id) }
         val approvedEntries = entries.filter { it.status == "approved" }
         val variantIds = approvedEntries.map { it.productVariantId }.distinct()
+        val warehouseId = entries.firstOrNull()?.warehouseId
 
         firestore.runTransaction { transaction ->
             // 1. All Reads
@@ -154,13 +155,14 @@ class InvoiceRepository @Inject constructor(
                 transaction.get(firestore.collection(com.batterysales.data.models.ProductVariant.COLLECTION_NAME).document(vid))
             }
             
+            val snapshots = warehouseId?.let { summaryRepository.getSummarySnapshots(transaction, it) }
             val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
             val invoiceRef = firestore.collection(Invoice.COLLECTION_NAME).document(invoiceId)
             val invoiceSnap = transaction.get(invoiceRef)
             val invoice = invoiceSnap.toObject(Invoice::class.java)
 
             // 2. All Writes
-            // 2.1 Update variants and system stats
+            // 2.1 Update variants, summaries and system stats
             var totalValueToReverse = 0.0
             var totalQtyToReverse = 0
             
@@ -171,24 +173,56 @@ class InvoiceRepository @Inject constructor(
                     stockMap[entry.warehouseId] = (stockMap[entry.warehouseId] ?: 0) - (entry.quantity)
                     transaction.update(variantSnapshots[entry.productVariantId]!!.reference, "currentStock", stockMap)
                     
+                    // Update Summary
+                    if (snapshots != null) {
+                        summaryRepository.applyInventoryUpdate(
+                            transaction = transaction,
+                            snapshots = snapshots,
+                            warehouseId = entry.warehouseId,
+                            variantId = entry.productVariantId,
+                            variant = variant,
+                            qtyChange = -entry.quantity
+                        )
+                    }
+
                     totalValueToReverse += (entry.quantity * variant.weightedAverageCost)
                     totalQtyToReverse += entry.quantity
                 }
             }
 
             if (invoice != null) {
+                val totalPaid = paymentsSnap.documents.sumOf { it.getDouble("amount") ?: 0.0 }
+                val cashPaid = paymentsSnap.documents.filter { it.getString("paymentMethod") == "cash" }.sumOf { it.getDouble("amount") ?: 0.0 }
+                val bankPaid = paymentsSnap.documents.filter { it.getString("paymentMethod") == "bank" }.sumOf { it.getDouble("amount") ?: 0.0 }
+
                 transaction.update(statsRef, mapOf(
                     "totalInventoryQuantity" to com.google.firebase.firestore.FieldValue.increment(-totalQtyToReverse.toLong()),
                     "totalInventoryValue" to com.google.firebase.firestore.FieldValue.increment(-totalValueToReverse),
-                    "totalCustomerDebt" to com.google.firebase.firestore.FieldValue.increment(-invoice.remainingAmount)
+                    "totalCustomerDebt" to com.google.firebase.firestore.FieldValue.increment(-invoice.remainingAmount),
+                    "totalCashBalance" to com.google.firebase.firestore.FieldValue.increment(-cashPaid),
+                    "totalBankBalance" to com.google.firebase.firestore.FieldValue.increment(-bankPaid)
                 ))
+
+                // Update Financial Summary
+                if (snapshots != null) {
+                    summaryRepository.applyFinancialUpdate(
+                        transaction = transaction,
+                        snapshots = snapshots,
+                        warehouseId = invoice.warehouseId,
+                        cashChange = -cashPaid,
+                        bankChange = -bankPaid,
+                        pendingCollectionChange = -invoice.remainingAmount,
+                        todayCollectionChange = -totalPaid,
+                        todayCollectionCountChange = -paymentsSnap.size()
+                    )
+                }
             }
 
             // 2.2 Delete associated payments
-            payments.documents.forEach { transaction.delete(it.reference) }
+            paymentsSnap.documents.forEach { transaction.delete(it.reference) }
 
             // 2.3 Delete stock entries
-            stockEntries.documents.forEach { transaction.delete(it.reference) }
+            stockEntriesSnap.documents.forEach { transaction.delete(it.reference) }
 
             // 2.4 Delete the invoice itself
             transaction.delete(invoiceRef)
@@ -248,7 +282,8 @@ class InvoiceRepository @Inject constructor(
                         message = "${variant.capacity}A | الكمية الحالية: ${currentQty + netQtyChange} (الحد: $threshold)",
                         relatedId = variant.id,
                         warehouseId = finalStockEntry.warehouseId,
-                        timestamp = Date()
+                        timestamp = Date(),
+                        data = mapOf("capacity" to variant.capacity, "currentStock" to (currentQty + netQtyChange), "threshold" to threshold)
                     ))
                 }
             }
@@ -258,12 +293,20 @@ class InvoiceRepository @Inject constructor(
             val valueChange = qty * (variant?.weightedAverageCost ?: 0.0)
             val customerDebtChange = invoice.remainingAmount
 
-            transaction.update(statsRef, mapOf(
+            val statsUpdates = mutableMapOf<String, Any>(
                 "totalInventoryQuantity" to com.google.firebase.firestore.FieldValue.increment(qty.toLong()),
                 "totalInventoryValue" to com.google.firebase.firestore.FieldValue.increment(valueChange),
                 "totalCustomerDebt" to com.google.firebase.firestore.FieldValue.increment(customerDebtChange),
                 "updatedAt" to java.util.Date()
-            ))
+            )
+
+            if (payment != null && payment.paymentMethod == "cash") {
+                statsUpdates["totalCashBalance"] = com.google.firebase.firestore.FieldValue.increment(payment.amount)
+            } else if (payment != null && payment.paymentMethod == "bank") {
+                statsUpdates["totalBankBalance"] = com.google.firebase.firestore.FieldValue.increment(payment.amount)
+            }
+
+            transaction.update(statsRef, statsUpdates)
 
             if (payment != null) {
                 val paymentRef = firestore.collection(com.batterysales.data.models.Payment.COLLECTION_NAME).document()
@@ -276,7 +319,9 @@ class InvoiceRepository @Inject constructor(
                     warehouseId = stockEntry.warehouseId,
                     cashChange = if (payment.paymentMethod == "cash") payment.amount else 0.0,
                     bankChange = if (payment.paymentMethod == "bank") payment.amount else 0.0,
-                    pendingCollectionChange = finalInvoice.remainingAmount
+                    pendingCollectionChange = finalInvoice.remainingAmount,
+                    todayCollectionChange = payment.amount,
+                    todayCollectionCountChange = 1
                 )
             } else {
                 // Just update pending collection
@@ -317,7 +362,37 @@ class InvoiceRepository @Inject constructor(
 
             // 2. Writes
             val paymentRef = firestore.collection(Payment.COLLECTION_NAME).document()
-            transaction.set(paymentRef, payment.copy(id = paymentRef.id, invoiceId = invoiceId))
+            val finalPayment = payment.copy(id = paymentRef.id, invoiceId = invoiceId)
+            transaction.set(paymentRef, finalPayment)
+
+            // Create Ledger Entry (Treasury or Bank)
+            if (finalPayment.paymentMethod == "bank") {
+                val bankRef = firestore.collection(com.batterysales.data.models.BankTransaction.COLLECTION_NAME).document()
+                transaction.set(bankRef, com.batterysales.data.models.BankTransaction(
+                    id = bankRef.id,
+                    amount = finalPayment.amount,
+                    type = com.batterysales.data.models.BankTransactionType.DEPOSIT,
+                    description = "دفعة من زبون: ${invoice.customerName} - فاتورة #${invoice.invoiceNumber}",
+                    date = finalPayment.paymentDate,
+                    notes = finalPayment.notes,
+                    isSystemManaged = true
+                    // Note: We don't have a specific paymentId field in BankTransaction yet,
+                    // but we can use description or reference for now, or add it later.
+                ))
+            } else {
+                val treasuryRef = firestore.collection(com.batterysales.data.models.Transaction.COLLECTION_NAME).document()
+                transaction.set(treasuryRef, com.batterysales.data.models.Transaction(
+                    id = treasuryRef.id,
+                    type = com.batterysales.data.models.TransactionType.PAYMENT,
+                    amount = finalPayment.amount,
+                    description = "دفعة من زبون: ${invoice.customerName} - فاتورة #${invoice.invoiceNumber}",
+                    relatedId = finalPayment.id, // Use payment ID for direct linking
+                    warehouseId = invoice.warehouseId,
+                    paymentMethod = finalPayment.paymentMethod,
+                    createdAt = finalPayment.paymentDate,
+                    isSystemManaged = true
+                ))
+            }
             
             val newTotalPaid = invoice.paidAmount + payment.amount
             val newRemaining = invoice.totalAmount - newTotalPaid
@@ -337,16 +412,33 @@ class InvoiceRepository @Inject constructor(
                 warehouseId = invoice.warehouseId,
                 cashChange = if (payment.paymentMethod == "cash") payment.amount else 0.0,
                 bankChange = if (payment.paymentMethod == "bank") payment.amount else 0.0,
-                pendingCollectionChange = -payment.amount
+                pendingCollectionChange = -payment.amount,
+                todayCollectionChange = payment.amount,
+                todayCollectionCountChange = 1 // Simplified: Each payment is an 'action' for count for now
             )
 
             // Update System Stats
-            transaction.update(statsRef, "totalCustomerDebt", com.google.firebase.firestore.FieldValue.increment(-payment.amount))
+            val statsUpdates = mutableMapOf<String, Any>(
+                "totalCustomerDebt" to com.google.firebase.firestore.FieldValue.increment(-payment.amount)
+            )
+
+            if (payment.paymentMethod == "cash") {
+                statsUpdates["totalCashBalance"] = com.google.firebase.firestore.FieldValue.increment(payment.amount)
+            } else if (payment.paymentMethod == "bank") {
+                statsUpdates["totalBankBalance"] = com.google.firebase.firestore.FieldValue.increment(payment.amount)
+            }
+
+            transaction.update(statsRef, statsUpdates)
         }.await()
     }
 
     suspend fun updatePayment(payment: Payment) {
         val invoiceRef = firestore.collection(Invoice.COLLECTION_NAME).document(payment.invoiceId)
+
+        // Find linked ledger entries
+        val treasuryTransactions = firestore.collection(com.batterysales.data.models.Transaction.COLLECTION_NAME)
+            .whereEqualTo("relatedId", payment.id).get().await()
+
         firestore.runTransaction { transaction ->
             // 1. Reads
             val invoiceSnap = transaction.get(invoiceRef)
@@ -360,6 +452,15 @@ class InvoiceRepository @Inject constructor(
             // 2. Writes
             val diff = payment.amount - oldPayment.amount
             transaction.set(paymentRef, payment)
+
+            // Update linked ledger entries
+            treasuryTransactions.documents.forEach { doc ->
+                transaction.update(doc.reference, mapOf(
+                    "amount" to payment.amount,
+                    "createdAt" to payment.paymentDate,
+                    "description" to "دفعة من زبون: ${invoice.customerName} - فاتورة #${invoice.invoiceNumber}"
+                ))
+            }
             
             val newTotalPaid = invoice.paidAmount + diff
             val newRemaining = invoice.totalAmount - newTotalPaid
@@ -379,11 +480,23 @@ class InvoiceRepository @Inject constructor(
                 warehouseId = invoice.warehouseId,
                 cashChange = if (payment.paymentMethod == "cash") diff else 0.0,
                 bankChange = if (payment.paymentMethod == "bank") diff else 0.0,
-                pendingCollectionChange = -diff
+                pendingCollectionChange = -diff,
+                todayCollectionChange = diff
+                // Note: count doesn't change on update
             )
 
             // Update System Stats
-            transaction.update(statsRef, "totalCustomerDebt", com.google.firebase.firestore.FieldValue.increment(-diff))
+            val statsUpdates = mutableMapOf<String, Any>(
+                "totalCustomerDebt" to com.google.firebase.firestore.FieldValue.increment(-diff)
+            )
+
+            if (payment.paymentMethod == "cash") {
+                statsUpdates["totalCashBalance"] = com.google.firebase.firestore.FieldValue.increment(diff)
+            } else if (payment.paymentMethod == "bank") {
+                statsUpdates["totalBankBalance"] = com.google.firebase.firestore.FieldValue.increment(diff)
+            }
+
+            transaction.update(statsRef, statsUpdates)
         }.await()
     }
 
@@ -409,6 +522,11 @@ class InvoiceRepository @Inject constructor(
 
     suspend fun deletePayment(paymentId: String, invoiceId: String) {
         val invoiceRef = firestore.collection(Invoice.COLLECTION_NAME).document(invoiceId)
+
+        // Find linked ledger entries
+        val treasuryTransactions = firestore.collection(com.batterysales.data.models.Transaction.COLLECTION_NAME)
+            .whereEqualTo("relatedId", paymentId).get().await()
+
         firestore.runTransaction { transaction ->
             // 1. Reads
             val invoiceSnap = transaction.get(invoiceRef)
@@ -421,6 +539,11 @@ class InvoiceRepository @Inject constructor(
 
             // 2. Writes
             transaction.delete(paymentRef)
+
+            // Delete linked ledger entries
+            treasuryTransactions.documents.forEach { doc ->
+                transaction.delete(doc.reference)
+            }
             
             val newTotalPaid = invoice.paidAmount - oldPayment.amount
             val newRemaining = invoice.totalAmount - newTotalPaid
@@ -440,11 +563,23 @@ class InvoiceRepository @Inject constructor(
                 warehouseId = invoice.warehouseId,
                 cashChange = if (oldPayment.paymentMethod == "cash") -oldPayment.amount else 0.0,
                 bankChange = if (oldPayment.paymentMethod == "bank") -oldPayment.amount else 0.0,
-                pendingCollectionChange = oldPayment.amount
+                pendingCollectionChange = oldPayment.amount,
+                todayCollectionChange = -oldPayment.amount,
+                todayCollectionCountChange = -1
             )
 
             // Update System Stats
-            transaction.update(statsRef, "totalCustomerDebt", com.google.firebase.firestore.FieldValue.increment(oldPayment.amount))
+            val statsUpdates = mutableMapOf<String, Any>(
+                "totalCustomerDebt" to com.google.firebase.firestore.FieldValue.increment(oldPayment.amount)
+            )
+
+            if (oldPayment.paymentMethod == "cash") {
+                statsUpdates["totalCashBalance"] = com.google.firebase.firestore.FieldValue.increment(-oldPayment.amount)
+            } else if (oldPayment.paymentMethod == "bank") {
+                statsUpdates["totalBankBalance"] = com.google.firebase.firestore.FieldValue.increment(-oldPayment.amount)
+            }
+
+            transaction.update(statsRef, statsUpdates)
         }.await()
     }
 }
