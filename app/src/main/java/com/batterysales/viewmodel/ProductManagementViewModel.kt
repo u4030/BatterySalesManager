@@ -167,7 +167,7 @@ class ProductManagementViewModel @Inject constructor(
                         specification = specification
                     )
                     if (variant.isValid()) {
-                        productVariantRepository.addVariant(variant)
+                        productVariantRepository.addVariant(variant, summaryRepository)
                     } else {
                         _errorMessage.value = variant.getValidationError()
                     }

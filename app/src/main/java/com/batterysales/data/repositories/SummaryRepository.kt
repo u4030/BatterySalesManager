@@ -58,43 +58,54 @@ class SummaryRepository @Inject constructor(
         variantId: String,
         variant: ProductVariant,
         qtyChange: Int,
-        costChange: Double = 0.0
+        costChange: Double = 0.0 // Deprecated, will recalculate from item values
     ) {
         val whSummary = snapshots.inventoryWh ?: InventorySummary(id = "inventory_wh_$warehouseId", warehouseId = warehouseId)
         val globalSummary = snapshots.inventoryGlobal ?: InventorySummary(id = "inventory_global")
 
         // Update Warehouse Summary
         val updatedItemsWh = whSummary.items.toMutableMap()
-        val currentItemWh = updatedItemsWh[variantId] ?: InventorySummaryItem(
+        val oldItemWh = updatedItemsWh[variantId]
+        val newItemWh = (oldItemWh ?: InventorySummaryItem(
             variantId = variantId, productId = variant.productId, productName = variant.productName ?: "Unknown",
             capacity = variant.capacity, barcode = variant.barcode, sellingPrice = variant.sellingPrice,
             specification = variant.specification, isDiscontinued = variant.isDiscontinued
-        )
-        updatedItemsWh[variantId] = currentItemWh.copy(
-            currentStock = currentItemWh.currentStock + qtyChange,
+        )).copy(
+            currentStock = (oldItemWh?.currentStock ?: 0) + qtyChange,
             weightedAverageCost = variant.weightedAverageCost,
             specification = variant.specification,
             isDiscontinued = variant.isDiscontinued,
             updatedAt = Date()
         )
+        updatedItemsWh[variantId] = newItemWh
 
         // Update Global Summary
         val updatedItemsGlobal = globalSummary.items.toMutableMap()
-        val currentItemGlobal = updatedItemsGlobal[variantId] ?: InventorySummaryItem(
+        val oldItemGlobal = updatedItemsGlobal[variantId]
+        val newItemGlobal = (oldItemGlobal ?: InventorySummaryItem(
             variantId = variantId, productId = variant.productId, productName = variant.productName ?: "Unknown",
             capacity = variant.capacity, barcode = variant.barcode, sellingPrice = variant.sellingPrice,
             specification = variant.specification, isDiscontinued = variant.isDiscontinued
-        )
-        updatedItemsGlobal[variantId] = currentItemGlobal.copy(
-            currentStock = currentItemGlobal.currentStock + qtyChange,
+        )).copy(
+            currentStock = (oldItemGlobal?.currentStock ?: 0) + qtyChange,
             weightedAverageCost = variant.weightedAverageCost,
             specification = variant.specification,
             isDiscontinued = variant.isDiscontinued,
             updatedAt = Date()
         )
+        updatedItemsGlobal[variantId] = newItemGlobal
 
-        transaction.set(summariesCollection.document("inventory_wh_$warehouseId"), whSummary.copy(items = updatedItemsWh, lastUpdated = Date(), totalValue = whSummary.totalValue + costChange, version = whSummary.version + 1))
-        transaction.set(summariesCollection.document("inventory_global"), globalSummary.copy(items = updatedItemsGlobal, lastUpdated = Date(), totalValue = globalSummary.totalValue + costChange, version = globalSummary.version + 1))
+        // Recalculate Total Values precisely to match Report formula (Stock * WAC)
+        val whOldItemVal = (oldItemWh?.currentStock ?: 0) * (oldItemWh?.weightedAverageCost ?: 0.0)
+        val whNewItemVal = newItemWh.currentStock * newItemWh.weightedAverageCost
+        val newWhTotalValue = whSummary.totalValue - whOldItemVal + whNewItemVal
+
+        val globalOldItemVal = (oldItemGlobal?.currentStock ?: 0) * (oldItemGlobal?.weightedAverageCost ?: 0.0)
+        val globalNewItemVal = newItemGlobal.currentStock * newItemGlobal.weightedAverageCost
+        val newGlobalTotalValue = globalSummary.totalValue - globalOldItemVal + globalNewItemVal
+
+        transaction.set(summariesCollection.document("inventory_wh_$warehouseId"), whSummary.copy(items = updatedItemsWh, lastUpdated = Date(), totalValue = newWhTotalValue, version = whSummary.version + 1))
+        transaction.set(summariesCollection.document("inventory_global"), globalSummary.copy(items = updatedItemsGlobal, lastUpdated = Date(), totalValue = newGlobalTotalValue, version = globalSummary.version + 1))
         
         incrementSyncVersion(transaction, "inventory")
     }
@@ -111,44 +122,48 @@ class SummaryRepository @Inject constructor(
 
         val updatedItemsWh = whSummary.items.toMutableMap()
         val updatedItemsGlobal = globalSummary.items.toMutableMap()
-        var totalCostChange = 0.0
+
+        var whValueDelta = 0.0
+        var globalValueDelta = 0.0
 
         qtyChanges.forEach { (variantId, qtyChange) ->
             val variant = variantsMap[variantId] ?: return@forEach
             
             // Warehouse Map
-            val currentItemWh = updatedItemsWh[variantId] ?: InventorySummaryItem(
+            val oldItemWh = updatedItemsWh[variantId]
+            val newItemWh = (oldItemWh ?: InventorySummaryItem(
                 variantId = variantId, productId = variant.productId, productName = variant.productName ?: "Unknown",
                 capacity = variant.capacity, barcode = variant.barcode, sellingPrice = variant.sellingPrice,
                 specification = variant.specification, isDiscontinued = variant.isDiscontinued
-            )
-            updatedItemsWh[variantId] = currentItemWh.copy(
-                currentStock = currentItemWh.currentStock + qtyChange,
+            )).copy(
+                currentStock = (oldItemWh?.currentStock ?: 0) + qtyChange,
                 weightedAverageCost = variant.weightedAverageCost,
                 specification = variant.specification,
                 isDiscontinued = variant.isDiscontinued,
                 updatedAt = Date()
             )
+            updatedItemsWh[variantId] = newItemWh
+            whValueDelta += (newItemWh.currentStock * newItemWh.weightedAverageCost) - ((oldItemWh?.currentStock ?: 0) * (oldItemWh?.weightedAverageCost ?: 0.0))
 
             // Global Map
-            val currentItemGlobal = updatedItemsGlobal[variantId] ?: InventorySummaryItem(
+            val oldItemGlobal = updatedItemsGlobal[variantId]
+            val newItemGlobal = (oldItemGlobal ?: InventorySummaryItem(
                 variantId = variantId, productId = variant.productId, productName = variant.productName ?: "Unknown",
                 capacity = variant.capacity, barcode = variant.barcode, sellingPrice = variant.sellingPrice,
                 specification = variant.specification, isDiscontinued = variant.isDiscontinued
-            )
-            updatedItemsGlobal[variantId] = currentItemGlobal.copy(
-                currentStock = currentItemGlobal.currentStock + qtyChange,
+            )).copy(
+                currentStock = (oldItemGlobal?.currentStock ?: 0) + qtyChange,
                 weightedAverageCost = variant.weightedAverageCost,
                 specification = variant.specification,
                 isDiscontinued = variant.isDiscontinued,
                 updatedAt = Date()
             )
-            
-            totalCostChange += (qtyChange * variant.weightedAverageCost)
+            updatedItemsGlobal[variantId] = newItemGlobal
+            globalValueDelta += (newItemGlobal.currentStock * newItemGlobal.weightedAverageCost) - ((oldItemGlobal?.currentStock ?: 0) * (oldItemGlobal?.weightedAverageCost ?: 0.0))
         }
 
-        transaction.set(summariesCollection.document("inventory_wh_$warehouseId"), whSummary.copy(items = updatedItemsWh, lastUpdated = Date(), totalValue = whSummary.totalValue + totalCostChange, version = whSummary.version + 1))
-        transaction.set(summariesCollection.document("inventory_global"), globalSummary.copy(items = updatedItemsGlobal, lastUpdated = Date(), totalValue = globalSummary.totalValue + totalCostChange, version = globalSummary.version + 1))
+        transaction.set(summariesCollection.document("inventory_wh_$warehouseId"), whSummary.copy(items = updatedItemsWh, lastUpdated = Date(), totalValue = whSummary.totalValue + whValueDelta, version = whSummary.version + 1))
+        transaction.set(summariesCollection.document("inventory_global"), globalSummary.copy(items = updatedItemsGlobal, lastUpdated = Date(), totalValue = globalSummary.totalValue + globalValueDelta, version = globalSummary.version + 1))
         
         incrementSyncVersion(transaction, "inventory")
     }
@@ -179,7 +194,6 @@ class SummaryRepository @Inject constructor(
         transaction: Transaction,
         snapshots: SummarySnapshots,
         warehouseId: String,
-        date: Date = Date(),
         cashChange: Double = 0.0,
         bankChange: Double = 0.0,
         pendingCollectionChange: Double = 0.0,
@@ -189,25 +203,15 @@ class SummaryRepository @Inject constructor(
         todayCollectionCountChange: Int = 0
     ) {
         val status = snapshots.financialStatus ?: FinancialStatus()
-        val now = Date()
-        val isStoredToday = com.batterysales.utils.DateUtils.isSameDay(status.lastUpdated, now)
-        val isUpdateToday = com.batterysales.utils.DateUtils.isSameDay(date, now)
-
-        val updatedWarehouses = if (!isStoredToday) {
-            // New day: Reset all today stats
-            status.warehouseBalances.mapValues { it.value.copy(todayCollection = 0.0, todayCollectionCount = 0) }.toMutableMap()
-        } else {
-            status.warehouseBalances.toMutableMap()
-        }
-
+        val updatedWarehouses = status.warehouseBalances.toMutableMap()
         val currentWh = updatedWarehouses[warehouseId] ?: WarehouseBalance(warehouseId = warehouseId)
         
         updatedWarehouses[warehouseId] = currentWh.copy(
             cashBalance = currentWh.cashBalance + cashChange,
             bankBalance = currentWh.bankBalance + bankChange,
             pendingCollection = currentWh.pendingCollection + pendingCollectionChange,
-            todayCollection = if (isUpdateToday) currentWh.todayCollection + todayCollectionChange else currentWh.todayCollection,
-            todayCollectionCount = if (isUpdateToday) currentWh.todayCollectionCount + todayCollectionCountChange else currentWh.todayCollectionCount
+            todayCollection = currentWh.todayCollection + todayCollectionChange,
+            todayCollectionCount = currentWh.todayCollectionCount + todayCollectionCountChange
         )
 
         transaction.set(summariesCollection.document("financial_status"), status.copy(
@@ -216,7 +220,9 @@ class SummaryRepository @Inject constructor(
             globalBankBalance = status.globalBankBalance + bankChange,
             totalUnpaidBills = status.totalUnpaidBills + billChange,
             totalUnpaidChecks = status.totalUnpaidChecks + checkChange,
-            lastUpdated = now,
+            todayCollection = status.todayCollection + todayCollectionChange,
+            todayCollectionCount = status.todayCollectionCount + todayCollectionCountChange,
+            lastUpdated = Date(),
             version = status.version + 1
         ))
         

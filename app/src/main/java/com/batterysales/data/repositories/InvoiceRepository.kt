@@ -134,19 +134,20 @@ class InvoiceRepository @Inject constructor(
     }
 
     suspend fun deleteInvoice(invoiceId: String) {
-        val payments = firestore.collection(Payment.COLLECTION_NAME)
+        val paymentsSnap = firestore.collection(Payment.COLLECTION_NAME)
             .whereEqualTo("invoiceId", invoiceId)
             .get()
             .await()
 
-        val stockEntries = firestore.collection(com.batterysales.data.models.StockEntry.COLLECTION_NAME)
+        val stockEntriesSnap = firestore.collection(com.batterysales.data.models.StockEntry.COLLECTION_NAME)
             .whereEqualTo("invoiceId", invoiceId)
             .get()
             .await()
 
-        val entries = stockEntries.documents.mapNotNull { it.toObject(com.batterysales.data.models.StockEntry::class.java)?.copy(id = it.id) }
+        val entries = stockEntriesSnap.documents.mapNotNull { it.toObject(com.batterysales.data.models.StockEntry::class.java)?.copy(id = it.id) }
         val approvedEntries = entries.filter { it.status == "approved" }
         val variantIds = approvedEntries.map { it.productVariantId }.distinct()
+        val warehouseId = entries.firstOrNull()?.warehouseId
 
         firestore.runTransaction { transaction ->
             // 1. All Reads
@@ -154,13 +155,14 @@ class InvoiceRepository @Inject constructor(
                 transaction.get(firestore.collection(com.batterysales.data.models.ProductVariant.COLLECTION_NAME).document(vid))
             }
             
+            val snapshots = warehouseId?.let { summaryRepository.getSummarySnapshots(transaction, it) }
             val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
             val invoiceRef = firestore.collection(Invoice.COLLECTION_NAME).document(invoiceId)
             val invoiceSnap = transaction.get(invoiceRef)
             val invoice = invoiceSnap.toObject(Invoice::class.java)
 
             // 2. All Writes
-            // 2.1 Update variants and system stats
+            // 2.1 Update variants, summaries and system stats
             var totalValueToReverse = 0.0
             var totalQtyToReverse = 0
             
@@ -171,24 +173,56 @@ class InvoiceRepository @Inject constructor(
                     stockMap[entry.warehouseId] = (stockMap[entry.warehouseId] ?: 0) - (entry.quantity)
                     transaction.update(variantSnapshots[entry.productVariantId]!!.reference, "currentStock", stockMap)
                     
+                    // Update Summary
+                    if (snapshots != null) {
+                        summaryRepository.applyInventoryUpdate(
+                            transaction = transaction,
+                            snapshots = snapshots,
+                            warehouseId = entry.warehouseId,
+                            variantId = entry.productVariantId,
+                            variant = variant,
+                            qtyChange = -entry.quantity
+                        )
+                    }
+
                     totalValueToReverse += (entry.quantity * variant.weightedAverageCost)
                     totalQtyToReverse += entry.quantity
                 }
             }
 
             if (invoice != null) {
+                val totalPaid = paymentsSnap.documents.sumOf { it.getDouble("amount") ?: 0.0 }
+                val cashPaid = paymentsSnap.documents.filter { it.getString("paymentMethod") == "cash" }.sumOf { it.getDouble("amount") ?: 0.0 }
+                val bankPaid = paymentsSnap.documents.filter { it.getString("paymentMethod") == "bank" }.sumOf { it.getDouble("amount") ?: 0.0 }
+
                 transaction.update(statsRef, mapOf(
                     "totalInventoryQuantity" to com.google.firebase.firestore.FieldValue.increment(-totalQtyToReverse.toLong()),
                     "totalInventoryValue" to com.google.firebase.firestore.FieldValue.increment(-totalValueToReverse),
-                    "totalCustomerDebt" to com.google.firebase.firestore.FieldValue.increment(-invoice.remainingAmount)
+                    "totalCustomerDebt" to com.google.firebase.firestore.FieldValue.increment(-invoice.remainingAmount),
+                    "totalCashBalance" to com.google.firebase.firestore.FieldValue.increment(-cashPaid),
+                    "totalBankBalance" to com.google.firebase.firestore.FieldValue.increment(-bankPaid)
                 ))
+
+                // Update Financial Summary
+                if (snapshots != null) {
+                    summaryRepository.applyFinancialUpdate(
+                        transaction = transaction,
+                        snapshots = snapshots,
+                        warehouseId = invoice.warehouseId,
+                        cashChange = -cashPaid,
+                        bankChange = -bankPaid,
+                        pendingCollectionChange = -invoice.remainingAmount,
+                        todayCollectionChange = -totalPaid,
+                        todayCollectionCountChange = -paymentsSnap.size()
+                    )
+                }
             }
 
             // 2.2 Delete associated payments
-            payments.documents.forEach { transaction.delete(it.reference) }
+            paymentsSnap.documents.forEach { transaction.delete(it.reference) }
 
             // 2.3 Delete stock entries
-            stockEntries.documents.forEach { transaction.delete(it.reference) }
+            stockEntriesSnap.documents.forEach { transaction.delete(it.reference) }
 
             // 2.4 Delete the invoice itself
             transaction.delete(invoiceRef)
@@ -283,7 +317,6 @@ class InvoiceRepository @Inject constructor(
                     transaction = transaction,
                     snapshots = summarySnapshots,
                     warehouseId = stockEntry.warehouseId,
-                    date = finalInvoice.invoiceDate ?: Date(),
                     cashChange = if (payment.paymentMethod == "cash") payment.amount else 0.0,
                     bankChange = if (payment.paymentMethod == "bank") payment.amount else 0.0,
                     pendingCollectionChange = finalInvoice.remainingAmount,
@@ -296,9 +329,7 @@ class InvoiceRepository @Inject constructor(
                     transaction = transaction,
                     snapshots = summarySnapshots,
                     warehouseId = stockEntry.warehouseId,
-                    date = finalInvoice.invoiceDate ?: Date(),
-                    pendingCollectionChange = finalInvoice.remainingAmount,
-                    todayCollectionCountChange = 1 // Still an invoice count even if no payment
+                    pendingCollectionChange = finalInvoice.remainingAmount
                 )
             }
 
@@ -379,12 +410,11 @@ class InvoiceRepository @Inject constructor(
                 transaction = transaction,
                 snapshots = summarySnapshots,
                 warehouseId = invoice.warehouseId,
-                date = payment.paymentDate,
                 cashChange = if (payment.paymentMethod == "cash") payment.amount else 0.0,
                 bankChange = if (payment.paymentMethod == "bank") payment.amount else 0.0,
                 pendingCollectionChange = -payment.amount,
-                todayCollectionChange = payment.amount
-                // Count doesn't change for just a payment on existing invoice
+                todayCollectionChange = payment.amount,
+                todayCollectionCountChange = 1 // Simplified: Each payment is an 'action' for count for now
             )
 
             // Update System Stats
@@ -448,11 +478,11 @@ class InvoiceRepository @Inject constructor(
                 transaction = transaction,
                 snapshots = summarySnapshots,
                 warehouseId = invoice.warehouseId,
-                date = payment.paymentDate,
                 cashChange = if (payment.paymentMethod == "cash") diff else 0.0,
                 bankChange = if (payment.paymentMethod == "bank") diff else 0.0,
                 pendingCollectionChange = -diff,
                 todayCollectionChange = diff
+                // Note: count doesn't change on update
             )
 
             // Update System Stats
@@ -531,11 +561,11 @@ class InvoiceRepository @Inject constructor(
                 transaction = transaction,
                 snapshots = summarySnapshots,
                 warehouseId = invoice.warehouseId,
-                date = oldPayment.paymentDate,
                 cashChange = if (oldPayment.paymentMethod == "cash") -oldPayment.amount else 0.0,
                 bankChange = if (oldPayment.paymentMethod == "bank") -oldPayment.amount else 0.0,
                 pendingCollectionChange = oldPayment.amount,
-                todayCollectionChange = -oldPayment.amount
+                todayCollectionChange = -oldPayment.amount,
+                todayCollectionCountChange = -1
             )
 
             // Update System Stats
