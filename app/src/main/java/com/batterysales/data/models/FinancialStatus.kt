@@ -14,18 +14,12 @@ data class FinancialStatus(
     val totalUnpaidBills: Double = 0.0,
     val totalUnpaidChecks: Double = 0.0,
     val lastUpdated: Date = Date(),
-    val version: Long = 0,
-
-    // Aggregate collections for Dashboard
-    val todayCollection: Double = 0.0,
-    val todayCollectionCount: Int = 0
+    val version: Long = 0
 )
 
 data class WarehouseBalance(
     val warehouseId: String = "",
     val cashBalance: Double = 0.0,
     val bankBalance: Double = 0.0,
-    val pendingCollection: Double = 0.0, // Total unpaid customer invoices
-    val todayCollection: Double = 0.0,
-    val todayCollectionCount: Int = 0
+    val pendingCollection: Double = 0.0 // Total unpaid customer invoices
 )

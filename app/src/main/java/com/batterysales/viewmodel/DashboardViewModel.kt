@@ -66,7 +66,6 @@ class DashboardViewModel @Inject constructor(
     private val warehouseRepository: WarehouseRepository,
     private val userRepository: UserRepository,
     private val paymentRepository: PaymentRepository,
-    private val summaryRepository: SummaryRepository,
     private val firestore: com.google.firebase.firestore.FirebaseFirestore
 ) : ViewModel() {
 
@@ -85,7 +84,6 @@ class DashboardViewModel @Inject constructor(
 
     private var dashboardJob: kotlinx.coroutines.Job? = null
     private var alertsListener: com.google.firebase.firestore.ListenerRegistration? = null
-    private var financialListenerJob: kotlinx.coroutines.Job? = null
 
     private fun loadDashboardData() {
         dashboardJob?.cancel()
@@ -96,7 +94,6 @@ class DashboardViewModel @Inject constructor(
             if (user == null) {
                 _uiState.value = DashboardUiState(isLoading = false)
                 alertsListener?.remove()
-                financialListenerJob?.cancel()
                 return@onEach
             }
 
@@ -114,7 +111,7 @@ class DashboardViewModel @Inject constructor(
                     Pair(0, warehouseRepository.getWarehousesOnce())
                 }
 
-                // 2. Real-time Snapshot Listener for Alerts
+                // 3. Real-time Snapshot Listener for Alerts
                 alertsListener?.remove()
                 alertsListener = firestore.collection(SystemAlert.COLLECTION_NAME)
                     .whereEqualTo("type", SystemAlert.TYPE_LOW_STOCK)
@@ -162,26 +159,6 @@ class DashboardViewModel @Inject constructor(
                         }
                     }
 
-                // 3. Real-time Snapshot Listener for Financial (Today's Collections)
-                financialListenerJob?.cancel()
-                financialListenerJob = summaryRepository.getFinancialStatusFlow()
-                    .onEach { status ->
-                        val relevantWarehouses = if (isAdmin) warehouses
-                                                else warehouses.filter { it.id == userWarehouseId && it.isActive }
-
-                        val warehouseStatsList = relevantWarehouses.map { warehouse ->
-                            val whBal = status.warehouseBalances[warehouse.id]
-                            WarehouseStats(
-                                warehouseId = warehouse.id,
-                                warehouseName = warehouse.name,
-                                todayCollection = whBal?.todayCollection ?: 0.0,
-                                todayCollectionCount = whBal?.todayCollectionCount ?: 0
-                            )
-                        }.filter { if (isAdmin) it.todayCollection > 0 || it.todayCollectionCount > 0 else true }
-
-                        _uiState.update { it.copy(warehouseStats = warehouseStatsList) }
-                    }.launchIn(viewModelScope)
-
                 // 4. Initial load of heavy data (Once per trigger)
                 loadHeavyData(user, warehouses, pendingCount)
 
@@ -195,7 +172,6 @@ class DashboardViewModel @Inject constructor(
     override fun onCleared() {
         super.onCleared()
         alertsListener?.remove()
-        financialListenerJob?.cancel()
     }
 
     private suspend fun loadHeavyData(
@@ -206,12 +182,20 @@ class DashboardViewModel @Inject constructor(
         val isAdmin = user.role == "admin"
         val userWarehouseId = user.warehouseId
         
-        // 1. Today's Collections (Now handled by real-time listener)
+        // 2. Today's Collections (Targeted server-side aggregation - One-time)
         val today = Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
         }
+        val startOfToday = today.time.time
+        val relevantWarehouses = if (isAdmin) warehouses
+                                else warehouses.filter { it.id == userWarehouseId && it.isActive }
 
-        // 2. Upcoming Bills (One-time fetch)
+        val warehouseStatsList = relevantWarehouses.map { warehouse ->
+            val (collection, count) = paymentRepository.getTodayStats(warehouse.id, startOfToday)
+            WarehouseStats(warehouse.id, warehouse.name, collection, count)
+        }.filter { if (isAdmin) it.todayCollection > 0 || it.todayCollectionCount > 0 else true }
+
+        // 3. Upcoming Bills (One-time fetch)
         val nextWeek = Calendar.getInstance().apply {
             add(Calendar.DAY_OF_YEAR, 7)
             set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59)
@@ -230,6 +214,7 @@ class DashboardViewModel @Inject constructor(
             current.copy(
                 pendingApprovalsCount = pendingCount,
                 upcomingBills = upcoming,
+                warehouseStats = warehouseStatsList,
                 notifications = constructNotifications(upcoming, pendingCount, current.lowStockVariants, today.time),
                 isLoading = false
             )

@@ -392,7 +392,7 @@ fun ReportItemCard(item: com.batterysales.data.models.InventoryReportItem, wareh
             FlowRow(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 InfoBadge(label = "إجمالي الكمية", value = item.totalQuantity.toString(), color = if (isLowStock) Color(0xFFEF4444) else Color(0xFF10B981))
                 if (!isSeller) {
-                    InfoBadge(label = "متوسط التكلفة", value = "JD ${String.format("%.3f", item.averageCost)}", color = Color(0xFFFB8C00))
+                    InfoBadge(label = "آخر تكلفة", value = "JD ${String.format("%.3f", item.averageCost)}", color = Color(0xFFFB8C00))
                     InfoBadge(label = "قيمة المخزون", value = "JD ${String.format("%.3f", item.totalCostValue)}", color = Color(0xFF3B82F6))
                 }
             }

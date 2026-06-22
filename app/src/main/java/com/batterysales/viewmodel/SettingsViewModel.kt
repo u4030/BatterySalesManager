@@ -25,7 +25,6 @@ class SettingsViewModel @Inject constructor(
     private val summaryRepository: SummaryRepository,
     private val accountingRepository: AccountingRepository,
     private val bankRepository: BankRepository,
-    private val paymentRepository: PaymentRepository,
     private val invoiceRepository: InvoiceRepository,
     private val userRepository: UserRepository
 ) : ViewModel() {
@@ -284,15 +283,13 @@ class SettingsViewModel @Inject constructor(
         }
 
         // Save Global
-        val globalTotalValue = globalItems.values.sumOf { it.currentStock * it.weightedAverageCost }
         firestore.collection("summaries").document("inventory_global")
-            .set(InventorySummary(id = "inventory_global", items = globalItems, totalValue = globalTotalValue)).await()
+            .set(InventorySummary(id = "inventory_global", items = globalItems)).await()
 
         // Save Warehouses
         warehouseItems.forEach { (whId, items) ->
-            val whTotalValue = items.values.sumOf { it.currentStock * it.weightedAverageCost }
             firestore.collection("summaries").document("inventory_wh_$whId")
-                .set(InventorySummary(id = "inventory_wh_$whId", warehouseId = whId, items = items, totalValue = whTotalValue)).await()
+                .set(InventorySummary(id = "inventory_wh_$whId", warehouseId = whId, items = items)).await()
         }
 
         // 3. Rebuild Suppliers Overview
@@ -305,45 +302,32 @@ class SettingsViewModel @Inject constructor(
                 totalCredit = s.totalCredit
             )
         }
-        val totalSuppDebt = supplierItems.values.sumOf { it.currentBalance }
         firestore.collection("summaries").document("suppliers_overview")
-            .set(SuppliersOverview(suppliers = supplierItems, totalSupplierDebt = totalSuppDebt)).await()
+            .set(SuppliersOverview(suppliers = supplierItems)).await()
 
         // 4. Rebuild Financial Status (High Precision Calculation)
-        val today = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-        }
-        val startOfToday = today.time.time
-
         val warehouseBalances = warehouses.associate { wh ->
             val cash = accountingRepository.getCurrentBalance(wh.id, "cash")
             val bank = accountingRepository.getCurrentBalance(wh.id, "bank")
             val debt = invoiceRepository.getTotalDebtForWarehouse(wh.id)
-            val (collVal, collCount) = paymentRepository.getTodayStats(wh.id, startOfToday)
             
             wh.id to WarehouseBalance(
                 warehouseId = wh.id,
                 cashBalance = cash,
                 bankBalance = bank,
-                pendingCollection = debt,
-                todayCollection = collVal,
-                todayCollectionCount = collCount
+                pendingCollection = debt
             )
         }
         
         // Calculate Globals via raw aggregation to be 100% sure
         val globalCash = accountingRepository.getCurrentBalance(null, "cash")
         val globalBank = bankRepository.getCurrentBalance()
-        val totalTodayCollVal = warehouseBalances.values.sumOf { it.todayCollection }
-        val totalTodayCollCount = warehouseBalances.values.sumOf { it.todayCollectionCount }
         
         firestore.collection("summaries").document("financial_status")
             .set(FinancialStatus(
                 warehouseBalances = warehouseBalances,
                 globalCashBalance = globalCash,
                 globalBankBalance = globalBank,
-                todayCollection = totalTodayCollVal,
-                todayCollectionCount = totalTodayCollCount,
                 lastUpdated = Date()
             )).await()
 

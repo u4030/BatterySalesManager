@@ -198,9 +198,7 @@ class SummaryRepository @Inject constructor(
         bankChange: Double = 0.0,
         pendingCollectionChange: Double = 0.0,
         billChange: Double = 0.0,
-        checkChange: Double = 0.0,
-        todayCollectionChange: Double = 0.0,
-        todayCollectionCountChange: Int = 0
+        checkChange: Double = 0.0
     ) {
         val status = snapshots.financialStatus ?: FinancialStatus()
         val updatedWarehouses = status.warehouseBalances.toMutableMap()
@@ -209,9 +207,7 @@ class SummaryRepository @Inject constructor(
         updatedWarehouses[warehouseId] = currentWh.copy(
             cashBalance = currentWh.cashBalance + cashChange,
             bankBalance = currentWh.bankBalance + bankChange,
-            pendingCollection = currentWh.pendingCollection + pendingCollectionChange,
-            todayCollection = currentWh.todayCollection + todayCollectionChange,
-            todayCollectionCount = currentWh.todayCollectionCount + todayCollectionCountChange
+            pendingCollection = currentWh.pendingCollection + pendingCollectionChange
         )
 
         transaction.set(summariesCollection.document("financial_status"), status.copy(
@@ -220,8 +216,6 @@ class SummaryRepository @Inject constructor(
             globalBankBalance = status.globalBankBalance + bankChange,
             totalUnpaidBills = status.totalUnpaidBills + billChange,
             totalUnpaidChecks = status.totalUnpaidChecks + checkChange,
-            todayCollection = status.todayCollection + todayCollectionChange,
-            todayCollectionCount = status.todayCollectionCount + todayCollectionCountChange,
             lastUpdated = Date(),
             version = status.version + 1
         ))

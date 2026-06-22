@@ -59,43 +59,10 @@ class ProductVariantRepository @Inject constructor(
         awaitClose { listenerRegistration.remove() }
     }
 
-    suspend fun addVariant(variant: ProductVariant, summaryRepository: SummaryRepository? = null) {
-        if (summaryRepository != null) {
-            val warehousesSnap = firestore.collection("warehouses").get().await()
-            val warehouseIds = warehousesSnap.documents.map { it.id }
-
-            firestore.runTransaction { transaction ->
-                val docRef = firestore.collection(ProductVariant.COLLECTION_NAME).document()
-                val finalVariant = variant.copy(id = docRef.id)
-
-                // 1. Reads
-                val snapshotsMap = warehouseIds.associateWith { whId ->
-                    summaryRepository.getSummarySnapshots(transaction, whId)
-                }
-
-                // 2. Writes
-                transaction.set(docRef, finalVariant)
-
-                // Initialize in all summaries
-                warehouseIds.forEach { whId ->
-                    val snapshots = snapshotsMap[whId]
-                    if (snapshots != null) {
-                        summaryRepository.applyInventoryUpdate(
-                            transaction = transaction,
-                            snapshots = snapshots,
-                            warehouseId = whId,
-                            variantId = finalVariant.id,
-                            variant = finalVariant,
-                            qtyChange = 0
-                        )
-                    }
-                }
-            }.await()
-        } else {
-            val docRef = firestore.collection(ProductVariant.COLLECTION_NAME).document()
-            val finalVariant = variant.copy(id = docRef.id)
-            docRef.set(finalVariant).await()
-        }
+    suspend fun addVariant(variant: ProductVariant) {
+        val docRef = firestore.collection(ProductVariant.COLLECTION_NAME).document()
+        val finalVariant = variant.copy(id = docRef.id)
+        docRef.set(finalVariant).await()
     }
 
     suspend fun updateVariant(variant: ProductVariant, summaryRepository: SummaryRepository? = null) {
