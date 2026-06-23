@@ -247,6 +247,19 @@ class SettingsViewModel @Inject constructor(
 
             val productName = products.find { it.id == variant.productId }?.name ?: "Unknown"
 
+            // Nuclear Cost Correction: Re-calculate actual Last Purchase Cost from history
+            val actualLastCost = try {
+                stockEntryRepository.getWeightedAverageCost(variant.id, null)
+            } catch (e: Exception) {
+                variant.weightedAverageCost
+            }
+
+            // Permanently correct the variant document if there is drift
+            if (Math.abs(variant.weightedAverageCost - actualLastCost) > 0.001) {
+                firestore.collection(ProductVariant.COLLECTION_NAME).document(variant.id)
+                    .update("weightedAverageCost", actualLastCost)
+            }
+
             val globalItem = InventorySummaryItem(
                 variantId = variant.id,
                 productId = variant.productId,
@@ -255,7 +268,7 @@ class SettingsViewModel @Inject constructor(
                 specification = variant.specification,
                 barcode = variant.barcode,
                 currentStock = totalQty,
-                weightedAverageCost = variant.weightedAverageCost,
+                weightedAverageCost = actualLastCost,
                 sellingPrice = variant.sellingPrice,
                 isDiscontinued = variant.isDiscontinued
             )

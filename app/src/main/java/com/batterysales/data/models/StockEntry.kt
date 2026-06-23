@@ -70,6 +70,14 @@ data class StockEntry(
      */
     fun getEffectiveDate(): Date = invoiceDate ?: timestamp
 
+    /**
+     * يحسب تكلفة الوحدة الواحدة بشكل صحيح مع دعم البيانات القديمة والجديدة
+     */
+    fun getUnitPrice(): Double {
+        return if (quantity != 0 && Math.abs(totalCost) > 0.001) Math.abs(totalCost / quantity)
+        else costPrice
+    }
+
     companion object {
         const val COLLECTION_NAME = "stock_entries"
 
