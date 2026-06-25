@@ -37,7 +37,7 @@ class BankRepository @Inject constructor(
 
         firestore.runTransaction { transactionOp ->
             // 1. Reads
-            val snapshots = summaryRepository.getSummarySnapshots(transactionOp, "global")
+            val snapshots = summaryRepository.getSummarySnapshots(transactionOp, listOf("global"))
             val statsRef = firestore.collection(SystemStats.COLLECTION_NAME).document(SystemStats.DOCUMENT_ID)
 
             // 2. Writes
@@ -63,7 +63,7 @@ class BankRepository @Inject constructor(
                 throw Exception("هذا القيد مدار من قبل النظام (فاتورة/شيك)، يرجى تعديله من المصدر لضمان دقة البيانات.")
             }
 
-            val snapshots = summaryRepository.getSummarySnapshots(transactionOp, "global")
+            val snapshots = summaryRepository.getSummarySnapshots(transactionOp, listOf("global"))
             val statsRef = firestore.collection(SystemStats.COLLECTION_NAME).document(SystemStats.DOCUMENT_ID)
 
             // 2. Writes
@@ -154,7 +154,7 @@ class BankRepository @Inject constructor(
             if (oldTrans?.isSystemManaged == true && !forceSystemUpdate) {
                 throw Exception("هذا القيد مدار من قبل النظام (فاتورة/شيك)، يرجى حذفه من المصدر لضمان دقة البيانات.")
             }
-            val snapshots = summaryRepository.getSummarySnapshots(transactionOp, "global")
+            val snapshots = summaryRepository.getSummarySnapshots(transactionOp, listOf("global"))
             val statsRef = firestore.collection(SystemStats.COLLECTION_NAME).document(SystemStats.DOCUMENT_ID)
 
             // 2. Writes

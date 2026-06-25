@@ -223,7 +223,7 @@ class InvoiceRepository @Inject constructor(
             val variantRef = firestore.collection(com.batterysales.data.models.ProductVariant.COLLECTION_NAME).document(stockEntry.productVariantId)
             val vSnap = transaction.get(variantRef)
             val variant = vSnap.toObject(com.batterysales.data.models.ProductVariant::class.java)?.copy(id = vSnap.id)
-            val summarySnapshots = summaryRepository.getSummarySnapshots(transaction, stockEntry.warehouseId)
+            val summarySnapshots = summaryRepository.getSummarySnapshots(transaction, listOf(stockEntry.warehouseId))
 
             // 2. All Writes
             transaction.set(invoiceRef, finalInvoice)
@@ -334,7 +334,7 @@ class InvoiceRepository @Inject constructor(
             // 1. Reads
             val invoiceSnap = transaction.get(invoiceRef)
             val invoice = invoiceSnap.toObject(Invoice::class.java)?.copy(id = invoiceSnap.id) ?: return@runTransaction
-            val summarySnapshots = summaryRepository.getSummarySnapshots(transaction, invoice.warehouseId)
+            val summarySnapshots = summaryRepository.getSummarySnapshots(transaction, listOf(invoice.warehouseId))
             val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
 
             // 2. Writes
@@ -421,7 +421,7 @@ class InvoiceRepository @Inject constructor(
             val paymentRef = firestore.collection(Payment.COLLECTION_NAME).document(payment.id)
             val pSnap = transaction.get(paymentRef)
             val oldPayment = pSnap.toObject(Payment::class.java)?.copy(id = pSnap.id) ?: return@runTransaction
-            val summarySnapshots = summaryRepository.getSummarySnapshots(transaction, invoice.warehouseId)
+            val summarySnapshots = summaryRepository.getSummarySnapshots(transaction, listOf(invoice.warehouseId))
             val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
 
             // 2. Writes
@@ -507,7 +507,7 @@ class InvoiceRepository @Inject constructor(
             val paymentRef = firestore.collection(Payment.COLLECTION_NAME).document(paymentId)
             val pSnap = transaction.get(paymentRef)
             val oldPayment = pSnap.toObject(Payment::class.java)?.copy(id = pSnap.id) ?: return@runTransaction
-            val summarySnapshots = summaryRepository.getSummarySnapshots(transaction, invoice.warehouseId)
+            val summarySnapshots = summaryRepository.getSummarySnapshots(transaction, listOf(invoice.warehouseId))
             val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
 
             // 2. Writes

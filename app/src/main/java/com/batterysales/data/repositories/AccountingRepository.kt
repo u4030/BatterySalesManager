@@ -138,7 +138,7 @@ class AccountingRepository @Inject constructor(
 
         firestore.runTransaction { transactionOp ->
             // 1. All Reads First
-            val snapshots = summaryRepository.getSummarySnapshots(transactionOp, finalTransaction.warehouseId)
+            val snapshots = summaryRepository.getSummarySnapshots(transactionOp, listOf(finalTransaction.warehouseId))
             val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
 
             // 2. All Writes
@@ -196,7 +196,7 @@ class AccountingRepository @Inject constructor(
 
         firestore.runTransaction { transactionOp ->
             // 1. Reads
-            val snapshots = summaryRepository.getSummarySnapshots(transactionOp, transactionData.warehouseId)
+            val snapshots = summaryRepository.getSummarySnapshots(transactionOp, listOf(transactionData.warehouseId))
             val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
 
             // 2. Writes
@@ -232,7 +232,7 @@ class AccountingRepository @Inject constructor(
             if (oldTrans?.isSystemManaged == true && !forceSystemUpdate) {
                 throw Exception("هذا القيد مدار من قبل النظام (فاتورة/كمبيالة)، يرجى تعديله من المصدر لضمان دقة البيانات.")
             }
-            val snapshots = summaryRepository.getSummarySnapshots(transactionOp, transaction.warehouseId)
+            val snapshots = summaryRepository.getSummarySnapshots(transactionOp, listOf(transaction.warehouseId))
             val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
 
             // 2. Writes
@@ -307,7 +307,7 @@ class AccountingRepository @Inject constructor(
             if (trans?.isSystemManaged == true && !forceSystemUpdate) {
                 throw Exception("هذا القيد مدار من قبل النظام (فاتورة/كمبيالة)، يرجى حذفه من المصدر لضمان دقة البيانات.")
             }
-            val snapshots = summaryRepository.getSummarySnapshots(transactionOp, trans?.warehouseId)
+            val snapshots = summaryRepository.getSummarySnapshots(transactionOp, listOf(trans?.warehouseId ?: ""))
             val relId = trans?.relatedId
 
             // 2. Writes
