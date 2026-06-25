@@ -27,3 +27,4 @@ data class Product(
         return if (name.isBlank()) "اسم المنتج مطلوب" else null
     }
 }
+ 

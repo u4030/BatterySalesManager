@@ -46,3 +46,4 @@ class SettingsManager @Inject constructor(
         prefs.edit().putBoolean("is_migration_done", done).apply()
     }
 }
+ 

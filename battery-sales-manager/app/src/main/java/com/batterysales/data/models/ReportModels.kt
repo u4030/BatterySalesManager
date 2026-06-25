@@ -39,3 +39,4 @@ data class LedgerItem(
     val entry: StockEntry,
     val warehouseName: String
 )
+ 

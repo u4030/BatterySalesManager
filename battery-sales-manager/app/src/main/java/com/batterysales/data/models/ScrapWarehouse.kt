@@ -12,3 +12,4 @@ data class ScrapWarehouse(
         const val COLLECTION_NAME = "scrap_warehouses"
     }
 }
+ 

@@ -17,3 +17,4 @@ data class Payment(
         const val COLLECTION_NAME = "payments"
     }
 }
+ 

@@ -14,3 +14,4 @@ data class Expense(
         const val COLLECTION_NAME = "expenses"
     }
 }
+ 

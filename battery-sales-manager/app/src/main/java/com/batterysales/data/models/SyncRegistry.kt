@@ -13,3 +13,4 @@ data class SyncRegistry(
     val financialVersion: Long = 0,
     val lastModified: Date = Date()
 )
+ 

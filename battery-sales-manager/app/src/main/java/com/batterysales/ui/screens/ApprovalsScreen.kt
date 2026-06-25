@@ -412,3 +412,4 @@ fun ApprovalCard(item: ApprovalItem, onApprove: () -> Unit, onReject: () -> Unit
         }
     }
 }
+ 

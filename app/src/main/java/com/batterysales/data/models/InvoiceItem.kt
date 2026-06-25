@@ -32,3 +32,4 @@ data class InvoiceItem(
      */
     fun calculateFinalTotal(): Double = calculateTotalAfterDiscount() + itemTax
 }
+ 

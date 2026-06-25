@@ -350,3 +350,4 @@ class SettingsViewModel @Inject constructor(
             .set(SyncRegistry(lastModified = Date())).await()
     }
 }
+ 

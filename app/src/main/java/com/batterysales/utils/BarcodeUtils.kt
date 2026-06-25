@@ -46,3 +46,4 @@ object BarcodeUtils {
         return generateBarcodeBitmap(content, BarcodeFormat.QR_CODE, width, height)
     }
 }
+ 

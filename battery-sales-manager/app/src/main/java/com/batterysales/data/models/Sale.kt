@@ -67,3 +67,4 @@ data class DailySalesSummary(
         const val COLLECTION_NAME = "daily_sales_summary"
     }
 }
+ 

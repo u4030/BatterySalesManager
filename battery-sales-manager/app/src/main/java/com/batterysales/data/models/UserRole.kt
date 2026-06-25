@@ -19,3 +19,4 @@ enum class UserRole(val label: String) {
         }
     }
 }
+ 

@@ -24,3 +24,4 @@ enum class OldBatteryTransactionType {
     SALE,
     ADJUSTMENT
 }
+ 

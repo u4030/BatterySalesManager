@@ -23,3 +23,4 @@ data class Supplier(
         const val COLLECTION_NAME = "suppliers"
     }
 }
+ 

@@ -60,3 +60,4 @@ class PrintQueueViewModel @Inject constructor() : ViewModel() {
         }
     }
 }
+ 

@@ -12,3 +12,4 @@ data class Warehouse(
         const val COLLECTION_NAME = "warehouses"
     }
 }
+ 

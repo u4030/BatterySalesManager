@@ -246,3 +246,4 @@ fun StockTransferScreen(
     }
 
 }
+ 

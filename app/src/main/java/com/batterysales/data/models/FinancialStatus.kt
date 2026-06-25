@@ -29,3 +29,4 @@ data class WarehouseBalance(
     val todayCollection: Double = 0.0,
     val todayCollectionCount: Int = 0
 )
+ 

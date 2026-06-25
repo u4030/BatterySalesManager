@@ -71,3 +71,4 @@ data class SupplierReportCache(
     val obligatedOrders: List<Map<String, Any>> = emptyList(),
     val lastCalculated: Date = Date()
 )
+ 

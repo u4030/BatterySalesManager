@@ -346,3 +346,4 @@ fun SupplierDialog(
         CustomKeyboardTextField(value = target3, onValueChange = { target3 = it }, label = "الهدف السنوي 3", keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC)
     }
 }
+ 

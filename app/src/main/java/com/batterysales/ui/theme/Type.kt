@@ -122,3 +122,4 @@ fun getTypography(scale: Float, isBold: Boolean): Typography {
 
 // Default Typography for non-composable usage or initial state
 val BatterySalesManagerTypography = getTypography(1.0f, false)
+ 
