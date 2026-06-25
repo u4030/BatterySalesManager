@@ -27,6 +27,7 @@ data class ProductManagementUiState(
     val suppliers: List<Supplier> = emptyList(),
     val selectedProduct: Product? = null,
     val isLoading: Boolean = false,
+    val isSubmitting: Boolean = false,
     val errorMessage: String? = null
 )
 
@@ -45,6 +46,7 @@ class ProductManagementViewModel @Inject constructor(
     private val _selectedProduct = MutableStateFlow<Product?>(null)
     private val _errorMessage = MutableStateFlow<String?>(null)
     private val _isLoading = MutableStateFlow(false)
+    private val _isSubmitting = MutableStateFlow(false)
     private val _barcodeFilter = MutableStateFlow("")
     private var currentUser: com.batterysales.data.models.User? = null
 
@@ -67,8 +69,9 @@ class ProductManagementViewModel @Inject constructor(
         _barcodeFilter,
         _selectedProduct,
         _errorMessage,
+        _isSubmitting,
         staticData
-    ) { products, barcodeFilter, selectedProduct, error, static ->
+    ) { products, barcodeFilter, selectedProduct, error, isSubmitting, static ->
         val (warehouses, suppliers) = static
 
         val filteredProducts = if (barcodeFilter.isBlank()) {
@@ -86,6 +89,7 @@ class ProductManagementViewModel @Inject constructor(
             warehouses = warehouses,
             suppliers = suppliers,
             isLoading = false,
+            isSubmitting = isSubmitting,
             errorMessage = error
         )
     }.flatMapLatest { state ->
@@ -122,6 +126,7 @@ class ProductManagementViewModel @Inject constructor(
 
     fun addProduct(name: String, supplierId: String) {
         viewModelScope.launch {
+            _isSubmitting.value = true
             try {
                 val existing = productRepository.getProductsOnce()
                 if (existing.any { it.name.equals(name, ignoreCase = true) && !it.archived }) {
@@ -138,12 +143,15 @@ class ProductManagementViewModel @Inject constructor(
             } catch (e: Exception) {
                 Log.e("ProductMgmtVM", "Error adding product", e)
                 _errorMessage.value = "Failed to add product: ${e.message}"
+            } finally {
+                _isSubmitting.value = false
             }
         }
     }
 
     fun addVariant(capacity: Int, sellingPrice: Double, barcode: String, minQuantity: Int, minQuantities: Map<String, Int>, specification: String) {
         viewModelScope.launch {
+            _isSubmitting.value = true
             _selectedProduct.value?.let { product ->
                 try {
                     val existing = productVariantRepository.getVariantsForProduct(product.id)
@@ -169,13 +177,16 @@ class ProductManagementViewModel @Inject constructor(
                 } catch (e: Exception) {
                     Log.e("ProductMgmtVM", "Error adding variant", e)
                     _errorMessage.value = "Failed to add variant: ${e.message}"
+                } finally {
+                    _isSubmitting.value = false
                 }
-            }
+            } ?: run { _isSubmitting.value = false }
         }
     }
 
     fun updateProduct(product: Product) {
         viewModelScope.launch {
+            _isSubmitting.value = true
             try {
                 val existing = productRepository.getProductsOnce()
                 if (existing.any { it.name.equals(product.name, ignoreCase = true) && it.id != product.id && !it.archived }) {
@@ -207,12 +218,15 @@ class ProductManagementViewModel @Inject constructor(
             } catch (e: Exception) {
                 Log.e("ProductMgmtVM", "Error updating product", e)
                 _errorMessage.value = "Failed to update product: ${e.message}"
+            } finally {
+                _isSubmitting.value = false
             }
         }
     }
 
     fun archiveProduct(product: Product) {
         viewModelScope.launch {
+            _isSubmitting.value = true
             try {
                 if (currentUser?.role == "seller") {
                     val oldProduct = productRepository.getProduct(product.id)
@@ -234,12 +248,15 @@ class ProductManagementViewModel @Inject constructor(
             } catch (e: Exception) {
                 Log.e("ProductMgmtVM", "Error archiving product", e)
                 _errorMessage.value = "Failed to archive product: ${e.message}"
+            } finally {
+                _isSubmitting.value = false
             }
         }
     }
 
     fun updateVariant(variant: ProductVariant) {
         viewModelScope.launch {
+            _isSubmitting.value = true
             try {
                 val existing = productVariantRepository.getVariantsForProduct(variant.productId)
                 val isDuplicate = existing.any {
@@ -280,12 +297,15 @@ class ProductManagementViewModel @Inject constructor(
             } catch (e: Exception) {
                 Log.e("ProductMgmtVM", "Error updating variant", e)
                 _errorMessage.value = "Failed to update variant: ${e.message}"
+            } finally {
+                _isSubmitting.value = false
             }
         }
     }
 
     fun archiveVariant(variant: ProductVariant) {
         viewModelScope.launch {
+            _isSubmitting.value = true
             try {
                 if (currentUser?.role == "seller") {
                     val product = productRepository.getProduct(variant.productId)
@@ -308,6 +328,8 @@ class ProductManagementViewModel @Inject constructor(
             } catch (e: Exception) {
                 Log.e("ProductMgmtVM", "Error archiving variant", e)
                 _errorMessage.value = "Failed to archive variant: ${e.message}"
+            } finally {
+                _isSubmitting.value = false
             }
         }
     }

@@ -28,6 +28,9 @@ class SupplierViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(false)
     val isLoading = _isLoading.asStateFlow()
 
+    private val _isSubmitting = MutableStateFlow(false)
+    val isSubmitting = _isSubmitting.asStateFlow()
+
     private val _error = MutableStateFlow<String?>(null)
     val error = _error.asStateFlow()
 
@@ -61,6 +64,7 @@ class SupplierViewModel @Inject constructor(
 
     fun addSupplier(name: String, phone: String, email: String, address: String, yearlyTarget: Double, target2: Double = 0.0, target3: Double = 0.0) {
         viewModelScope.launch {
+            _isSubmitting.value = true
             try {
                 val supplier = Supplier(
                     name = name,
@@ -72,39 +76,54 @@ class SupplierViewModel @Inject constructor(
                     yearlyTarget3 = target3
                 )
                 supplierRepository.addSupplier(supplier)
+                refresh()
             } catch (e: Exception) {
                 _error.value = "فشل إضافة المورد: ${e.message}"
+            } finally {
+                _isSubmitting.value = false
             }
         }
     }
 
     fun updateSupplier(supplier: Supplier) {
         viewModelScope.launch {
+            _isSubmitting.value = true
             try {
                 supplierRepository.updateSupplier(supplier)
+                refresh()
             } catch (e: Exception) {
                 _error.value = "فشل تحديث المورد: ${e.message}"
+            } finally {
+                _isSubmitting.value = false
             }
         }
     }
 
     fun deleteSupplier(id: String) {
         viewModelScope.launch {
+            _isSubmitting.value = true
             try {
                 supplierRepository.deleteSupplier(id)
+                refresh()
             } catch (e: Exception) {
                 _error.value = "فشل حذف المورد: ${e.message}"
+            } finally {
+                _isSubmitting.value = false
             }
         }
     }
 
     fun resetSupplier(supplier: Supplier) {
         viewModelScope.launch {
+            _isSubmitting.value = true
             try {
                 val updated = supplier.copy(resetDate = java.util.Date())
                 supplierRepository.updateSupplier(updated)
+                refresh()
             } catch (e: Exception) {
                 _error.value = "فشل إعادة ضبط المورد: ${e.message}"
+            } finally {
+                _isSubmitting.value = false
             }
         }
     }

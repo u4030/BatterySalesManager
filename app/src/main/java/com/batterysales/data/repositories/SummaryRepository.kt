@@ -28,22 +28,26 @@ class SummaryRepository @Inject constructor(
      * All reads are performed at once to comply with Firestore rules.
      */
     data class SummarySnapshots(
-        val inventoryWh: InventorySummary?,
+        val warehouseSummaries: Map<String, InventorySummary>, // warehouseId to summary
         val inventoryGlobal: InventorySummary?,
         val suppliersOverview: SuppliersOverview?,
         val financialStatus: FinancialStatus?,
         val syncRegistry: SyncRegistry?
     )
 
-    fun getSummarySnapshots(transaction: Transaction, warehouseId: String? = null): SummarySnapshots {
-        val whRef = if (warehouseId != null) summariesCollection.document("inventory_wh_$warehouseId") else null
+    fun getSummarySnapshots(transaction: Transaction, warehouseIds: List<String> = emptyList()): SummarySnapshots {
+        val whSummaries = warehouseIds.associateWith { whId ->
+            val ref = summariesCollection.document("inventory_wh_$whId")
+            transaction.get(ref).toObject(InventorySummary::class.java) ?: InventorySummary(id = ref.id, warehouseId = whId)
+        }
+
         val globalRef = summariesCollection.document("inventory_global")
         val supplierRef = summariesCollection.document("suppliers_overview")
         val financialRef = summariesCollection.document("financial_status")
         val registryRef = summariesCollection.document("sync_registry")
 
         return SummarySnapshots(
-            inventoryWh = whRef?.let { transaction.get(it).toObject(InventorySummary::class.java) ?: InventorySummary(id = it.id, warehouseId = warehouseId) },
+            warehouseSummaries = whSummaries,
             inventoryGlobal = transaction.get(globalRef).toObject(InventorySummary::class.java) ?: InventorySummary(id = "inventory_global"),
             suppliersOverview = transaction.get(supplierRef).toObject(SuppliersOverview::class.java) ?: SuppliersOverview(),
             financialStatus = transaction.get(financialRef).toObject(FinancialStatus::class.java) ?: FinancialStatus(),
@@ -51,6 +55,9 @@ class SummaryRepository @Inject constructor(
         )
     }
 
+    /**
+     * Refined architectural update: Updates a specific warehouse and the global summary.
+     */
     fun applyInventoryUpdate(
         transaction: Transaction,
         snapshots: SummarySnapshots,
@@ -58,9 +65,9 @@ class SummaryRepository @Inject constructor(
         variantId: String,
         variant: ProductVariant,
         qtyChange: Int,
-        costChange: Double = 0.0 // Deprecated, will recalculate from item values
+        costChange: Double = 0.0 // Deprecated
     ) {
-        val whSummary = snapshots.inventoryWh ?: InventorySummary(id = "inventory_wh_$warehouseId", warehouseId = warehouseId)
+        val whSummary = snapshots.warehouseSummaries[warehouseId] ?: InventorySummary(id = "inventory_wh_$warehouseId", warehouseId = warehouseId)
         val globalSummary = snapshots.inventoryGlobal ?: InventorySummary(id = "inventory_global")
 
         // Update Warehouse Summary
@@ -95,21 +102,24 @@ class SummaryRepository @Inject constructor(
         )
         updatedItemsGlobal[variantId] = newItemGlobal
 
-        // Recalculate Total Values precisely to match Report formula (Stock * WAC)
-        val whOldItemVal = (oldItemWh?.currentStock ?: 0) * (oldItemWh?.weightedAverageCost ?: 0.0)
-        val whNewItemVal = newItemWh.currentStock * newItemWh.weightedAverageCost
-        val newWhTotalValue = whSummary.totalValue - whOldItemVal + whNewItemVal
+        // Recalculate Total Values
+        val whOldVal = (oldItemWh?.currentStock ?: 0) * (oldItemWh?.weightedAverageCost ?: 0.0)
+        val whNewVal = newItemWh.currentStock * newItemWh.weightedAverageCost
+        val newWhTotal = whSummary.totalValue - whOldVal + whNewVal
 
-        val globalOldItemVal = (oldItemGlobal?.currentStock ?: 0) * (oldItemGlobal?.weightedAverageCost ?: 0.0)
-        val globalNewItemVal = newItemGlobal.currentStock * newItemGlobal.weightedAverageCost
-        val newGlobalTotalValue = globalSummary.totalValue - globalOldItemVal + globalNewItemVal
+        val globalOldVal = (oldItemGlobal?.currentStock ?: 0) * (oldItemGlobal?.weightedAverageCost ?: 0.0)
+        val globalNewVal = newItemGlobal.currentStock * newItemGlobal.weightedAverageCost
+        val newGlobalTotal = globalSummary.totalValue - globalOldVal + globalNewVal
 
-        transaction.set(summariesCollection.document("inventory_wh_$warehouseId"), whSummary.copy(items = updatedItemsWh, lastUpdated = Date(), totalValue = newWhTotalValue, version = whSummary.version + 1))
-        transaction.set(summariesCollection.document("inventory_global"), globalSummary.copy(items = updatedItemsGlobal, lastUpdated = Date(), totalValue = newGlobalTotalValue, version = globalSummary.version + 1))
+        transaction.set(summariesCollection.document("inventory_wh_$warehouseId"), whSummary.copy(items = updatedItemsWh, lastUpdated = Date(), totalValue = newWhTotal, version = whSummary.version + 1))
+        transaction.set(summariesCollection.document("inventory_global"), globalSummary.copy(items = updatedItemsGlobal, lastUpdated = Date(), totalValue = newGlobalTotal, version = globalSummary.version + 1))
         
         incrementSyncVersion(transaction, "inventory")
     }
 
+    /**
+     * Refined bulk update: Group by warehouse to prevent document collisions.
+     */
     fun applyBulkInventoryUpdate(
         transaction: Transaction,
         snapshots: SummarySnapshots,
@@ -117,7 +127,7 @@ class SummaryRepository @Inject constructor(
         variantsMap: Map<String, ProductVariant?>,
         qtyChanges: Map<String, Int>
     ) {
-        val whSummary = snapshots.inventoryWh ?: InventorySummary(id = "inventory_wh_$warehouseId", warehouseId = warehouseId)
+        val whSummary = snapshots.warehouseSummaries[warehouseId] ?: InventorySummary(id = "inventory_wh_$warehouseId", warehouseId = warehouseId)
         val globalSummary = snapshots.inventoryGlobal ?: InventorySummary(id = "inventory_global")
 
         val updatedItemsWh = whSummary.items.toMutableMap()
@@ -145,7 +155,7 @@ class SummaryRepository @Inject constructor(
             updatedItemsWh[variantId] = newItemWh
             whValueDelta += (newItemWh.currentStock * newItemWh.weightedAverageCost) - ((oldItemWh?.currentStock ?: 0) * (oldItemWh?.weightedAverageCost ?: 0.0))
 
-            // Global Map
+            // Global Map (Shared across warehouses, but grouped by whId call here)
             val oldItemGlobal = updatedItemsGlobal[variantId]
             val newItemGlobal = (oldItemGlobal ?: InventorySummaryItem(
                 variantId = variantId, productId = variant.productId, productName = variant.productName ?: "Unknown",
@@ -287,6 +297,23 @@ class SummaryRepository @Inject constructor(
             cachedInventorySummary = newCache
         }
         return summary
+    }
+
+    fun getInventorySummaryFlow(warehouseId: String?): Flow<InventorySummary> = callbackFlow {
+        val docId = if (warehouseId != null) "inventory_wh_$warehouseId" else "inventory_global"
+        val listener = summariesCollection.document(docId)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) return@addSnapshotListener
+                val summary = snapshot?.toObject(InventorySummary::class.java) ?: InventorySummary(id = docId, warehouseId = warehouseId)
+
+                val key = warehouseId ?: "global"
+                val newCache = cachedInventorySummary.toMutableMap()
+                newCache[key] = summary
+                cachedInventorySummary = newCache
+
+                trySend(summary)
+            }
+        awaitClose { listener.remove() }
     }
 
     suspend fun getSuppliersOverview(forceRefresh: Boolean = false): SuppliersOverview? {

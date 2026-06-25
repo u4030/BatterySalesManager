@@ -69,26 +69,21 @@ class ProductVariantRepository @Inject constructor(
 
             firestore.runTransaction { transaction ->
                 // 1. Reads
-                val snapshotsMap = warehouseIds.associateWith { whId ->
-                    summaryRepository.getSummarySnapshots(transaction, whId)
-                }
+                val snapshots = summaryRepository.getSummarySnapshots(transaction, warehouseIds)
 
                 // 2. Writes
                 transaction.set(docRef, finalVariant)
 
                 // Initialize in all warehouse summaries
                 warehouseIds.forEach { whId ->
-                    val snapshots = snapshotsMap[whId]
-                    if (snapshots != null) {
-                        summaryRepository.applyInventoryUpdate(
-                            transaction = transaction,
-                            snapshots = snapshots,
-                            warehouseId = whId,
-                            variantId = finalVariant.id,
-                            variant = finalVariant,
-                            qtyChange = 0
-                        )
-                    }
+                    summaryRepository.applyInventoryUpdate(
+                        transaction = transaction,
+                        snapshots = snapshots,
+                        warehouseId = whId,
+                        variantId = finalVariant.id,
+                        variant = finalVariant,
+                        qtyChange = 0
+                    )
                 }
             }.await()
         } else {
@@ -105,26 +100,21 @@ class ProductVariantRepository @Inject constructor(
                 val variantRef = firestore.collection(ProductVariant.COLLECTION_NAME).document(variant.id)
                 
                 // 1. Reads
-                val snapshotsMap = warehouseIds.associateWith { whId -> 
-                    summaryRepository.getSummarySnapshots(transaction, whId)
-                }
+                val snapshots = summaryRepository.getSummarySnapshots(transaction, warehouseIds)
 
                 // 2. Writes
                 transaction.set(variantRef, variant)
 
                 // Update summaries for all warehouses
                 warehouseIds.forEach { whId ->
-                    val snapshots = snapshotsMap[whId]
-                    if (snapshots != null) {
-                        summaryRepository.applyInventoryUpdate(
-                            transaction = transaction,
-                            snapshots = snapshots,
-                            warehouseId = whId,
-                            variantId = variant.id,
-                            variant = variant,
-                            qtyChange = 0 // No stock change, just metadata/status update
-                        )
-                    }
+                    summaryRepository.applyInventoryUpdate(
+                        transaction = transaction,
+                        snapshots = snapshots,
+                        warehouseId = whId,
+                        variantId = variant.id,
+                        variant = variant,
+                        qtyChange = 0 // No stock change, just metadata/status update
+                    )
                 }
 
                 // If discontinued, cleanup alerts

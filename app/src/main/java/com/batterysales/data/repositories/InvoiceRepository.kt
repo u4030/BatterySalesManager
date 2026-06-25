@@ -147,6 +147,7 @@ class InvoiceRepository @Inject constructor(
         val entries = stockEntries.documents.mapNotNull { it.toObject(com.batterysales.data.models.StockEntry::class.java)?.copy(id = it.id) }
         val approvedEntries = entries.filter { it.status == "approved" }
         val variantIds = approvedEntries.map { it.productVariantId }.distinct()
+        val warehouseIds = approvedEntries.map { it.warehouseId }.distinct()
 
         firestore.runTransaction { transaction ->
             // 1. All Reads
@@ -154,6 +155,8 @@ class InvoiceRepository @Inject constructor(
                 transaction.get(firestore.collection(com.batterysales.data.models.ProductVariant.COLLECTION_NAME).document(vid))
             }
             
+            val summarySnapshots = summaryRepository.getSummarySnapshots(transaction, warehouseIds)
+
             val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
             val invoiceRef = firestore.collection(Invoice.COLLECTION_NAME).document(invoiceId)
             val invoiceSnap = transaction.get(invoiceRef)
@@ -171,6 +174,16 @@ class InvoiceRepository @Inject constructor(
                     stockMap[entry.warehouseId] = (stockMap[entry.warehouseId] ?: 0) - (entry.quantity)
                     transaction.update(variantSnapshots[entry.productVariantId]!!.reference, "currentStock", stockMap)
                     
+                    // Update Summary
+                    summaryRepository.applyInventoryUpdate(
+                        transaction = transaction,
+                        snapshots = summarySnapshots,
+                        warehouseId = entry.warehouseId,
+                        variantId = entry.productVariantId,
+                        variant = variant,
+                        qtyChange = -entry.quantity
+                    )
+
                     totalValueToReverse += (entry.quantity * variant.weightedAverageCost)
                     totalQtyToReverse += entry.quantity
                 }

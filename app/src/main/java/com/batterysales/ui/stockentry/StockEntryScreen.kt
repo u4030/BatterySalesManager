@@ -80,6 +80,7 @@ fun StockEntryScreen(
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
+        Box(modifier = Modifier.fillMaxSize()) {
         if (uiState.isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = Color(0xFFFB8C00))
@@ -115,6 +116,31 @@ fun StockEntryScreen(
                     )
                 }
             }
+        }
+
+        if (uiState.isSubmitting) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.3f))
+                    .clickable(enabled = false) {},
+                contentAlignment = Alignment.Center
+            ) {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        CircularProgressIndicator(color = Color(0xFFFB8C00))
+                        Text("جاري الحفظ والمزامنة...", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
         }
     }
 }
