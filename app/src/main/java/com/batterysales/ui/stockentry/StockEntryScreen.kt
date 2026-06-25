@@ -262,15 +262,16 @@ fun StockEntryContent(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     maxItemsInEachRow = 2
                 ) {
+                    val filteredProducts = viewModel.getFilteredProducts()
                     Dropdown(
                         label = "المنتج",
                         selectedValue = uiState.selectedProduct?.let { p ->
                             p.name + if (p.specification.isNotEmpty()) " (${p.specification})" else ""
                         } ?: "",
-                        options = uiState.products.map { p ->
+                        options = filteredProducts.map { p ->
                             p.name + if (p.specification.isNotEmpty()) " (${p.specification})" else ""
                         },
-                        onOptionSelected = { index -> viewModel.onProductSelected(uiState.products[index]) },
+                        onOptionSelected = { index -> viewModel.onProductSelected(filteredProducts[index]) },
                         enabled = true,
                         modifier = Modifier.weight(1f).widthIn(min = 150.dp)
                     )

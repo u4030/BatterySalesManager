@@ -56,51 +56,46 @@ class ProductManagementViewModel @Inject constructor(
 
     private val refreshTrigger = MutableStateFlow(0)
 
+    private val staticData = flow {
+        val warehouses = warehouseRepository.getWarehousesOnce()
+        val suppliers = supplierRepository.getSuppliersOnce()
+        emit(Pair(warehouses, suppliers))
+    }
+
     val uiState: StateFlow<ProductManagementUiState> = combine(
-        refreshTrigger,
+        productRepository.getProducts(),
         _barcodeFilter,
-        _selectedProduct
-    ) { _, barcodeFilter, selectedProduct ->
-        Triple(barcodeFilter, selectedProduct, 0)
-    }.flatMapLatest { (barcodeFilter, selectedProduct, _) ->
-        _isLoading.value = true
-        flow {
-            try {
-                val products = productRepository.getProductsOnce()
-                val warehouses = warehouseRepository.getWarehousesOnce()
-                val suppliers = supplierRepository.getSuppliersOnce()
-                
-                val variants = if (selectedProduct != null) {
-                    productVariantRepository.getVariantsForProduct(selectedProduct.id)
-                } else emptyList()
+        _selectedProduct,
+        _errorMessage,
+        staticData
+    ) { products, barcodeFilter, selectedProduct, error, static ->
+        val (warehouses, suppliers) = static
 
-                val filteredProducts = if (barcodeFilter.isBlank()) {
-                    products.filter { !it.archived }
-                } else {
-                    // Optimized Barcode Filter: Only fetch variants if filtering by barcode
-                    val matchingVariants = productVariantRepository.getAllVariants()
-                        .filter { it.barcode.contains(barcodeFilter, ignoreCase = true) }
-                    
-                    val productIdsWithMatchingBarcode = matchingVariants.map { it.productId }.toSet()
-                    
-                    products.filter { !it.archived && (it.id in productIdsWithMatchingBarcode || it.name.contains(barcodeFilter, ignoreCase = true)) }
+        val filteredProducts = if (barcodeFilter.isBlank()) {
+            products.filter { !it.archived }
+        } else {
+            val matchingVariants = productVariantRepository.getAllVariants()
+                .filter { it.barcode.contains(barcodeFilter, ignoreCase = true) }
+            val productIdsWithMatchingBarcode = matchingVariants.map { it.productId }.toSet()
+            products.filter { !it.archived && (it.id in productIdsWithMatchingBarcode || it.name.contains(barcodeFilter, ignoreCase = true)) }
+        }
+
+        ProductManagementUiState(
+            products = filteredProducts,
+            selectedProduct = selectedProduct,
+            warehouses = warehouses,
+            suppliers = suppliers,
+            isLoading = false,
+            errorMessage = error
+        )
+    }.flatMapLatest { state ->
+        if (state.selectedProduct != null) {
+            productVariantRepository.getVariantsForProductFlow(state.selectedProduct.id)
+                .map { variants ->
+                    state.copy(variants = variants.filter { !it.archived }.sortedBy { it.capacity })
                 }
-
-                emit(ProductManagementUiState(
-                    products = filteredProducts,
-                    selectedProduct = selectedProduct,
-                    variants = variants.filter { !it.archived }.sortedBy { it.capacity },
-                    warehouses = warehouses,
-                    suppliers = suppliers,
-                    isLoading = false,
-                    errorMessage = _errorMessage.value
-                ))
-            } catch (e: Exception) {
-                Log.e("ProductMgmtVM", "Error loading data", e)
-                emit(ProductManagementUiState(isLoading = false, errorMessage = "خطأ في تحميل البيانات"))
-            } finally {
-                _isLoading.value = false
-            }
+        } else {
+            flowOf(state.copy(variants = emptyList()))
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ProductManagementUiState(isLoading = true))
 
@@ -167,7 +162,7 @@ class ProductManagementViewModel @Inject constructor(
                         specification = specification
                     )
                     if (variant.isValid()) {
-                        productVariantRepository.addVariant(variant)
+                        productVariantRepository.addVariant(variant, summaryRepository)
                     } else {
                         _errorMessage.value = variant.getValidationError()
                     }

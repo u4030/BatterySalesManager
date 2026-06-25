@@ -84,6 +84,7 @@ class DashboardViewModel @Inject constructor(
 
     private var dashboardJob: kotlinx.coroutines.Job? = null
     private var alertsListener: com.google.firebase.firestore.ListenerRegistration? = null
+    private var financialListener: com.google.firebase.firestore.ListenerRegistration? = null
 
     private fun loadDashboardData() {
         dashboardJob?.cancel()
@@ -94,6 +95,7 @@ class DashboardViewModel @Inject constructor(
             if (user == null) {
                 _uiState.value = DashboardUiState(isLoading = false)
                 alertsListener?.remove()
+                financialListener?.remove()
                 return@onEach
             }
 
@@ -110,6 +112,28 @@ class DashboardViewModel @Inject constructor(
                 } else {
                     Pair(0, warehouseRepository.getWarehousesOnce())
                 }
+
+                // 2. Real-time Snapshot Listener for Financial Status (Quota-Efficient)
+                financialListener?.remove()
+                financialListener = firestore.collection("summaries").document("financial_status")
+                    .addSnapshotListener { snap, e ->
+                        if (snap == null || e != null) return@addSnapshotListener
+                        val status = snap.toObject(FinancialStatus::class.java) ?: FinancialStatus()
+
+                        val whStats = if (isAdmin) {
+                            warehouses.map { wh ->
+                                val bal = status.warehouseBalances[wh.id]
+                                WarehouseStats(wh.id, wh.name, bal?.todayCollection ?: 0.0, bal?.todayCollectionCount ?: 0)
+                            }.filter { it.todayCollection > 0 || it.todayCollectionCount > 0 }
+                        } else {
+                            val bal = status.warehouseBalances[userWarehouseId]
+                            listOf(WarehouseStats(userWarehouseId, warehouses.find { it.id == userWarehouseId }?.name ?: "مخزن", bal?.todayCollection ?: 0.0, bal?.todayCollectionCount ?: 0))
+                        }
+
+                        _uiState.update { it.copy(
+                            warehouseStats = whStats
+                        ) }
+                    }
 
                 // 3. Real-time Snapshot Listener for Alerts
                 alertsListener?.remove()
@@ -172,6 +196,7 @@ class DashboardViewModel @Inject constructor(
     override fun onCleared() {
         super.onCleared()
         alertsListener?.remove()
+        financialListener?.remove()
     }
 
     private suspend fun loadHeavyData(
