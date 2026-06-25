@@ -126,8 +126,9 @@ class DashboardViewModel @Inject constructor(
                                 WarehouseStats(wh.id, wh.name, bal?.todayCollection ?: 0.0, bal?.todayCollectionCount ?: 0)
                             }.filter { it.todayCollection > 0 || it.todayCollectionCount > 0 }
                         } else {
-                            val bal = status.warehouseBalances[userWarehouseId]
-                            listOf(WarehouseStats(userWarehouseId, warehouses.find { it.id == userWarehouseId }?.name ?: "مخزن", bal?.todayCollection ?: 0.0, bal?.todayCollectionCount ?: 0))
+                            val targetWhId = userWarehouseId ?: ""
+                            val bal = status.warehouseBalances[targetWhId]
+                            listOf(WarehouseStats(targetWhId, warehouses.find { it.id == targetWhId }?.name ?: "مخزن", bal?.todayCollection ?: 0.0, bal?.todayCollectionCount ?: 0))
                         }
 
                         _uiState.update { it.copy(
