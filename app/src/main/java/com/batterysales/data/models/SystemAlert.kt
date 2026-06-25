@@ -22,3 +22,4 @@ data class SystemAlert(
         const val TYPE_FINANCIAL_DUE = "financial_due"
     }
 }
+ 

@@ -18,3 +18,4 @@ class BatterySalesApp : Application() {
         Timber.plant(Timber.DebugTree())
     }
 }
+ 

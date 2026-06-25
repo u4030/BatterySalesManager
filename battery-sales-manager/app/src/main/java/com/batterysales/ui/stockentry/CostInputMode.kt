@@ -4,3 +4,4 @@ enum class CostInputMode {
     BY_AMPERE,
     BY_ITEM
 }
+ 

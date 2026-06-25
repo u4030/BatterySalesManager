@@ -619,3 +619,4 @@ fun SellOldBatteryDialog(
         dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
     )
 }
+ 

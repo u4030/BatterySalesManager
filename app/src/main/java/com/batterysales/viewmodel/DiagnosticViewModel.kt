@@ -44,3 +44,4 @@ class DiagnosticViewModel @Inject constructor(
         }
     }
 }
+ 

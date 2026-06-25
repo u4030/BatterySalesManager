@@ -129,3 +129,4 @@ class ProductVariantRepository @Inject constructor(
         return snapshot.documents.firstOrNull()?.toObject(ProductVariant::class.java)?.copy(id = snapshot.documents.firstOrNull()?.id ?: "")
     }
 }
+ 

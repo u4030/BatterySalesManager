@@ -1289,3 +1289,4 @@ class StockEntryRepository @Inject constructor(
         }
     }
 }
+ 

@@ -120,3 +120,4 @@ class UserRepository @Inject constructor(
         firestore.collection(User.COLLECTION_NAME).document(userId).delete().await()
     }
 }
+ 

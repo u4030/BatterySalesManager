@@ -361,3 +361,4 @@ class SummaryRepository @Inject constructor(
 
     suspend fun getSyncRegistry(): SyncRegistry? = fetchSyncRegistry()
 }
+ 

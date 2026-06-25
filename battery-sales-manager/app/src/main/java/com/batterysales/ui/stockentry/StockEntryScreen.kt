@@ -663,3 +663,4 @@ fun AddSupplierDialog(onDismiss: () -> Unit, onAddSupplier: (String, Double) -> 
         )
     }
 }
+ 

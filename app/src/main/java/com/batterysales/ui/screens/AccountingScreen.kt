@@ -694,3 +694,4 @@ fun AddTransactionDialog(
         }
     }
 }
+ 

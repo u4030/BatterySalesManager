@@ -60,3 +60,4 @@ class ScrapWarehouseRepository @Inject constructor(
         }
     }
 }
+ 
