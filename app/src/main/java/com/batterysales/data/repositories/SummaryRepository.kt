@@ -79,7 +79,7 @@ class SummaryRepository @Inject constructor(
             specification = variant.specification, isDiscontinued = variant.isDiscontinued
         )).copy(
             currentStock = (oldItemWh?.currentStock ?: 0) + qtyChange,
-            weightedAverageCost = variant.weightedAverageCost,
+            weightedAverageCost = if (variant.weightedAverageCost > 0.001) variant.weightedAverageCost else (oldItemWh?.weightedAverageCost ?: 0.0),
             specification = variant.specification,
             isDiscontinued = variant.isDiscontinued,
             updatedAt = Date()
@@ -95,7 +95,7 @@ class SummaryRepository @Inject constructor(
             specification = variant.specification, isDiscontinued = variant.isDiscontinued
         )).copy(
             currentStock = (oldItemGlobal?.currentStock ?: 0) + qtyChange,
-            weightedAverageCost = variant.weightedAverageCost,
+            weightedAverageCost = if (variant.weightedAverageCost > 0.001) variant.weightedAverageCost else (oldItemGlobal?.weightedAverageCost ?: 0.0),
             specification = variant.specification,
             isDiscontinued = variant.isDiscontinued,
             updatedAt = Date()
@@ -147,7 +147,7 @@ class SummaryRepository @Inject constructor(
                 specification = variant.specification, isDiscontinued = variant.isDiscontinued
             )).copy(
                 currentStock = (oldItemWh?.currentStock ?: 0) + qtyChange,
-                weightedAverageCost = variant.weightedAverageCost,
+                weightedAverageCost = if (variant.weightedAverageCost > 0.001) variant.weightedAverageCost else (oldItemWh?.weightedAverageCost ?: 0.0),
                 specification = variant.specification,
                 isDiscontinued = variant.isDiscontinued,
                 updatedAt = Date()
@@ -163,7 +163,7 @@ class SummaryRepository @Inject constructor(
                 specification = variant.specification, isDiscontinued = variant.isDiscontinued
             )).copy(
                 currentStock = (oldItemGlobal?.currentStock ?: 0) + qtyChange,
-                weightedAverageCost = variant.weightedAverageCost,
+                weightedAverageCost = if (variant.weightedAverageCost > 0.001) variant.weightedAverageCost else (oldItemGlobal?.weightedAverageCost ?: 0.0),
                 specification = variant.specification,
                 isDiscontinued = variant.isDiscontinued,
                 updatedAt = Date()

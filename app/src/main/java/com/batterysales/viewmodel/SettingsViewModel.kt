@@ -72,6 +72,11 @@ class SettingsViewModel @Inject constructor(
                 
                 invoiceRepository.migrateInvoices()
                 stockEntryRepository.migrateStockEntries(billRepository)
+
+                // --- NEW: Fix Product-Supplier association for legacy data ---
+                _migrationStatus.value = "جاري تحديث روابط الموردين للمنتجات القديمة..."
+                migrateProductSuppliers()
+
                 stockEntryRepository.migrateAllVariants(productRepository, supplierRepository, billRepository)
                 
                 // Rebuild Summaries from scratch
@@ -348,6 +353,33 @@ class SettingsViewModel @Inject constructor(
         com.google.firebase.firestore.FirebaseFirestore.getInstance()
             .collection("summaries").document("sync_registry")
             .set(SyncRegistry(lastModified = Date())).await()
+    }
+
+    private suspend fun migrateProductSuppliers() {
+        val firestore = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+        val products = productRepository.getAllProducts()
+        val approvedEntriesSnap = firestore.collection(StockEntry.COLLECTION_NAME)
+            .whereEqualTo("status", "approved")
+            .get().await()
+
+        val entries = approvedEntriesSnap.documents.mapNotNull { it.toObject(StockEntry::class.java) }
+
+        products.filter { it.supplierId.isEmpty() }.chunked(50).forEach { chunk ->
+            val batch = firestore.batch()
+            var count = 0
+            chunk.forEach { product ->
+                // Find any approved stock entry for any variant of this product to find the supplier
+                val variants = productVariantRepository.getVariantsForProduct(product.id)
+                val variantIds = variants.map { it.id }.toSet()
+
+                val relatedEntry = entries.find { it.productVariantId in variantIds && it.supplierId.isNotEmpty() }
+                if (relatedEntry != null) {
+                    batch.update(firestore.collection(Product.COLLECTION_NAME).document(product.id), "supplierId", relatedEntry.supplierId)
+                    count++
+                }
+            }
+            if (count > 0) batch.commit().await()
+        }
     }
 }
  

@@ -33,7 +33,7 @@ class StockEntryRepository @Inject constructor(
             history + stockEntry
         } else history
 
-        val finalLastCost = newHistory.maxByOrNull { it.getEffectiveDate().time }?.getUnitPrice() ?: 0.0
+        val finalLastCostCalculated = newHistory.maxByOrNull { it.getEffectiveDate().time }?.getUnitPrice() ?: 0.0
 
         firestore.runTransaction { transaction ->
             // 1. Reads
@@ -94,7 +94,8 @@ class StockEntryRepository @Inject constructor(
                     transaction.delete(alertRef)
                 }
 
-                // Update Last Purchase Cost
+                // Update Last Purchase Cost (with fallback)
+                val finalLastCost = if (finalLastCostCalculated > 0.001) finalLastCostCalculated else variant.weightedAverageCost
                 variantUpdates["weightedAverageCost"] = finalLastCost
                 
                 if (variantUpdates.isNotEmpty()) {
@@ -312,11 +313,18 @@ class StockEntryRepository @Inject constructor(
 
             // Apply Summary Updates (ONE WRITE PER WAREHOUSE)
             warehouseQtyChanges.forEach { (whId, vChanges) ->
+                // Ensure WAC is preserved if batch calculation resulted in 0
+                val variantsWithPreservedCost = updatedVariants.mapValues { (vid, v) ->
+                    if (v.weightedAverageCost <= 0.001) {
+                        v.copy(weightedAverageCost = variantsMap[vid]?.weightedAverageCost ?: 0.0)
+                    } else v
+                }
+
                 summaryRepository.applyBulkInventoryUpdate(
                     transaction = transaction,
                     snapshots = snapshots,
                     warehouseId = whId,
-                    variantsMap = updatedVariants,
+                    variantsMap = variantsWithPreservedCost,
                     qtyChanges = vChanges
                 )
             }
@@ -867,7 +875,7 @@ class StockEntryRepository @Inject constructor(
             history + entryToApprove
         } else history
 
-        val finalLastCostForApprove = finalHistory.maxByOrNull { it.getEffectiveDate().time }?.getUnitPrice() ?: 0.0
+        val finalLastCostForApproveCalculated = finalHistory.maxByOrNull { it.getEffectiveDate().time }?.getUnitPrice() ?: 0.0
 
         firestore.runTransaction { transaction ->
             val snapshots = summaryRepository.getSummarySnapshots(transaction, listOf(entryToApprove.warehouseId))
@@ -893,7 +901,8 @@ class StockEntryRepository @Inject constructor(
             val newQty = (newStockMap[entry.warehouseId] ?: 0) + (entry.quantity - entry.returnedQuantity)
             newStockMap[entry.warehouseId] = newQty
             
-            // Update Last Purchase Cost
+            // Update Last Purchase Cost (with fallback)
+            val finalLastCostForApprove = if (finalLastCostForApproveCalculated > 0.001) finalLastCostForApproveCalculated else variant.weightedAverageCost
             transaction.update(variantRef, mapOf(
                 "currentStock" to newStockMap,
                 "weightedAverageCost" to finalLastCostForApprove
