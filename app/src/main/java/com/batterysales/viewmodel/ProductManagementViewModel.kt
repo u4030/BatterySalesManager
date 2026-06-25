@@ -64,33 +64,47 @@ class ProductManagementViewModel @Inject constructor(
         emit(Pair(warehouses, suppliers))
     }
 
-    val uiState: StateFlow<ProductManagementUiState> = combine(
-        productRepository.getProducts(),
+    private val localState = combine(
         _barcodeFilter,
         _selectedProduct,
         _errorMessage,
-        _isSubmitting,
+        _isSubmitting
+    ) { barcode, selected, error, submitting ->
+        LocalState(barcode, selected, error, submitting)
+    }
+
+    data class LocalState(
+        val barcodeFilter: String,
+        val selectedProduct: Product?,
+        val errorMessage: String?,
+        val isSubmitting: Boolean
+    )
+
+    val uiState: StateFlow<ProductManagementUiState> = combine(
+        productRepository.getProducts(),
+        productVariantRepository.getAllVariantsFlow(),
+        localState,
         staticData
-    ) { products, barcodeFilter, selectedProduct, error, isSubmitting, static ->
+    ) { products, allVariants, local, static ->
         val (warehouses, suppliers) = static
 
-        val filteredProducts = if (barcodeFilter.isBlank()) {
+        val filteredProducts = if (local.barcodeFilter.isBlank()) {
             products.filter { !it.archived }
         } else {
-            val matchingVariants = productVariantRepository.getAllVariants()
-                .filter { it.barcode.contains(barcodeFilter, ignoreCase = true) }
+            val matchingVariants = allVariants
+                .filter { it.barcode.contains(local.barcodeFilter, ignoreCase = true) }
             val productIdsWithMatchingBarcode = matchingVariants.map { it.productId }.toSet()
-            products.filter { !it.archived && (it.id in productIdsWithMatchingBarcode || it.name.contains(barcodeFilter, ignoreCase = true)) }
+            products.filter { !it.archived && (it.id in productIdsWithMatchingBarcode || it.name.contains(local.barcodeFilter, ignoreCase = true)) }
         }
 
         ProductManagementUiState(
             products = filteredProducts,
-            selectedProduct = selectedProduct,
+            selectedProduct = local.selectedProduct,
             warehouses = warehouses,
             suppliers = suppliers,
             isLoading = false,
-            isSubmitting = isSubmitting,
-            errorMessage = error
+            isSubmitting = local.isSubmitting,
+            errorMessage = local.errorMessage
         )
     }.flatMapLatest { state ->
         if (state.selectedProduct != null) {
