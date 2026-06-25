@@ -85,7 +85,7 @@ class ProductManagementViewModel @Inject constructor(
         productVariantRepository.getAllVariantsFlow(),
         localState,
         staticData
-    ) { products, allVariants, local, static ->
+    ) { products: List<Product>, allVariants: List<ProductVariant>, local: LocalState, static: Pair<List<Warehouse>, List<Supplier>> ->
         val (warehouses, suppliers) = static
 
         val filteredProducts = if (local.barcodeFilter.isBlank()) {
@@ -176,6 +176,7 @@ class ProductManagementViewModel @Inject constructor(
 
                     val variant = ProductVariant(
                         productId = product.id,
+                        productName = product.name,
                         capacity = capacity,
                         sellingPrice = sellingPrice,
                         barcode = barcode,
@@ -272,6 +273,9 @@ class ProductManagementViewModel @Inject constructor(
         viewModelScope.launch {
             _isSubmitting.value = true
             try {
+                val product = productRepository.getProduct(variant.productId)
+                val variantWithMeta = variant.copy(productName = product?.name ?: variant.productName)
+
                 val existing = productVariantRepository.getVariantsForProduct(variant.productId)
                 val isDuplicate = existing.any {
                     it.capacity == variant.capacity &&
@@ -291,7 +295,6 @@ class ProductManagementViewModel @Inject constructor(
                 }
 
                 if (currentUser?.role == "seller") {
-                    val product = productRepository.getProduct(variant.productId)
                     val oldVariant = productVariantRepository.getVariant(variant.id)
                     approvalRepository.addRequest(ApprovalRequest(
                         requesterId = currentUser?.id ?: "",
@@ -301,12 +304,12 @@ class ProductManagementViewModel @Inject constructor(
                         targetId = variant.id,
                         productName = product?.name ?: "",
                         variantCapacity = variant.capacity.toString(),
-                        variantData = variant,
+                        variantData = variantWithMeta,
                         oldVariantData = oldVariant
                     ))
                     _errorMessage.value = "تم إرسال طلب التعديل للمدير للموافقة"
                 } else {
-                    productVariantRepository.updateVariant(variant, summaryRepository)
+                    productVariantRepository.updateVariant(variantWithMeta, summaryRepository)
                 }
             } catch (e: Exception) {
                 Log.e("ProductMgmtVM", "Error updating variant", e)
