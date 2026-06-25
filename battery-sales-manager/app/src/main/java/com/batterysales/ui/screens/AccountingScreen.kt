@@ -1,0 +1,696 @@
+package com.batterysales.ui.screens
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.paging.compose.collectAsLazyPagingItems
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.*
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.navigation.NavHostController
+import com.batterysales.data.models.Transaction
+import com.batterysales.data.models.TransactionType
+import com.batterysales.viewmodel.AccountingViewModel
+import java.text.SimpleDateFormat
+import java.util.*
+import com.batterysales.ui.components.SharedHeader
+import com.batterysales.ui.components.HeaderIconButton
+import com.batterysales.ui.components.CustomKeyboardTextField
+import com.batterysales.ui.components.AppDialog
+import com.batterysales.ui.components.ConnectivityBanner
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+fun AccountingScreen(
+    navController: NavHostController,
+    viewModel: AccountingViewModel = hiltViewModel()
+) {
+    val keyboardController = com.batterysales.ui.components.LocalCustomKeyboardController.current
+    val pagingItems = viewModel.transactions.collectAsLazyPagingItems()
+    val lifecycleOwner = LocalLifecycleOwner.current
+    
+    val networkHelper = (androidx.compose.ui.platform.LocalContext.current.applicationContext as com.batterysales.BatterySalesApp).networkHelper 
+    val isOnline by networkHelper.isOnlineFlow.collectAsState(initial = true)
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.loadData()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+    val balance by viewModel.balance.collectAsState()
+    val totalExpenses by viewModel.totalExpenses.collectAsState()
+    val errorMessage by viewModel.errorMessage.collectAsState()
+    val listState = rememberLazyListState()
+    var showAddTransactionDialog by remember { mutableStateOf(false) }
+    var selectedType by remember { mutableStateOf(TransactionType.INCOME) }
+    var transactionToEdit by remember { mutableStateOf<Transaction?>(null) }
+    var showDeleteConfirm by remember { mutableStateOf<Transaction?>(null) }
+
+    val selectedTab by viewModel.selectedTab.collectAsState()
+    var showDateRangePicker by remember { mutableStateOf(false) }
+    val dateRangePickerState = rememberDateRangePickerState()
+
+    var searchQuery by remember { mutableStateOf("") }
+
+    val warehouses by viewModel.warehouses.collectAsState()
+    val selectedWarehouseId by viewModel.selectedWarehouseId.collectAsState()
+    val currentUser by viewModel.currentUser.collectAsState()
+    val selectedPaymentMethod by viewModel.selectedPaymentMethod.collectAsState()
+    val selectedYear by viewModel.selectedYear.collectAsState()
+
+
+    val bgColor = MaterialTheme.colorScheme.background
+    val cardBgColor = MaterialTheme.colorScheme.surface
+    val accentColor = Color(0xFFFB8C00)
+    val headerGradient = androidx.compose.ui.graphics.Brush.verticalGradient(
+        colors = listOf(Color(0xFFE53935), Color(0xFFFB8C00))
+    )
+
+    val canUseTreasury = remember(currentUser) {
+        currentUser?.role == "admin" || currentUser?.permissions?.contains("use_treasury") == true
+    }
+
+    errorMessage?.let { error ->
+        AlertDialog(
+            onDismissRequest = { viewModel.clearError() },
+            title = { Text("خطأ") },
+            text = { Text(error) },
+            confirmButton = {
+                Button(onClick = { viewModel.clearError() }) { Text("موافق") }
+            }
+        )
+    }
+
+    Scaffold(
+        containerColor = bgColor,
+        floatingActionButton = {
+            if (canUseTreasury) {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    FloatingActionButton(
+                        onClick = {
+                            selectedType = TransactionType.INCOME
+                            showAddTransactionDialog = true
+                        },
+                        containerColor = Color(0xFF4CAF50).copy(alpha = 0.7f),
+                        contentColor = Color.White
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "إيداع")
+                    }
+                    FloatingActionButton(
+                        onClick = {
+                            selectedType = TransactionType.EXPENSE
+                            showAddTransactionDialog = true
+                        },
+                        containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
+                        contentColor = Color.White
+                    ) {
+                        Icon(Icons.Default.Remove, contentDescription = "سحب")
+                    }
+                }
+            }
+        }
+    ) { paddingValues ->
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .imePadding(),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(bottom = 80.dp)
+        ) {
+            // Gradient Header with Balance
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                                colors = listOf(Color(0xFFE53935), Color(0xFFFB8C00))
+                            ),
+                            shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
+                        )
+                        .padding(bottom = 24.dp)
+                        .statusBarsPadding()
+                ) {
+                    Column {
+                        Row(
+                            modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                HeaderIconButton(
+                                    icon = Icons.AutoMirrored.Filled.ArrowBack,
+                                    onClick = { 
+                                        keyboardController.hideKeyboard()
+                                        navController.popBackStack() 
+                                    },
+                                    contentDescription = "Back"
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = "الخزينة والمحاسبة",
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Row {
+                                if (currentUser?.role == "admin") {
+                                    HeaderIconButton(
+                                        icon = Icons.Default.Send,
+                                        onClick = { viewModel.transferDailyIncomeToMain() },
+                                        contentDescription = "Transfer to Main"
+                                    )
+                                }
+                                HeaderIconButton(
+                                    icon = Icons.Default.CalendarMonth,
+                                    onClick = { showDateRangePicker = true },
+                                    contentDescription = "Date Range"
+                                )
+                            }
+                        }
+
+                        // Warehouse selection for admins - Primary Filter as Tabs
+                        if (currentUser?.role == "admin" && warehouses.isNotEmpty()) {
+                            val selectedIndex = warehouses.indexOfFirst { it.id == selectedWarehouseId }.coerceAtLeast(0)
+                            ScrollableTabRow(
+                                selectedTabIndex = selectedIndex,
+                                containerColor = Color.Transparent,
+                                contentColor = Color.White,
+                                edgePadding = 16.dp,
+                                divider = {},
+                                indicator = { tabPositions ->
+                                    if (tabPositions.isNotEmpty()) {
+                                        Box(
+                                            Modifier
+                                                .tabIndicatorOffset(tabPositions[selectedIndex])
+                                                .height(4.dp)
+                                                .padding(horizontal = 16.dp)
+                                                .background(Color.White, RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
+                                        )
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                            ) {
+                                warehouses.forEach { warehouse ->
+                                    Tab(
+                                        selected = selectedWarehouseId == warehouse.id,
+                                        onClick = { viewModel.onWarehouseSelected(warehouse.id) },
+                                        text = {
+                                            Text(
+                                                warehouse.name,
+                                                style = MaterialTheme.typography.titleSmall,
+                                                fontWeight = if (selectedWarehouseId == warehouse.id) FontWeight.Bold else FontWeight.Medium
+                                            )
+                                        },
+                                        selectedContentColor = Color.White,
+                                        unselectedContentColor = Color.White.copy(alpha = 0.6f)
+                                    )
+                                }
+                            }
+                        }
+
+                        // Balance Card inside the gradient
+                        Card(
+                            modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
+                            shape = RoundedCornerShape(20.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.2f))
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(20.dp).fillMaxWidth(),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                val currentWhName = warehouses.find { it.id == selectedWarehouseId }?.name ?: "الخزينة"
+                                Text(
+                                    "إجمالي الرصيد الحالي ($currentWhName)",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = Color.White.copy(alpha = 0.9f)
+                                )
+                                Text(
+                                    "JD ${String.format("%.3f", balance)}",
+                                    style = MaterialTheme.typography.headlineMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+
+                                Spacer(modifier = Modifier.height(12.dp))
+                                HorizontalDivider(color = Color.White.copy(alpha = 0.2f))
+                                Spacer(modifier = Modifier.height(12.dp))
+
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("إجمالي المصروفات", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
+                                        Text("JD ${String.format("%.3f", totalExpenses)}", color = Color.White, fontWeight = FontWeight.Bold)
+                                    }
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("طريقة الدفع", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
+                                        Text(
+                                            when(selectedPaymentMethod) {
+                                                "cash" -> "كاش"
+                                                "e-wallet" -> "محفظة"
+                                                "visa" -> "فيزا"
+                                                else -> "الكل"
+                                            },
+                                            color = accentColor,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            item {
+                Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                    // Secondary filters as Chips instead of tabs to avoid confusion
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        FilterChip(
+                            selected = selectedTab == 0,
+                            onClick = { viewModel.onTabSelected(0) },
+                            label = { Text("جميع القيود") }
+                        )
+                        FilterChip(
+                            selected = selectedTab == 1,
+                            onClick = { viewModel.onTabSelected(1) },
+                            label = { Text("المسحوبات") }
+                        )
+
+                        Spacer(modifier = Modifier.weight(1f))
+
+                        // Year Selector
+                        var yearExpanded by remember { mutableStateOf(false) }
+                        Box {
+                            FilterChip(
+                                selected = selectedYear != null,
+                                onClick = { yearExpanded = true },
+                                label = { Text(selectedYear?.toString() ?: "كل السنوات") },
+                                trailingIcon = { Icon(Icons.Default.ArrowDropDown, contentDescription = null) }
+                            )
+                            DropdownMenu(expanded = yearExpanded, onDismissRequest = { yearExpanded = false }) {
+                                DropdownMenuItem(text = { Text("كل السنوات") }, onClick = { viewModel.onYearSelected(null); yearExpanded = false })
+                                val currentYear = Calendar.getInstance().get(Calendar.YEAR)
+                                for (y in currentYear downTo currentYear - 5) {
+                                    DropdownMenuItem(text = { Text(y.toString()) }, onClick = { viewModel.onYearSelected(y); yearExpanded = false })
+                                }
+                            }
+                        }
+                    }
+
+                    // Payment Method Chips
+                    val paymentMethods = listOf("cash" to "كاش", "e-wallet" to "محفظة", "visa" to "فيزا")
+                    androidx.compose.foundation.lazy.LazyRow(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        item {
+                            FilterChip(
+                                selected = selectedPaymentMethod == null,
+                                onClick = { viewModel.onPaymentMethodSelected(null) },
+                                label = { Text("جميع طرق الدفع") }
+                            )
+                        }
+                        items(paymentMethods) { (id, label) ->
+                            FilterChip(
+                                selected = selectedPaymentMethod == id,
+                                onClick = { viewModel.onPaymentMethodSelected(id) },
+                                label = { Text(label) }
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Search Bar
+                    CustomKeyboardTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = "بحث بالوصف أو الرقم المرجعي..."
+                    )
+
+                    if (dateRangePickerState.selectedStartDateMillis != null) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        com.batterysales.ui.components.DateRangeInfo(
+                            startDate = dateRangePickerState.selectedStartDateMillis,
+                            endDate = dateRangePickerState.selectedEndDateMillis,
+                            onClear = { dateRangePickerState.setSelection(null, null) }
+                        )
+                    }
+                }
+            }
+
+            if (pagingItems.loadState.refresh is androidx.paging.LoadState.Loading) {
+                item {
+                    Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = accentColor)
+                    }
+                }
+            } else if (pagingItems.itemCount == 0) {
+                item {
+                    Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                        Text(
+                            "لا توجد عمليات حالياً",
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+            } else {
+                items(pagingItems.itemCount) { index ->
+                    val trans = pagingItems[index]
+                    trans?.let {
+                        Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                            TransactionItemCard(
+                                transaction = it,
+                                onEdit = { transactionToEdit = it },
+                                onDelete = { showDeleteConfirm = it }
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (pagingItems.loadState.append is androidx.paging.LoadState.Loading) {
+                item {
+                    Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(modifier = Modifier.size(32.dp), color = accentColor)
+                    }
+                }
+            }
+        }
+    }
+
+    if (showAddTransactionDialog) {
+        AddTransactionDialog(
+            type = selectedType,
+            onDismiss = { showAddTransactionDialog = false },
+            onAdd = { type, desc, amount, ref, method ->
+                viewModel.addManualTransaction(type, amount, desc, ref, method)
+                showAddTransactionDialog = false
+            }
+        )
+    }
+
+    if (transactionToEdit != null) {
+        val isLinkedToBill = transactionToEdit?.relatedId?.isNotEmpty() == true || transactionToEdit?.isSystemManaged == true
+        if (isLinkedToBill) {
+            AlertDialog(
+                onDismissRequest = { transactionToEdit = null },
+                title = { Text("تنبيه") },
+                text = { Text("هذا القيد نظامي ومرتبط بعملية أخرى (كمبيالة/شيك/تمويل). لتعديله، يرجى الانتقال إلى الشاشة المختصة (الكمبيالات مثلاً).") },
+                confirmButton = { Button(onClick = { transactionToEdit = null }) { Text("فهمت") } }
+            )
+        } else {
+            EditTransactionDialog(
+                transaction = transactionToEdit!!,
+                onDismiss = { transactionToEdit = null },
+                onConfirm = { updated ->
+                    viewModel.updateTransaction(updated)
+                    transactionToEdit = null
+                }
+            )
+        }
+    }
+
+    if (showDateRangePicker) {
+        com.batterysales.ui.components.AppDateRangePickerDialog(
+            state = dateRangePickerState,
+            onDismiss = { showDateRangePicker = false },
+            onConfirm = {
+                viewModel.onDateRangeSelected(
+                    dateRangePickerState.selectedStartDateMillis,
+                    dateRangePickerState.selectedEndDateMillis
+                )
+                showDateRangePicker = false
+            }
+        )
+    }
+
+    if (showDeleteConfirm != null) {
+        val isLinkedToBill = showDeleteConfirm?.relatedId?.isNotEmpty() == true || showDeleteConfirm?.isSystemManaged == true
+        
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = null },
+            title = { Text(if (isLinkedToBill) "تنبيه" else "حذف العملية") },
+            text = { 
+                if (isLinkedToBill) {
+                    Text("هذا القيد نظامي ومرتبط بعملية أخرى. لحذفه، يرجى الانتقال إلى الشاشة المختصة (الكمبيالات مثلاً) والحذف من هناك لضمان دقة البيانات.")
+                } else {
+                    Text("هل أنت متأكد من حذف هذه العملية المالية؟ لا يمكن التراجع عن هذا الإجراء.")
+                }
+            },
+            confirmButton = {
+                if (!isLinkedToBill) {
+                    Button(
+                        onClick = {
+                            viewModel.deleteTransaction(showDeleteConfirm!!.id)
+                            showDeleteConfirm = null
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    ) { Text("حذف") }
+                } else {
+                    Button(onClick = { showDeleteConfirm = null }) { Text("فهمت") }
+                }
+            },
+            dismissButton = {
+                if (!isLinkedToBill) {
+                    TextButton(onClick = { showDeleteConfirm = null }) { Text("إلغاء") }
+                }
+            }
+        )
+    }
+}
+
+@Composable
+fun TransactionItemCard(
+    transaction: Transaction,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val dateFormatter = SimpleDateFormat("yyyy/MM/dd hh:mm a", Locale.getDefault())
+    val isIncome = transaction.type == TransactionType.INCOME || transaction.type == TransactionType.PAYMENT
+    val amountColor = if (isIncome) Color(0xFF10B981) else Color(0xFFEF4444)
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Surface(
+                    color = amountColor.copy(alpha = 0.1f),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = if (isIncome) Icons.AutoMirrored.Filled.TrendingUp else Icons.AutoMirrored.Filled.TrendingDown,
+                            contentDescription = null,
+                            tint = amountColor,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = if (isIncome) "إيداع" else "سحب",
+                            color = amountColor,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    IconButton(
+                        onClick = onEdit,
+                        modifier = Modifier.size(32.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f), CircleShape)
+                    ) {
+                        Icon(Icons.Default.Edit, contentDescription = "Edit", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                    }
+                    IconButton(
+                        onClick = onDelete,
+                        modifier = Modifier.size(32.dp).background(Color(0xFF3B1F1F), CircleShape)
+                    ) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color(0xFFEF4444), modifier = Modifier.size(16.dp))
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text(
+                text = "${if (isIncome) "+" else "-"} JD ${String.format("%,.3f", transaction.amount)}",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = if (isIncome) Color(0xFF10B981) else Color(0xFFEF4444)
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                transaction.description,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            if (transaction.referenceNumber.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "رقم الشيك/السند/المرجع: ${transaction.referenceNumber}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color(0xFFFB8C00),
+                    fontWeight = FontWeight.Medium
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Text(
+                dateFormatter.format(transaction.createdAt),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+fun EditTransactionDialog(
+    transaction: Transaction,
+    onDismiss: () -> Unit,
+    onConfirm: (Transaction) -> Unit
+) {
+    var description by remember { mutableStateOf(transaction.description) }
+    var amount by remember { mutableStateOf(transaction.amount.toString()) }
+
+    AppDialog(
+        onDismiss = onDismiss,
+        title = "تعديل العملية",
+        confirmButton = {
+            Button(onClick = {
+                val amt = amount.toDoubleOrNull() ?: transaction.amount
+                onConfirm(transaction.copy(description = description, amount = amt))
+            }) { Text("موافق") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("إلغاء") }
+        }
+    ) {
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = description,
+            onValueChange = { description = it },
+            label = "الوصف"
+        )
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = amount,
+            onValueChange = { amount = it },
+            label = "المبلغ",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
+        )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun AddTransactionDialog(
+    type: TransactionType,
+    onDismiss: () -> Unit,
+    onAdd: (TransactionType, String, Double, String, String) -> Unit
+) {
+    var description by remember { mutableStateOf("") }
+    var amount by remember { mutableStateOf("") }
+    var referenceNumber by remember { mutableStateOf("") }
+    var selectedMethod by remember { mutableStateOf("cash") }
+
+    AppDialog(
+        onDismiss = onDismiss,
+        title = if (type == TransactionType.INCOME) "إيداع مبلغ" else "سحب مبلغ / مصروف",
+        confirmButton = {
+            val isOnline = (androidx.compose.ui.platform.LocalContext.current.applicationContext as? com.batterysales.BatterySalesApp)?.networkHelper?.isNetworkConnected() ?: true
+            Button(
+                onClick = {
+                    val amt = amount.toDoubleOrNull() ?: 0.0
+                    if (description.isNotEmpty() && amt > 0) onAdd(type, description, amt, referenceNumber, selectedMethod)
+                }, 
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (type == TransactionType.INCOME) Color(0xFF4CAF50) else MaterialTheme.colorScheme.error,
+                    disabledContainerColor = (if (type == TransactionType.INCOME) Color(0xFF4CAF50) else MaterialTheme.colorScheme.error).copy(alpha = 0.5f)
+                ),
+                enabled = isOnline
+            ) { Text("موافق") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("إلغاء") }
+        }
+    ) {
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = description,
+            onValueChange = { description = it },
+            label = "الوصف"
+        )
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = referenceNumber,
+            onValueChange = { referenceNumber = it },
+            label = "رقم المرجع (اختياري)"
+        )
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = amount,
+            onValueChange = { amount = it },
+            label = "المبلغ",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
+        )
+
+        Text("طريقة الدفع:", style = MaterialTheme.typography.labelMedium)
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf("cash" to "كاش", "e-wallet" to "محفظة", "visa" to "فيزا").forEach { (id, label) ->
+                FilterChip(
+                    selected = selectedMethod == id,
+                    onClick = { selectedMethod = id },
+                    label = { Text(label) }
+                )
+            }
+        }
+    }
+}

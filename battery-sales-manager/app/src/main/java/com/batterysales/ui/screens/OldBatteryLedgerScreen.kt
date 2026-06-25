@@ -1,0 +1,621 @@
+package com.batterysales.ui.screens
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.paging.compose.collectAsLazyPagingItems
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.*
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.navigation.NavHostController
+import com.batterysales.data.models.OldBatteryTransaction
+import com.batterysales.data.models.OldBatteryTransactionType
+import com.batterysales.data.models.ScrapWarehouse
+import com.batterysales.viewmodel.OldBatteryViewModel
+import java.text.SimpleDateFormat
+import java.util.*
+import com.batterysales.ui.components.SharedHeader
+import com.batterysales.ui.components.HeaderIconButton
+
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.blur
+import androidx.compose.foundation.shape.CircleShape
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+fun OldBatteryLedgerScreen(
+    navController: NavHostController,
+    viewModel: OldBatteryViewModel = hiltViewModel()
+) {
+    val keyboardController = com.batterysales.ui.components.LocalCustomKeyboardController.current
+    val pagingItems = viewModel.transactions.collectAsLazyPagingItems()
+    val summary by viewModel.summary.collectAsState()
+    val scrapWarehouses by viewModel.scrapWarehouses.collectAsState()
+    val isSeller by viewModel.isSeller.collectAsState()
+    val userWarehouseId by viewModel.userWarehouseId.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+    val errorMessage by viewModel.errorMessage.collectAsState()
+    val listState = rememberLazyListState()
+    
+    var selectedFilterWH by remember { mutableStateOf<String?>(null) }
+    var showDateRangePicker by remember { mutableStateOf(false) }
+    val dateRangePickerState = rememberDateRangePickerState()
+
+
+    var showSaleDialog by remember { mutableStateOf<OldBatteryTransaction?>(null) }
+    var showEditDialog by remember { mutableStateOf<OldBatteryTransaction?>(null) }
+    var showAddDialog by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf<OldBatteryTransaction?>(null) }
+
+    val bgColor = MaterialTheme.colorScheme.background
+    val cardBgColor = MaterialTheme.colorScheme.surface
+    val accentColor = Color(0xFFFB8C00)
+    val headerGradient = Brush.verticalGradient(
+        colors = listOf(Color(0xFFE53935), Color(0xFFFB8C00))
+    )
+
+    Scaffold(
+        containerColor = bgColor,
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = { showAddDialog = true },
+                containerColor = accentColor,
+                contentColor = Color.White,
+                shape = CircleShape
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "إضافة")
+            }
+        }
+    ) { paddingValues ->
+        errorMessage?.let { error ->
+            AlertDialog(
+                onDismissRequest = { /* Handle if needed */ },
+                title = { Text("خطأ") },
+                text = { Text(error) },
+                confirmButton = {
+                    Button(onClick = { viewModel.clearError() }) { Text("موافق") }
+                }
+            )
+        }
+
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.padding(paddingValues).fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(bottom = 32.dp)
+        ) {
+            // Header Section
+            item {
+                SharedHeader(
+                    title = "سجل السكراب",
+                    onBackClick = { 
+                        keyboardController.hideKeyboard()
+                        navController.popBackStack() 
+                    },
+                    actions = {
+                        HeaderIconButton(
+                            icon = Icons.Default.CalendarMonth,
+                            onClick = { showDateRangePicker = true },
+                            contentDescription = "Date Range"
+                        )
+                    }
+                )
+
+                Column(modifier = Modifier.padding(16.dp)) {
+                    // Summary Card
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(20.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.15f))
+                        ) {
+                            Column(modifier = Modifier.padding(20.dp), horizontalAlignment = Alignment.End) {
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("إجمالي الكمية", color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelSmall)
+                                        Text("${summary.first}", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+                                    }
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("إجمالي الأمبيرات", color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelSmall)
+                                        Text("\u200E${String.format("%.1f", summary.second)} A", color = accentColor, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+                                    }
+                                }
+                                
+                                if (summary.first > 0) {
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Button(
+                                        onClick = {
+                                            showSaleDialog = com.batterysales.data.models.OldBatteryTransaction(
+                                                quantity = summary.first,
+                                                totalAmperes = summary.second,
+                                                warehouseId = if (isSeller) userWarehouseId ?: "" else (selectedFilterWH ?: "")
+                                            )
+                                        },
+                                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = accentColor),
+                                        shape = RoundedCornerShape(12.dp)
+                                    ) {
+                                        Text("بيع سكراب بالجملة", fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+            if (dateRangePickerState.selectedStartDateMillis != null) {
+                item {
+                    Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        com.batterysales.ui.components.DateRangeInfo(
+                            startDate = dateRangePickerState.selectedStartDateMillis,
+                            endDate = dateRangePickerState.selectedEndDateMillis,
+                            onClear = { 
+                                dateRangePickerState.setSelection(null, null)
+                                viewModel.loadTransactions(reset = true, startDate = null, endDate = null)
+                            }
+                        )
+                    }
+                }
+            }
+
+            if (!isSeller && scrapWarehouses.size > 1) {
+                item {
+                    androidx.compose.foundation.lazy.LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                    ) {
+                        items(scrapWarehouses) { scrapWh ->
+                            FilterChip(
+                                selected = selectedFilterWH == scrapWh.parentWarehouseId,
+                                onClick = { 
+                                    selectedFilterWH = scrapWh.parentWarehouseId
+                                    viewModel.loadTransactions(reset = true, warehouseId = scrapWh.parentWarehouseId)
+                                },
+                                label = { Text(scrapWh.name.removePrefix("سكراب - ")) },
+                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = accentColor, selectedLabelColor = Color.White)
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (pagingItems.loadState.refresh is androidx.paging.LoadState.Loading) {
+                item {
+                    Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = accentColor)
+                    }
+                }
+            } else if (pagingItems.itemCount == 0) {
+                item {
+                    Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                        Text("لا توجد عمليات مسجلة", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                    }
+                }
+            } else {
+                items(pagingItems.itemCount) { index ->
+                    val trans = pagingItems[index]
+                    trans?.let {
+                        val warehouseName = scrapWarehouses.find { wh -> wh.parentWarehouseId == it.warehouseId }?.name ?: "غير معروف"
+                        OldBatteryTransactionCard(
+                            transaction = it,
+                            warehouseName = warehouseName,
+                            onEdit = { showEditDialog = it },
+                            onDelete = { showDeleteConfirm = it },
+                            onSell = { showSaleDialog = it }
+                        )
+                    }
+                }
+
+                if (pagingItems.loadState.append is androidx.paging.LoadState.Loading) {
+                    item {
+                        Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(modifier = Modifier.size(32.dp), color = accentColor)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showAddDialog) {
+        AddEditOldBatteryDialog(
+            scrapWarehouses = scrapWarehouses,
+            isSeller = isSeller,
+            userWarehouseId = userWarehouseId,
+            onDismiss = { showAddDialog = false },
+            onConfirm = { qty, amps, price, notes, whId ->
+                viewModel.addManualIntake(qty, amps, price, notes, whId)
+                showAddDialog = false
+            }
+        )
+    }
+
+    if (showEditDialog != null) {
+        AddEditOldBatteryDialog(
+            transaction = showEditDialog,
+            scrapWarehouses = scrapWarehouses,
+            isSeller = isSeller,
+            userWarehouseId = userWarehouseId,
+            onDismiss = { showEditDialog = null },
+            onConfirm = { qty, amps, price, notes, whId ->
+                viewModel.updateTransaction(showEditDialog!!.copy(quantity = qty, totalAmperes = amps, amount = price, notes = notes, warehouseId = whId))
+                showEditDialog = null
+            }
+        )
+    }
+
+    if (showSaleDialog != null) {
+        SellOldBatteryDialog(
+            transaction = showSaleDialog!!,
+            onDismiss = { showSaleDialog = null },
+            onConfirm = { qty, amps, price ->
+                viewModel.sellBatteries(qty, amps, price, showSaleDialog!!.warehouseId)
+                showSaleDialog = null
+            }
+        )
+    }
+
+    if (showDeleteConfirm != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = null },
+            title = { Text("حذف السجل") },
+            text = { Text("هل أنت متأكد من حذف هذا السجل؟ سيتم تحديث المخزون تلقائياً.") },
+            confirmButton = {
+                Button(onClick = {
+                    viewModel.deleteTransaction(showDeleteConfirm!!.id)
+                    showDeleteConfirm = null
+                }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) {
+                    Text("حذف")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = null }) { Text("إلغاء") }
+            }
+        )
+    }
+
+    if (showDateRangePicker) {
+        com.batterysales.ui.components.AppDateRangePickerDialog(
+            state = dateRangePickerState,
+            onDismiss = { showDateRangePicker = false },
+            onConfirm = { 
+                showDateRangePicker = false
+                viewModel.loadTransactions(
+                    reset = true,
+                    startDate = dateRangePickerState.selectedStartDateMillis,
+                    endDate = dateRangePickerState.selectedEndDateMillis
+                )
+            }
+        )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun OldBatteryTransactionCard(
+    transaction: OldBatteryTransaction,
+    warehouseName: String,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    onSell: () -> Unit
+) {
+    val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
+    val isIntake = transaction.type == OldBatteryTransactionType.INTAKE
+    val typeColor = if (isIntake) Color(0xFF10B981) else Color(0xFFEF4444)
+    val accentColor = Color(0xFFFB8C00)
+
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        if (isIntake) "استلام سكراب" else "عملية بيع سكراب",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "مستودع: $warehouseName",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                
+                Surface(
+                    color = typeColor.copy(alpha = 0.1f),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Row(modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = if (isIntake) Icons.AutoMirrored.Filled.CallReceived else Icons.AutoMirrored.Filled.CallMade,
+                            contentDescription = null,
+                            tint = typeColor,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = if (isIntake) "استلام" else "بيع",
+                            color = typeColor,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
+                Column {
+                    Text(
+                        text = "\u200F${transaction.quantity} حبة | \u200E${transaction.totalAmperes} A",
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    if (transaction.createdByUserName.isNotEmpty()) {
+                        Text(
+                            text = "بواسطة: ${transaction.createdByUserName}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                    if (transaction.amount > 0) {
+                        Text(
+                            text = "JD ${String.format("%,.3f", transaction.amount)}",
+                            fontWeight = FontWeight.Bold,
+                            color = if (isIntake) Color(0xFFEF4444) else Color(0xFF10B981),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                    Text(
+                        text = dateFormatter.format(transaction.date),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.Gray
+                    )
+                }
+
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (isIntake && transaction.quantity > 0) {
+                        IconButton(
+                            onClick = onSell,
+                            modifier = Modifier.size(36.dp).background(accentColor.copy(alpha = 0.1f), CircleShape)
+                        ) {
+                            Icon(Icons.Default.Sell, contentDescription = "Sell", tint = accentColor, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                    IconButton(
+                        onClick = onEdit,
+                        modifier = Modifier.size(36.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), CircleShape)
+                    ) {
+                        Icon(Icons.Default.Edit, contentDescription = "Edit", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                    }
+                    IconButton(
+                        onClick = onDelete,
+                        modifier = Modifier.size(36.dp).background(Color(0xFF3B1F1F), CircleShape)
+                    ) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color(0xFFEF4444), modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
+            
+            if (transaction.notes.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Surface(
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = transaction.notes,
+                        modifier = Modifier.padding(12.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AddEditOldBatteryDialog(
+    transaction: OldBatteryTransaction? = null,
+    scrapWarehouses: List<com.batterysales.data.models.ScrapWarehouse>,
+    isSeller: Boolean,
+    userWarehouseId: String?,
+    onDismiss: () -> Unit,
+    onConfirm: (Int, Double, Double, String, String) -> Unit
+) {
+    var qty by remember { mutableStateOf(transaction?.quantity?.toString() ?: "") }
+    var amps by remember { mutableStateOf(transaction?.totalAmperes?.toString() ?: "") }
+    var price by remember { mutableStateOf(transaction?.amount?.toString() ?: "") }
+    var notes by remember { mutableStateOf(transaction?.notes ?: "") }
+    var errorMsg by remember { mutableStateOf<String?>(null) }
+    
+    // Default to user warehouse if seller, or existing transaction warehouse, or NONE for admin to force selection
+    val initialWH = if (isSeller) userWarehouseId ?: "" 
+                   else transaction?.warehouseId ?: ""
+                   
+    var selectedWarehouseId by remember { mutableStateOf(initialWH) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (transaction == null) "إضافة بطاريات قديمة" else "تعديل السجل") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                if (scrapWarehouses.size > 1 && !isSeller) {
+                    Text("المستودع (إلزامي):", style = MaterialTheme.typography.titleSmall, color = if (selectedWarehouseId.isEmpty()) Color.Red else MaterialTheme.colorScheme.onSurface)
+                    androidx.compose.foundation.lazy.LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(scrapWarehouses) { scrapWh ->
+                            FilterChip(
+                                selected = selectedWarehouseId == scrapWh.parentWarehouseId,
+                                onClick = { selectedWarehouseId = scrapWh.parentWarehouseId },
+                                label = { Text(scrapWh.name.removePrefix("سكراب - ")) }
+                            )
+                        }
+                    }
+                } else if (isSeller) {
+                    val whName = scrapWarehouses.find { it.parentWarehouseId == userWarehouseId }?.name ?: "المستودع الخاص بك"
+                    Text("المستودع: $whName", style = MaterialTheme.typography.bodyMedium)
+                }
+
+                com.batterysales.ui.components.CustomKeyboardTextField(
+                    value = qty,
+                    onValueChange = { qty = it },
+                    label = "الكمية",
+                    keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
+                )
+                com.batterysales.ui.components.CustomKeyboardTextField(
+                    value = amps,
+                    onValueChange = { amps = it },
+                    label = "إجمالي الأمبيرات",
+                    keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
+                )
+                com.batterysales.ui.components.CustomKeyboardTextField(
+                    value = price,
+                    onValueChange = { price = it },
+                    label = "المبلغ المدفوع (اختياري)",
+                    keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
+                )
+                com.batterysales.ui.components.CustomKeyboardTextField(
+                    value = notes,
+                    onValueChange = { notes = it },
+                    label = "ملاحظات"
+                )
+                
+                errorMsg?.let {
+                    Text(it, color = Color.Red, style = MaterialTheme.typography.bodySmall)
+                }
+                
+                Spacer(modifier = Modifier.height(com.batterysales.ui.components.LocalCustomKeyboardController.current.keyboardHeight.value))
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                val q = qty.toIntOrNull() ?: 0
+                val a = amps.toDoubleOrNull() ?: 0.0
+                val p = price.toDoubleOrNull() ?: 0.0
+                
+                if (selectedWarehouseId.isEmpty()) {
+                    errorMsg = "الرجاء تحديد المستودع أولاً"
+                    return@Button
+                }
+                if (q <= 0) {
+                    errorMsg = "الرجاء إدخال كمية صحيحة"
+                    return@Button
+                }
+                
+                onConfirm(q, a, p, notes, selectedWarehouseId)
+            }) { Text("موافق") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
+    )
+}
+
+@Composable
+fun SellOldBatteryDialog(
+    transaction: OldBatteryTransaction,
+    onDismiss: () -> Unit,
+    onConfirm: (Int, Double, Double) -> Unit
+) {
+    var qty by remember { mutableStateOf(transaction.quantity.toString()) }
+    var amps by remember { mutableStateOf(transaction.totalAmperes.toString()) }
+    var pricePerAmp by remember { mutableStateOf("") }
+    var price by remember { mutableStateOf("") }
+
+    // Automatic price calculation with 3-decimal precision
+    LaunchedEffect(amps, pricePerAmp) {
+        val a = amps.toDoubleOrNull() ?: 0.0
+        
+        // Use parsing logic that supports multi-dot if needed, but primarily 3-decimal precision
+        val ppa = if (pricePerAmp.count { it == '.' } > 1) {
+            val parts = pricePerAmp.split(".")
+            val jd = parts.getOrNull(0) ?: "0"
+            val qirsh = (parts.getOrNull(1) ?: "00").padStart(2, '0')
+            val fils = (parts.getOrNull(2) ?: "00").padStart(2, '0')
+            "$jd.${qirsh}${fils}".toDoubleOrNull() ?: 0.0
+        } else {
+            pricePerAmp.toDoubleOrNull() ?: 0.0
+        }
+
+        if (a > 0 && ppa > 0) {
+            price = String.format("%.3f", a * ppa)
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("بيع بطاريات قديمة (سكراب)") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                com.batterysales.ui.components.CustomKeyboardTextField(
+                    value = qty,
+                    onValueChange = { qty = it },
+                    label = "الكمية المباعة",
+                    keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
+                )
+                com.batterysales.ui.components.CustomKeyboardTextField(
+                    value = amps,
+                    onValueChange = { amps = it },
+                    label = "إجمالي الأمبيرات",
+                    keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
+                )
+                com.batterysales.ui.components.CustomKeyboardTextField(
+                    value = pricePerAmp,
+                    onValueChange = { pricePerAmp = it },
+                    label = "سعر الأمبير الواحد",
+                    keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
+                )
+                com.batterysales.ui.components.CustomKeyboardTextField(
+                    value = price,
+                    onValueChange = { price = it },
+                    label = "سعر البيع الإجمالي",
+                    keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
+                )
+                Spacer(modifier = Modifier.height(com.batterysales.ui.components.LocalCustomKeyboardController.current.keyboardHeight.value))
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                val q = qty.toIntOrNull() ?: 0
+                val a = amps.toDoubleOrNull() ?: 0.0
+                val p = price.toDoubleOrNull() ?: 0.0
+                if (q > 0 && p > 0) onConfirm(q, a, p)
+            }) { Text("موافق") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
+    )
+}

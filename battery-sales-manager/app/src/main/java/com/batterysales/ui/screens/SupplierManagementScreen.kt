@@ -1,0 +1,348 @@
+package com.batterysales.ui.screens
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.*
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.navigation.NavController
+import com.batterysales.data.models.Supplier
+import com.batterysales.viewmodel.SupplierViewModel
+import com.batterysales.ui.components.CustomKeyboardTextField
+import com.batterysales.ui.components.SharedHeader
+import com.batterysales.ui.components.HeaderIconButton
+import com.batterysales.ui.components.AppDialog
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SupplierManagementScreen(
+    navController: NavController,
+    viewModel: SupplierViewModel = hiltViewModel()
+) {
+    val suppliers by viewModel.suppliers.collectAsState(emptyList())
+    val searchQuery by viewModel.searchQuery.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+    val error by viewModel.error.collectAsState()
+
+    var showAddDialog by remember { mutableStateOf(false) }
+    var supplierToEdit by remember { mutableStateOf<Supplier?>(null) }
+    var supplierToDelete by remember { mutableStateOf<Supplier?>(null) }
+    var supplierToReset by remember { mutableStateOf<Supplier?>(null) }
+
+    val bgColor = MaterialTheme.colorScheme.background
+    val accentColor = Color(0xFFFB8C00)
+    val headerGradient = androidx.compose.ui.graphics.Brush.verticalGradient(
+        colors = listOf(Color(0xFFE53935), Color(0xFFFB8C00))
+    )
+
+    Scaffold(
+        containerColor = bgColor,
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = { showAddDialog = true },
+                containerColor = accentColor,
+                contentColor = Color.White,
+                shape = CircleShape
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "إضافة مورد")
+            }
+        }
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .imePadding(),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(bottom = 80.dp)
+        ) {
+            // Gradient Header
+            item {
+                SharedHeader(
+                    title = "إدارة الموردين",
+                    onBackClick = { navController.popBackStack() },
+                    actions = {
+                        HeaderIconButton(
+                            icon = Icons.Default.Refresh,
+                            onClick = { viewModel.loadSuppliers() },
+                            contentDescription = "Refresh"
+                        )
+                    }
+                )
+
+                Column(modifier = Modifier.padding(16.dp)) {
+                    CustomKeyboardTextField(
+                        value = searchQuery,
+                        onValueChange = viewModel::onSearchQueryChanged,
+                        label = "بحث باسم المورد...",
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+
+            if (isLoading && suppliers.isEmpty()) {
+                item {
+                    Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = accentColor)
+                    }
+                }
+            } else if (suppliers.isEmpty()) {
+                item {
+                    Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                        Text("لا يوجد موردين مضافين", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                    }
+                }
+            } else {
+                items(suppliers) { supplier ->
+                    Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                        SupplierItemCard(
+                            supplier = supplier,
+                            onEdit = { supplierToEdit = supplier },
+                            onDelete = { supplierToDelete = supplier },
+                            onReset = { supplierToReset = supplier }
+                        )
+                    }
+                }
+            }
+        }
+
+        error?.let {
+            Snackbar(
+                modifier = Modifier.padding(16.dp),
+                action = {
+                    TextButton(onClick = { viewModel.clearError() }) { Text("إغلاق") }
+                }
+            ) { Text(it) }
+        }
+    }
+
+    if (showAddDialog) {
+        SupplierDialog(
+            onDismiss = { showAddDialog = false },
+            onConfirm = { name, phone, email, address, t1, t2, t3 ->
+                viewModel.addSupplier(name, phone, email, address, t1, t2, t3)
+            }
+        )
+    }
+
+    supplierToEdit?.let { supplier ->
+        SupplierDialog(
+            supplier = supplier,
+            onDismiss = { supplierToEdit = null },
+            onConfirm = { name, phone, email, address, t1, t2, t3 ->
+                viewModel.updateSupplier(supplier.copy(
+                    name = name,
+                    phone = phone,
+                    email = email,
+                    address = address,
+                    yearlyTarget = t1,
+                    yearlyTarget2 = t2,
+                    yearlyTarget3 = t3
+                ))
+            }
+        )
+    }
+
+    supplierToDelete?.let { supplier ->
+        AlertDialog(
+            onDismissRequest = { supplierToDelete = null },
+            title = { Text("تأكيد الحذف") },
+            text = { Text("هل أنت متأكد من حذف المورد '${supplier.name}'؟") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.deleteSupplier(supplier.id)
+                        supplierToDelete = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("حذف") }
+            },
+            dismissButton = {
+                TextButton(onClick = { supplierToDelete = null }) { Text("إلغاء") }
+            }
+        )
+    }
+
+    supplierToReset?.let { supplier ->
+        AlertDialog(
+            onDismissRequest = { supplierToReset = null },
+            title = { Text("إعادة ضبط المورد") },
+            text = { Text("هل أنت متأكد من إعادة ضبط المورد '${supplier.name}'؟ سيتم تجاهل كافة المشتريات والدفعات السابقة لهذا المورد في التقارير (تصفير الحساب السنوي).") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.resetSupplier(supplier)
+                        supplierToReset = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFB8C00))
+                ) { Text("إعادة ضبط") }
+            },
+            dismissButton = {
+                TextButton(onClick = { supplierToReset = null }) { Text("إلغاء") }
+            }
+        )
+    }
+}
+
+@Composable
+fun SupplierItemCard(
+    supplier: Supplier,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    onReset: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = supplier.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    if (supplier.phone.isNotEmpty()) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Phone, contentDescription = null, size = 14.sp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = supplier.phone,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                Row {
+                    IconButton(
+                        onClick = onReset,
+                        modifier = Modifier.size(36.dp).background(Color(0xFFFB8C00).copy(alpha = 0.1f), CircleShape)
+                    ) {
+                        Icon(Icons.Default.RestartAlt, contentDescription = "Reset", tint = Color(0xFFFB8C00), modifier = Modifier.size(18.dp))
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    IconButton(
+                        onClick = onEdit,
+                        modifier = Modifier.size(36.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), CircleShape)
+                    ) {
+                        Icon(Icons.Default.Edit, contentDescription = "Edit", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    IconButton(
+                        onClick = onDelete,
+                        modifier = Modifier.size(36.dp).background(MaterialTheme.colorScheme.error.copy(alpha = 0.1f), CircleShape)
+                    ) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
+
+            if (supplier.yearlyTarget > 0 || supplier.yearlyTarget2 > 0 || supplier.yearlyTarget3 > 0) {
+                Spacer(modifier = Modifier.height(12.dp))
+                HorizontalDivider(modifier = Modifier.alpha(0.1f))
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (supplier.yearlyTarget > 0) {
+                        TargetRow(label = "الهدف 1", amount = supplier.yearlyTarget)
+                    }
+                    if (supplier.yearlyTarget2 > 0) {
+                        TargetRow(label = "الهدف 2", amount = supplier.yearlyTarget2)
+                    }
+                    if (supplier.yearlyTarget3 > 0) {
+                        TargetRow(label = "الهدف 3", amount = supplier.yearlyTarget3)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun Icon(icon: androidx.compose.ui.graphics.vector.ImageVector, contentDescription: String?, size: androidx.compose.ui.unit.TextUnit, tint: Color) {
+    Icon(icon, contentDescription, modifier = Modifier.size(size.value.dp), tint = tint)
+}
+
+@Composable
+private fun TargetRow(label: String, amount: Double) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Default.Star, contentDescription = null, size = 14.sp, tint = Color(0xFFFACC15))
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(
+            text = "$label: JD ${String.format("%,.3f", amount)}",
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.primary
+        )
+    }
+}
+
+@Composable
+fun SupplierDialog(
+    supplier: Supplier? = null,
+    onDismiss: () -> Unit,
+    onConfirm: (String, String, String, String, Double, Double, Double) -> Unit
+) {
+    var name by remember { mutableStateOf(supplier?.name ?: "") }
+    var phone by remember { mutableStateOf(supplier?.phone ?: "") }
+    var email by remember { mutableStateOf(supplier?.email ?: "") }
+    var address by remember { mutableStateOf(supplier?.address ?: "") }
+    var target1 by remember { mutableStateOf(supplier?.yearlyTarget?.takeIf { it > 0 }?.toString() ?: "") }
+    var target2 by remember { mutableStateOf(supplier?.yearlyTarget2?.takeIf { it > 0 }?.toString() ?: "") }
+    var target3 by remember { mutableStateOf(supplier?.yearlyTarget3?.takeIf { it > 0 }?.toString() ?: "") }
+
+    AppDialog(
+        onDismiss = onDismiss,
+        title = if (supplier == null) "إضافة مورد جديد" else "تعديل بيانات المورد",
+        confirmButton = {
+            Button(onClick = {
+                if (name.isNotBlank()) {
+                    onConfirm(
+                        name, phone, email, address,
+                        target1.toDoubleOrNull() ?: 0.0,
+                        target2.toDoubleOrNull() ?: 0.0,
+                        target3.toDoubleOrNull() ?: 0.0
+                    )
+                    onDismiss()
+                }
+            }) { Text(if (supplier == null) "إضافة" else "حفظ") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("إلغاء") }
+        }
+    ) {
+        CustomKeyboardTextField(value = name, onValueChange = { name = it }, label = "اسم المورد", keyboardType = com.batterysales.ui.components.KeyboardLanguage.ARABIC)
+        CustomKeyboardTextField(value = phone, onValueChange = { phone = it }, label = "رقم الهاتف", keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC)
+        CustomKeyboardTextField(value = email, onValueChange = { email = it }, label = "البريد الإلكتروني", keyboardType = com.batterysales.ui.components.KeyboardLanguage.ENGLISH_LOWER)
+        CustomKeyboardTextField(value = address, onValueChange = { address = it }, label = "العنوان", keyboardType = com.batterysales.ui.components.KeyboardLanguage.ARABIC)
+        CustomKeyboardTextField(value = target1, onValueChange = { target1 = it }, label = "الهدف السنوي 1", keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC)
+        CustomKeyboardTextField(value = target2, onValueChange = { target2 = it }, label = "الهدف السنوي 2", keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC)
+        CustomKeyboardTextField(value = target3, onValueChange = { target3 = it }, label = "الهدف السنوي 3", keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC)
+    }
+}

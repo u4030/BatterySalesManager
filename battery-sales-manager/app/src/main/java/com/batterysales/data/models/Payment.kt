@@ -1,0 +1,19 @@
+package com.batterysales.data.models
+
+import java.util.Date
+
+data class Payment(
+    val id: String = "",
+    val invoiceId: String = "", // معرف الفاتورة المرتبطة
+    val warehouseId: String = "", // Denormalized for dashboard stats
+    val amount: Double = 0.0, // مبلغ الدفعة
+    val paymentDate: Date = Date(),
+    val paymentMethod: String = "", // نقد، شيك، تحويل، إلخ
+    val notes: String = "",
+    val createdAt: Date = Date(),
+    val timestamp: Date = Date()
+) {
+    companion object {
+        const val COLLECTION_NAME = "payments"
+    }
+}

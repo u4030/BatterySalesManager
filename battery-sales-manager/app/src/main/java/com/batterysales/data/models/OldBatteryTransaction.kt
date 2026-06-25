@@ -1,0 +1,26 @@
+package com.batterysales.data.models
+
+import java.util.Date
+
+data class OldBatteryTransaction(
+    val id: String = "",
+    val invoiceId: String? = null,
+    val quantity: Int = 0,
+    val warehouseId: String = "",
+    val totalAmperes: Double = 0.0,
+    val type: OldBatteryTransactionType = OldBatteryTransactionType.INTAKE, // INTAKE (from customer) or SALE (sold to recycler)
+    val amount: Double = 0.0, // Purchase price (INTAKE) or Sale price (SALE)
+    val date: Date = Date(),
+    val notes: String = "",
+    val createdByUserName: String = ""
+) {
+    companion object {
+        const val COLLECTION_NAME = "old_battery_transactions"
+    }
+}
+
+enum class OldBatteryTransactionType {
+    INTAKE,
+    SALE,
+    ADJUSTMENT
+}

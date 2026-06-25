@@ -1,0 +1,42 @@
+package com.batterysales.data.models
+
+import com.google.firebase.firestore.Exclude
+import java.util.Date
+
+/**
+ * ProductVariant - نموذج بيانات متغير المنتج (السعة)
+ */
+data class ProductVariant(
+    val id: String = "",
+    val productId: String = "",
+    val capacity: Int = 0,
+    val sellingPrice: Double = 0.0,
+    val barcode: String = "",
+    val minQuantity: Int = 0,
+    val minQuantities: Map<String, Int> = emptyMap(),
+    var specification: String = "",
+    val productName: String? = null, // Denormalized for sorting
+    val productSpecification: String? = null, // Denormalized for display
+    val currentStock: Map<String, Int>? = null, // WarehouseId to Quantity. Null means migration needed.
+    val weightedAverageCost: Double = 0.0, // Pre-calculated average cost for reports
+    val createdAt: Date = Date(),
+    val updatedAt: Date = Date(),
+    val archived: Boolean = false,
+    val isDiscontinued: Boolean = false
+) {
+    companion object {
+        const val COLLECTION_NAME = "product_variants"
+    }
+
+    @Exclude
+    fun isValid(): Boolean = productId.isNotBlank() && capacity > 0
+
+    @Exclude
+    fun getValidationError(): String? {
+        return when {
+            productId.isBlank() -> "معرف المنتج الأساسي مطلوب"
+            capacity <= 0 -> "السعة يجب أن تكون أكبر من صفر"
+            else -> null
+        }
+    }
+}
