@@ -73,14 +73,15 @@ class DashboardViewModel @Inject constructor(
 
     private val refreshTrigger = MutableStateFlow(0)
 
-    private val _heavyData = MutableStateFlow<HeavyData?>(null)
     private data class HeavyData(
         val pendingCount: Int,
         val warehouses: List<Warehouse>,
         val upcomingBills: List<Bill>
     )
 
-    private val alertsFlow = callbackFlow {
+    private val _heavyData = MutableStateFlow<HeavyData?>(null)
+
+    private val alertsFlow: Flow<List<SystemAlert>> = callbackFlow {
         val listener = firestore.collection(SystemAlert.COLLECTION_NAME)
             .whereEqualTo("type", SystemAlert.TYPE_LOW_STOCK)
             .addSnapshotListener { snap, e ->
@@ -96,9 +97,8 @@ class DashboardViewModel @Inject constructor(
         summaryRepository.getFinancialStatusFlow(),
         summaryRepository.getSuppliersOverviewFlow(),
         alertsFlow,
-        _heavyData,
-        refreshTrigger
-    ) { user, financial, suppliers, alerts, heavy, _ ->
+        _heavyData
+    ) { user: User?, financial: FinancialStatus, suppliers: SuppliersOverview, alerts: List<SystemAlert>, heavy: HeavyData? ->
         if (user == null) return@combine DashboardUiState(isLoading = false)
         if (heavy == null) return@combine DashboardUiState(isLoading = true)
 
@@ -129,7 +129,6 @@ class DashboardViewModel @Inject constructor(
         // Alerts / Low Stock
         val filteredAlerts = alerts.filter { isAdmin || it.warehouseId == userWarehouseId }
         val lowStockItems = filteredAlerts.map { alert ->
-            val specSuffix = if ((alert.data["specification"] as? String)?.isNotBlank() == true) " | ${alert.data["specification"]}" else ""
             LowStockItem(
                 variantId = alert.relatedId,
                 productName = alert.title.replace("مخزون منخفض: ", ""),

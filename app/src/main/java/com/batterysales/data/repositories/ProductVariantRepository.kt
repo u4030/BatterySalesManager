@@ -132,6 +132,14 @@ class ProductVariantRepository @Inject constructor(
                                 summaryRepository.applySupplierUpdate(transaction, snapshots, entry.supplierId, variant.productName ?: "", creditChange = cost)
                             }
                             summaryRepository.invalidateSupplierReportCache(transaction, entry.supplierId)
+
+                            // Reverse from Global Stats
+                            val statsRef = firestore.collection("system_stats").document("global_stats")
+                            transaction.update(statsRef, mapOf(
+                                "totalSupplierDebt" to com.google.firebase.firestore.FieldValue.increment(-cost),
+                                "totalInventoryValue" to com.google.firebase.firestore.FieldValue.increment(-cost),
+                                "totalInventoryQuantity" to com.google.firebase.firestore.FieldValue.increment(-(entry.quantity - entry.returnedQuantity).toLong())
+                            ))
                         }
                         transaction.update(doc.reference, "status", "archived")
                     }
