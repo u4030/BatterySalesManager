@@ -211,7 +211,7 @@ class DashboardViewModel @Inject constructor(
                 if (isOverdue) "كمبيالة متأخرة" else "موعد استحقاق قريب",
                 "الكمبيالة: ${bill.description} تستحق بتاريخ ${java.text.SimpleDateFormat("yyyy/MM/dd").format(bill.dueDate)}",
                 if (isOverdue) NotificationType.OVERDUE_BILL else NotificationType.UPCOMING_BILL,
-                "bills"
+                "bills?highlightBillId=${bill.id}"
             ))
         }
         
