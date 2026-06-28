@@ -73,13 +73,18 @@ class SummaryRepository @Inject constructor(
         // Update Warehouse Summary
         val updatedItemsWh = whSummary.items.toMutableMap()
         val oldItemWh = updatedItemsWh[variantId]
+
+        // Cost Fallback Strategy: Never let WAC drop to 0 if we have a historical cost
+        val targetCost = if (variant.weightedAverageCost > 0.001) variant.weightedAverageCost
+                        else (oldItemWh?.weightedAverageCost ?: 0.0)
+
         val newItemWh = (oldItemWh ?: InventorySummaryItem(
             variantId = variantId, productId = variant.productId, productName = variant.productName ?: "Unknown",
             capacity = variant.capacity, barcode = variant.barcode, sellingPrice = variant.sellingPrice,
             specification = variant.specification, isDiscontinued = variant.isDiscontinued
         )).copy(
             currentStock = (oldItemWh?.currentStock ?: 0) + qtyChange,
-            weightedAverageCost = if (variant.weightedAverageCost > 0.001) variant.weightedAverageCost else (oldItemWh?.weightedAverageCost ?: 0.0),
+            weightedAverageCost = targetCost,
             specification = variant.specification,
             isDiscontinued = variant.isDiscontinued,
             updatedAt = Date()
@@ -95,7 +100,7 @@ class SummaryRepository @Inject constructor(
             specification = variant.specification, isDiscontinued = variant.isDiscontinued
         )).copy(
             currentStock = (oldItemGlobal?.currentStock ?: 0) + qtyChange,
-            weightedAverageCost = if (variant.weightedAverageCost > 0.001) variant.weightedAverageCost else (oldItemGlobal?.weightedAverageCost ?: 0.0),
+            weightedAverageCost = targetCost,
             specification = variant.specification,
             isDiscontinued = variant.isDiscontinued,
             updatedAt = Date()
@@ -113,7 +118,7 @@ class SummaryRepository @Inject constructor(
 
         transaction.set(summariesCollection.document("inventory_wh_$warehouseId"), whSummary.copy(items = updatedItemsWh, lastUpdated = Date(), totalValue = newWhTotal, version = whSummary.version + 1))
         transaction.set(summariesCollection.document("inventory_global"), globalSummary.copy(items = updatedItemsGlobal, lastUpdated = Date(), totalValue = newGlobalTotal, version = globalSummary.version + 1))
-        
+
         incrementSyncVersion(transaction, "inventory")
     }
 
@@ -178,13 +183,16 @@ class SummaryRepository @Inject constructor(
             
             // Warehouse Map
             val oldItemWh = updatedItemsWh[variantId]
+            val targetCost = if (variant.weightedAverageCost > 0.001) variant.weightedAverageCost
+                            else (oldItemWh?.weightedAverageCost ?: 0.0)
+
             val newItemWh = (oldItemWh ?: InventorySummaryItem(
                 variantId = variantId, productId = variant.productId, productName = variant.productName ?: "Unknown",
                 capacity = variant.capacity, barcode = variant.barcode, sellingPrice = variant.sellingPrice,
                 specification = variant.specification, isDiscontinued = variant.isDiscontinued
             )).copy(
                 currentStock = (oldItemWh?.currentStock ?: 0) + qtyChange,
-                weightedAverageCost = if (variant.weightedAverageCost > 0.001) variant.weightedAverageCost else (oldItemWh?.weightedAverageCost ?: 0.0),
+                weightedAverageCost = targetCost,
                 specification = variant.specification,
                 isDiscontinued = variant.isDiscontinued,
                 updatedAt = Date()
@@ -200,7 +208,7 @@ class SummaryRepository @Inject constructor(
                 specification = variant.specification, isDiscontinued = variant.isDiscontinued
             )).copy(
                 currentStock = (oldItemGlobal?.currentStock ?: 0) + qtyChange,
-                weightedAverageCost = if (variant.weightedAverageCost > 0.001) variant.weightedAverageCost else (oldItemGlobal?.weightedAverageCost ?: 0.0),
+                weightedAverageCost = targetCost,
                 specification = variant.specification,
                 isDiscontinued = variant.isDiscontinued,
                 updatedAt = Date()
@@ -349,6 +357,17 @@ class SummaryRepository @Inject constructor(
                 cachedInventorySummary = newCache
 
                 trySend(summary)
+            }
+        awaitClose { listener.remove() }
+    }
+
+    fun getSuppliersOverviewFlow(): Flow<SuppliersOverview> = callbackFlow {
+        val listener = summariesCollection.document("suppliers_overview")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) return@addSnapshotListener
+                val overview = snapshot?.toObject(SuppliersOverview::class.java) ?: SuppliersOverview()
+                cachedSuppliersOverview = overview
+                trySend(overview)
             }
         awaitClose { listener.remove() }
     }

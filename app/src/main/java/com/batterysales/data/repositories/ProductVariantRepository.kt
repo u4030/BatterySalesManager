@@ -96,6 +96,13 @@ class ProductVariantRepository @Inject constructor(
             val warehousesSnap = firestore.collection("warehouses").get().await()
             val warehouseIds = warehousesSnap.documents.map { it.id }
 
+            // NUCLEAR ARCHIVING STRATEGY: Find all linked stock entries to archive them too
+            val linkedEntries = if (variant.archived) {
+                firestore.collection("stock_entries")
+                    .whereEqualTo("productVariantId", variant.id)
+                    .get().await().documents
+            } else emptyList()
+
             firestore.runTransaction { transaction ->
                 val variantRef = firestore.collection(ProductVariant.COLLECTION_NAME).document(variant.id)
                 
@@ -105,9 +112,29 @@ class ProductVariantRepository @Inject constructor(
                 // 2. Writes
                 transaction.set(variantRef, variant)
 
-                // Update summaries for all warehouses
                 if (variant.archived) {
                     summaryRepository.removeInventoryItem(transaction, snapshots, warehouseIds, variant.id)
+
+                    // Archive linked stock entries and reverse their financial impact
+                    linkedEntries.forEach { doc ->
+                        val entry = doc.toObject(com.batterysales.data.models.StockEntry::class.java)
+                        if (entry != null && entry.status == "approved" && entry.supplierId.isNotEmpty()) {
+                            val cost = entry.getNetCost()
+                            val supplierRef = firestore.collection("suppliers").document(entry.supplierId)
+
+                            if (cost > 0.001) {
+                                transaction.update(supplierRef, "totalDebit", com.google.firebase.firestore.FieldValue.increment(-cost))
+                                transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-cost))
+                                summaryRepository.applySupplierUpdate(transaction, snapshots, entry.supplierId, variant.productName ?: "", debitChange = -cost)
+                            } else if (cost < -0.001) {
+                                transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(cost))
+                                transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-cost))
+                                summaryRepository.applySupplierUpdate(transaction, snapshots, entry.supplierId, variant.productName ?: "", creditChange = cost)
+                            }
+                            summaryRepository.invalidateSupplierReportCache(transaction, entry.supplierId)
+                        }
+                        transaction.update(doc.reference, "status", "archived")
+                    }
                 } else {
                     warehouseIds.forEach { whId ->
                         summaryRepository.applyInventoryUpdate(
@@ -116,7 +143,7 @@ class ProductVariantRepository @Inject constructor(
                             warehouseId = whId,
                             variantId = variant.id,
                             variant = variant,
-                            qtyChange = 0 // No stock change, just metadata/status update
+                            qtyChange = 0
                         )
                     }
                 }

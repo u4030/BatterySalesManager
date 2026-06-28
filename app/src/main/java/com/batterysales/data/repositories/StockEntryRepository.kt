@@ -848,7 +848,6 @@ class StockEntryRepository @Inject constructor(
     fun getPendingEntriesFlow(): Flow<List<StockEntry>> = callbackFlow {
         val listenerRegistration = firestore.collection(StockEntry.COLLECTION_NAME)
             .whereEqualTo("status", "pending")
-            .orderBy("timestamp", Query.Direction.DESCENDING)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     close(error)
@@ -995,7 +994,8 @@ class StockEntryRepository @Inject constructor(
                     .whereIn("supplierId", chunk)
                     .get()
                     .await()
-                allEntries.addAll(snap.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) })
+                allEntries.addAll(snap.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
+                    .filter { it.status == "approved" })
             }
         }
 

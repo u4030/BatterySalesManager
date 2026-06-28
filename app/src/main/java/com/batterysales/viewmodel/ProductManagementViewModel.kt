@@ -62,7 +62,7 @@ class ProductManagementViewModel @Inject constructor(
         val warehouses = warehouseRepository.getWarehousesOnce()
         val suppliers = supplierRepository.getSuppliersOnce()
         emit(Pair(warehouses, suppliers))
-    }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, Pair(emptyList(), emptyList()))
 
     private val localState = combine(
         _barcodeFilter,
@@ -85,7 +85,7 @@ class ProductManagementViewModel @Inject constructor(
         productVariantRepository.getAllVariantsFlow(),
         localState,
         staticData
-    ) { products: List<Product>, allVariants: List<ProductVariant>, local: LocalState, static: Pair<List<Warehouse>, List<Supplier>> ->
+    ) { products, allVariants, local, static ->
         val (warehouses, suppliers) = static
 
         val filteredProducts = if (local.barcodeFilter.isBlank()) {

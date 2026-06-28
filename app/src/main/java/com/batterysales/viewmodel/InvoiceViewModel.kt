@@ -23,6 +23,7 @@ data class InvoiceUiState(
     val warehouses: List<Warehouse> = emptyList(),
     val isLoading: Boolean = false, // Stop automatic loading
     val errorMessage: String? = null,
+    val isSubmitting: Boolean = false,
     val invoiceToDelete: Invoice? = null,
     val deletionWarningMessage: String = "",
     val selectedWarehouseId: String = "",
@@ -163,6 +164,7 @@ class InvoiceViewModel @Inject constructor(
     fun onConfirmDelete() {
         viewModelScope.launch {
             _uiState.value.invoiceToDelete?.let { invoice ->
+                _uiState.update { it.copy(isSubmitting = true) }
                 try {
                     invoiceRepository.deleteInvoice(invoice.id)
                     paymentRepository.getPaymentsForInvoice(invoice.id).first().forEach { payment ->
@@ -171,8 +173,9 @@ class InvoiceViewModel @Inject constructor(
                     accountingRepository.deleteTransactionsByRelatedId(invoice.id)
                     loadInvoices(reset = true)
                 } catch (e: Exception) {
-                    _uiState.update { it.copy(errorMessage = "Failed to delete invoice") }
+                    _uiState.update { it.copy(errorMessage = "Failed to delete invoice", isSubmitting = false) }
                 } finally {
+                    _uiState.update { it.copy(isSubmitting = false) }
                     onDismissDeleteDialog()
                 }
             }
@@ -199,10 +202,13 @@ class InvoiceViewModel @Inject constructor(
 
     fun updateCustomerInfo(invoice: Invoice, newName: String, newPhone: String) {
         viewModelScope.launch {
+            _uiState.update { it.copy(isSubmitting = true) }
             try {
                 invoiceRepository.updateInvoice(invoice.copy(customerName = newName, customerPhone = newPhone))
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = "Failed to update customer info") }
+                _uiState.update { it.copy(errorMessage = "Failed to update customer info", isSubmitting = false) }
+            } finally {
+                _uiState.update { it.copy(isSubmitting = false) }
             }
         }
     }

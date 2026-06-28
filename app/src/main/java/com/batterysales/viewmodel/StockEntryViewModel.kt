@@ -222,7 +222,8 @@ class StockEntryViewModel @Inject constructor(
         return if (supplierId.isNullOrEmpty()) {
             uiState.value.products
         } else {
-            uiState.value.products.filter { it.supplierId == supplierId }
+            // Include products with matching supplierId OR empty supplierId (legacy support)
+            uiState.value.products.filter { it.supplierId == supplierId || it.supplierId.isEmpty() }
         }
     }
     fun onQuantityChanged(quantity: String) { _uiState.update { it.copy(quantity = quantity) } }
