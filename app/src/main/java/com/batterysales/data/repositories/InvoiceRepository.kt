@@ -270,7 +270,12 @@ class InvoiceRepository @Inject constructor(
                         relatedId = variant.id,
                         warehouseId = finalStockEntry.warehouseId,
                         timestamp = Date(),
-                        data = mapOf("capacity" to variant.capacity, "currentStock" to (currentQty + netQtyChange), "threshold" to threshold)
+                        data = mapOf(
+                            "capacity" to variant.capacity,
+                            "specification" to variant.specification,
+                            "currentStock" to (currentQty + netQtyChange),
+                            "threshold" to threshold
+                        )
                     ))
                 }
             }
