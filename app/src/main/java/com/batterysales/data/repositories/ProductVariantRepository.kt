@@ -106,15 +106,19 @@ class ProductVariantRepository @Inject constructor(
                 transaction.set(variantRef, variant)
 
                 // Update summaries for all warehouses
-                warehouseIds.forEach { whId ->
-                    summaryRepository.applyInventoryUpdate(
-                        transaction = transaction,
-                        snapshots = snapshots,
-                        warehouseId = whId,
-                        variantId = variant.id,
-                        variant = variant,
-                        qtyChange = 0 // No stock change, just metadata/status update
-                    )
+                if (variant.archived) {
+                    summaryRepository.removeInventoryItem(transaction, snapshots, warehouseIds, variant.id)
+                } else {
+                    warehouseIds.forEach { whId ->
+                        summaryRepository.applyInventoryUpdate(
+                            transaction = transaction,
+                            snapshots = snapshots,
+                            warehouseId = whId,
+                            variantId = variant.id,
+                            variant = variant,
+                            qtyChange = 0 // No stock change, just metadata/status update
+                        )
+                    }
                 }
 
                 // If discontinued, cleanup alerts

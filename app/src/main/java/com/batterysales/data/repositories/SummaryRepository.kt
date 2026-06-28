@@ -117,6 +117,43 @@ class SummaryRepository @Inject constructor(
         incrementSyncVersion(transaction, "inventory")
     }
 
+    fun removeInventoryItem(
+        transaction: Transaction,
+        snapshots: SummarySnapshots,
+        warehouseIds: List<String>,
+        variantId: String
+    ) {
+        val globalSummary = snapshots.inventoryGlobal ?: return
+        val updatedItemsGlobal = globalSummary.items.toMutableMap()
+        val removedItemGlobal = updatedItemsGlobal.remove(variantId)
+
+        val globalValueReduction = (removedItemGlobal?.currentStock ?: 0) * (removedItemGlobal?.weightedAverageCost ?: 0.0)
+
+        transaction.set(summariesCollection.document("inventory_global"), globalSummary.copy(
+            items = updatedItemsGlobal,
+            totalValue = (globalSummary.totalValue - globalValueReduction).coerceAtLeast(0.0),
+            lastUpdated = Date(),
+            version = globalSummary.version + 1
+        ))
+
+        warehouseIds.forEach { whId ->
+            val whSummary = snapshots.warehouseSummaries[whId] ?: return@forEach
+            val updatedItemsWh = whSummary.items.toMutableMap()
+            val removedItemWh = updatedItemsWh.remove(variantId)
+
+            val whValueReduction = (removedItemWh?.currentStock ?: 0) * (removedItemWh?.weightedAverageCost ?: 0.0)
+
+            transaction.set(summariesCollection.document("inventory_wh_$whId"), whSummary.copy(
+                items = updatedItemsWh,
+                totalValue = (whSummary.totalValue - whValueReduction).coerceAtLeast(0.0),
+                lastUpdated = Date(),
+                version = whSummary.version + 1
+            ))
+        }
+
+        incrementSyncVersion(transaction, "inventory")
+    }
+
     /**
      * Refined bulk update: Group by warehouse to prevent document collisions.
      */

@@ -105,12 +105,14 @@ class DashboardViewModel @Inject constructor(
                 val userWarehouseId = user.warehouseId
 
                 // 1. Initial Static Data Fetch
-                val (pendingCount, warehouses) = if (isAdmin) {
+                val (pendingCount, warehouses, overview) = if (isAdmin) {
                     val pEntries = stockEntryRepository.getPendingCount()
                     val pReqs = approvalRepository.getPendingRequestsFlow().take(1).first()
-                    Pair(pEntries + pReqs.size, warehouseRepository.getWarehousesOnce())
+                    val warehouses = warehouseRepository.getWarehousesOnce()
+                    val overview = summaryRepository.getSuppliersOverview(forceRefresh = true)
+                    Triple(pEntries + pReqs.size, warehouses, overview)
                 } else {
-                    Pair(0, warehouseRepository.getWarehousesOnce())
+                    Triple(0, warehouseRepository.getWarehousesOnce(), null)
                 }
 
                 // 2. Real-time Snapshot Listener for Financial Status (Quota-Efficient)
@@ -132,7 +134,15 @@ class DashboardViewModel @Inject constructor(
                         }
 
                         _uiState.update { it.copy(
-                            warehouseStats = whStats
+                            warehouseStats = whStats,
+                            systemStats = SystemStats(
+                                totalCashBalance = status.globalCashBalance,
+                                totalBankBalance = status.globalBankBalance,
+                                totalSupplierDebt = overview?.totalSupplierDebt ?: 0.0, // We might need to listen to overview too
+                                totalCustomerDebt = status.warehouseBalances.values.sumOf { it.pendingCollection },
+                                totalUnpaidBills = status.totalUnpaidBills,
+                                totalUnpaidChecks = status.totalUnpaidChecks
+                            )
                         ) }
                     }
 
