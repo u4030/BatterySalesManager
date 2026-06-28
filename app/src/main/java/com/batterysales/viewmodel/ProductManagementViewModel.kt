@@ -243,6 +243,15 @@ class ProductManagementViewModel @Inject constructor(
         viewModelScope.launch {
             _isSubmitting.value = true
             try {
+                // Check for active variants first
+                val variants = productVariantRepository.getVariantsForProduct(product.id)
+                val hasActiveVariants = variants.any { !it.archived }
+
+                if (hasActiveVariants) {
+                    _errorMessage.value = "لا يمكن حذف المنتج لوجود أصناف نشطة مرتبطة به. يرجى حذف الأصناف أولاً."
+                    return@launch
+                }
+
                 if (currentUser?.role == "seller") {
                     val oldProduct = productRepository.getProduct(product.id)
                     approvalRepository.addRequest(ApprovalRequest(
@@ -258,13 +267,6 @@ class ProductManagementViewModel @Inject constructor(
                 } else {
                     val archivedProduct = product.copy(archived = true)
                     productRepository.updateProduct(archivedProduct)
-
-                    // Trigger removal of all variants from summaries when a product is archived
-                    val variants = productVariantRepository.getVariantsForProduct(product.id)
-                    variants.forEach { variant ->
-                        val archivedVariant = variant.copy(archived = true)
-                        productVariantRepository.updateVariant(archivedVariant, summaryRepository)
-                    }
 
                     _selectedProduct.value = null // Deselect after archiving
                 }
