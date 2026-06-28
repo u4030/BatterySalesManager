@@ -195,6 +195,14 @@ class InvoiceRepository @Inject constructor(
                     "totalInventoryValue" to com.google.firebase.firestore.FieldValue.increment(-totalValueToReverse),
                     "totalCustomerDebt" to com.google.firebase.firestore.FieldValue.increment(-invoice.remainingAmount)
                 ))
+
+                // Update Financial Summary
+                summaryRepository.applyFinancialUpdate(
+                    transaction = transaction,
+                    snapshots = summarySnapshots,
+                    warehouseId = invoice.warehouseId,
+                    pendingCollectionChange = -invoice.remainingAmount
+                )
             }
 
             // 2.2 Delete associated payments

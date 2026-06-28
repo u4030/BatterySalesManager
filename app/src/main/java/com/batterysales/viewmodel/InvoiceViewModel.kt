@@ -48,9 +48,20 @@ class InvoiceViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(InvoiceUiState())
-    val uiState: StateFlow<InvoiceUiState> = _uiState.asStateFlow()
-
     private val filterState = MutableStateFlow(InvoiceFilters())
+
+    val uiState: StateFlow<InvoiceUiState> = combine(
+        _uiState,
+        summaryRepository.getFinancialStatusFlow()
+    ) { state, status ->
+        val whId = state.selectedWarehouseId
+        val debt = if (whId == "all" || whId.isEmpty()) {
+            status.warehouseBalances.values.sumOf { it.pendingCollection }
+        } else {
+            status.warehouseBalances[whId]?.pendingCollection ?: 0.0
+        }
+        state.copy(totalDebt = debt)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), InvoiceUiState())
     private val refreshTrigger = MutableStateFlow(0)
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -74,7 +85,6 @@ class InvoiceViewModel @Inject constructor(
 
     init {
         checkRoleAndLoadWarehouses()
-        observeFinancialStatus()
     }
 
     data class InvoiceFilters(
@@ -107,22 +117,8 @@ class InvoiceViewModel @Inject constructor(
         }
     }
 
-    private fun observeFinancialStatus() {
-        summaryRepository.getFinancialStatusFlow()
-            .onEach { status ->
-                val whId = _uiState.value.selectedWarehouseId
-                val debt = if (whId == "all" || whId.isEmpty()) {
-                    status.warehouseBalances.values.sumOf { it.pendingCollection }
-                } else {
-                    status.warehouseBalances[whId]?.pendingCollection ?: 0.0
-                }
-                _uiState.update { it.copy(totalDebt = debt) }
-            }
-            .launchIn(viewModelScope)
-    }
-
     private suspend fun loadDebtFromSummary() {
-        // Now handled reactively by observeFinancialStatus
+        // Now handled reactively by uiState combine
     }
 
     fun loadInvoices(reset: Boolean = false) {
@@ -135,19 +131,6 @@ class InvoiceViewModel @Inject constructor(
         if (_uiState.value.selectedWarehouseId == warehouseId) return
         _uiState.update { it.copy(selectedWarehouseId = warehouseId) }
         filterState.update { it.copy(warehouseId = warehouseId) }
-
-        // Trigger a re-calculation of debt from current flow
-        viewModelScope.launch {
-            val status = summaryRepository.getFinancialStatus()
-            if (status != null) {
-                val debt = if (warehouseId == "all" || warehouseId.isEmpty()) {
-                    status.warehouseBalances.values.sumOf { it.pendingCollection }
-                } else {
-                    status.warehouseBalances[warehouseId]?.pendingCollection ?: 0.0
-                }
-                _uiState.update { it.copy(totalDebt = debt) }
-            }
-        }
     }
 
     fun onTabSelected(tabIndex: Int) {
