@@ -33,7 +33,7 @@ class StockEntryRepository @Inject constructor(
             history + stockEntry
         } else history
 
-        val finalLastCost = newHistory.maxByOrNull { it.getEffectiveDate().time }?.getUnitPrice() ?: 0.0
+        val finalLastCostCalculated = newHistory.maxByOrNull { it.getEffectiveDate().time }?.getUnitPrice() ?: 0.0
 
         firestore.runTransaction { transaction ->
             // 1. Reads
@@ -45,7 +45,7 @@ class StockEntryRepository @Inject constructor(
             val warehouseSnap = transaction.get(warehouseRef)
             val whName = warehouseSnap.getString("name") ?: "مخزن غير معروف"
 
-            val snapshots = summaryRepository.getSummarySnapshots(transaction, stockEntry.warehouseId)
+            val snapshots = summaryRepository.getSummarySnapshots(transaction, listOf(stockEntry.warehouseId))
 
             // 2. Writes
             val docRef = firestore.collection(StockEntry.COLLECTION_NAME).document()
@@ -94,7 +94,8 @@ class StockEntryRepository @Inject constructor(
                     transaction.delete(alertRef)
                 }
 
-                // Update Last Purchase Cost
+                // Update Last Purchase Cost (with fallback)
+                val finalLastCost = if (finalLastCostCalculated > 0.001) finalLastCostCalculated else variant.weightedAverageCost
                 variantUpdates["weightedAverageCost"] = finalLastCost
                 
                 if (variantUpdates.isNotEmpty()) {
@@ -198,7 +199,7 @@ class StockEntryRepository @Inject constructor(
             
             // Fetch snapshots for ALL involved warehouses
             val warehouseIds = stockEntries.map { it.warehouseId }.distinct()
-            val snapshotsMap = warehouseIds.associateWith { summaryRepository.getSummarySnapshots(transaction, it) }
+            val snapshots = summaryRepository.getSummarySnapshots(transaction, warehouseIds)
 
             val stockUpdates = mutableMapOf<String, MutableMap<String, Int>>() 
             val variantCostChanges = mutableMapOf<String, Double>()
@@ -312,12 +313,18 @@ class StockEntryRepository @Inject constructor(
 
             // Apply Summary Updates (ONE WRITE PER WAREHOUSE)
             warehouseQtyChanges.forEach { (whId, vChanges) ->
-                val snapshots = snapshotsMap[whId] ?: return@forEach
+                // Ensure WAC is preserved if batch calculation resulted in 0
+                val variantsWithPreservedCost = updatedVariants.mapValues { (vid, v) ->
+                    if (v.weightedAverageCost <= 0.001) {
+                        v.copy(weightedAverageCost = variantsMap[vid]?.weightedAverageCost ?: 0.0)
+                    } else v
+                }
+
                 summaryRepository.applyBulkInventoryUpdate(
                     transaction = transaction,
                     snapshots = snapshots,
                     warehouseId = whId,
-                    variantsMap = updatedVariants,
+                    variantsMap = variantsWithPreservedCost,
                     qtyChanges = vChanges
                 )
             }
@@ -440,6 +447,26 @@ class StockEntryRepository @Inject constructor(
                 newStockMap[destinationWarehouseId] = destNewQty
                 transaction.update(variantRef, "currentStock", newStockMap)
 
+                // --- Update Summaries ---
+                val snapshots = summaryRepository.getSummarySnapshots(transaction, listOf(sourceWarehouseId, destinationWarehouseId))
+                summaryRepository.applyInventoryUpdate(
+                    transaction = transaction,
+                    snapshots = snapshots,
+                    warehouseId = sourceWarehouseId,
+                    variantId = productVariantId,
+                    variant = variant,
+                    qtyChange = -quantity
+                )
+
+                summaryRepository.applyInventoryUpdate(
+                    transaction = transaction,
+                    snapshots = snapshots,
+                    warehouseId = destinationWarehouseId,
+                    variantId = productVariantId,
+                    variant = variant,
+                    qtyChange = quantity
+                )
+
                 // Low Stock Check for Source
                 val threshold = variant.minQuantities[sourceWarehouseId] ?: variant.minQuantity
                 val alertRef = firestore.collection(SystemAlert.COLLECTION_NAME).document("low_stock_${variant.id}_$sourceWarehouseId")
@@ -533,9 +560,7 @@ class StockEntryRepository @Inject constructor(
                 snap.toObject(ProductVariant::class.java)?.copy(id = snap.id)
             }
 
-            val snapshotsMap = warehouseIds.associateWith { whId ->
-                summaryRepository.getSummarySnapshots(transaction, whId)
-            }
+            val snapshots = summaryRepository.getSummarySnapshots(transaction, warehouseIds.toList())
 
             val statsRef = firestore.collection(SystemStats.COLLECTION_NAME).document(SystemStats.DOCUMENT_ID)
 
@@ -551,7 +576,6 @@ class StockEntryRepository @Inject constructor(
                     transaction.update(firestore.collection(ProductVariant.COLLECTION_NAME).document(variant.id), "currentStock", newStockMap)
 
                     // Update Summaries for Revert
-                    val snapshots = snapshotsMap[oldEntry.warehouseId]!!
                     summaryRepository.applyInventoryUpdate(
                         transaction = transaction,
                         snapshots = snapshots,
@@ -620,7 +644,6 @@ class StockEntryRepository @Inject constructor(
                     ))
 
                     // Update Summaries for Apply
-                    val snapshots = snapshotsMap[finalEntry.warehouseId]!!
                     summaryRepository.applyInventoryUpdate(
                         transaction = transaction,
                         snapshots = snapshots,
@@ -750,7 +773,7 @@ class StockEntryRepository @Inject constructor(
                 ))
 
                 // Update Summary
-                val snapshots = summaryRepository.getSummarySnapshots(transaction, entry.warehouseId)
+                val snapshots = summaryRepository.getSummarySnapshots(transaction, listOf(entry.warehouseId))
                 summaryRepository.applyInventoryUpdate(
                     transaction = transaction,
                     snapshots = snapshots,
@@ -802,10 +825,12 @@ class StockEntryRepository @Inject constructor(
                     if (cost > 0) {
                         transaction.update(supplierRef, "totalDebit", com.google.firebase.firestore.FieldValue.increment(-cost))
                         transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-cost))
+                        summaryRepository.applySupplierUpdate(transaction, snapshots, oldEntry.supplierId, variant.productName ?: "", debitChange = -cost)
                     } else if (cost < 0) {
                         transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(cost))
                         transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-cost))
                         transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(cost))
+                        summaryRepository.applySupplierUpdate(transaction, snapshots, oldEntry.supplierId, variant.productName ?: "", creditChange = cost)
                     }
                 }
             }
@@ -823,7 +848,6 @@ class StockEntryRepository @Inject constructor(
     fun getPendingEntriesFlow(): Flow<List<StockEntry>> = callbackFlow {
         val listenerRegistration = firestore.collection(StockEntry.COLLECTION_NAME)
             .whereEqualTo("status", "pending")
-            .orderBy("timestamp", Query.Direction.DESCENDING)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     close(error)
@@ -852,10 +876,10 @@ class StockEntryRepository @Inject constructor(
             history + entryToApprove
         } else history
 
-        val finalLastCostForApprove = finalHistory.maxByOrNull { it.getEffectiveDate().time }?.getUnitPrice() ?: 0.0
+        val finalLastCostForApproveCalculated = finalHistory.maxByOrNull { it.getEffectiveDate().time }?.getUnitPrice() ?: 0.0
 
         firestore.runTransaction { transaction ->
-            val snapshots = summaryRepository.getSummarySnapshots(transaction, entryToApprove.warehouseId)
+            val snapshots = summaryRepository.getSummarySnapshots(transaction, listOf(entryToApprove.warehouseId))
             val docRef = firestore.collection(StockEntry.COLLECTION_NAME).document(entryId)
             val entrySnap = transaction.get(docRef)
             val entry = entrySnap.toObject(StockEntry::class.java)?.copy(id = entrySnap.id) ?: return@runTransaction
@@ -878,7 +902,8 @@ class StockEntryRepository @Inject constructor(
             val newQty = (newStockMap[entry.warehouseId] ?: 0) + (entry.quantity - entry.returnedQuantity)
             newStockMap[entry.warehouseId] = newQty
             
-            // Update Last Purchase Cost
+            // Update Last Purchase Cost (with fallback)
+            val finalLastCostForApprove = if (finalLastCostForApproveCalculated > 0.001) finalLastCostForApproveCalculated else variant.weightedAverageCost
             transaction.update(variantRef, mapOf(
                 "currentStock" to newStockMap,
                 "weightedAverageCost" to finalLastCostForApprove
@@ -969,7 +994,8 @@ class StockEntryRepository @Inject constructor(
                     .whereIn("supplierId", chunk)
                     .get()
                     .await()
-                allEntries.addAll(snap.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) })
+                allEntries.addAll(snap.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
+                    .filter { it.status == "approved" })
             }
         }
 
@@ -982,7 +1008,7 @@ class StockEntryRepository @Inject constructor(
                 
                 val existingIds = allEntries.map { it.id }.toSet()
                 val legacyEntries = snap.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
-                    .filter { !existingIds.contains(it.id) }
+                    .filter { !existingIds.contains(it.id) && it.status == "approved" }
                 
                 allEntries.addAll(legacyEntries)
             }
@@ -1115,6 +1141,7 @@ class StockEntryRepository @Inject constructor(
         val statsRef = firestore.collection(SystemStats.COLLECTION_NAME).document(SystemStats.DOCUMENT_ID)
         val variantsList = firestore.collection(ProductVariant.COLLECTION_NAME).get().await()
             .documents.mapNotNull { it.toObject(ProductVariant::class.java) }
+            .filter { !it.archived }
         
         val totalInvValue = variantsList.sumOf { (it.currentStock?.values?.sum() ?: 0) * it.weightedAverageCost }
         val totalInvQty = variantsList.sumOf { it.currentStock?.values?.sum() ?: 0 }
@@ -1254,7 +1281,7 @@ class StockEntryRepository @Inject constructor(
             val freshEntry = freshSnap.toObject(StockEntry::class.java)?.copy(id = freshSnap.id) ?: return@runTransaction
             val variantSnap = transaction.get(variantRef)
             val variant = variantSnap.toObject(ProductVariant::class.java)?.copy(id = variantSnap.id)
-            val snapshots = summaryRepository.getSummarySnapshots(transaction, entry.warehouseId)
+            val snapshots = summaryRepository.getSummarySnapshots(transaction, listOf(entry.warehouseId))
 
             // 2. Writes
             val newReturnedQty = freshEntry.returnedQuantity + quantity

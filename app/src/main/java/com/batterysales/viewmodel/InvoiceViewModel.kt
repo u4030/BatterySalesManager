@@ -23,6 +23,7 @@ data class InvoiceUiState(
     val warehouses: List<Warehouse> = emptyList(),
     val isLoading: Boolean = false, // Stop automatic loading
     val errorMessage: String? = null,
+    val isSubmitting: Boolean = false,
     val invoiceToDelete: Invoice? = null,
     val deletionWarningMessage: String = "",
     val selectedWarehouseId: String = "",
@@ -48,9 +49,20 @@ class InvoiceViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(InvoiceUiState())
-    val uiState: StateFlow<InvoiceUiState> = _uiState.asStateFlow()
-
     private val filterState = MutableStateFlow(InvoiceFilters())
+
+    val uiState: StateFlow<InvoiceUiState> = combine(
+        _uiState,
+        summaryRepository.getFinancialStatusFlow()
+    ) { state, status ->
+        val whId = state.selectedWarehouseId
+        val debt = if (whId == "all" || whId.isEmpty()) {
+            status.warehouseBalances.values.sumOf { it.pendingCollection }
+        } else {
+            status.warehouseBalances[whId]?.pendingCollection ?: 0.0
+        }
+        state.copy(totalDebt = debt)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), InvoiceUiState())
     private val refreshTrigger = MutableStateFlow(0)
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -107,25 +119,7 @@ class InvoiceViewModel @Inject constructor(
     }
 
     private suspend fun loadDebtFromSummary() {
-        try {
-            val whId = _uiState.value.selectedWarehouseId
-            val status = summaryRepository.getFinancialStatus()
-            
-            val debt = if (status != null) {
-                if (whId == "all" || whId.isEmpty()) {
-                    status.warehouseBalances.values.sumOf { it.pendingCollection }
-                } else {
-                    status.warehouseBalances[whId]?.pendingCollection ?: 0.0
-                }
-            } else {
-                // Fallback to repository aggregation
-                invoiceRepository.getTotalDebtForWarehouse(if (whId == "all") null else whId)
-            }
-            
-            _uiState.update { it.copy(totalDebt = debt) }
-        } catch (e: Exception) {
-            Log.e("InvoiceViewModel", "Error loading debt summary", e)
-        }
+        // Now handled reactively by uiState combine
     }
 
     fun loadInvoices(reset: Boolean = false) {
@@ -170,6 +164,7 @@ class InvoiceViewModel @Inject constructor(
     fun onConfirmDelete() {
         viewModelScope.launch {
             _uiState.value.invoiceToDelete?.let { invoice ->
+                _uiState.update { it.copy(isSubmitting = true) }
                 try {
                     invoiceRepository.deleteInvoice(invoice.id)
                     paymentRepository.getPaymentsForInvoice(invoice.id).first().forEach { payment ->
@@ -178,8 +173,9 @@ class InvoiceViewModel @Inject constructor(
                     accountingRepository.deleteTransactionsByRelatedId(invoice.id)
                     loadInvoices(reset = true)
                 } catch (e: Exception) {
-                    _uiState.update { it.copy(errorMessage = "Failed to delete invoice") }
+                    _uiState.update { it.copy(errorMessage = "Failed to delete invoice", isSubmitting = false) }
                 } finally {
+                    _uiState.update { it.copy(isSubmitting = false) }
                     onDismissDeleteDialog()
                 }
             }
@@ -206,10 +202,13 @@ class InvoiceViewModel @Inject constructor(
 
     fun updateCustomerInfo(invoice: Invoice, newName: String, newPhone: String) {
         viewModelScope.launch {
+            _uiState.update { it.copy(isSubmitting = true) }
             try {
                 invoiceRepository.updateInvoice(invoice.copy(customerName = newName, customerPhone = newPhone))
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = "Failed to update customer info") }
+                _uiState.update { it.copy(errorMessage = "Failed to update customer info", isSubmitting = false) }
+            } finally {
+                _uiState.update { it.copy(isSubmitting = false) }
             }
         }
     }

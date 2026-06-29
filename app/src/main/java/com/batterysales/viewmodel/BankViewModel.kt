@@ -37,6 +37,9 @@ class BankViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(false)
     val isLoading = _isLoading.asStateFlow()
 
+    private val _isSubmitting = MutableStateFlow(false)
+    val isSubmitting = _isSubmitting.asStateFlow()
+
     private val _isLoadingMore = MutableStateFlow(false)
     val isLoadingMore = _isLoadingMore.asStateFlow()
 
@@ -177,21 +180,21 @@ class BankViewModel @Inject constructor(
 
     fun updateTransaction(transaction: BankTransaction) {
         viewModelScope.launch {
-            _isLoading.value = true
+            _isSubmitting.value = true
             try {
                 repository.updateTransaction(transaction)
                 loadData()
             } catch (e: Exception) {
                 _errorMessage.value = e.message
             } finally {
-                _isLoading.value = false
+                _isSubmitting.value = false
             }
         }
     }
 
     fun addManualTransaction(type: BankTransactionType, amount: Double, description: String, referenceNumber: String = "", supplierName: String = "", fromTreasury: Boolean = false, warehouseId: String? = null) {
         viewModelScope.launch {
-            _isLoading.value = true
+            _isSubmitting.value = true
             try {
                 val transaction = BankTransaction(type = type, amount = amount, description = description, referenceNumber = referenceNumber, supplierName = supplierName, date = Date())
                 val transId = repository.addTransaction(transaction)
@@ -210,14 +213,14 @@ class BankViewModel @Inject constructor(
                 }
                 loadData()
             } finally {
-                _isLoading.value = false
+                _isSubmitting.value = false
             }
         }
     }
 
     fun deleteTransaction(id: String) {
         viewModelScope.launch {
-            _isLoading.value = true
+            _isSubmitting.value = true
             try {
                 repository.deleteTransaction(id)
                 accountingRepository.deleteTransactionsByRelatedId(id)
@@ -225,7 +228,7 @@ class BankViewModel @Inject constructor(
             } catch (e: Exception) {
                 _errorMessage.value = e.message
             } finally {
-                _isLoading.value = false
+                _isSubmitting.value = false
             }
         }
     }

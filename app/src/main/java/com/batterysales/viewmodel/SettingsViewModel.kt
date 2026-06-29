@@ -72,6 +72,11 @@ class SettingsViewModel @Inject constructor(
                 
                 invoiceRepository.migrateInvoices()
                 stockEntryRepository.migrateStockEntries(billRepository)
+
+                // --- NEW: Fix Product-Supplier association for legacy data ---
+                _migrationStatus.value = "جاري تحديث روابط الموردين للمنتجات القديمة..."
+                migrateProductSuppliers()
+
                 stockEntryRepository.migrateAllVariants(productRepository, supplierRepository, billRepository)
                 
                 // Rebuild Summaries from scratch
@@ -206,6 +211,15 @@ class SettingsViewModel @Inject constructor(
     private suspend fun rebuildAllSummaries() {
         val firestore = com.google.firebase.firestore.FirebaseFirestore.getInstance()
         
+        // --- 0. PURGE CACHES AND SUMMARIES ---
+        summaryRepository.invalidateAllSupplierCaches()
+        val oldSummaries = firestore.collection("summaries").get().await()
+        if (!oldSummaries.isEmpty) {
+            val batch = firestore.batch()
+            oldSummaries.documents.forEach { batch.delete(it.reference) }
+            batch.commit().await()
+        }
+
         // This is a heavy operation to initialize the new Summary-First system
         val products = productRepository.getProductsOnce()
         val warehouses = warehouseRepository.getWarehousesOnce()
@@ -242,8 +256,8 @@ class SettingsViewModel @Inject constructor(
         variants.forEach { variant: ProductVariant ->
             val totalQty = variant.currentStock?.values?.sum() ?: 0
             
-            // Filter out archived variants that have zero stock to avoid "duplicate" clutter in reports
-            if (variant.archived && totalQty == 0) return@forEach
+            // Strict Exclusion: Never include archived variants in the summaries
+            if (variant.archived) return@forEach
 
             val productName = products.find { it.id == variant.productId }?.name ?: "Unknown"
             
@@ -305,18 +319,43 @@ class SettingsViewModel @Inject constructor(
                 .set(InventorySummary(id = "inventory_wh_$whId", warehouseId = whId, items = items)).await()
         }
 
-        // 3. Rebuild Suppliers Overview
+        // 3. Rebuild Suppliers Overview (Deep Audit Strategy)
+        val activeVariantIds = variants.filter { !it.archived }.map { it.id }.toSet()
+
+        val approvedEntries = entriesSnap.documents.mapNotNull { it.toObject(StockEntry::class.java) }
+            .filter { it.status == "approved" && activeVariantIds.contains(it.productVariantId) }
+
+        val billsSnap = firestore.collection(Bill.COLLECTION_NAME).get().await()
+        val allBills = billsSnap.documents.mapNotNull { it.toObject(Bill::class.java) }
+
         val supplierItems = suppliers.associate { s ->
+            // Recalculate everything from raw records to purge archived/broken data
+            val debit = approvedEntries.filter { it.supplierId == s.id }.sumOf { it.getNetCost() }
+            val credit = allBills.filter { it.supplierId == s.id }.sumOf { it.paidAmount }
+
+            // Permanently sync the Supplier document itself
+            firestore.collection("suppliers").document(s.id).update(mapOf(
+                "totalDebit" to debit,
+                "totalCredit" to credit,
+                "currentBalance" to (debit - credit)
+            ))
+
             s.id to SupplierSummaryItem(
                 supplierId = s.id,
                 name = s.name,
-                currentBalance = s.currentBalance,
-                totalDebit = s.totalDebit,
-                totalCredit = s.totalCredit
+                currentBalance = debit - credit,
+                totalDebit = debit,
+                totalCredit = credit,
+                updatedAt = Date()
             )
         }
+
         firestore.collection("summaries").document("suppliers_overview")
-            .set(SuppliersOverview(suppliers = supplierItems)).await()
+            .set(SuppliersOverview(
+                suppliers = supplierItems,
+                totalSupplierDebt = supplierItems.values.sumOf { it.currentBalance },
+                lastUpdated = Date()
+            )).await()
 
         // 4. Rebuild Financial Status (High Precision Calculation)
         val warehouseBalances = warehouses.associate { wh ->
@@ -336,18 +375,97 @@ class SettingsViewModel @Inject constructor(
         val globalCash = accountingRepository.getCurrentBalance(null, "cash")
         val globalBank = bankRepository.getCurrentBalance()
         
+        val globalUnpaidBills = allBills.filter { it.billType == BillType.BILL && it.status != BillStatus.PAID }.sumOf { it.amount - it.paidAmount }
+        val globalUnpaidChecks = allBills.filter { it.billType == BillType.CHECK && it.status != BillStatus.PAID }.sumOf { it.amount - it.paidAmount }
+
         firestore.collection("summaries").document("financial_status")
             .set(FinancialStatus(
                 warehouseBalances = warehouseBalances,
                 globalCashBalance = globalCash,
                 globalBankBalance = globalBank,
+                totalUnpaidBills = globalUnpaidBills,
+                totalUnpaidChecks = globalUnpaidChecks,
                 lastUpdated = Date()
             )).await()
+
+        // Update SystemStats Document
+        val statsRef = firestore.collection(SystemStats.COLLECTION_NAME).document(SystemStats.DOCUMENT_ID)
+        statsRef.set(SystemStats(
+            totalSupplierDebt = supplierItems.values.sumOf { it.currentBalance },
+            totalCustomerDebt = warehouseBalances.values.sumOf { it.pendingCollection },
+            totalInventoryValue = globalItems.values.sumOf { it.currentStock * it.weightedAverageCost },
+            totalInventoryQuantity = globalItems.values.sumOf { it.currentStock },
+            totalCashBalance = globalCash,
+            totalBankBalance = globalBank,
+            totalUnpaidBills = globalUnpaidBills,
+            totalUnpaidChecks = globalUnpaidChecks,
+            updatedAt = Date()
+        )).await()
 
         // 4. Reset Sync Registry
         com.google.firebase.firestore.FirebaseFirestore.getInstance()
             .collection("summaries").document("sync_registry")
             .set(SyncRegistry(lastModified = Date())).await()
+    }
+
+    private suspend fun migrateProductSuppliers() {
+        val firestore = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+        val products = productRepository.getAllProducts()
+        val productsMap = products.associateBy { it.id }
+
+        // --- PROPAGATE ARCHIVE ---
+        // 1. Mark variants with archived OR missing products as archived
+        val allVariants = productVariantRepository.getAllVariants()
+        val variantsToArchive = allVariants.filter { v ->
+            val parent = productsMap[v.productId]
+            v.archived != true && (parent == null || parent.archived)
+        }
+
+        variantsToArchive.chunked(50).forEach { chunk ->
+            val batch = firestore.batch()
+            chunk.forEach { v -> batch.update(firestore.collection(ProductVariant.COLLECTION_NAME).document(v.id), "archived", true) }
+            batch.commit().await()
+        }
+
+        // 2. Mark stock entries for archived variants as archived
+        val archivedVariantIds = allVariants.filter { it.archived || variantsToArchive.any { va -> va.id == it.id } }.map { it.id }.toSet()
+        val entriesSnap = firestore.collection(StockEntry.COLLECTION_NAME).get().await()
+        entriesSnap.documents.chunked(500).forEach { chunk ->
+            val batch = firestore.batch()
+            var count = 0
+            chunk.forEach { doc ->
+                val vid = doc.getString("productVariantId") ?: ""
+                val status = doc.getString("status") ?: ""
+                if (archivedVariantIds.contains(vid) && status != "archived") {
+                    batch.update(doc.reference, "status", "archived")
+                    count++
+                }
+            }
+            if (count > 0) batch.commit().await()
+        }
+
+        val approvedEntriesSnap = firestore.collection(StockEntry.COLLECTION_NAME)
+            .whereEqualTo("status", "approved")
+            .get().await()
+
+        val entries = approvedEntriesSnap.documents.mapNotNull { it.toObject(StockEntry::class.java) }
+
+        products.filter { it.supplierId.isEmpty() }.chunked(50).forEach { chunk ->
+            val batch = firestore.batch()
+            var count = 0
+            chunk.forEach { product ->
+                // Find any approved stock entry for any variant of this product to find the supplier
+                val variants = productVariantRepository.getVariantsForProduct(product.id)
+                val variantIds = variants.map { it.id }.toSet()
+
+                val relatedEntry = entries.find { it.productVariantId in variantIds && it.supplierId.isNotEmpty() }
+                if (relatedEntry != null) {
+                    batch.update(firestore.collection(Product.COLLECTION_NAME).document(product.id), "supplierId", relatedEntry.supplierId)
+                    count++
+                }
+            }
+            if (count > 0) batch.commit().await()
+        }
     }
 }
  

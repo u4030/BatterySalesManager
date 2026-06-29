@@ -15,6 +15,7 @@ data class UserManagementUiState(
     val users: List<User> = emptyList(),
     val warehouses: List<Warehouse> = emptyList(),
     val isLoading: Boolean = true,
+    val isSubmitting: Boolean = false,
     val successMessage: String? = null,
     val errorMessage: String? = null
 )
@@ -62,18 +63,22 @@ class UserManagementViewModel @Inject constructor(
 
     fun updateUserRole(user: User, newRole: String) {
         viewModelScope.launch {
+            _uiState.update { it.copy(isSubmitting = true) }
             try {
                 val updatedUser = user.copy(role = newRole)
                 userRepository.updateUser(updatedUser)
                 _uiState.update { it.copy(successMessage = "تم تحديث الدور بنجاح") }
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = "فشل تحديث الدور: ${e.message}") }
+            } finally {
+                _uiState.update { it.copy(isSubmitting = false) }
             }
         }
     }
 
     fun toggleUserStatus(user: User) {
         viewModelScope.launch {
+            _uiState.update { it.copy(isSubmitting = true) }
             try {
                 val updatedUser = user.copy(isActive = !user.isActive)
                 userRepository.updateUser(updatedUser)
@@ -81,12 +86,15 @@ class UserManagementViewModel @Inject constructor(
                 _uiState.update { it.copy(successMessage = "تم $statusText المستخدم بنجاح") }
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = "فشل تحديث حالة المستخدم: ${e.message}") }
+            } finally {
+                _uiState.update { it.copy(isSubmitting = false) }
             }
         }
     }
 
     fun togglePermission(user: User, permission: String) {
         viewModelScope.launch {
+            _uiState.update { it.copy(isSubmitting = true) }
             try {
                 val currentPermissions = user.permissions.toMutableList()
                 if (currentPermissions.contains(permission)) {
@@ -99,29 +107,37 @@ class UserManagementViewModel @Inject constructor(
                 _uiState.update { it.copy(successMessage = "تم تحديث الصلاحيات") }
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = "فشل تحديث الصلاحيات") }
+            } finally {
+                _uiState.update { it.copy(isSubmitting = false) }
             }
         }
     }
 
     fun deleteUser(userId: String) {
         viewModelScope.launch {
+            _uiState.update { it.copy(isSubmitting = true) }
             try {
                 userRepository.deleteUser(userId)
                 _uiState.update { it.copy(successMessage = "تم حذف المستخدم بنجاح") }
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = "فشل حذف المستخدم: ${e.message}") }
+            } finally {
+                _uiState.update { it.copy(isSubmitting = false) }
             }
         }
     }
 
     fun linkUserToWarehouse(user: User, warehouseId: String?) {
         viewModelScope.launch {
+            _uiState.update { it.copy(isSubmitting = true) }
             try {
                 val updatedUser = user.copy(warehouseId = warehouseId)
                 userRepository.updateUser(updatedUser)
                 _uiState.update { it.copy(successMessage = "تم ربط المستودع بنجاح") }
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = "فشل ربط المستودع: ${e.message}") }
+            } finally {
+                _uiState.update { it.copy(isSubmitting = false) }
             }
         }
     }
@@ -132,16 +148,16 @@ class UserManagementViewModel @Inject constructor(
                 _uiState.update { it.copy(errorMessage = "الرجاء التأكد من صحة البيانات (كلمة المرور 6 أحرف على الأقل)") }
                 return@launch
             }
-            _uiState.update { it.copy(isLoading = true) }
+            _uiState.update { it.copy(isSubmitting = true) }
             try {
                 userRepository.registerUser(email, password, displayName, role, warehouseId)
                 _uiState.update { it.copy(
-                    isLoading = false,
+                    isSubmitting = false,
                     successMessage = "تم إنشاء المستخدم بنجاح"
                 ) }
             } catch (e: Exception) {
                 _uiState.update { it.copy(
-                    isLoading = false,
+                    isSubmitting = false,
                     errorMessage = "فشل إنشاء المستخدم: ${e.message}"
                 ) }
             }

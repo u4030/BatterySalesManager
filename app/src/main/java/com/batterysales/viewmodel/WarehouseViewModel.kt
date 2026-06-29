@@ -15,6 +15,7 @@ data class WarehouseUiState(
     val isAdmin: Boolean = false,
     val searchQuery: String = "",
     val isLoading: Boolean = false,
+    val isSubmitting: Boolean = false,
     val inventoryItems: List<InventoryReportItem> = emptyList() // Nuclear: Full list
 )
 
@@ -56,20 +57,20 @@ class WarehouseViewModel @Inject constructor(
         }
     }
 
-    // --- NUCLEAR STRATEGY: Load ENTIRE warehouse inventory in ONE read with FALLBACK ---
+    // --- NUCLEAR STRATEGY: Load ENTIRE warehouse inventory via Real-time Flow ---
+    private var summaryJob: kotlinx.coroutines.Job? = null
     private fun loadWarehouseInventory(whId: String) {
         if (whId.isEmpty()) return
-        viewModelScope.launch {
-            try {
-                _uiState.update { it.copy(isLoading = true) }
-                val summary = summaryRepository.getInventorySummary(whId)
-                cachedSummary = summary
-                
-                // Always call filterAndSetItems to handle both summary and fallback scenarios
-                filterAndSetItems(_uiState.value.searchQuery, whId)
-            } finally {
-                _uiState.update { it.copy(isLoading = false) }
-            }
+        summaryJob?.cancel()
+        summaryJob = viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true) }
+            summaryRepository.getInventorySummaryFlow(whId)
+                .onEach { summary ->
+                    cachedSummary = summary
+                    filterAndSetItems(_uiState.value.searchQuery, whId)
+                    _uiState.update { it.copy(isLoading = false) }
+                }
+                .launchIn(viewModelScope)
         }
     }
 
@@ -131,36 +132,36 @@ class WarehouseViewModel @Inject constructor(
 
     fun addWarehouse(name: String, location: String, isMain: Boolean = false) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
+            _uiState.update { it.copy(isSubmitting = true) }
             try {
                 warehouseRepository.addWarehouse(Warehouse(name = name, location = location, isMain = isMain))
                 loadInitialData()
             } finally {
-                _uiState.update { it.copy(isLoading = false) }
+                _uiState.update { it.copy(isSubmitting = false) }
             }
         }
     }
 
     fun updateWarehouse(warehouse: Warehouse) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
+            _uiState.update { it.copy(isSubmitting = true) }
             try {
                 warehouseRepository.updateWarehouse(warehouse)
                 loadInitialData()
             } finally {
-                _uiState.update { it.copy(isLoading = false) }
+                _uiState.update { it.copy(isSubmitting = false) }
             }
         }
     }
 
     fun deleteWarehouse(warehouseId: String) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
+            _uiState.update { it.copy(isSubmitting = true) }
             try {
                 warehouseRepository.deleteWarehouse(warehouseId)
                 loadInitialData()
             } finally {
-                _uiState.update { it.copy(isLoading = false) }
+                _uiState.update { it.copy(isSubmitting = false) }
             }
         }
     }

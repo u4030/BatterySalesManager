@@ -27,7 +27,8 @@ class BillViewModel @Inject constructor(
     private val stockEntryRepository: StockEntryRepository,
     private val accountingRepository: AccountingRepository,
     private val bankRepository: BankRepository,
-    private val warehouseRepository: WarehouseRepository
+    private val warehouseRepository: WarehouseRepository,
+    private val savedStateHandle: androidx.lifecycle.SavedStateHandle
 ) : ViewModel() {
 
     private val _searchQuery = MutableStateFlow("")
@@ -77,7 +78,16 @@ class BillViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(false)
     val isLoading = _isLoading.asStateFlow()
 
+    private val _highlightBillId = MutableStateFlow<String?>(null)
+    val highlightBillId = _highlightBillId.asStateFlow()
+
     init {
+        val highlightId = savedStateHandle.get<String>("highlightBillId")
+        if (highlightId != null) {
+            _highlightBillId.value = highlightId
+            _isDataLoaded.value = true // Ensure we try to load/find it
+        }
+
         // --- ELITE STRATEGY: One read for unpaid total ---
         viewModelScope.launch { 
             loadUnpaidFromSummary() 
@@ -181,6 +191,10 @@ class BillViewModel @Inject constructor(
             bankRepository.deleteTransactionsByBillId(billId)
             loadData()
         }
+    }
+
+    fun clearHighlight() {
+        _highlightBillId.value = null
     }
 }
  

@@ -147,6 +147,7 @@ class InvoiceRepository @Inject constructor(
         val entries = stockEntries.documents.mapNotNull { it.toObject(com.batterysales.data.models.StockEntry::class.java)?.copy(id = it.id) }
         val approvedEntries = entries.filter { it.status == "approved" }
         val variantIds = approvedEntries.map { it.productVariantId }.distinct()
+        val warehouseIds = approvedEntries.map { it.warehouseId }.distinct()
 
         firestore.runTransaction { transaction ->
             // 1. All Reads
@@ -154,6 +155,8 @@ class InvoiceRepository @Inject constructor(
                 transaction.get(firestore.collection(com.batterysales.data.models.ProductVariant.COLLECTION_NAME).document(vid))
             }
             
+            val summarySnapshots = summaryRepository.getSummarySnapshots(transaction, warehouseIds)
+
             val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
             val invoiceRef = firestore.collection(Invoice.COLLECTION_NAME).document(invoiceId)
             val invoiceSnap = transaction.get(invoiceRef)
@@ -171,6 +174,16 @@ class InvoiceRepository @Inject constructor(
                     stockMap[entry.warehouseId] = (stockMap[entry.warehouseId] ?: 0) - (entry.quantity)
                     transaction.update(variantSnapshots[entry.productVariantId]!!.reference, "currentStock", stockMap)
                     
+                    // Update Summary
+                    summaryRepository.applyInventoryUpdate(
+                        transaction = transaction,
+                        snapshots = summarySnapshots,
+                        warehouseId = entry.warehouseId,
+                        variantId = entry.productVariantId,
+                        variant = variant,
+                        qtyChange = -entry.quantity
+                    )
+
                     totalValueToReverse += (entry.quantity * variant.weightedAverageCost)
                     totalQtyToReverse += entry.quantity
                 }
@@ -182,6 +195,14 @@ class InvoiceRepository @Inject constructor(
                     "totalInventoryValue" to com.google.firebase.firestore.FieldValue.increment(-totalValueToReverse),
                     "totalCustomerDebt" to com.google.firebase.firestore.FieldValue.increment(-invoice.remainingAmount)
                 ))
+
+                // Update Financial Summary
+                summaryRepository.applyFinancialUpdate(
+                    transaction = transaction,
+                    snapshots = summarySnapshots,
+                    warehouseId = invoice.warehouseId,
+                    pendingCollectionChange = -invoice.remainingAmount
+                )
             }
 
             // 2.2 Delete associated payments
@@ -210,7 +231,7 @@ class InvoiceRepository @Inject constructor(
             val variantRef = firestore.collection(com.batterysales.data.models.ProductVariant.COLLECTION_NAME).document(stockEntry.productVariantId)
             val vSnap = transaction.get(variantRef)
             val variant = vSnap.toObject(com.batterysales.data.models.ProductVariant::class.java)?.copy(id = vSnap.id)
-            val summarySnapshots = summaryRepository.getSummarySnapshots(transaction, stockEntry.warehouseId)
+            val summarySnapshots = summaryRepository.getSummarySnapshots(transaction, listOf(stockEntry.warehouseId))
 
             // 2. All Writes
             transaction.set(invoiceRef, finalInvoice)
@@ -249,7 +270,12 @@ class InvoiceRepository @Inject constructor(
                         relatedId = variant.id,
                         warehouseId = finalStockEntry.warehouseId,
                         timestamp = Date(),
-                        data = mapOf("capacity" to variant.capacity, "currentStock" to (currentQty + netQtyChange), "threshold" to threshold)
+                        data = mapOf(
+                            "capacity" to variant.capacity,
+                            "specification" to variant.specification,
+                            "currentStock" to (currentQty + netQtyChange),
+                            "threshold" to threshold
+                        )
                     ))
                 }
             }
@@ -321,7 +347,7 @@ class InvoiceRepository @Inject constructor(
             // 1. Reads
             val invoiceSnap = transaction.get(invoiceRef)
             val invoice = invoiceSnap.toObject(Invoice::class.java)?.copy(id = invoiceSnap.id) ?: return@runTransaction
-            val summarySnapshots = summaryRepository.getSummarySnapshots(transaction, invoice.warehouseId)
+            val summarySnapshots = summaryRepository.getSummarySnapshots(transaction, listOf(invoice.warehouseId))
             val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
 
             // 2. Writes
@@ -408,7 +434,7 @@ class InvoiceRepository @Inject constructor(
             val paymentRef = firestore.collection(Payment.COLLECTION_NAME).document(payment.id)
             val pSnap = transaction.get(paymentRef)
             val oldPayment = pSnap.toObject(Payment::class.java)?.copy(id = pSnap.id) ?: return@runTransaction
-            val summarySnapshots = summaryRepository.getSummarySnapshots(transaction, invoice.warehouseId)
+            val summarySnapshots = summaryRepository.getSummarySnapshots(transaction, listOf(invoice.warehouseId))
             val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
 
             // 2. Writes
@@ -494,7 +520,7 @@ class InvoiceRepository @Inject constructor(
             val paymentRef = firestore.collection(Payment.COLLECTION_NAME).document(paymentId)
             val pSnap = transaction.get(paymentRef)
             val oldPayment = pSnap.toObject(Payment::class.java)?.copy(id = pSnap.id) ?: return@runTransaction
-            val summarySnapshots = summaryRepository.getSummarySnapshots(transaction, invoice.warehouseId)
+            val summarySnapshots = summaryRepository.getSummarySnapshots(transaction, listOf(invoice.warehouseId))
             val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
 
             // 2. Writes

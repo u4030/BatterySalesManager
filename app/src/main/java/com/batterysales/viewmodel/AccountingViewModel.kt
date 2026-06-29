@@ -37,6 +37,9 @@ class AccountingViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(false)
     val isLoading = _isLoading.asStateFlow()
 
+    private val _isSubmitting = MutableStateFlow(false)
+    val isSubmitting = _isSubmitting.asStateFlow()
+
     private val _warehouses = MutableStateFlow<List<Warehouse>>(emptyList())
     val warehouses = _warehouses.asStateFlow()
 
@@ -243,14 +246,14 @@ class AccountingViewModel @Inject constructor(
 
     fun updateTransaction(transaction: Transaction) {
         viewModelScope.launch {
-            _isLoading.value = true
+            _isSubmitting.value = true
             try {
                 repository.updateTransaction(transaction)
                 loadData(reset = true)
             } catch (e: Exception) {
                 _errorMessage.value = e.message
                 Log.e("AccountingViewModel", "Error updating transaction", e)
-            } finally { _isLoading.value = false }
+            } finally { _isSubmitting.value = false }
         }
     }
 
@@ -264,7 +267,7 @@ class AccountingViewModel @Inject constructor(
 
     fun addManualTransaction(type: TransactionType, amount: Double, description: String, referenceNumber: String = "", paymentMethod: String = "cash") {
         viewModelScope.launch {
-            _isLoading.value = true
+            _isSubmitting.value = true
             try {
                 val transaction = Transaction(
                     type = type, amount = amount, description = description, 
@@ -274,21 +277,21 @@ class AccountingViewModel @Inject constructor(
                 repository.addTransaction(transaction)
                 loadData(reset = true)
             } finally {
-                _isLoading.value = false
+                _isSubmitting.value = false
             }
         }
     }
 
     fun deleteTransaction(id: String) {
         viewModelScope.launch {
-            _isLoading.value = true
+            _isSubmitting.value = true
             try {
                 repository.deleteTransaction(id)
                 loadData(reset = true)
             } catch (e: Exception) {
                 _errorMessage.value = e.message
             } finally {
-                _isLoading.value = false
+                _isSubmitting.value = false
             }
         }
     }
