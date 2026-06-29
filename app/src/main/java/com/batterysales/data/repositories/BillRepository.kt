@@ -834,6 +834,8 @@ class BillRepository @Inject constructor(
                 "currentBalance" to (totalDebit - totalCreditPool),
                 "unallocatedCredit" to unallocatedPool
             ))
+
+            summaryRepository.invalidateSupplierReportCache(transaction, supplierId)
         }.await()
 
         // 3. Run FIFO Linkage (It will re-apply manual links first internally)
@@ -854,6 +856,10 @@ class BillRepository @Inject constructor(
         // 1. Fetch data for calculation (Including legacy name-based entries)
         val allRawEntries = stockEntryRepository.getEntriesBySuppliers(listOf(supplierId), supplierNames)
             .filter { it.status == "approved" }
+
+        // Invalidate cache since we are re-calculating links
+        firestore.collection("suppliers").document(supplierId).collection("cache").document("report").delete().await()
+
         if (allRawEntries.isEmpty()) return
 
         val supplierBills = getBillsBySuppliers(listOf(supplierId), supplierNames)

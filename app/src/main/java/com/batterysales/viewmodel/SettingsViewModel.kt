@@ -211,7 +211,8 @@ class SettingsViewModel @Inject constructor(
     private suspend fun rebuildAllSummaries() {
         val firestore = com.google.firebase.firestore.FirebaseFirestore.getInstance()
         
-        // --- 0. PURGE OLD SUMMARIES ---
+        // --- 0. PURGE CACHES AND SUMMARIES ---
+        summaryRepository.invalidateAllSupplierCaches()
         val oldSummaries = firestore.collection("summaries").get().await()
         if (!oldSummaries.isEmpty) {
             val batch = firestore.batch()

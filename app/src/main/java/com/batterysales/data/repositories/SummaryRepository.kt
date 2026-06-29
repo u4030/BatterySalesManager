@@ -292,6 +292,14 @@ class SummaryRepository @Inject constructor(
         transaction.delete(cacheRef)
     }
 
+    suspend fun invalidateAllSupplierCaches() {
+        val suppliers = firestore.collection("suppliers").get().await()
+        suppliers.documents.forEach { supplierDoc ->
+            firestore.collection("suppliers").document(supplierDoc.id)
+                .collection("cache").document("report").delete().await()
+        }
+    }
+
     private fun com.batterysales.data.models.PurchaseOrderItem.toMap(): Map<String, Any> = mapOf(
         "id" to entry.id, 
         "totalCost" to entry.totalCost, 

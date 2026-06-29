@@ -323,7 +323,7 @@ class ReportsViewModel @Inject constructor(
                     } else entry.specification
                     entry.copy(specification = spec)
                 }.filter { entry ->
-                    entry.status == "approved" &&
+                    entry.status == "approved" && entry.totalCost != 0.0 &&
                             (adjustedStart == null || !entry.getEffectiveDate().before(Date(adjustedStart))) &&
                             (adjustedEnd == null || !entry.getEffectiveDate().after(Date(adjustedEnd))) &&
                             (supplier.resetDate == null || !entry.getEffectiveDate().before(supplier.resetDate))
