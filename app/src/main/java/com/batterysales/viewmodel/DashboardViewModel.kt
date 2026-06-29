@@ -96,9 +96,18 @@ class DashboardViewModel @Inject constructor(
         userRepository.getCurrentUserFlow(),
         summaryRepository.getFinancialStatusFlow(),
         summaryRepository.getSuppliersOverviewFlow(),
+        summaryRepository.getInventorySummaryFlow(null),
         alertsFlow,
         _heavyData
-    ) { user: User?, financial: FinancialStatus, suppliers: SuppliersOverview, alerts: List<SystemAlert>, heavy: HeavyData? ->
+    ) { args: Array<Any?> ->
+        val user = args[0] as? User
+        val financial = args[1] as? FinancialStatus ?: FinancialStatus()
+        val suppliers = args[2] as? SuppliersOverview ?: SuppliersOverview()
+        val globalInventory = args[3] as? InventorySummary ?: InventorySummary()
+        @Suppress("UNCHECKED_CAST")
+        val alerts = args[4] as? List<SystemAlert> ?: emptyList()
+        val heavy = args[5] as? HeavyData
+
         if (user == null) return@combine DashboardUiState(isLoading = false)
         if (heavy == null) return@combine DashboardUiState(isLoading = true)
 
@@ -128,12 +137,20 @@ class DashboardViewModel @Inject constructor(
 
         // Alerts / Low Stock
         val filteredAlerts = alerts.filter { isAdmin || it.warehouseId == userWarehouseId }
+
+        // Metadata Backfill Strategy: Use Global Summary Flow for missing metadata
+        val summaryItems = globalInventory.items
+
         val lowStockItems = filteredAlerts.map { alert ->
+            val summary = summaryItems[alert.relatedId]
+            val capacity = (alert.data["capacity"] as? Number)?.toInt() ?: summary?.capacity ?: 0
+            val specification = (alert.data["specification"] as? String) ?: summary?.specification ?: ""
+
             LowStockItem(
                 variantId = alert.relatedId,
-                productName = alert.title.replace("مخزون منخفض: ", ""),
-                capacity = (alert.data["capacity"] as? Number)?.toInt() ?: 0,
-                specification = (alert.data["specification"] as? String) ?: "",
+                productName = summary?.productName ?: alert.title.replace("مخزون منخفض: ", ""),
+                capacity = capacity,
+                specification = specification,
                 currentQuantity = (alert.data["currentStock"] as? Number)?.toInt() ?: 0,
                 minQuantity = (alert.data["threshold"] as? Number)?.toInt() ?: 0,
                 warehouseName = heavy.warehouses.find { it.id == alert.warehouseId }?.name ?: alert.warehouseName ?: "مخزن"
@@ -223,7 +240,7 @@ class DashboardViewModel @Inject constructor(
         
         lowStockItems.forEach { item ->
             val specLabel = if (item.specification.isNotBlank()) "${item.specification}|" else ""
-            val message = "(${item.warehouseName}: $specLabel${item.capacity}A)"
+            val message = "(${item.warehouseName}: $specLabel${item.capacity} أمبير)"
             val route = "product_ledger/${item.variantId}/${item.productName}/${item.capacity}/${item.specification.ifEmpty { "no_spec" }}"
 
             allNotifications.add(AppNotification(
