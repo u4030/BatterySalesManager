@@ -1141,6 +1141,7 @@ class StockEntryRepository @Inject constructor(
         val statsRef = firestore.collection(SystemStats.COLLECTION_NAME).document(SystemStats.DOCUMENT_ID)
         val variantsList = firestore.collection(ProductVariant.COLLECTION_NAME).get().await()
             .documents.mapNotNull { it.toObject(ProductVariant::class.java) }
+            .filter { !it.archived }
         
         val totalInvValue = variantsList.sumOf { (it.currentStock?.values?.sum() ?: 0) * it.weightedAverageCost }
         val totalInvQty = variantsList.sumOf { it.currentStock?.values?.sum() ?: 0 }
