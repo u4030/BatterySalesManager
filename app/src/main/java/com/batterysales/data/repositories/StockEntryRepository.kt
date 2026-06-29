@@ -1008,7 +1008,7 @@ class StockEntryRepository @Inject constructor(
                 
                 val existingIds = allEntries.map { it.id }.toSet()
                 val legacyEntries = snap.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
-                    .filter { !existingIds.contains(it.id) }
+                    .filter { !existingIds.contains(it.id) && it.status == "approved" }
                 
                 allEntries.addAll(legacyEntries)
             }
