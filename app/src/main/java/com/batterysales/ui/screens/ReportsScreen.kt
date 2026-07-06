@@ -160,7 +160,14 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                             item { InventoryReportControls(viewModel) }
                             
                             if (inventoryItems.isNotEmpty()) {
-                                item { GrandTotalCard(totalQuantity = grandTotalQuantity, isSeller = isSeller) }
+                                item {
+                                    val totalValue by viewModel.grandTotalInventoryValue.collectAsState()
+                                    GrandTotalCard(
+                                        totalQuantity = grandTotalQuantity,
+                                        totalValue = totalValue,
+                                        isSeller = isSeller
+                                    )
+                                }
                             }
 
                             if (inventoryItems.isEmpty() && !currentTabLoading) {
@@ -315,21 +322,40 @@ fun InventoryReportControls(viewModel: ReportsViewModel) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun GrandTotalCard(totalQuantity: Int, isSeller: Boolean) {
+fun GrandTotalCard(totalQuantity: Int, totalValue: Double, isSeller: Boolean) {
     Card(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f))
     ) {
-        FlowRow(modifier = Modifier.padding(20.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalArrangement = Arrangement.Center) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
-                Surface(color = MaterialTheme.colorScheme.primary, shape = CircleShape, modifier = Modifier.size(40.dp)) {
-                    Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Inventory, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp)) }
+        Column(modifier = Modifier.padding(20.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(color = MaterialTheme.colorScheme.primary, shape = CircleShape, modifier = Modifier.size(40.dp)) {
+                        Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Inventory, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp)) }
+                    }
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Text(text = "إجمالي كمية المخزون", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                 }
-                Spacer(modifier = Modifier.width(16.dp))
-                Text(text = "إجمالي كمية المخزون", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                Text(text = totalQuantity.toString(), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
             }
-            Text(text = totalQuantity.toString(), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(vertical = 4.dp))
+
+            if (!isSeller) {
+                Spacer(modifier = Modifier.height(12.dp))
+                HorizontalDivider(modifier = Modifier.alpha(0.1f))
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(color = Color(0xFF3B82F6), shape = CircleShape, modifier = Modifier.size(40.dp)) {
+                            Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Payments, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp)) }
+                        }
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Text(text = "إجمالي قيمة المخزون", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                    }
+                    Text(text = "JD ${String.format("%,.3f", totalValue)}", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Color(0xFF3B82F6))
+                }
+            }
         }
     }
 }

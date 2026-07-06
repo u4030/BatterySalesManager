@@ -1172,7 +1172,6 @@ class StockEntryRepository @Inject constructor(
 
     suspend fun getWeightedAverageCost(variantId: String, warehouseId: String?): Double {
         // Robust strategy: fetch all approved entries for this variant to find newest purchase in memory
-        // Filtering in memory is safer against indexing lag and complex compound query errors
         val query = firestore.collection(StockEntry.COLLECTION_NAME)
             .whereEqualTo("productVariantId", variantId)
             .whereEqualTo("status", "approved")
@@ -1180,11 +1179,15 @@ class StockEntryRepository @Inject constructor(
         val snap = query.get().await()
         val entries = snap.documents.mapNotNull { it.toObject(StockEntry::class.java) }
         
-        // Find newest entry with quantity > 0 (Actual purchase) based on effective date
-        val lastPurchase = entries.filter { it.quantity > 0 && it.getUnitPrice() > 0.001 }
+        // Find newest entry with quantity != 0 and some cost info based on effective date
+        val lastCostEntry = entries.filter { Math.abs(it.getUnitPrice()) > 0.001 }
             .maxByOrNull { it.getEffectiveDate().time }
         
-        return lastPurchase?.getUnitPrice() ?: 0.0
+        if (lastCostEntry != null) return Math.abs(lastCostEntry.getUnitPrice())
+
+        // Fallback: If no history with cost, try to get the current cost from the variant document
+        val variantSnap = firestore.collection(ProductVariant.COLLECTION_NAME).document(variantId).get().await()
+        return variantSnap.getDouble("weightedAverageCost") ?: 0.0
     }
 
     suspend fun getVariantQuantity(variantId: String, warehouseId: String?): Int {

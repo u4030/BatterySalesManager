@@ -310,13 +310,26 @@ class SettingsViewModel @Inject constructor(
         }
 
         // Save Global
+        val globalTotalValue = globalItems.values.sumOf { it.currentStock * it.weightedAverageCost }
         firestore.collection("summaries").document("inventory_global")
-            .set(InventorySummary(id = "inventory_global", items = globalItems)).await()
+            .set(InventorySummary(
+                id = "inventory_global",
+                items = globalItems,
+                totalValue = globalTotalValue,
+                totalItemsCount = globalItems.size
+            )).await()
 
         // Save Warehouses
         warehouseItems.forEach { (whId, items) ->
+            val whTotalValue = items.values.sumOf { it.currentStock * it.weightedAverageCost }
             firestore.collection("summaries").document("inventory_wh_$whId")
-                .set(InventorySummary(id = "inventory_wh_$whId", warehouseId = whId, items = items)).await()
+                .set(InventorySummary(
+                    id = "inventory_wh_$whId",
+                    warehouseId = whId,
+                    items = items,
+                    totalValue = whTotalValue,
+                    totalItemsCount = items.size
+                )).await()
         }
 
         // 3. Rebuild Suppliers Overview (Deep Audit Strategy)
