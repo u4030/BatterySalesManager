@@ -66,28 +66,50 @@ class ProductLedgerViewModel @Inject constructor(
 
     private val refreshTrigger = MutableStateFlow(0)
     private val _isDataLoaded = MutableStateFlow(false)
-    private var allWarehouses: List<Warehouse> = emptyList()
+
+    private data class LedgerFilters(
+        val category: LedgerCategory,
+        val query: String,
+        val user: com.batterysales.data.models.User?,
+        val warehouses: List<Warehouse>
+    )
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    val ledgerItems: Flow<PagingData<LedgerItem>> = combine(_selectedCategory, _searchQuery, userRepository.getCurrentUserFlow(), refreshTrigger, _isDataLoaded) { category, query, user, _, loaded ->
-        if (!loaded && query.isEmpty()) return@combine null
-        Triple(category, query, user)
-    }.filterNotNull().flatMapLatest { (category, query, user) ->
-        val warehouseMap = allWarehouses.associateBy { it.id }
+    val ledgerItems: Flow<PagingData<LedgerItem>> = combine(
+        listOf(
+            _selectedCategory,
+            _searchQuery,
+            userRepository.getCurrentUserFlow(),
+            warehouseRepository.getWarehouses(),
+            refreshTrigger,
+            _isDataLoaded
+        )
+    ) { args: Array<Any?> ->
+        val category = args[0] as LedgerCategory
+        val query = args[1] as String
+        val user = args[2] as com.batterysales.data.models.User?
+        val warehouses = args[3] as List<Warehouse>
+        val loaded = args[5] as Boolean
+
+        if (!loaded && query.isEmpty()) null
+        else LedgerFilters(category, query, user, warehouses)
+    }.filterNotNull().flatMapLatest { filters ->
+        val warehouseMap = filters.warehouses.associateBy { it.id }
+        val user = filters.user
         val warehouseFilter = targetWarehouseId ?: if (user?.role == "seller") user.warehouseId else null
         
         Pager(PagingConfig(pageSize = 20)) { StockEntryPagingSource(stockEntryRepository, productVariantId, warehouseFilter) }
             .flow.map { pagingData ->
                 pagingData.map { entry -> LedgerItem(entry = entry, warehouseName = warehouseMap[entry.warehouseId]?.name ?: "Unknown") }
                     .filter { item ->
-                        val categoryMatch = when (category) {
+                        val categoryMatch = when (filters.category) {
                             LedgerCategory.ALL -> true
                             LedgerCategory.PURCHASES -> item.entry.quantity > 0 && item.entry.invoiceId == null && item.entry.supplier != "Sale" && item.entry.costPrice > 0 && !item.entry.supplier.contains("Reversal")
                             LedgerCategory.SALES -> item.entry.invoiceId != null || item.entry.supplier == "Sale"
                             LedgerCategory.TRANSFERS -> item.entry.costPrice == 0.0 && item.entry.invoiceId == null && item.entry.supplier != "Sale" && !item.entry.supplier.contains("Reversal")
                             LedgerCategory.RETURNS -> item.entry.supplier.contains("Reversal") || item.entry.returnedQuantity > 0
                         }
-                        val searchMatch = if (query.isBlank()) true else item.entry.supplier.contains(query, ignoreCase = true) || item.warehouseName.contains(query, ignoreCase = true) || item.entry.createdByUserName.contains(query, ignoreCase = true) || item.entry.invoiceNumber.contains(query, ignoreCase = true)
+                        val searchMatch = if (filters.query.isBlank()) true else item.entry.supplier.contains(filters.query, ignoreCase = true) || item.warehouseName.contains(filters.query, ignoreCase = true) || item.entry.createdByUserName.contains(filters.query, ignoreCase = true) || item.entry.invoiceNumber.contains(filters.query, ignoreCase = true)
                         categoryMatch && searchMatch
                     }
             }.cachedIn(viewModelScope)
@@ -97,7 +119,6 @@ class ProductLedgerViewModel @Inject constructor(
         viewModelScope.launch {
             val user = userRepository.getCurrentUser()
             _userRole.value = user?.role ?: "seller"
-            allWarehouses = warehouseRepository.getWarehousesOnce()
             loadData()
         }
     }
