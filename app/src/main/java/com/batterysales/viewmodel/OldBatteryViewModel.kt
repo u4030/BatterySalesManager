@@ -100,7 +100,7 @@ class OldBatteryViewModel @Inject constructor(
                 _summary.value = Pair(0, 0.0)
                 _selectedWarehouseId.value = null
 
-                refreshScrapWarehouses(user)
+                observeScrapWarehouses(user)
 
                 if (user?.role == "seller") {
                     loadTransactions(reset = true, warehouseId = user.warehouseId)
@@ -112,31 +112,30 @@ class OldBatteryViewModel @Inject constructor(
         // No-op now as initialization is handled by user flow
     }
 
-    private fun refreshScrapWarehouses(user: com.batterysales.data.models.User? = currentUser) {
-        viewModelScope.launch {
-            try {
-                val snapshot = com.google.firebase.firestore.FirebaseFirestore.getInstance()
-                    .collection(com.batterysales.data.models.ScrapWarehouse.COLLECTION_NAME)
-                    .get().await()
-                
-                val allScrapWh = snapshot.documents.mapNotNull { it.toObject(com.batterysales.data.models.ScrapWarehouse::class.java)?.copy(id = it.id) }
-                val active = allScrapWh.filter { it.isActive }
-                
-                val filtered = if (user?.role == "seller") {
-                    active.filter { it.parentWarehouseId == user.warehouseId }
-                } else active
-                
-                _scrapWarehouses.value = filtered
+    private var scrapJob: kotlinx.coroutines.Job? = null
+    private fun observeScrapWarehouses(user: com.batterysales.data.models.User?) {
+        scrapJob?.cancel()
+        scrapJob = viewModelScope.launch {
+            scrapWarehouseRepository.getScrapWarehouses()
+                .onEach { allScrapWh ->
+                    val active = allScrapWh.filter { it.isActive }
 
-                if (user?.role == "admin" && _selectedWarehouseId.value == null) {
-                    loadTransactions(reset = true, warehouseId = null)
-                } else if (user?.role == "seller") {
-                    _selectedWarehouseId.value = user.warehouseId
-                    loadTransactions(reset = true, warehouseId = user.warehouseId)
+                    val filtered = if (user?.role == "seller") {
+                        active.filter { it.parentWarehouseId == user.warehouseId }
+                    } else active
+
+                    _scrapWarehouses.value = filtered
+
+                    // Update Summary reactively
+                    val warehouseFilter = if (user?.role == "seller") user.warehouseId else _selectedWarehouseId.value
+                    if (warehouseFilter != null) {
+                        val scrapWh = active.find { it.parentWarehouseId == warehouseFilter }
+                        _summary.value = Pair(scrapWh?.totalQuantity ?: 0, scrapWh?.totalAmperes ?: 0.0)
+                    } else {
+                        _summary.value = Pair(active.sumOf { it.totalQuantity }, active.sumOf { it.totalAmperes })
+                    }
                 }
-            } catch (e: Exception) {
-                Log.e("OldBatteryViewModel", "Error refreshing scrap warehouses", e)
-            }
+                .launchIn(viewModelScope)
         }
     }
 
@@ -153,32 +152,15 @@ class OldBatteryViewModel @Inject constructor(
             _isLoading.value = true
         }
 
+        // Transaction list is handled by PagingSource via 'transactions' Flow
+        // Just refresh the summary
         viewModelScope.launch {
             try {
                 val warehouseFilter = if (_isSeller.value) _userWarehouseId.value else warehouseId
-                
-                // Refresh scrap warehouses list first to ensure summary is up-to-date
-                val snapshot = com.google.firebase.firestore.FirebaseFirestore.getInstance()
-                    .collection(com.batterysales.data.models.ScrapWarehouse.COLLECTION_NAME)
-                    .get().await()
-                val allScrapWh = snapshot.documents.mapNotNull { it.toObject(com.batterysales.data.models.ScrapWarehouse::class.java)?.copy(id = it.id) }
-                _scrapWarehouses.value = allScrapWh // Update cache
-
-                // Use ScrapWarehouse entity for summary instead of aggregation
-                val scrapWh = allScrapWh.find { it.parentWarehouseId == warehouseFilter }
-                if (scrapWh != null) {
-                    _summary.value = Pair(scrapWh.totalQuantity, scrapWh.totalAmperes)
-                } else {
-                    // Fallback to aggregation if entity not yet loaded/migrated
-                    _summary.value = repository.getStockSummary(warehouseFilter)
-                }
-
-            } catch (e: Exception) {
-                Log.e("OldBatteryViewModel", "Error loading transactions", e)
-                _errorMessage.value = "خطأ في تحميل البيانات: ${e.message}"
+                val summary = repository.getStockSummary(warehouseFilter)
+                _summary.value = summary
             } finally {
                 _isLoading.value = false
-                _isLoadingMore.value = false
             }
         }
     }

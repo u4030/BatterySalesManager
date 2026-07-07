@@ -28,6 +28,7 @@ class ReportsViewModel @Inject constructor(
     private val summaryRepository: SummaryRepository,
     private val billRepository: BillRepository,
     private val oldBatteryRepository: OldBatteryRepository,
+    private val scrapWarehouseRepository: ScrapWarehouseRepository,
     private val userRepository: UserRepository,
     private val settingsManager: com.batterysales.utils.SettingsManager,
     private val firestore: FirebaseFirestore
@@ -465,34 +466,29 @@ class ReportsViewModel @Inject constructor(
         }
     }
 
+    private var scrapJob: kotlinx.coroutines.Job? = null
     fun loadScrapReport() {
-        viewModelScope.launch {
+        scrapJob?.cancel()
+        scrapJob = viewModelScope.launch {
             _isScrapLoading.value = true
-            try {
-                val summary = oldBatteryRepository.getStockSummary()
-                _oldBatterySummary.value = summary
+            val user = userRepository.getCurrentUser()
+            val seller = user?.role == "seller"
 
-                val user = userRepository.getCurrentUser()
-                val seller = user?.role == "seller"
+            scrapWarehouseRepository.getScrapWarehouses()
+                .onEach { allScrapWh: List<ScrapWarehouse> ->
+                    val active = allScrapWh.filter { it.isActive }
 
-                val scrapWhRef = firestore.collection(ScrapWarehouse.COLLECTION_NAME)
-                val snapshot = scrapWhRef.get().await()
-                val allScrapWh = snapshot.documents.mapNotNull { it.toObject(ScrapWarehouse::class.java)?.copy(id = it.id) }
-                    .filter { it.isActive }
-
-                if (seller) {
-                    val myScrapWh = allScrapWh.find { it.parentWarehouseId == user?.warehouseId }
-                    if (myScrapWh != null) {
-                        _scrapWarehouses.value = listOf(myScrapWh)
+                    if (seller) {
+                        val myScrapWh = active.find { it.parentWarehouseId == user?.warehouseId }
+                        _scrapWarehouses.value = if (myScrapWh != null) listOf(myScrapWh) else emptyList()
+                        _oldBatterySummary.value = Pair(myScrapWh?.totalQuantity ?: 0, myScrapWh?.totalAmperes ?: 0.0)
                     } else {
-                        _scrapWarehouses.value = emptyList()
+                        _scrapWarehouses.value = active.sortedBy { it.name }
+                        _oldBatterySummary.value = Pair(active.sumOf { it.totalQuantity }, active.sumOf { it.totalAmperes })
                     }
-                } else {
-                    _scrapWarehouses.value = allScrapWh.sortedBy { it.name }
+                    _isScrapLoading.value = false
                 }
-            } finally {
-                _isScrapLoading.value = false
-            }
+                .launchIn(viewModelScope)
         }
     }
 }

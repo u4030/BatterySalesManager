@@ -132,7 +132,10 @@ class DashboardViewModel @Inject constructor(
             totalSupplierDebt = if (isAdmin) suppliers.totalSupplierDebt else 0.0,
             totalCustomerDebt = if (isAdmin) financial.warehouseBalances.values.sumOf { it.pendingCollection } else 0.0,
             totalUnpaidBills = financial.totalUnpaidBills,
-            totalUnpaidChecks = financial.totalUnpaidChecks
+            totalUnpaidChecks = financial.totalUnpaidChecks,
+            totalInventoryQuantity = globalInventory.items.values.sumOf { it.currentStock },
+            totalInventoryValue = globalInventory.items.values.sumOf { it.currentStock * it.weightedAverageCost },
+            updatedAt = Date()
         )
 
         // Alerts / Low Stock

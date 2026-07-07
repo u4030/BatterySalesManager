@@ -367,15 +367,21 @@ class InvoiceRepository @Inject constructor(
 
             if (oldBatteryTransaction != null) {
                 val scrapRef = firestore.collection(com.batterysales.data.models.OldBatteryTransaction.COLLECTION_NAME).document()
-                transaction.set(scrapRef, oldBatteryTransaction.copy(id = scrapRef.id, invoiceId = finalInvoice.id))
+                // Force correct warehouse from stock entry to ensure scrap summary alignment
+                val finalScrapTrans = oldBatteryTransaction.copy(
+                    id = scrapRef.id,
+                    invoiceId = finalInvoice.id,
+                    warehouseId = stockEntry.warehouseId
+                )
+                transaction.set(scrapRef, finalScrapTrans)
 
                 // Update Scrap Summary Atomically
                 summaryRepository.applyScrapUpdate(
                     transaction = transaction,
                     snapshots = summarySnapshots,
                     warehouseId = stockEntry.warehouseId,
-                    qtyChange = oldBatteryTransaction.quantity,
-                    ampereChange = oldBatteryTransaction.totalAmperes
+                    qtyChange = finalScrapTrans.quantity,
+                    ampereChange = finalScrapTrans.totalAmperes
                 )
             }
         }.await()
@@ -393,7 +399,8 @@ class InvoiceRepository @Inject constructor(
             // 1. Reads
             val invoiceSnap = transaction.get(invoiceRef)
             val invoice = invoiceSnap.toObject(Invoice::class.java)?.copy(id = invoiceSnap.id) ?: return@runTransaction
-            val summarySnapshots = summaryRepository.getSummarySnapshots(transaction, listOf(invoice.warehouseId))
+            val warehouseId = invoice.warehouseId.ifBlank { "global" }
+            val summarySnapshots = summaryRepository.getSummarySnapshots(transaction, listOf(warehouseId))
             val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
 
             // 2. Writes
@@ -445,7 +452,7 @@ class InvoiceRepository @Inject constructor(
             summaryRepository.applyFinancialUpdate(
                 transaction = transaction,
                 snapshots = summarySnapshots,
-                warehouseId = invoice.warehouseId,
+                warehouseId = warehouseId,
                 cashChange = if (payment.paymentMethod == "cash") payment.amount else 0.0,
                 bankChange = if (payment.paymentMethod == "bank") payment.amount else 0.0,
                 pendingCollectionChange = -payment.amount,

@@ -45,13 +45,10 @@ class SummaryRepository @Inject constructor(
         val scrapMap = mutableMapOf<String, ScrapWarehouse>()
         if (includeScrap && warehouseIds.isNotEmpty()) {
             warehouseIds.forEach { whId ->
-                // Note: This requires knowing the document ID for scrap.
-                // We'll assume a standard ID format or fetch by parentWarehouseId.
-                // Since we can't query in transactions, we'll try a standardized ID: scrap_wh_$whId
                 val ref = firestore.collection(ScrapWarehouse.COLLECTION_NAME).document("scrap_wh_$whId")
-                transaction.get(ref).toObject(ScrapWarehouse::class.java)?.let {
-                    scrapMap[whId] = it
-                }
+                val scrap = transaction.get(ref).toObject(ScrapWarehouse::class.java)
+                            ?: ScrapWarehouse(id = "scrap_wh_$whId", parentWarehouseId = whId, name = "سكراب - $whId")
+                scrapMap[whId] = scrap
             }
         }
 
@@ -276,12 +273,12 @@ class SummaryRepository @Inject constructor(
         qtyChange: Int,
         ampereChange: Double
     ) {
-        val scrap = snapshots.scrapSnapshots[warehouseId] ?: return
+        val scrap = snapshots.scrapSnapshots[warehouseId] ?: ScrapWarehouse(id = "scrap_wh_$warehouseId", parentWarehouseId = warehouseId, name = "سكراب - $warehouseId")
         val docRef = firestore.collection(ScrapWarehouse.COLLECTION_NAME).document("scrap_wh_$warehouseId")
 
-        transaction.update(docRef, mapOf(
-            "totalQuantity" to scrap.totalQuantity + qtyChange,
-            "totalAmperes" to scrap.totalAmperes + ampereChange
+        transaction.set(docRef, scrap.copy(
+            totalQuantity = (scrap.totalQuantity + qtyChange).coerceAtLeast(0),
+            totalAmperes = (scrap.totalAmperes + ampereChange).coerceAtLeast(0.0)
         ))
 
         incrementSyncVersion(transaction, "inventory")
@@ -321,8 +318,8 @@ class SummaryRepository @Inject constructor(
             cashBalance = currentWh.cashBalance + cashChange,
             bankBalance = currentWh.bankBalance + bankChange,
             pendingCollection = currentWh.pendingCollection + pendingCollectionChange,
-            todayCollection = currentWh.todayCollection + todayCollectionChange,
-            todayCollectionCount = currentWh.todayCollectionCount + todayCollectionCountChange
+            todayCollection = (currentWh.todayCollection + todayCollectionChange).coerceAtLeast(0.0),
+            todayCollectionCount = (currentWh.todayCollectionCount + todayCollectionCountChange).coerceAtLeast(0)
         )
 
         transaction.set(summariesCollection.document("financial_status"), baseStatus.copy(
@@ -331,8 +328,8 @@ class SummaryRepository @Inject constructor(
             globalBankBalance = baseStatus.globalBankBalance + bankChange,
             totalUnpaidBills = baseStatus.totalUnpaidBills + billChange,
             totalUnpaidChecks = baseStatus.totalUnpaidChecks + checkChange,
-            todayCollection = baseStatus.todayCollection + todayCollectionChange,
-            todayCollectionCount = baseStatus.todayCollectionCount + todayCollectionCountChange,
+            todayCollection = (baseStatus.todayCollection + todayCollectionChange).coerceAtLeast(0.0),
+            todayCollectionCount = (baseStatus.todayCollectionCount + todayCollectionCountChange).coerceAtLeast(0),
             lastUpdated = Date(),
             version = baseStatus.version + 1
         ))
