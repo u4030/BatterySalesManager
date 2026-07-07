@@ -73,10 +73,15 @@ class SummaryRepository @Inject constructor(
         // Update Warehouse Summary
         val updatedItemsWh = whSummary.items.toMutableMap()
         val oldItemWh = updatedItemsWh[variantId]
+        val oldItemGlobal = globalSummary.items[variantId]
 
         // Cost Fallback Strategy: Never let WAC drop to 0 if we have a historical cost
-        val targetCost = if (variant.weightedAverageCost > 0.001) variant.weightedAverageCost
-                        else (oldItemWh?.weightedAverageCost ?: 0.0)
+        val targetCost = when {
+            variant.weightedAverageCost > 0.001 -> variant.weightedAverageCost
+            oldItemGlobal != null && oldItemGlobal.weightedAverageCost > 0.001 -> oldItemGlobal.weightedAverageCost
+            oldItemWh != null && oldItemWh.weightedAverageCost > 0.001 -> oldItemWh.weightedAverageCost
+            else -> variant.weightedAverageCost
+        }
 
         val newItemWh = (oldItemWh ?: InventorySummaryItem(
             variantId = variantId, productId = variant.productId, productName = variant.productName ?: "Unknown",
@@ -93,7 +98,6 @@ class SummaryRepository @Inject constructor(
 
         // Update Global Summary
         val updatedItemsGlobal = globalSummary.items.toMutableMap()
-        val oldItemGlobal = updatedItemsGlobal[variantId]
         val newItemGlobal = (oldItemGlobal ?: InventorySummaryItem(
             variantId = variantId, productId = variant.productId, productName = variant.productName ?: "Unknown",
             capacity = variant.capacity, barcode = variant.barcode, sellingPrice = variant.sellingPrice,
@@ -183,8 +187,14 @@ class SummaryRepository @Inject constructor(
             
             // Warehouse Map
             val oldItemWh = updatedItemsWh[variantId]
-            val targetCost = if (variant.weightedAverageCost > 0.001) variant.weightedAverageCost
-                            else (oldItemWh?.weightedAverageCost ?: 0.0)
+            val oldItemGlobal = updatedItemsGlobal[variantId]
+
+            val targetCost = when {
+                variant.weightedAverageCost > 0.001 -> variant.weightedAverageCost
+                oldItemGlobal != null && oldItemGlobal.weightedAverageCost > 0.001 -> oldItemGlobal.weightedAverageCost
+                oldItemWh != null && oldItemWh.weightedAverageCost > 0.001 -> oldItemWh.weightedAverageCost
+                else -> variant.weightedAverageCost
+            }
 
             val newItemWh = (oldItemWh ?: InventorySummaryItem(
                 variantId = variantId, productId = variant.productId, productName = variant.productName ?: "Unknown",
@@ -201,7 +211,6 @@ class SummaryRepository @Inject constructor(
             whValueDelta += (newItemWh.currentStock * newItemWh.weightedAverageCost) - ((oldItemWh?.currentStock ?: 0) * (oldItemWh?.weightedAverageCost ?: 0.0))
 
             // Global Map (Shared across warehouses, but grouped by whId call here)
-            val oldItemGlobal = updatedItemsGlobal[variantId]
             val newItemGlobal = (oldItemGlobal ?: InventorySummaryItem(
                 variantId = variantId, productId = variant.productId, productName = variant.productName ?: "Unknown",
                 capacity = variant.capacity, barcode = variant.barcode, sellingPrice = variant.sellingPrice,

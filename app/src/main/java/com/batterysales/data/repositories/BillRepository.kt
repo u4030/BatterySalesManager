@@ -146,6 +146,14 @@ class BillRepository @Inject constructor(
                     transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(creditToApply))
                     transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-creditToApply))
                     transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(creditToApply))
+
+                    summaryRepository.applySupplierUpdate(
+                        transaction = transaction,
+                        snapshots = snapshots,
+                        supplierId = finalBill.supplierId,
+                        name = "", // Optional name backfill
+                        creditChange = creditToApply
+                    )
                 }
             }
 
@@ -291,6 +299,14 @@ class BillRepository @Inject constructor(
                     transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(paymentAmount))
                     transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-paymentAmount))
                     transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(paymentAmount))
+
+                    summaryRepository.applySupplierUpdate(
+                        transaction = transaction,
+                        snapshots = snapshots,
+                        supplierId = bill.supplierId,
+                        name = "",
+                        creditChange = paymentAmount
+                    )
                 }
             }
 
@@ -418,6 +434,14 @@ class BillRepository @Inject constructor(
                     transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(paymentAmount))
                     transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-paymentAmount))
                     transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(paymentAmount))
+
+                    summaryRepository.applySupplierUpdate(
+                        transaction = transaction,
+                        snapshots = snapshots,
+                        supplierId = freshBill.supplierId,
+                        name = "",
+                        creditChange = paymentAmount
+                    )
                 }
             }
 
@@ -499,6 +523,14 @@ class BillRepository @Inject constructor(
                     val supplierRef = firestore.collection("suppliers").document(bill.supplierId)
                     transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(-creditToRemove))
                     transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(creditToRemove))
+
+                    summaryRepository.applySupplierUpdate(
+                        transaction = transaction,
+                        snapshots = snapshots,
+                        supplierId = bill.supplierId,
+                        name = "",
+                        creditChange = -creditToRemove
+                    )
                 }
             }
 
@@ -749,6 +781,7 @@ class BillRepository @Inject constructor(
                             "totalCredit" to com.google.firebase.firestore.FieldValue.increment(amountDiff),
                             "currentBalance" to com.google.firebase.firestore.FieldValue.increment(-amountDiff)
                         ))
+                        summaryRepository.applySupplierUpdate(transaction, snapshots, bill.supplierId, "", creditChange = amountDiff)
                     }
                 } else {
                     // Full swap
@@ -758,6 +791,7 @@ class BillRepository @Inject constructor(
                             "totalCredit" to com.google.firebase.firestore.FieldValue.increment(-oldBill.amount),
                             "currentBalance" to com.google.firebase.firestore.FieldValue.increment(oldBill.amount)
                         ))
+                        summaryRepository.applySupplierUpdate(transaction, snapshots, oldBill.supplierId, "", creditChange = -oldBill.amount)
                     }
                     if (bill.supplierId.isNotEmpty()) {
                         val newSRef = firestore.collection("suppliers").document(bill.supplierId)
@@ -765,6 +799,7 @@ class BillRepository @Inject constructor(
                             "totalCredit" to com.google.firebase.firestore.FieldValue.increment(bill.amount),
                             "currentBalance" to com.google.firebase.firestore.FieldValue.increment(-bill.amount)
                         ))
+                        summaryRepository.applySupplierUpdate(transaction, snapshots, bill.supplierId, "", creditChange = bill.amount)
                     }
                 }
             }

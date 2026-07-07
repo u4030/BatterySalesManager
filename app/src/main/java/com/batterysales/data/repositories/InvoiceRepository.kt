@@ -57,7 +57,9 @@ class InvoiceRepository @Inject constructor(
 
     suspend fun updateInvoice(invoice: Invoice) {
         val updatedInvoice = invoice.copy(updatedAt = Date())
-        firestore.collection(Invoice.COLLECTION_NAME).document(invoice.id).set(updatedInvoice).await()
+        firestore.runTransaction { transaction ->
+            transaction.set(firestore.collection(Invoice.COLLECTION_NAME).document(invoice.id), updatedInvoice)
+        }.await()
     }
 
     suspend fun getTotalDebtForWarehouse(warehouseId: String?): Double {
