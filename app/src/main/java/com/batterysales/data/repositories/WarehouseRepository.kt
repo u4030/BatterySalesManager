@@ -39,8 +39,8 @@ class WarehouseRepository @Inject constructor(
             val finalWarehouse = warehouse.copy(id = docRef.id)
             transaction.set(docRef, finalWarehouse)
 
-            // Automatically create linked ScrapWarehouse
-            val scrapDocRef = firestore.collection(com.batterysales.data.models.ScrapWarehouse.COLLECTION_NAME).document()
+            // Automatically create linked ScrapWarehouse with deterministic ID for transactions
+            val scrapDocRef = firestore.collection(com.batterysales.data.models.ScrapWarehouse.COLLECTION_NAME).document("scrap_wh_${docRef.id}")
             val scrapWarehouse = com.batterysales.data.models.ScrapWarehouse(
                 id = scrapDocRef.id,
                 name = "سكراب - ${warehouse.name}",

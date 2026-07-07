@@ -371,16 +371,32 @@ class SettingsViewModel @Inject constructor(
             )).await()
 
         // 4. Rebuild Financial Status (High Precision Calculation)
+        val startOfToday = com.batterysales.utils.DateUtils.getStartOfDay(System.currentTimeMillis())
+        val endOfToday = com.batterysales.utils.DateUtils.getEndOfDay(System.currentTimeMillis())
+
         val warehouseBalances = warehouses.associate { wh ->
             val cash = accountingRepository.getCurrentBalance(wh.id, "cash")
             val bank = accountingRepository.getCurrentBalance(wh.id, "bank")
             val debt = invoiceRepository.getTotalDebtForWarehouse(wh.id)
             
+            // Calculate today's collection for this warehouse
+            val todayPayments = firestore.collection(Payment.COLLECTION_NAME)
+                .whereEqualTo("warehouseId", wh.id)
+                .whereGreaterThanOrEqualTo("paymentDate", Date(startOfToday))
+                .whereLessThanOrEqualTo("paymentDate", Date(endOfToday))
+                .get().await()
+                .documents
+
+            val todayAmt = todayPayments.sumOf { it.getDouble("amount") ?: 0.0 }
+            val todayCount = todayPayments.mapNotNull { it.getString("invoiceId") }.distinct().size
+
             wh.id to WarehouseBalance(
                 warehouseId = wh.id,
                 cashBalance = cash,
                 bankBalance = bank,
-                pendingCollection = debt
+                pendingCollection = debt,
+                todayCollection = todayAmt,
+                todayCollectionCount = todayCount
             )
         }
         
@@ -398,6 +414,8 @@ class SettingsViewModel @Inject constructor(
                 globalBankBalance = globalBank,
                 totalUnpaidBills = globalUnpaidBills,
                 totalUnpaidChecks = globalUnpaidChecks,
+                todayCollection = warehouseBalances.values.sumOf { it.todayCollection },
+                todayCollectionCount = warehouseBalances.values.sumOf { it.todayCollectionCount },
                 lastUpdated = Date()
             )).await()
 
@@ -415,7 +433,44 @@ class SettingsViewModel @Inject constructor(
             updatedAt = Date()
         )).await()
 
-        // 4. Reset Sync Registry
+        // 5. Rebuild Scrap Summaries
+        val scrapSnap = firestore.collection(OldBatteryTransaction.COLLECTION_NAME).get().await()
+        val allScrapTrans = scrapSnap.documents.mapNotNull { it.toObject(OldBatteryTransaction::class.java) }
+
+        // Clear old scrap summaries first
+        val oldScrapWhs = firestore.collection(ScrapWarehouse.COLLECTION_NAME).get().await()
+        val scrapBatch = firestore.batch()
+        oldScrapWhs.documents.forEach { scrapBatch.delete(it.reference) }
+        scrapBatch.commit().await()
+
+        warehouses.forEach { wh ->
+            val whScrap = allScrapTrans.filter { it.warehouseId == wh.id }
+            val totalQty = whScrap.sumOf {
+                when(it.type) {
+                    OldBatteryTransactionType.INTAKE -> it.quantity
+                    OldBatteryTransactionType.SALE -> -it.quantity
+                    OldBatteryTransactionType.ADJUSTMENT -> it.quantity
+                }
+            }
+            val totalAmps = whScrap.sumOf {
+                when(it.type) {
+                    OldBatteryTransactionType.INTAKE -> it.totalAmperes
+                    OldBatteryTransactionType.SALE -> -it.totalAmperes
+                    OldBatteryTransactionType.ADJUSTMENT -> it.totalAmperes
+                }
+            }
+
+            val scrapWh = ScrapWarehouse(
+                id = "scrap_wh_${wh.id}",
+                name = "سكراب - ${wh.name}",
+                parentWarehouseId = wh.id,
+                totalQuantity = totalQty,
+                totalAmperes = totalAmps
+            )
+            firestore.collection(ScrapWarehouse.COLLECTION_NAME).document(scrapWh.id).set(scrapWh).await()
+        }
+
+        // 6. Reset Sync Registry
         com.google.firebase.firestore.FirebaseFirestore.getInstance()
             .collection("summaries").document("sync_registry")
             .set(SyncRegistry(lastModified = Date())).await()

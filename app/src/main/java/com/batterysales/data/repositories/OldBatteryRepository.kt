@@ -34,92 +34,114 @@ class OldBatteryRepository @Inject constructor(
         val finalTransaction = transaction.copy(id = idToUse)
 
         firestore.runTransaction { firestoreTransaction ->
+            // --- READ PHASE ---
+            val scrapRef = firestore.collection(com.batterysales.data.models.ScrapWarehouse.COLLECTION_NAME).document("scrap_wh_${transaction.warehouseId}")
+            val scrapSnap = firestoreTransaction.get(scrapRef)
+            val scrap = scrapSnap.toObject(com.batterysales.data.models.ScrapWarehouse::class.java)
+
+            // --- WRITE PHASE ---
             firestoreTransaction.set(docRef, finalTransaction)
-        }.await()
-        
-        // Update ScrapWarehouse totals incrementally to save quota
-        updateScrapWarehouseTotals(
-            parentWarehouseId = transaction.warehouseId,
-            quantityDelta = when (transaction.type) {
-                OldBatteryTransactionType.INTAKE -> transaction.quantity
-                OldBatteryTransactionType.SALE -> -transaction.quantity
-                OldBatteryTransactionType.ADJUSTMENT -> transaction.quantity
-            },
-            amperesDelta = when (transaction.type) {
-                OldBatteryTransactionType.INTAKE -> transaction.totalAmperes
-                OldBatteryTransactionType.SALE -> -transaction.totalAmperes
-                OldBatteryTransactionType.ADJUSTMENT -> transaction.totalAmperes
+
+            if (scrap != null) {
+                val qtyDelta = when (transaction.type) {
+                    OldBatteryTransactionType.INTAKE -> transaction.quantity
+                    OldBatteryTransactionType.SALE -> -transaction.quantity
+                    OldBatteryTransactionType.ADJUSTMENT -> transaction.quantity
+                }
+                val ampDelta = when (transaction.type) {
+                    OldBatteryTransactionType.INTAKE -> transaction.totalAmperes
+                    OldBatteryTransactionType.SALE -> -transaction.totalAmperes
+                    OldBatteryTransactionType.ADJUSTMENT -> transaction.totalAmperes
+                }
+                firestoreTransaction.update(scrapRef, mapOf(
+                    "totalQuantity" to scrap.totalQuantity + qtyDelta,
+                    "totalAmperes" to scrap.totalAmperes + ampDelta
+                ))
             }
-        )
+        }.await()
         return idToUse
     }
 
     suspend fun updateTransaction(transaction: OldBatteryTransaction) {
-        val oldDoc = firestore.collection(OldBatteryTransaction.COLLECTION_NAME).document(transaction.id).get().await()
-        val oldTrans = oldDoc.toObject(OldBatteryTransaction::class.java)
+        val docRef = firestore.collection(OldBatteryTransaction.COLLECTION_NAME).document(transaction.id)
 
-        if (oldTrans != null) {
-            // 1. Revert old totals
-            updateScrapWarehouseTotals(
-                parentWarehouseId = oldTrans.warehouseId,
-                quantityDelta = when (oldTrans.type) {
+        firestore.runTransaction { firestoreTransaction ->
+            // --- READ PHASE ---
+            val oldSnap = firestoreTransaction.get(docRef)
+            val oldTrans = oldSnap.toObject(OldBatteryTransaction::class.java)
+
+            val scrapRef = firestore.collection(com.batterysales.data.models.ScrapWarehouse.COLLECTION_NAME).document("scrap_wh_${transaction.warehouseId}")
+            val scrapSnap = firestoreTransaction.get(scrapRef)
+            val scrap = scrapSnap.toObject(com.batterysales.data.models.ScrapWarehouse::class.java)
+
+            // --- WRITE PHASE ---
+            firestoreTransaction.set(docRef, transaction)
+
+            if (oldTrans != null && scrap != null) {
+                // Revert old
+                val oldQtyDelta = when (oldTrans.type) {
                     OldBatteryTransactionType.INTAKE -> -oldTrans.quantity
                     OldBatteryTransactionType.SALE -> oldTrans.quantity
                     OldBatteryTransactionType.ADJUSTMENT -> -oldTrans.quantity
-                },
-                amperesDelta = when (oldTrans.type) {
+                }
+                val oldAmpDelta = when (oldTrans.type) {
                     OldBatteryTransactionType.INTAKE -> -oldTrans.totalAmperes
                     OldBatteryTransactionType.SALE -> oldTrans.totalAmperes
                     OldBatteryTransactionType.ADJUSTMENT -> -oldTrans.totalAmperes
                 }
-            )
-        }
 
-        firestore.collection(OldBatteryTransaction.COLLECTION_NAME)
-            .document(transaction.id)
-            .set(transaction)
-            .await()
-        
-        // 2. Apply new totals
-        updateScrapWarehouseTotals(
-            parentWarehouseId = transaction.warehouseId,
-            quantityDelta = when (transaction.type) {
-                OldBatteryTransactionType.INTAKE -> transaction.quantity
-                OldBatteryTransactionType.SALE -> -transaction.quantity
-                OldBatteryTransactionType.ADJUSTMENT -> transaction.quantity
-            },
-            amperesDelta = when (transaction.type) {
-                OldBatteryTransactionType.INTAKE -> transaction.totalAmperes
-                OldBatteryTransactionType.SALE -> -transaction.totalAmperes
-                OldBatteryTransactionType.ADJUSTMENT -> transaction.totalAmperes
+                // Apply new
+                val newQtyDelta = when (transaction.type) {
+                    OldBatteryTransactionType.INTAKE -> transaction.quantity
+                    OldBatteryTransactionType.SALE -> -transaction.quantity
+                    OldBatteryTransactionType.ADJUSTMENT -> transaction.quantity
+                }
+                val newAmpDelta = when (transaction.type) {
+                    OldBatteryTransactionType.INTAKE -> transaction.totalAmperes
+                    OldBatteryTransactionType.SALE -> -transaction.totalAmperes
+                    OldBatteryTransactionType.ADJUSTMENT -> transaction.totalAmperes
+                }
+
+                firestoreTransaction.update(scrapRef, mapOf(
+                    "totalQuantity" to scrap.totalQuantity + oldQtyDelta + newQtyDelta,
+                    "totalAmperes" to scrap.totalAmperes + oldAmpDelta + newAmpDelta
+                ))
             }
-        )
+        }.await()
     }
 
     suspend fun deleteTransaction(id: String) {
-        val oldDoc = firestore.collection(OldBatteryTransaction.COLLECTION_NAME).document(id).get().await()
-        val oldTrans = oldDoc.toObject(OldBatteryTransaction::class.java)
+        val docRef = firestore.collection(OldBatteryTransaction.COLLECTION_NAME).document(id)
 
-        if (oldTrans != null) {
-            updateScrapWarehouseTotals(
-                parentWarehouseId = oldTrans.warehouseId,
-                quantityDelta = when (oldTrans.type) {
+        firestore.runTransaction { firestoreTransaction ->
+            // --- READ PHASE ---
+            val oldSnap = firestoreTransaction.get(docRef)
+            val oldTrans = oldSnap.toObject(OldBatteryTransaction::class.java) ?: return@runTransaction
+
+            val scrapRef = firestore.collection(com.batterysales.data.models.ScrapWarehouse.COLLECTION_NAME).document("scrap_wh_${oldTrans.warehouseId}")
+            val scrapSnap = firestoreTransaction.get(scrapRef)
+            val scrap = scrapSnap.toObject(com.batterysales.data.models.ScrapWarehouse::class.java)
+
+            // --- WRITE PHASE ---
+            firestoreTransaction.delete(docRef)
+
+            if (scrap != null) {
+                val qtyDelta = when (oldTrans.type) {
                     OldBatteryTransactionType.INTAKE -> -oldTrans.quantity
                     OldBatteryTransactionType.SALE -> oldTrans.quantity
                     OldBatteryTransactionType.ADJUSTMENT -> -oldTrans.quantity
-                },
-                amperesDelta = when (oldTrans.type) {
+                }
+                val ampDelta = when (oldTrans.type) {
                     OldBatteryTransactionType.INTAKE -> -oldTrans.totalAmperes
                     OldBatteryTransactionType.SALE -> oldTrans.totalAmperes
                     OldBatteryTransactionType.ADJUSTMENT -> -oldTrans.totalAmperes
                 }
-            )
-        }
-
-        firestore.collection(OldBatteryTransaction.COLLECTION_NAME)
-            .document(id)
-            .delete()
-            .await()
+                firestoreTransaction.update(scrapRef, mapOf(
+                    "totalQuantity" to scrap.totalQuantity + qtyDelta,
+                    "totalAmperes" to scrap.totalAmperes + ampDelta
+                ))
+            }
+        }.await()
     }
 
     private suspend fun updateScrapWarehouseTotals(parentWarehouseId: String, quantityDelta: Int, amperesDelta: Double) {

@@ -32,13 +32,27 @@ class SummaryRepository @Inject constructor(
         val inventoryGlobal: InventorySummary?,
         val suppliersOverview: SuppliersOverview?,
         val financialStatus: FinancialStatus?,
-        val syncRegistry: SyncRegistry?
+        val syncRegistry: SyncRegistry?,
+        val scrapSnapshots: Map<String, ScrapWarehouse> = emptyMap() // parentWarehouseId to scrap
     )
 
-    fun getSummarySnapshots(transaction: Transaction, warehouseIds: List<String> = emptyList()): SummarySnapshots {
+    fun getSummarySnapshots(transaction: Transaction, warehouseIds: List<String> = emptyList(), includeScrap: Boolean = false): SummarySnapshots {
         val whSummaries = warehouseIds.associateWith { whId ->
             val ref = summariesCollection.document("inventory_wh_$whId")
             transaction.get(ref).toObject(InventorySummary::class.java) ?: InventorySummary(id = ref.id, warehouseId = whId)
+        }
+
+        val scrapMap = mutableMapOf<String, ScrapWarehouse>()
+        if (includeScrap && warehouseIds.isNotEmpty()) {
+            warehouseIds.forEach { whId ->
+                // Note: This requires knowing the document ID for scrap.
+                // We'll assume a standard ID format or fetch by parentWarehouseId.
+                // Since we can't query in transactions, we'll try a standardized ID: scrap_wh_$whId
+                val ref = firestore.collection(ScrapWarehouse.COLLECTION_NAME).document("scrap_wh_$whId")
+                transaction.get(ref).toObject(ScrapWarehouse::class.java)?.let {
+                    scrapMap[whId] = it
+                }
+            }
         }
 
         val globalRef = summariesCollection.document("inventory_global")
@@ -51,7 +65,8 @@ class SummaryRepository @Inject constructor(
             inventoryGlobal = transaction.get(globalRef).toObject(InventorySummary::class.java) ?: InventorySummary(id = "inventory_global"),
             suppliersOverview = transaction.get(supplierRef).toObject(SuppliersOverview::class.java) ?: SuppliersOverview(),
             financialStatus = transaction.get(financialRef).toObject(FinancialStatus::class.java) ?: FinancialStatus(),
-            syncRegistry = transaction.get(registryRef).toObject(SyncRegistry::class.java) ?: SyncRegistry()
+            syncRegistry = transaction.get(registryRef).toObject(SyncRegistry::class.java) ?: SyncRegistry(),
+            scrapSnapshots = scrapMap
         )
     }
 
@@ -254,6 +269,24 @@ class SummaryRepository @Inject constructor(
         incrementSyncVersion(transaction, "suppliers")
     }
 
+    fun applyScrapUpdate(
+        transaction: Transaction,
+        snapshots: SummarySnapshots,
+        warehouseId: String,
+        qtyChange: Int,
+        ampereChange: Double
+    ) {
+        val scrap = snapshots.scrapSnapshots[warehouseId] ?: return
+        val docRef = firestore.collection(ScrapWarehouse.COLLECTION_NAME).document("scrap_wh_$warehouseId")
+
+        transaction.update(docRef, mapOf(
+            "totalQuantity" to scrap.totalQuantity + qtyChange,
+            "totalAmperes" to scrap.totalAmperes + ampereChange
+        ))
+
+        incrementSyncVersion(transaction, "inventory")
+    }
+
     fun applyFinancialUpdate(
         transaction: Transaction,
         snapshots: SummarySnapshots,
@@ -262,26 +295,46 @@ class SummaryRepository @Inject constructor(
         bankChange: Double = 0.0,
         pendingCollectionChange: Double = 0.0,
         billChange: Double = 0.0,
-        checkChange: Double = 0.0
+        checkChange: Double = 0.0,
+        todayCollectionChange: Double = 0.0,
+        todayCollectionCountChange: Int = 0
     ) {
         val status = snapshots.financialStatus ?: FinancialStatus()
-        val updatedWarehouses = status.warehouseBalances.toMutableMap()
+
+        // Daily Reset Logic: If lastUpdated is NOT today, reset daily stats
+        val isNewDay = !com.batterysales.utils.DateUtils.isSameDay(status.lastUpdated, Date())
+
+        val baseStatus = if (isNewDay) {
+            status.copy(
+                todayCollection = 0.0,
+                todayCollectionCount = 0,
+                warehouseBalances = status.warehouseBalances.mapValues { (_, v) ->
+                    v.copy(todayCollection = 0.0, todayCollectionCount = 0)
+                }
+            )
+        } else status
+
+        val updatedWarehouses = baseStatus.warehouseBalances.toMutableMap()
         val currentWh = updatedWarehouses[warehouseId] ?: WarehouseBalance(warehouseId = warehouseId)
         
         updatedWarehouses[warehouseId] = currentWh.copy(
             cashBalance = currentWh.cashBalance + cashChange,
             bankBalance = currentWh.bankBalance + bankChange,
-            pendingCollection = currentWh.pendingCollection + pendingCollectionChange
+            pendingCollection = currentWh.pendingCollection + pendingCollectionChange,
+            todayCollection = currentWh.todayCollection + todayCollectionChange,
+            todayCollectionCount = currentWh.todayCollectionCount + todayCollectionCountChange
         )
 
-        transaction.set(summariesCollection.document("financial_status"), status.copy(
+        transaction.set(summariesCollection.document("financial_status"), baseStatus.copy(
             warehouseBalances = updatedWarehouses,
-            globalCashBalance = status.globalCashBalance + cashChange,
-            globalBankBalance = status.globalBankBalance + bankChange,
-            totalUnpaidBills = status.totalUnpaidBills + billChange,
-            totalUnpaidChecks = status.totalUnpaidChecks + checkChange,
+            globalCashBalance = baseStatus.globalCashBalance + cashChange,
+            globalBankBalance = baseStatus.globalBankBalance + bankChange,
+            totalUnpaidBills = baseStatus.totalUnpaidBills + billChange,
+            totalUnpaidChecks = baseStatus.totalUnpaidChecks + checkChange,
+            todayCollection = baseStatus.todayCollection + todayCollectionChange,
+            todayCollectionCount = baseStatus.todayCollectionCount + todayCollectionCountChange,
             lastUpdated = Date(),
-            version = status.version + 1
+            version = baseStatus.version + 1
         ))
         
         incrementSyncVersion(transaction, "financial")

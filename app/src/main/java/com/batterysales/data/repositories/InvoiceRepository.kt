@@ -146,6 +146,11 @@ class InvoiceRepository @Inject constructor(
             .get()
             .await()
 
+        val scrapTransactions = firestore.collection(com.batterysales.data.models.OldBatteryTransaction.COLLECTION_NAME)
+            .whereEqualTo("invoiceId", invoiceId)
+            .get()
+            .await()
+
         val entries = stockEntries.documents.mapNotNull { it.toObject(com.batterysales.data.models.StockEntry::class.java)?.copy(id = it.id) }
         val approvedEntries = entries.filter { it.status == "approved" }
         val variantIds = approvedEntries.map { it.productVariantId }.distinct()
@@ -157,7 +162,11 @@ class InvoiceRepository @Inject constructor(
                 transaction.get(firestore.collection(com.batterysales.data.models.ProductVariant.COLLECTION_NAME).document(vid))
             }
             
-            val summarySnapshots = summaryRepository.getSummarySnapshots(transaction, warehouseIds)
+            val summarySnapshots = summaryRepository.getSummarySnapshots(
+                transaction = transaction,
+                warehouseIds = warehouseIds,
+                includeScrap = !scrapTransactions.isEmpty
+            )
 
             val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
             val invoiceRef = firestore.collection(Invoice.COLLECTION_NAME).document(invoiceId)
@@ -198,12 +207,16 @@ class InvoiceRepository @Inject constructor(
                     "totalCustomerDebt" to com.google.firebase.firestore.FieldValue.increment(-invoice.remainingAmount)
                 ))
 
+                val totalPaidReverse = payments.documents.sumOf { it.getDouble("amount") ?: 0.0 }
+
                 // Update Financial Summary
                 summaryRepository.applyFinancialUpdate(
                     transaction = transaction,
                     snapshots = summarySnapshots,
                     warehouseId = invoice.warehouseId,
-                    pendingCollectionChange = -invoice.remainingAmount
+                    pendingCollectionChange = -invoice.remainingAmount,
+                    todayCollectionChange = -totalPaidReverse,
+                    todayCollectionCountChange = if (totalPaidReverse > 0) -1 else 0
                 )
             }
 
@@ -213,7 +226,22 @@ class InvoiceRepository @Inject constructor(
             // 2.3 Delete stock entries
             stockEntries.documents.forEach { transaction.delete(it.reference) }
 
-            // 2.4 Delete the invoice itself
+            // 2.4 Delete scrap transactions and reverse impact
+            scrapTransactions.documents.forEach { doc ->
+                val scrap = doc.toObject(com.batterysales.data.models.OldBatteryTransaction::class.java)
+                if (scrap != null) {
+                    summaryRepository.applyScrapUpdate(
+                        transaction = transaction,
+                        snapshots = summarySnapshots,
+                        warehouseId = scrap.warehouseId,
+                        qtyChange = -scrap.quantity,
+                        ampereChange = -scrap.totalAmperes
+                    )
+                }
+                transaction.delete(doc.reference)
+            }
+
+            // 2.5 Delete the invoice itself
             transaction.delete(invoiceRef)
         }.await()
     }
@@ -233,7 +261,12 @@ class InvoiceRepository @Inject constructor(
             val variantRef = firestore.collection(com.batterysales.data.models.ProductVariant.COLLECTION_NAME).document(stockEntry.productVariantId)
             val vSnap = transaction.get(variantRef)
             val variant = vSnap.toObject(com.batterysales.data.models.ProductVariant::class.java)?.copy(id = vSnap.id)
-            val summarySnapshots = summaryRepository.getSummarySnapshots(transaction, listOf(stockEntry.warehouseId))
+
+            val summarySnapshots = summaryRepository.getSummarySnapshots(
+                transaction = transaction,
+                warehouseIds = listOf(stockEntry.warehouseId),
+                includeScrap = oldBatteryTransaction != null
+            )
 
             // 2. All Writes
             transaction.set(invoiceRef, finalInvoice)
@@ -306,14 +339,16 @@ class InvoiceRepository @Inject constructor(
                 val paymentRef = firestore.collection(com.batterysales.data.models.Payment.COLLECTION_NAME).document()
                 transaction.set(paymentRef, payment.copy(id = paymentRef.id, invoiceId = finalInvoice.id))
                 
-                // Update Financial Summary
+                // Update Financial Summary with Daily Stats
                 summaryRepository.applyFinancialUpdate(
                     transaction = transaction,
                     snapshots = summarySnapshots,
                     warehouseId = stockEntry.warehouseId,
                     cashChange = if (payment.paymentMethod == "cash") payment.amount else 0.0,
                     bankChange = if (payment.paymentMethod == "bank") payment.amount else 0.0,
-                    pendingCollectionChange = finalInvoice.remainingAmount
+                    pendingCollectionChange = finalInvoice.remainingAmount,
+                    todayCollectionChange = payment.amount,
+                    todayCollectionCountChange = 1
                 )
             } else {
                 // Just update pending collection
@@ -333,6 +368,15 @@ class InvoiceRepository @Inject constructor(
             if (oldBatteryTransaction != null) {
                 val scrapRef = firestore.collection(com.batterysales.data.models.OldBatteryTransaction.COLLECTION_NAME).document()
                 transaction.set(scrapRef, oldBatteryTransaction.copy(id = scrapRef.id, invoiceId = finalInvoice.id))
+
+                // Update Scrap Summary Atomically
+                summaryRepository.applyScrapUpdate(
+                    transaction = transaction,
+                    snapshots = summarySnapshots,
+                    warehouseId = stockEntry.warehouseId,
+                    qtyChange = oldBatteryTransaction.quantity,
+                    ampereChange = oldBatteryTransaction.totalAmperes
+                )
             }
         }.await()
 
@@ -397,14 +441,16 @@ class InvoiceRepository @Inject constructor(
                 "updatedAt" to Date()
             ))
 
-            // Update Financial Summary
+            // Update Financial Summary with Daily Stats
             summaryRepository.applyFinancialUpdate(
                 transaction = transaction,
                 snapshots = summarySnapshots,
                 warehouseId = invoice.warehouseId,
                 cashChange = if (payment.paymentMethod == "cash") payment.amount else 0.0,
                 bankChange = if (payment.paymentMethod == "bank") payment.amount else 0.0,
-                pendingCollectionChange = -payment.amount
+                pendingCollectionChange = -payment.amount,
+                todayCollectionChange = payment.amount,
+                todayCollectionCountChange = 1
             )
 
             // Update System Stats
@@ -463,14 +509,15 @@ class InvoiceRepository @Inject constructor(
                 "updatedAt" to Date()
             ))
 
-            // Update Financial Summary
+            // Update Financial Summary with Daily Stats
             summaryRepository.applyFinancialUpdate(
                 transaction = transaction,
                 snapshots = summarySnapshots,
                 warehouseId = invoice.warehouseId,
                 cashChange = if (payment.paymentMethod == "cash") diff else 0.0,
                 bankChange = if (payment.paymentMethod == "bank") diff else 0.0,
-                pendingCollectionChange = -diff
+                pendingCollectionChange = -diff,
+                todayCollectionChange = diff
             )
 
             // Update System Stats
@@ -544,14 +591,16 @@ class InvoiceRepository @Inject constructor(
                 "updatedAt" to Date()
             ))
 
-            // Update Financial Summary
+            // Update Financial Summary with Daily Stats
             summaryRepository.applyFinancialUpdate(
                 transaction = transaction,
                 snapshots = summarySnapshots,
                 warehouseId = invoice.warehouseId,
                 cashChange = if (oldPayment.paymentMethod == "cash") -oldPayment.amount else 0.0,
                 bankChange = if (oldPayment.paymentMethod == "bank") -oldPayment.amount else 0.0,
-                pendingCollectionChange = oldPayment.amount
+                pendingCollectionChange = oldPayment.amount,
+                todayCollectionChange = -oldPayment.amount,
+                todayCollectionCountChange = -1
             )
 
             // Update System Stats
