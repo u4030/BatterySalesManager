@@ -212,10 +212,9 @@ class OldBatteryRepository @Inject constructor(
      */
     suspend fun getStockSummary(warehouseId: String? = null): Pair<Int, Double> {
         if (warehouseId != null) {
-            val snap = firestore.collection(com.batterysales.data.models.ScrapWarehouse.COLLECTION_NAME)
-                .whereEqualTo("parentWarehouseId", warehouseId)
-                .limit(1).get().await()
-            val scrapWh = snap.documents.firstOrNull()?.toObject(com.batterysales.data.models.ScrapWarehouse::class.java)
+            val ref = firestore.collection(com.batterysales.data.models.ScrapWarehouse.COLLECTION_NAME).document("scrap_wh_$warehouseId")
+            val snap = ref.get().await()
+            val scrapWh = snap.toObject(com.batterysales.data.models.ScrapWarehouse::class.java)
             if (scrapWh != null) return Pair(scrapWh.totalQuantity, scrapWh.totalAmperes)
         } else {
             val snap = firestore.collection(com.batterysales.data.models.ScrapWarehouse.COLLECTION_NAME).get().await()

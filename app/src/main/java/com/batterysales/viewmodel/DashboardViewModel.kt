@@ -101,7 +101,7 @@ class DashboardViewModel @Inject constructor(
         _heavyData
     ) { args: Array<Any?> ->
         val user = args[0] as? User
-        val financial = args[1] as? FinancialStatus ?: FinancialStatus()
+        val rawFinancial = args[1] as? FinancialStatus ?: FinancialStatus()
         val suppliers = args[2] as? SuppliersOverview ?: SuppliersOverview()
         val globalInventory = args[3] as? InventorySummary ?: InventorySummary()
         @Suppress("UNCHECKED_CAST")
@@ -113,6 +113,16 @@ class DashboardViewModel @Inject constructor(
 
         val isAdmin = user.role == "admin"
         val userWarehouseId = user.warehouseId
+
+        // Client-side Daily Validation: Reset if lastUpdated is stale
+        val isStale = !com.batterysales.utils.DateUtils.isSameDay(rawFinancial.lastUpdated, Date())
+        val financial = if (isStale) {
+            rawFinancial.copy(
+                todayCollection = 0.0,
+                todayCollectionCount = 0,
+                warehouseBalances = rawFinancial.warehouseBalances.mapValues { (_, v) -> v.copy(todayCollection = 0.0, todayCollectionCount = 0) }
+            )
+        } else rawFinancial
 
         // Financial Stats
         val whStats = if (isAdmin) {

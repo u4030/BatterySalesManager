@@ -207,7 +207,19 @@ class InvoiceRepository @Inject constructor(
                     "totalCustomerDebt" to com.google.firebase.firestore.FieldValue.increment(-invoice.remainingAmount)
                 ))
 
-                val totalPaidReverse = payments.documents.sumOf { it.getDouble("amount") ?: 0.0 }
+                // Only reverse from today's collection if the payment was made today
+                var todayAmtToReverse = 0.0
+                var todayCountToReverse = 0
+                val now = Date()
+
+                payments.documents.forEach { doc ->
+                    val pDate = doc.getDate("paymentDate") ?: doc.getDate("timestamp") ?: Date(0)
+                    if (com.batterysales.utils.DateUtils.isSameDay(pDate, now)) {
+                        val amt = doc.getDouble("amount") ?: 0.0
+                        todayAmtToReverse += amt
+                        todayCountToReverse++
+                    }
+                }
 
                 // Update Financial Summary
                 summaryRepository.applyFinancialUpdate(
@@ -215,8 +227,8 @@ class InvoiceRepository @Inject constructor(
                     snapshots = summarySnapshots,
                     warehouseId = invoice.warehouseId,
                     pendingCollectionChange = -invoice.remainingAmount,
-                    todayCollectionChange = -totalPaidReverse,
-                    todayCollectionCountChange = if (totalPaidReverse > 0) -1 else 0
+                    todayCollectionChange = -todayAmtToReverse,
+                    todayCollectionCountChange = if (todayCountToReverse > 0) -1 else 0
                 )
             }
 
@@ -385,10 +397,6 @@ class InvoiceRepository @Inject constructor(
                 )
             }
         }.await()
-
-        if (oldBatteryTransaction != null) {
-            oldBatteryRepository.syncScrapWarehouse(oldBatteryTransaction.warehouseId)
-        }
 
         return finalInvoice.id
     }
