@@ -612,6 +612,7 @@ class StockEntryRepository @Inject constructor(
             // 3. Commit Inventory and Low Stock Alerts
             val variantsToUpdate = mutableMapOf<String, com.batterysales.data.models.ProductVariant>()
             variantsMap.forEach { (vid, variant) ->
+                if (variant == null) return@forEach
                 val currentStockMap = variant.currentStock?.toMutableMap() ?: mutableMapOf()
                 var variantChanged = false
 
