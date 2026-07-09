@@ -374,10 +374,19 @@ class SettingsViewModel @Inject constructor(
         val startOfToday = com.batterysales.utils.DateUtils.getStartOfDay(System.currentTimeMillis())
         val endOfToday = com.batterysales.utils.DateUtils.getEndOfDay(System.currentTimeMillis())
 
+        // Fetch ALL invoices with remaining debt to ensure none are missed due to ID mismatch
+        val debtInvoices = firestore.collection(Invoice.COLLECTION_NAME)
+            .whereGreaterThan("remainingAmount", 0.001)
+            .get().await()
+            .documents.mapNotNull { it.toObject(Invoice::class.java) }
+
+        val debtByWh = debtInvoices.groupBy { it.warehouseId.ifBlank { "unassigned" } }
+            .mapValues { (_, list) -> list.sumOf { it.remainingAmount } }
+
         val warehouseBalances = warehouses.associate { wh ->
             val cash = accountingRepository.getCurrentBalance(wh.id, "cash")
             val bank = accountingRepository.getCurrentBalance(wh.id, "bank")
-            val debt = invoiceRepository.getTotalDebtForWarehouse(wh.id)
+            val debt = debtByWh[wh.id] ?: 0.0
             
             // Calculate today's collection for this warehouse
             val todayPayments = firestore.collection(Payment.COLLECTION_NAME)

@@ -296,6 +296,7 @@ class SummaryRepository @Inject constructor(
         todayCollectionChange: Double = 0.0,
         todayCollectionCountChange: Int = 0
     ) {
+        val targetWhId = warehouseId.ifBlank { "unassigned" }
         val status = snapshots.financialStatus ?: FinancialStatus()
 
         // Daily Reset Logic: If lastUpdated is NOT today, reset daily stats
@@ -312,9 +313,9 @@ class SummaryRepository @Inject constructor(
         } else status
 
         val updatedWarehouses = baseStatus.warehouseBalances.toMutableMap()
-        val currentWh = updatedWarehouses[warehouseId] ?: WarehouseBalance(warehouseId = warehouseId)
-        
-        updatedWarehouses[warehouseId] = currentWh.copy(
+        val currentWh = updatedWarehouses[targetWhId] ?: WarehouseBalance(warehouseId = targetWhId)
+
+        updatedWarehouses[targetWhId] = currentWh.copy(
             cashBalance = currentWh.cashBalance + cashChange,
             bankBalance = currentWh.bankBalance + bankChange,
             pendingCollection = currentWh.pendingCollection + pendingCollectionChange,

@@ -64,7 +64,7 @@ class InvoiceRepository @Inject constructor(
 
     suspend fun getTotalDebtForWarehouse(warehouseId: String?): Double {
         var query = firestore.collection(Invoice.COLLECTION_NAME)
-            .whereEqualTo("status", "pending")
+            .whereGreaterThan("remainingAmount", 0.001)
 
         if (!warehouseId.isNullOrBlank()) {
             query = query.whereEqualTo("warehouseId", warehouseId)
