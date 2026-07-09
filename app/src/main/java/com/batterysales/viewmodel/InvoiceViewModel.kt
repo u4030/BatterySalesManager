@@ -166,14 +166,12 @@ class InvoiceViewModel @Inject constructor(
             _uiState.value.invoiceToDelete?.let { invoice ->
                 _uiState.update { it.copy(isSubmitting = true) }
                 try {
+                    // NUCLEAR STRATEGY: deleteInvoice now handles all payments and ledger entries atomically
                     invoiceRepository.deleteInvoice(invoice.id)
-                    paymentRepository.getPaymentsForInvoice(invoice.id).first().forEach { payment ->
-                        accountingRepository.deleteTransactionsByRelatedId(payment.id)
-                    }
-                    accountingRepository.deleteTransactionsByRelatedId(invoice.id)
                     loadInvoices(reset = true)
                 } catch (e: Exception) {
-                    _uiState.update { it.copy(errorMessage = "Failed to delete invoice", isSubmitting = false) }
+                    Log.e("InvoiceViewModel", "Error deleting invoice: ${invoice.id}", e)
+                    _uiState.update { it.copy(errorMessage = "Failed to delete: ${e.localizedMessage ?: "Unknown error"}", isSubmitting = false) }
                 } finally {
                     _uiState.update { it.copy(isSubmitting = false) }
                     onDismissDeleteDialog()
