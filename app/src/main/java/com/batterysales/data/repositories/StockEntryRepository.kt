@@ -311,23 +311,13 @@ class StockEntryRepository @Inject constructor(
                 ))
             }
 
-            // Apply Summary Updates (ONE WRITE PER WAREHOUSE)
-            warehouseQtyChanges.forEach { (whId, vChanges) ->
-                // Ensure WAC is preserved if batch calculation resulted in 0
-                val variantsWithPreservedCost = updatedVariants.mapValues { (vid, v) ->
-                    if (v.weightedAverageCost <= 0.001) {
-                        v.copy(weightedAverageCost = variantsMap[vid]?.weightedAverageCost ?: 0.0)
-                    } else v
-                }
-
-                summaryRepository.applyBulkInventoryUpdate(
-                    transaction = transaction,
-                    snapshots = snapshots,
-                    warehouseId = whId,
-                    variantsMap = variantsWithPreservedCost,
-                    qtyChanges = vChanges
-                )
+            // Apply Summary Updates (Optimized Plural)
+            val variantsWithPreservedCost = updatedVariants.mapValues { (vid, v) ->
+                if (v.weightedAverageCost <= 0.001) {
+                    v.copy(weightedAverageCost = variantsMap[vid]?.weightedAverageCost ?: 0.0)
+                } else v
             }
+            summaryRepository.applyInventoryUpdates(transaction, snapshots, warehouseQtyChanges, variantsWithPreservedCost)
 
             val allSupplierIds = (supplierDebitChanges.keys + supplierCreditChanges.keys).distinct()
             allSupplierIds.forEach { sid ->
@@ -451,23 +441,15 @@ class StockEntryRepository @Inject constructor(
                 newStockMap[destinationWarehouseId] = destNewQty
                 transaction.update(variantRef, "currentStock", newStockMap)
 
-                // --- Update Summaries ---
-                summaryRepository.applyInventoryUpdate(
+                // --- Update Summaries (Optimized Plural) ---
+                summaryRepository.applyInventoryUpdates(
                     transaction = transaction,
                     snapshots = snapshots,
-                    warehouseId = sourceWarehouseId,
-                    variantId = productVariantId,
-                    variant = variant,
-                    qtyChange = -quantity
-                )
-
-                summaryRepository.applyInventoryUpdate(
-                    transaction = transaction,
-                    snapshots = snapshots,
-                    warehouseId = destinationWarehouseId,
-                    variantId = productVariantId,
-                    variant = variant,
-                    qtyChange = quantity
+                    updates = mapOf(
+                        sourceWarehouseId to mapOf(productVariantId to -quantity),
+                        destinationWarehouseId to mapOf(productVariantId to quantity)
+                    ),
+                    variantsMap = mapOf(productVariantId to variant)
                 )
 
                 // Low Stock Check for Source
@@ -575,49 +557,27 @@ class StockEntryRepository @Inject constructor(
             val statsRef = firestore.collection(SystemStats.COLLECTION_NAME).document(SystemStats.DOCUMENT_ID)
 
             // --- WRITE PHASE ---
+            val invUpdates = mutableMapOf<String, MutableMap<String, Int>>() // whId -> { vid -> delta }
+            val supplierDeltas = mutableMapOf<String, Pair<Double, Double>>() // supplierId -> (debitDelta, creditDelta)
+            val statsDeltas = mutableMapOf<String, Double>() // key -> delta
+
             // 1. Revert Old Entry if it was approved
             if (oldEntry.status == "approved") {
                 val variant = variantsMap[oldEntry.productVariantId]
                 if (variant != null) {
-                    val currentStockMap = variant.currentStock ?: emptyMap()
-                    val newStockMap = currentStockMap.toMutableMap()
                     val qtyToRevert = oldEntry.quantity - oldEntry.returnedQuantity
-                    newStockMap[oldEntry.warehouseId] = (newStockMap[oldEntry.warehouseId] ?: 0) - qtyToRevert
-                    
-                    transaction.update(firestore.collection(ProductVariant.COLLECTION_NAME).document(variant.id), "currentStock", newStockMap)
+                    val whMap = invUpdates.getOrPut(oldEntry.warehouseId) { mutableMapOf() }
+                    whMap[oldEntry.productVariantId] = (whMap[oldEntry.productVariantId] ?: 0) - qtyToRevert
 
-                    // Update Summaries for Revert
-                    summaryRepository.applyInventoryUpdate(
-                        transaction = transaction,
-                        snapshots = snapshots,
-                        warehouseId = oldEntry.warehouseId,
-                        variantId = oldEntry.productVariantId,
-                        variant = variant, 
-                        qtyChange = -qtyToRevert
-                    )
-
-                    // Adjust Stats for Revert
                     val cost = oldEntry.getNetCost()
-                    transaction.update(statsRef, mapOf(
-                        "totalInventoryQuantity" to com.google.firebase.firestore.FieldValue.increment(-qtyToRevert.toLong()),
-                        "totalInventoryValue" to com.google.firebase.firestore.FieldValue.increment(-cost),
-                        "totalSupplierDebt" to com.google.firebase.firestore.FieldValue.increment(-cost)
-                    ))
+                    statsDeltas["qty"] = (statsDeltas["qty"] ?: 0.0) - qtyToRevert
+                    statsDeltas["value"] = (statsDeltas["value"] ?: 0.0) - cost
+                    statsDeltas["debt"] = (statsDeltas["debt"] ?: 0.0) - cost
 
-                    // Revert Supplier Totals
                     if (oldEntry.supplierId.isNotEmpty()) {
-                        summaryRepository.invalidateSupplierReportCache(transaction, oldEntry.supplierId)
-                        val supplierRef = firestore.collection("suppliers").document(oldEntry.supplierId)
-                        if (cost > 0) {
-                            transaction.update(supplierRef, "totalDebit", com.google.firebase.firestore.FieldValue.increment(-cost))
-                            transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-cost))
-                            summaryRepository.applySupplierUpdate(transaction, snapshots, oldEntry.supplierId, variant.productName ?: "", debitChange = -cost)
-                        } else if (cost < 0) {
-                            transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(cost))
-                            transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-cost))
-                            transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(cost))
-                            summaryRepository.applySupplierUpdate(transaction, snapshots, oldEntry.supplierId, variant.productName ?: "", creditChange = cost)
-                        }
+                        val current = supplierDeltas.getOrDefault(oldEntry.supplierId, Pair(0.0, 0.0))
+                        if (cost > 0) supplierDeltas[oldEntry.supplierId] = Pair(current.first - cost, current.second)
+                        else if (cost < 0) supplierDeltas[oldEntry.supplierId] = Pair(current.first, current.second + cost)
                     }
                 }
             }
@@ -632,88 +592,100 @@ class StockEntryRepository @Inject constructor(
             if (finalEntry.status == "approved") {
                 val variant = variantsMap[finalEntry.productVariantId]
                 if (variant != null) {
-                    val variantRef = firestore.collection(ProductVariant.COLLECTION_NAME).document(variant.id)
-                    
-                    val currentStockMap = if (oldEntry.status == "approved" && oldEntry.productVariantId == variant.id) {
-                        val tempMap = variant.currentStock?.toMutableMap() ?: mutableMapOf()
-                        val qtyToRevert = oldEntry.quantity - oldEntry.returnedQuantity
-                        tempMap[oldEntry.warehouseId] = (tempMap[oldEntry.warehouseId] ?: 0) - qtyToRevert
-                        tempMap
-                    } else {
-                        variant.currentStock ?: emptyMap()
-                    }
-
-                    val newStockMap = currentStockMap.toMutableMap()
                     val qtyToAdd = finalEntry.quantity - finalEntry.returnedQuantity
-                    val newWhQty = (newStockMap[finalEntry.warehouseId] ?: 0) + qtyToAdd
-                    newStockMap[finalEntry.warehouseId] = newWhQty
-                    
-                    // Update Last Purchase Cost
-                    transaction.update(variantRef, mapOf(
-                        "currentStock" to newStockMap,
-                        "weightedAverageCost" to finalLastCost
-                    ))
+                    val whMap = invUpdates.getOrPut(finalEntry.warehouseId) { mutableMapOf() }
+                    whMap[finalEntry.productVariantId] = (whMap[finalEntry.productVariantId] ?: 0) + qtyToAdd
 
-                    // Update Summaries for Apply
-                    summaryRepository.applyInventoryUpdate(
-                        transaction = transaction,
-                        snapshots = snapshots,
-                        warehouseId = finalEntry.warehouseId,
-                        variantId = finalEntry.productVariantId,
-                        variant = variant.copy(weightedAverageCost = finalLastCost),
-                        qtyChange = qtyToAdd
-                    )
-
-                    // Adjust Stats for Apply
                     val cost = finalEntry.getNetCost()
-                    transaction.update(statsRef, mapOf(
-                        "totalInventoryQuantity" to com.google.firebase.firestore.FieldValue.increment(qtyToAdd.toLong()),
-                        "totalInventoryValue" to com.google.firebase.firestore.FieldValue.increment(cost),
-                        "totalSupplierDebt" to com.google.firebase.firestore.FieldValue.increment(cost)
-                    ))
+                    statsDeltas["qty"] = (statsDeltas["qty"] ?: 0.0) + qtyToAdd
+                    statsDeltas["value"] = (statsDeltas["value"] ?: 0.0) + cost
+                    statsDeltas["debt"] = (statsDeltas["debt"] ?: 0.0) + cost
 
-                    // Apply Supplier Totals
                     if (finalEntry.supplierId.isNotEmpty()) {
-                        summaryRepository.invalidateSupplierReportCache(transaction, finalEntry.supplierId)
-                        val supplierRef = firestore.collection("suppliers").document(finalEntry.supplierId)
-                        if (cost > 0) {
-                            transaction.update(supplierRef, "totalDebit", com.google.firebase.firestore.FieldValue.increment(cost))
-                            transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(cost))
-                            summaryRepository.applySupplierUpdate(transaction, snapshots, finalEntry.supplierId, variant.productName ?: "", debitChange = cost)
-                        } else if (cost < 0) {
-                            transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(-cost))
-                            transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(cost))
-                            transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(-cost))
-                            summaryRepository.applySupplierUpdate(transaction, snapshots, finalEntry.supplierId, variant.productName ?: "", creditChange = -cost)
-                        }
-                    }
-
-                    // Low Stock Check
-                    val threshold = variant.minQuantities[finalEntry.warehouseId] ?: variant.minQuantity
-                    val alertRef = firestore.collection(SystemAlert.COLLECTION_NAME).document("low_stock_${variant.id}_${finalEntry.warehouseId}")
-                    if (!variant.isDiscontinued && threshold > 0 && newWhQty <= threshold) {
-                        val whName = whNamesMap[finalEntry.warehouseId] ?: "مخزن غير معروف"
-                        val specSuffix = if (variant.specification.isNotBlank()) " | ${variant.specification}" else ""
-                        transaction.set(alertRef, SystemAlert(
-                            id = alertRef.id,
-                            type = SystemAlert.TYPE_LOW_STOCK,
-                            title = "مخزون منخفض: ${variant.productName ?: ""}",
-                            message = "${variant.capacity}A$specSuffix في $whName | الكمية: $newWhQty (الحد: $threshold)",
-                            relatedId = variant.id,
-                            warehouseId = finalEntry.warehouseId,
-                            warehouseName = whName,
-                            timestamp = Date(),
-                            data = mapOf(
-                                "capacity" to variant.capacity, 
-                                "specification" to variant.specification,
-                                "currentStock" to newWhQty, 
-                                "threshold" to threshold
-                            )
-                        ))
-                    } else {
-                        transaction.delete(alertRef)
+                        val current = supplierDeltas.getOrDefault(finalEntry.supplierId, Pair(0.0, 0.0))
+                        if (cost > 0) supplierDeltas[finalEntry.supplierId] = Pair(current.first + cost, current.second)
+                        else if (cost < 0) supplierDeltas[finalEntry.supplierId] = Pair(current.first, current.second - cost)
                     }
                 }
+            }
+
+            // 3. Commit Inventory and Low Stock Alerts
+            val variantsToUpdate = mutableMapOf<String, com.batterysales.data.models.ProductVariant>()
+            variantsMap.forEach { (vid, variant) ->
+                val currentStockMap = variant.currentStock?.toMutableMap() ?: mutableMapOf()
+                var variantChanged = false
+
+                invUpdates.forEach { (whId, vDeltas) ->
+                    val delta = vDeltas[vid] ?: 0
+                    if (delta != 0) {
+                        val newQty = (currentStockMap[whId] ?: 0) + delta
+                        currentStockMap[whId] = newQty
+                        variantChanged = true
+
+                        // Low Stock Check
+                        val threshold = variant.minQuantities[whId] ?: variant.minQuantity
+                        val alertRef = firestore.collection(SystemAlert.COLLECTION_NAME).document("low_stock_${variant.id}_$whId")
+                        if (!variant.isDiscontinued && threshold > 0 && newQty <= threshold) {
+                            val whName = whNamesMap[whId] ?: "مخزن غير معروف"
+                            val specSuffix = if (variant.specification.isNotBlank()) " | ${variant.specification}" else ""
+                            transaction.set(alertRef, SystemAlert(
+                                id = alertRef.id,
+                                type = SystemAlert.TYPE_LOW_STOCK,
+                                title = "مخزون منخفض: ${variant.productName ?: ""}",
+                                message = "${variant.capacity}A$specSuffix في $whName | الكمية: $newQty (الحد: $threshold)",
+                                relatedId = variant.id,
+                                warehouseId = whId,
+                                warehouseName = whName,
+                                timestamp = Date(),
+                                data = mapOf("capacity" to variant.capacity, "specification" to variant.specification, "currentStock" to newQty, "threshold" to threshold)
+                            ))
+                        } else {
+                            transaction.delete(alertRef)
+                        }
+                    }
+                }
+
+                if (variantChanged) {
+                    val updatedVariant = variant.copy(
+                        currentStock = currentStockMap,
+                        weightedAverageCost = if (vid == finalEntry.productVariantId) finalLastCost else variant.weightedAverageCost
+                    )
+                    variantsToUpdate[vid] = updatedVariant
+                    transaction.update(firestore.collection(ProductVariant.COLLECTION_NAME).document(vid), mapOf(
+                        "currentStock" to currentStockMap,
+                        "weightedAverageCost" to updatedVariant.weightedAverageCost,
+                        "updatedAt" to Date()
+                    ))
+                }
+            }
+
+            summaryRepository.applyInventoryUpdates(transaction, snapshots, invUpdates, variantsToUpdate)
+
+            // 4. Commit Supplier Updates
+            supplierDeltas.forEach { (sid, deltas) ->
+                summaryRepository.invalidateSupplierReportCache(transaction, sid)
+                val supplierRef = firestore.collection("suppliers").document(sid)
+                val (debit, credit) = deltas
+                if (debit != 0.0) {
+                    transaction.update(supplierRef, "totalDebit", com.google.firebase.firestore.FieldValue.increment(debit))
+                    transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(debit))
+                }
+                if (credit != 0.0) {
+                    transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(credit))
+                    transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-credit))
+                    transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(credit))
+                }
+                summaryRepository.applySupplierUpdate(transaction, snapshots, sid, variantsToUpdate[finalEntry.productVariantId]?.productName ?: "Unknown", debitChange = debit, creditChange = credit)
+            }
+
+            // 5. Commit Stats
+            if (statsDeltas.isNotEmpty()) {
+                transaction.update(statsRef, mapOf(
+                    "totalInventoryQuantity" to com.google.firebase.firestore.FieldValue.increment((statsDeltas["qty"] ?: 0.0).toLong()),
+                    "totalInventoryValue" to com.google.firebase.firestore.FieldValue.increment(statsDeltas["value"] ?: 0.0),
+                    "totalSupplierDebt" to com.google.firebase.firestore.FieldValue.increment(statsDeltas["debt"] ?: 0.0),
+                    "updatedAt" to Date()
+                ))
             }
         }.await()
 
@@ -787,14 +759,12 @@ class StockEntryRepository @Inject constructor(
                     "weightedAverageCost" to (newLastCost ?: variant.weightedAverageCost)
                 ))
 
-                // Update Summary
-                summaryRepository.applyInventoryUpdate(
+                // Update Summary (Optimized plural)
+                summaryRepository.applyInventoryUpdates(
                     transaction = transaction,
                     snapshots = snapshots,
-                    warehouseId = entry.warehouseId,
-                    variantId = entry.productVariantId,
-                    variant = variant.copy(weightedAverageCost = (newLastCost ?: variant.weightedAverageCost)),
-                    qtyChange = -qtyToRevert
+                    updates = mapOf(entry.warehouseId to mapOf(entry.productVariantId to -qtyToRevert)),
+                    variantsMap = mapOf(entry.productVariantId to variant.copy(weightedAverageCost = (newLastCost ?: variant.weightedAverageCost)))
                 )
 
                 val statsRef = firestore.collection(SystemStats.COLLECTION_NAME).document(SystemStats.DOCUMENT_ID)

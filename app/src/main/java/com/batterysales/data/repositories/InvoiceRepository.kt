@@ -181,30 +181,47 @@ class InvoiceRepository @Inject constructor(
             var totalValueToReverse = 0.0
             var totalQtyToReverse = 0
             
-            // Group inventory updates by warehouse to call applyInventoryUpdate exactly once per warehouse
-            val inventoryAggregates = approvedEntries.groupBy { it.warehouseId }
+            // 1. Aggregate Inventory changes
+            val warehouseVariantDeltas = mutableMapOf<String, MutableMap<String, Int>>() // whId -> { vid -> delta }
+            val variantsMap = mutableMapOf<String, com.batterysales.data.models.ProductVariant>()
 
-            inventoryAggregates.forEach { (whId, whEntries) ->
-                whEntries.forEach { entry ->
-                    val variant = variantSnapshots[entry.productVariantId]?.toObject(com.batterysales.data.models.ProductVariant::class.java)
-                    if (variant != null) {
-                        val currentStockMap = (transaction.get(variantSnapshots[entry.productVariantId]!!.reference).get("currentStock") as? Map<String, Int>)?.toMutableMap() ?: mutableMapOf()
-                        currentStockMap[whId] = (currentStockMap[whId] ?: 0) - entry.quantity
-                        transaction.update(variantSnapshots[entry.productVariantId]!!.reference, "currentStock", currentStockMap)
+            approvedEntries.forEach { entry ->
+                val vid = entry.productVariantId
+                val whId = entry.warehouseId
+                val vSnap = variantSnapshots[vid]
+                val variant = vSnap?.toObject(com.batterysales.data.models.ProductVariant::class.java)
 
-                        summaryRepository.applyInventoryUpdate(
-                            transaction = transaction,
-                            snapshots = summarySnapshots,
-                            warehouseId = whId,
-                            variantId = entry.productVariantId,
-                            variant = variant,
-                            qtyChange = -entry.quantity
-                        )
-                        totalValueToReverse += (entry.quantity * variant.weightedAverageCost)
-                        totalQtyToReverse += entry.quantity
-                    }
+                if (variant != null) {
+                    variantsMap[vid] = variant
+                    val vMap = warehouseVariantDeltas.getOrPut(whId) { mutableMapOf() }
+                    vMap[vid] = (vMap[vid] ?: 0) - entry.quantity
+
+                    totalValueToReverse += (entry.quantity * variant.weightedAverageCost)
+                    totalQtyToReverse += entry.quantity
                 }
             }
+
+            // Apply Variant Document Updates
+            variantSnapshots.forEach { (vid, vSnap) ->
+                val variant = variantsMap[vid] ?: return@forEach
+                val currentStockMap = (vSnap.get("currentStock") as? Map<String, Int>)?.toMutableMap() ?: mutableMapOf()
+
+                var variantChanged = false
+                warehouseVariantDeltas.forEach { (whId, vDeltas) ->
+                    val delta = vDeltas[vid] ?: 0
+                    if (delta != 0) {
+                        currentStockMap[whId] = (currentStockMap[whId] ?: 0) + delta
+                        variantChanged = true
+                    }
+                }
+
+                if (variantChanged) {
+                    transaction.update(vSnap.reference, "currentStock", currentStockMap)
+                }
+            }
+
+            // Apply Summary Updates (Optimized Plural)
+            summaryRepository.applyInventoryUpdates(transaction, summarySnapshots, warehouseVariantDeltas, variantsMap)
 
             if (invoice != null) {
                 val statsUpdates = mutableMapOf<String, Any>(
@@ -227,16 +244,17 @@ class InvoiceRepository @Inject constructor(
 
                 // Aggregate and Reverse Payment impact on Financial Summary
                 val now = Date()
-                val whPaymentAggregates = payments.documents.groupBy { it.getString("warehouseId") ?: invoice.warehouseId }
+                val financialDeltas = mutableMapOf<String, com.batterysales.data.repositories.SummaryRepository.FinancialDelta>()
 
-                whPaymentAggregates.forEach { (whId, whPayments) ->
+                // Group payments by warehouse
+                val whPaymentGroups = payments.documents.groupBy { it.getString("warehouseId") ?: invoice.warehouseId }
+
+                whPaymentGroups.forEach { (whId, whPayments) ->
                     var todayAmt = 0.0
                     var todayCount = 0
-                    var totalWhPayment = 0.0
 
                     whPayments.forEach { doc ->
                         val amt = doc.getDouble("amount") ?: 0.0
-                        totalWhPayment += amt
                         val pDate = doc.getDate("paymentDate") ?: doc.getDate("timestamp") ?: Date(0)
                         if (com.batterysales.utils.DateUtils.isSameDay(pDate, now)) {
                             todayAmt += amt
@@ -244,10 +262,7 @@ class InvoiceRepository @Inject constructor(
                         }
                     }
 
-                    summaryRepository.applyFinancialUpdate(
-                        transaction = transaction,
-                        snapshots = summarySnapshots,
-                        warehouseId = whId,
+                    financialDeltas[whId] = com.batterysales.data.repositories.SummaryRepository.FinancialDelta(
                         pendingCollectionChange = if (whId == invoice.warehouseId) -invoice.remainingAmount else 0.0,
                         todayCollectionChange = -todayAmt,
                         todayCollectionCountChange = if (todayCount > 0) -1 else 0,
@@ -255,6 +270,15 @@ class InvoiceRepository @Inject constructor(
                         bankChange = -whPayments.filter { it.getString("paymentMethod") == "bank" }.sumOf { it.getDouble("amount") ?: 0.0 }
                     )
                 }
+
+                // Handle case where invoice had debt but no payments (still need to reverse pendingCollection)
+                if (!financialDeltas.containsKey(invoice.warehouseId) && invoice.remainingAmount > 0.001) {
+                    financialDeltas[invoice.warehouseId] = com.batterysales.data.repositories.SummaryRepository.FinancialDelta(
+                        pendingCollectionChange = -invoice.remainingAmount
+                    )
+                }
+
+                summaryRepository.applyFinancialUpdates(transaction, summarySnapshots, financialDeltas)
             }
 
             // Cleanup
@@ -263,19 +287,18 @@ class InvoiceRepository @Inject constructor(
             treasuryTransactions.forEach { transaction.delete(it.reference) }
             bankTransactions.forEach { transaction.delete(it.reference) }
 
-            // Reverse scrap impact as a single aggregate per warehouse
-            scrapTransactions.documents.groupBy { it.getString("warehouseId") ?: "" }.forEach { (whId, whScraps) ->
-                if (whId.isNotEmpty()) {
-                    summaryRepository.applyScrapUpdate(
-                        transaction = transaction,
-                        snapshots = summarySnapshots,
-                        warehouseId = whId,
-                        qtyChange = -whScraps.sumOf { it.getLong("quantity")?.toInt() ?: 0 },
-                        ampereChange = -whScraps.sumOf { it.getDouble("totalAmperes") ?: 0.0 }
+            // Reverse scrap impact as a single aggregate
+            val scrapDeltas = scrapTransactions.documents.groupBy { it.getString("warehouseId") ?: "" }
+                .filter { it.key.isNotEmpty() }
+                .mapValues { (_, docs) ->
+                    com.batterysales.data.repositories.SummaryRepository.ScrapDelta(
+                        qtyChange = -docs.sumOf { it.getLong("quantity")?.toInt() ?: 0 },
+                        ampereChange = -docs.sumOf { it.getDouble("totalAmperes") ?: 0.0 }
                     )
                 }
-                whScraps.forEach { transaction.delete(it.reference) }
-            }
+
+            summaryRepository.applyScrapUpdates(transaction, summarySnapshots, scrapDeltas)
+            scrapTransactions.documents.forEach { transaction.delete(it.reference) }
 
             transaction.delete(invoiceRef)
         }.await()
