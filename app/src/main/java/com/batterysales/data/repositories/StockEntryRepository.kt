@@ -63,7 +63,8 @@ class StockEntryRepository @Inject constructor(
                 // Update Stock Map
                 val currentStockMap = variant.currentStock ?: emptyMap()
                 val newStockMap = currentStockMap.toMutableMap()
-                val newQty = (newStockMap[finalEntry.warehouseId] ?: 0) + (finalEntry.quantity - finalEntry.returnedQuantity)
+                val currentWhQty = (newStockMap[finalEntry.warehouseId] as? Number)?.toInt() ?: 0
+                val newQty = currentWhQty + (finalEntry.quantity - finalEntry.returnedQuantity)
                 newStockMap[finalEntry.warehouseId] = newQty
                 variantUpdates["currentStock"] = newStockMap
 
@@ -264,7 +265,8 @@ class StockEntryRepository @Inject constructor(
                 val finalLastCostForBatch = variantsLastCosts[variantId] ?: variant.weightedAverageCost
 
                 updates.forEach { (warehouseId, change) ->
-                    val newQty = (newStockMap[warehouseId] ?: 0) + change
+                    val currentWhQty = (newStockMap[warehouseId] as? Number)?.toInt() ?: 0
+                    val newQty = currentWhQty + change
                     newStockMap[warehouseId] = newQty
 
                     // Low Stock Check
@@ -435,8 +437,10 @@ class StockEntryRepository @Inject constructor(
             if (status == "approved" && variant != null) {
                 val currentStockMap = variant.currentStock ?: emptyMap()
                 val newStockMap = currentStockMap.toMutableMap()
-                val sourceNewQty = (newStockMap[sourceWarehouseId] ?: 0) - quantity
-                val destNewQty = (newStockMap[destinationWarehouseId] ?: 0) + quantity
+                val sourceOldQty = (newStockMap[sourceWarehouseId] as? Number)?.toInt() ?: 0
+                val destOldQty = (newStockMap[destinationWarehouseId] as? Number)?.toInt() ?: 0
+                val sourceNewQty = sourceOldQty - quantity
+                val destNewQty = destOldQty + quantity
                 newStockMap[sourceWarehouseId] = sourceNewQty
                 newStockMap[destinationWarehouseId] = destNewQty
                 transaction.update(variantRef, "currentStock", newStockMap)
@@ -619,7 +623,8 @@ class StockEntryRepository @Inject constructor(
                 invUpdates.forEach { (whId, vDeltas) ->
                     val delta = vDeltas[vid] ?: 0
                     if (delta != 0) {
-                        val newQty = (currentStockMap[whId] ?: 0) + delta
+                        val currentWhQty = (currentStockMap[whId] as? Number)?.toInt() ?: 0
+                        val newQty = currentWhQty + delta
                         currentStockMap[whId] = newQty
                         variantChanged = true
 
@@ -884,7 +889,8 @@ class StockEntryRepository @Inject constructor(
             // Update Stock Map
             val currentStockMap = variant.currentStock ?: emptyMap()
             val newStockMap = currentStockMap.toMutableMap()
-            val newQty = (newStockMap[entry.warehouseId] ?: 0) + (entry.quantity - entry.returnedQuantity)
+            val currentWhQty = (newStockMap[entry.warehouseId] as? Number)?.toInt() ?: 0
+            val newQty = currentWhQty + (entry.quantity - entry.returnedQuantity)
             newStockMap[entry.warehouseId] = newQty
             
             // Update Last Purchase Cost (with fallback)

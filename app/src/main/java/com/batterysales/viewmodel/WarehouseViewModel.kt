@@ -102,7 +102,7 @@ class WarehouseViewModel @Inject constructor(
                     .filter { !it.archived }
                     .filter { if (query.isBlank()) true else (it.productName?.contains(query, ignoreCase = true) ?: false) || it.barcode == query }
                     .map { v ->
-                        val qty = v.currentStock?.get(targetWhId) ?: 0
+                        val qty = (v.currentStock?.get(targetWhId) as? Number)?.toInt() ?: 0
                         InventoryReportItem(
                             product = Product(id = v.productId, name = v.productName ?: "Unknown"),
                             variant = v,

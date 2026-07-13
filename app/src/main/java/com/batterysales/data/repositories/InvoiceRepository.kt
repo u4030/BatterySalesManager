@@ -376,7 +376,8 @@ class InvoiceRepository @Inject constructor(
             transaction.set(stockRef, finalStockEntry)
 
             if (variant != null && variant.currentStock != null) {
-                val currentStockMap = (vSnap.get("currentStock") as? Map<String, Int>)?.toMutableMap() ?: mutableMapOf()
+                val rawStock = vSnap.get("currentStock") as? Map<String, Any> ?: emptyMap()
+                val currentStockMap = rawStock.mapValues { (it.value as? Number)?.toInt() ?: 0 }.toMutableMap()
                 val netQtyChange = finalStockEntry.quantity - finalStockEntry.returnedQuantity
                 currentStockMap[finalStockEntry.warehouseId] = (currentStockMap[finalStockEntry.warehouseId] ?: 0) + netQtyChange
                 transaction.update(variantRef, "currentStock", currentStockMap)

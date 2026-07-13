@@ -54,6 +54,19 @@ class ProductManagementViewModel @Inject constructor(
         userRepository.getCurrentUserFlow().onEach {
             currentUser = it
         }.launchIn(viewModelScope)
+
+        loadProducts()
+    }
+
+    private fun loadProducts() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                _products.value = productRepository.getProductsOnce()
+            } finally {
+                _isLoading.value = false
+            }
+        }
     }
 
     private val refreshTrigger = MutableStateFlow(0)
@@ -80,25 +93,17 @@ class ProductManagementViewModel @Inject constructor(
         val isSubmitting: Boolean
     )
 
+    private val _products = MutableStateFlow<List<Product>>(emptyList())
+
     val uiState: StateFlow<ProductManagementUiState> = combine(
-        productRepository.getProducts(),
-        productVariantRepository.getAllVariantsFlow(),
+        _products,
         localState,
         staticData
-    ) { products, allVariants, local, static ->
+    ) { products, local, static ->
         val (warehouses, suppliers) = static
 
-        val filteredProducts = if (local.barcodeFilter.isBlank()) {
-            products.filter { !it.archived }
-        } else {
-            val matchingVariants = allVariants
-                .filter { it.barcode.contains(local.barcodeFilter, ignoreCase = true) }
-            val productIdsWithMatchingBarcode = matchingVariants.map { it.productId }.toSet()
-            products.filter { !it.archived && (it.id in productIdsWithMatchingBarcode || it.name.contains(local.barcodeFilter, ignoreCase = true)) }
-        }
-
         ProductManagementUiState(
-            products = filteredProducts,
+            products = products.filter { !it.archived },
             selectedProduct = local.selectedProduct,
             warehouses = warehouses,
             suppliers = suppliers,
@@ -118,11 +123,21 @@ class ProductManagementViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ProductManagementUiState(isLoading = true))
 
     fun refresh() {
+        loadProducts()
         refreshTrigger.value += 1
     }
 
     fun onBarcodeFilterChanged(query: String) {
         _barcodeFilter.value = query
+        if (query.length >= 3) {
+            viewModelScope.launch {
+                val variant = productVariantRepository.getVariantByBarcode(query)
+                variant?.let { v ->
+                    val product = _products.value.find { it.id == v.productId }
+                    product?.let { selectProduct(it) }
+                }
+            }
+        }
     }
 
     fun generateUniqueBarcode(): String {
