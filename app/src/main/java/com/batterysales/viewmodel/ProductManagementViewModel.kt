@@ -49,6 +49,7 @@ class ProductManagementViewModel @Inject constructor(
     private val _isSubmitting = MutableStateFlow(false)
     private val _barcodeFilter = MutableStateFlow("")
     private var currentUser: com.batterysales.data.models.User? = null
+    private val _products = MutableStateFlow<List<Product>>(emptyList())
 
     init {
         userRepository.getCurrentUserFlow().onEach {
@@ -92,8 +93,6 @@ class ProductManagementViewModel @Inject constructor(
         val errorMessage: String?,
         val isSubmitting: Boolean
     )
-
-    private val _products = MutableStateFlow<List<Product>>(emptyList())
 
     val uiState: StateFlow<ProductManagementUiState> = combine(
         _products,

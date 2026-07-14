@@ -134,7 +134,7 @@ class ProductVariantRepository @Inject constructor(
                             summaryRepository.invalidateSupplierReportCache(transaction, entry.supplierId)
 
                             // Reverse from Global Stats
-                            val statsRef = firestore.collection("system_stats").document("global_stats")
+                            val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
                             transaction.update(statsRef, mapOf(
                                 "totalSupplierDebt" to com.google.firebase.firestore.FieldValue.increment(-cost),
                                 "totalInventoryValue" to com.google.firebase.firestore.FieldValue.increment(-cost),
