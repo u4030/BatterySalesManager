@@ -165,6 +165,7 @@ class ProductManagementViewModel @Inject constructor(
                 val product = Product(name = name, supplierId = supplierId)
                 if (product.isValid()) {
                     productRepository.addProduct(product)
+                    loadProducts()
                 } else {
                     _errorMessage.value = product.getValidationError()
                 }
@@ -243,6 +244,7 @@ class ProductManagementViewModel @Inject constructor(
                     _errorMessage.value = "تم إرسال طلب التعديل للمدير للموافقة"
                 } else {
                     productRepository.updateProduct(product)
+                    loadProducts()
                 }
             } catch (e: Exception) {
                 Log.e("ProductMgmtVM", "Error updating product", e)
@@ -281,6 +283,7 @@ class ProductManagementViewModel @Inject constructor(
                 } else {
                     val archivedProduct = product.copy(archived = true)
                     productRepository.updateProduct(archivedProduct)
+                    loadProducts()
 
                     _selectedProduct.value = null // Deselect after archiving
                 }

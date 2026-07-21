@@ -78,6 +78,9 @@ class BillViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(false)
     val isLoading = _isLoading.asStateFlow()
 
+    private val _isSubmitting = MutableStateFlow(false)
+    val isSubmitting = _isSubmitting.asStateFlow()
+
     private val _highlightBillId = MutableStateFlow<String?>(null)
     val highlightBillId = _highlightBillId.asStateFlow()
 
@@ -133,37 +136,37 @@ class BillViewModel @Inject constructor(
 
     fun updateBill(bill: Bill) {
         viewModelScope.launch {
-            _isLoading.value = true
+            _isSubmitting.value = true
             try {
                 repository.updateBill(bill)
                 loadData()
-            } finally { _isLoading.value = false }
+            } finally { _isSubmitting.value = false }
         }
     }
 
     fun recordPayment(billId: String, amount: Double) {
         viewModelScope.launch {
-            _isLoading.value = true
+            _isSubmitting.value = true
             try {
                 repository.recordPayment(billId, amount)
                 loadData()
-            } finally { _isLoading.value = false }
+            } finally { _isSubmitting.value = false }
         }
     }
 
     fun recordPayment(bill: Bill, amount: Double, method: String, warehouseId: String, notes: String) {
         viewModelScope.launch {
-            _isLoading.value = true
+            _isSubmitting.value = true
             try {
                 repository.addBillPayment(bill, amount, method, warehouseId, notes)
                 loadData()
-            } finally { _isLoading.value = false }
+            } finally { _isSubmitting.value = false }
         }
     }
 
     fun addBill(description: String, amount: Double, dueDate: Date, billType: BillType, referenceNumber: String = "", supplierId: String = "", relatedEntryId: String? = null, warehouseId: String? = null, payImmediately: Boolean = false) {
         viewModelScope.launch {
-            _isLoading.value = true
+            _isSubmitting.value = true
             try {
                 val bill = Bill(
                     description = description, 
@@ -180,16 +183,19 @@ class BillViewModel @Inject constructor(
                 )
                 repository.addBill(bill)
                 loadData()
-            } finally { _isLoading.value = false }
+            } finally { _isSubmitting.value = false }
         }
     }
 
     fun deleteBill(billId: String) {
         viewModelScope.launch {
-            repository.deleteBill(billId)
-            accountingRepository.deleteTransactionsByRelatedId(billId)
-            bankRepository.deleteTransactionsByBillId(billId)
-            loadData()
+            _isSubmitting.value = true
+            try {
+                repository.deleteBill(billId)
+                accountingRepository.deleteTransactionsByRelatedId(billId)
+                bankRepository.deleteTransactionsByBillId(billId)
+                loadData()
+            } finally { _isSubmitting.value = false }
         }
     }
 

@@ -305,7 +305,7 @@ class InvoiceRepository @Inject constructor(
                 financialDeltas[whId] = com.batterysales.data.repositories.SummaryRepository.FinancialDelta(
                     pendingCollectionChange = if (whId == invoice.warehouseId) -invoice.remainingAmount else 0.0,
                     todayCollectionChange = -todayAmt,
-                    todayCollectionCountChange = if (todayCount > 0) -1 else 0,
+                    todayCollectionCountChange = -todayCount,
                     cashChange = -whPayments.filter { it.getString("paymentMethod") != "bank" }.sumOf { it.getDouble("amount") ?: 0.0 },
                     bankChange = -whPayments.filter { it.getString("paymentMethod") == "bank" }.sumOf { it.getDouble("amount") ?: 0.0 }
                 )

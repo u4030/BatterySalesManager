@@ -73,6 +73,7 @@ fun BillsScreen(
     val suppliers by viewModel.suppliers.collectAsState()
     val pendingPurchases by viewModel.pendingPurchases.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val isSubmitting by viewModel.isSubmitting.collectAsState()
     val highlightBillId by viewModel.highlightBillId.collectAsState()
     val listState = rememberLazyListState()
 
@@ -105,9 +106,10 @@ fun BillsScreen(
     var billToDelete by remember { mutableStateOf<Bill?>(null) }
     var billToEdit by remember { mutableStateOf<Bill?>(null) }
 
-    Scaffold(
-        containerColor = bgColor,
-        floatingActionButton = {
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+            containerColor = bgColor,
+            floatingActionButton = {
             FloatingActionButton(
                 onClick = { showAddBillDialog = true },
                 containerColor = accentColor,
@@ -307,12 +309,37 @@ fun BillsScreen(
         )
     }
 
-    if (showDateRangePicker) {
-        com.batterysales.ui.components.AppDateRangePickerDialog(
-            state = dateRangePickerState,
-            onDismiss = { showDateRangePicker = false },
-            onConfirm = { showDateRangePicker = false }
-        )
+        if (showDateRangePicker) {
+            com.batterysales.ui.components.AppDateRangePickerDialog(
+                state = dateRangePickerState,
+                onDismiss = { showDateRangePicker = false },
+                onConfirm = { showDateRangePicker = false }
+            )
+        }
+
+        if (isSubmitting) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.3f))
+                    .clickable(enabled = false) {},
+                contentAlignment = Alignment.Center
+            ) {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        CircularProgressIndicator(color = accentColor)
+                        Text("جاري الحفظ...", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
     }
 }
 
