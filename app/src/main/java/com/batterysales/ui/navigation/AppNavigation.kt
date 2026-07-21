@@ -47,7 +47,16 @@ fun AppNavigation(navController: NavHostController) {
         composable("accounting") { AccountingScreen(navController) }
         composable("bank") { BankScreen(navController) }
         composable("old_battery_ledger") { OldBatteryLedgerScreen(navController) }
-        composable("bills") { BillsScreen(navController) }
+        composable(
+            route = "bills?highlightBillId={highlightBillId}",
+            arguments = listOf(navArgument("highlightBillId") {
+                type = NavType.StringType
+                nullable = true
+                defaultValue = null
+            })
+        ) {
+            BillsScreen(navController)
+        }
         composable("reports") { ReportsScreen(navController) }
         composable("user_management") { UserManagementScreen(navController) }
         composable("approvals") { ApprovalsScreen(navController) }

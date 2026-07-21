@@ -74,7 +74,7 @@ class BillRepository @Inject constructor(
         firestore.runTransaction { transaction ->
             // --- READ PHASE ---
             val targetWhId = mainWhId
-            val snapshots = summaryRepository.getSummarySnapshots(transaction, targetWhId)
+            val snapshots = summaryRepository.getSummarySnapshots(transaction, listOf(targetWhId))
             
             // --- WRITE PHASE ---
             transaction.set(docRef, finalBill)
@@ -146,6 +146,14 @@ class BillRepository @Inject constructor(
                     transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(creditToApply))
                     transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-creditToApply))
                     transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(creditToApply))
+
+                    summaryRepository.applySupplierUpdate(
+                        transaction = transaction,
+                        snapshots = snapshots,
+                        supplierId = finalBill.supplierId,
+                        name = "", // Optional name backfill
+                        creditChange = creditToApply
+                    )
                 }
             }
 
@@ -218,7 +226,7 @@ class BillRepository @Inject constructor(
             val targetMethod = if (bill.billType == BillType.CHECK) "bank" else "cash"
             val targetWhId = if (bill.warehouseId.isNullOrEmpty() || bill.warehouseId == "main_treasury") mainWhId else bill.warehouseId!!
 
-            val snapshots = summaryRepository.getSummarySnapshots(transaction, targetWhId)
+            val snapshots = summaryRepository.getSummarySnapshots(transaction, listOf(targetWhId))
 
             val isAlreadyCredited = bill.billType == BillType.CHECK || bill.billType == BillType.BILL
 
@@ -291,6 +299,14 @@ class BillRepository @Inject constructor(
                     transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(paymentAmount))
                     transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-paymentAmount))
                     transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(paymentAmount))
+
+                    summaryRepository.applySupplierUpdate(
+                        transaction = transaction,
+                        snapshots = snapshots,
+                        supplierId = bill.supplierId,
+                        name = "",
+                        creditChange = paymentAmount
+                    )
                 }
             }
 
@@ -346,7 +362,7 @@ class BillRepository @Inject constructor(
                 warehouseId.ifBlank { freshBill.warehouseId ?: mainWhId }
             }
 
-            val snapshots = summaryRepository.getSummarySnapshots(transaction, targetWhId)
+            val snapshots = summaryRepository.getSummarySnapshots(transaction, listOf(targetWhId))
 
             // --- WRITE PHASE ---
             val newPaidAmount = freshBill.paidAmount + paymentAmount
@@ -418,6 +434,14 @@ class BillRepository @Inject constructor(
                     transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(paymentAmount))
                     transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-paymentAmount))
                     transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(paymentAmount))
+
+                    summaryRepository.applySupplierUpdate(
+                        transaction = transaction,
+                        snapshots = snapshots,
+                        supplierId = freshBill.supplierId,
+                        name = "",
+                        creditChange = paymentAmount
+                    )
                 }
             }
 
@@ -476,7 +500,7 @@ class BillRepository @Inject constructor(
             val bill = billSnap.toObject(Bill::class.java) ?: return@runTransaction
             supplierIdToSync = bill.supplierId
             
-            val snapshots = summaryRepository.getSummarySnapshots(transaction, bill.warehouseId ?: "global")
+            val snapshots = summaryRepository.getSummarySnapshots(transaction, listOf(bill.warehouseId ?: "global"))
             val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
 
             // 2. Writes
@@ -499,6 +523,14 @@ class BillRepository @Inject constructor(
                     val supplierRef = firestore.collection("suppliers").document(bill.supplierId)
                     transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(-creditToRemove))
                     transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(creditToRemove))
+
+                    summaryRepository.applySupplierUpdate(
+                        transaction = transaction,
+                        snapshots = snapshots,
+                        supplierId = bill.supplierId,
+                        name = "",
+                        creditChange = -creditToRemove
+                    )
                 }
             }
 
@@ -655,7 +687,7 @@ class BillRepository @Inject constructor(
             oldSupplierId = oldBill.supplierId
             val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
             
-            val snapshots = summaryRepository.getSummarySnapshots(transaction, bill.warehouseId ?: "global")
+            val snapshots = summaryRepository.getSummarySnapshots(transaction, listOf(bill.warehouseId ?: "global"))
 
             // 2. Calculate Differences
             val amountDiff = bill.amount - oldBill.amount
@@ -749,6 +781,7 @@ class BillRepository @Inject constructor(
                             "totalCredit" to com.google.firebase.firestore.FieldValue.increment(amountDiff),
                             "currentBalance" to com.google.firebase.firestore.FieldValue.increment(-amountDiff)
                         ))
+                        summaryRepository.applySupplierUpdate(transaction, snapshots, bill.supplierId, "", creditChange = amountDiff)
                     }
                 } else {
                     // Full swap
@@ -758,6 +791,7 @@ class BillRepository @Inject constructor(
                             "totalCredit" to com.google.firebase.firestore.FieldValue.increment(-oldBill.amount),
                             "currentBalance" to com.google.firebase.firestore.FieldValue.increment(oldBill.amount)
                         ))
+                        summaryRepository.applySupplierUpdate(transaction, snapshots, oldBill.supplierId, "", creditChange = -oldBill.amount)
                     }
                     if (bill.supplierId.isNotEmpty()) {
                         val newSRef = firestore.collection("suppliers").document(bill.supplierId)
@@ -765,6 +799,7 @@ class BillRepository @Inject constructor(
                             "totalCredit" to com.google.firebase.firestore.FieldValue.increment(bill.amount),
                             "currentBalance" to com.google.firebase.firestore.FieldValue.increment(-bill.amount)
                         ))
+                        summaryRepository.applySupplierUpdate(transaction, snapshots, bill.supplierId, "", creditChange = bill.amount)
                     }
                 }
             }
@@ -834,6 +869,8 @@ class BillRepository @Inject constructor(
                 "currentBalance" to (totalDebit - totalCreditPool),
                 "unallocatedCredit" to unallocatedPool
             ))
+
+            summaryRepository.invalidateSupplierReportCache(transaction, supplierId)
         }.await()
 
         // 3. Run FIFO Linkage (It will re-apply manual links first internally)
@@ -854,6 +891,10 @@ class BillRepository @Inject constructor(
         // 1. Fetch data for calculation (Including legacy name-based entries)
         val allRawEntries = stockEntryRepository.getEntriesBySuppliers(listOf(supplierId), supplierNames)
             .filter { it.status == "approved" }
+
+        // Invalidate cache since we are re-calculating links
+        firestore.collection("suppliers").document(supplierId).collection("cache").document("report").delete().await()
+
         if (allRawEntries.isEmpty()) return
 
         val supplierBills = getBillsBySuppliers(listOf(supplierId), supplierNames)

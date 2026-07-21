@@ -73,7 +73,22 @@ fun BillsScreen(
     val suppliers by viewModel.suppliers.collectAsState()
     val pendingPurchases by viewModel.pendingPurchases.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val isSubmitting by viewModel.isSubmitting.collectAsState()
+    val highlightBillId by viewModel.highlightBillId.collectAsState()
     val listState = rememberLazyListState()
+
+    LaunchedEffect(pagingItems.itemCount, highlightBillId) {
+        if (highlightBillId != null && pagingItems.itemCount > 0) {
+            for (i in 0 until pagingItems.itemCount) {
+                if (pagingItems[i]?.id == highlightBillId) {
+                    listState.animateScrollToItem(i + 1) // +1 because of the header
+                    kotlinx.coroutines.delay(2000)
+                    viewModel.clearHighlight()
+                    break
+                }
+            }
+        }
+    }
 
     var showAddBillDialog by remember { mutableStateOf(false) }
     var showDateRangePicker by remember { mutableStateOf(false) }
@@ -91,9 +106,10 @@ fun BillsScreen(
     var billToDelete by remember { mutableStateOf<Bill?>(null) }
     var billToEdit by remember { mutableStateOf<Bill?>(null) }
 
-    Scaffold(
-        containerColor = bgColor,
-        floatingActionButton = {
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+            containerColor = bgColor,
+            floatingActionButton = {
             FloatingActionButton(
                 onClick = { showAddBillDialog = true },
                 containerColor = accentColor,
@@ -211,10 +227,12 @@ fun BillsScreen(
                 val billItem = pagingItems[index]
                 billItem?.let { b ->
                     val supplier = suppliers.find { it.id == b.supplierId }
+                    val isHighlighted = b.id == highlightBillId
                     Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                         BillItemCard(
                             bill = b,
                             supplierName = supplier?.name ?: "",
+                            isHighlighted = isHighlighted,
                             onPayClick = { selectedBillForPayment = b },
                             onDeleteClick = { billToDelete = b },
                             onEditClick = { billToEdit = b }
@@ -291,18 +309,43 @@ fun BillsScreen(
         )
     }
 
-    if (showDateRangePicker) {
-        com.batterysales.ui.components.AppDateRangePickerDialog(
-            state = dateRangePickerState,
-            onDismiss = { showDateRangePicker = false },
-            onConfirm = { showDateRangePicker = false }
-        )
+        if (showDateRangePicker) {
+            com.batterysales.ui.components.AppDateRangePickerDialog(
+                state = dateRangePickerState,
+                onDismiss = { showDateRangePicker = false },
+                onConfirm = { showDateRangePicker = false }
+            )
+        }
+
+        if (isSubmitting) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.3f))
+                    .clickable(enabled = false) {},
+                contentAlignment = Alignment.Center
+            ) {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        CircularProgressIndicator(color = accentColor)
+                        Text("جاري الحفظ...", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
     }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun BillItemCard(bill: Bill, supplierName: String, onPayClick: () -> Unit, onDeleteClick: () -> Unit, onEditClick: () -> Unit) {
+fun BillItemCard(bill: Bill, supplierName: String, isHighlighted: Boolean = false, onPayClick: () -> Unit, onDeleteClick: () -> Unit, onEditClick: () -> Unit) {
     val dateFormatter = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
     val isPaid = bill.status == BillStatus.PAID
     val isPartial = bill.status == BillStatus.PARTIAL
@@ -316,7 +359,10 @@ fun BillItemCard(bill: Bill, supplierName: String, onPayClick: () -> Unit, onDel
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        colors = CardDefaults.cardColors(
+            containerColor = if (isHighlighted) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+        ),
+        border = if (isHighlighted) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
             Row(

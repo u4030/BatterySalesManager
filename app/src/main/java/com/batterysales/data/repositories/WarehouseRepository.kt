@@ -36,17 +36,29 @@ class WarehouseRepository @Inject constructor(
     suspend fun addWarehouse(warehouse: Warehouse) {
         firestore.runTransaction { transaction ->
             val docRef = firestore.collection(Warehouse.COLLECTION_NAME).document()
-            val finalWarehouse = warehouse.copy(id = docRef.id)
+            val finalWhId = docRef.id
+            val finalWarehouse = warehouse.copy(id = finalWhId)
             transaction.set(docRef, finalWarehouse)
 
-            // Automatically create linked ScrapWarehouse
-            val scrapDocRef = firestore.collection(com.batterysales.data.models.ScrapWarehouse.COLLECTION_NAME).document()
+            // 1. Automatically create linked ScrapWarehouse with deterministic ID
+            val scrapDocRef = firestore.collection(com.batterysales.data.models.ScrapWarehouse.COLLECTION_NAME).document("scrap_wh_$finalWhId")
             val scrapWarehouse = com.batterysales.data.models.ScrapWarehouse(
                 id = scrapDocRef.id,
                 name = "سكراب - ${warehouse.name}",
-                parentWarehouseId = docRef.id
+                parentWarehouseId = finalWhId
             )
             transaction.set(scrapDocRef, scrapWarehouse)
+
+            // 2. Initialize Financial Status block for this warehouse
+            val financialRef = firestore.collection("summaries").document("financial_status")
+            val financialSnap = transaction.get(financialRef)
+            val financial = financialSnap.toObject(com.batterysales.data.models.FinancialStatus::class.java)
+
+            if (financial != null) {
+                val updatedBalances = financial.warehouseBalances.toMutableMap()
+                updatedBalances[finalWhId] = com.batterysales.data.models.WarehouseBalance(warehouseId = finalWhId)
+                transaction.update(financialRef, "warehouseBalances", updatedBalances)
+            }
         }.await()
     }
 

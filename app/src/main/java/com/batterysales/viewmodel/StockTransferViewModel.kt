@@ -101,7 +101,7 @@ class StockTransferViewModel @Inject constructor(
             val newStockMap = _uiState.value.stockLevels.toMutableMap()
             val targetWhId = _uiState.value.sourceWarehouse?.id ?: currentUser?.warehouseId ?: "global"
             variantsForProduct.forEach { v ->
-                val qty = v.currentStock?.get(targetWhId) ?: 0
+                val qty = (v.currentStock?.get(targetWhId) as? Number)?.toInt() ?: 0
                 newStockMap[Pair(v.id, targetWhId)] = qty
             }
 

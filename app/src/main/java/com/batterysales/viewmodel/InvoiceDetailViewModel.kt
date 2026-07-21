@@ -62,25 +62,12 @@ class InvoiceDetailViewModel @Inject constructor(
                 // Then, start listening for real-time payment updates
                 paymentRepository.getPaymentsForInvoice(id)
                     .collect { payments ->
-                        // Recalculate totals every time payments change
-                        val paidAmount = payments.sumOf { it.amount }
-                        val remainingAmount = (invoice.totalAmount - paidAmount).coerceAtLeast(0.0)
-                        val status = if (remainingAmount <= 0) "paid" else "pending"
-
-                        val updatedInvoice = invoice.copy(
-                            paidAmount = paidAmount,
-                            remainingAmount = remainingAmount,
-                            status = status
-                        )
-
-                        // If the invoice status has changed, update it in the DB
-                        if (updatedInvoice.paidAmount != invoice.paidAmount || updatedInvoice.status != invoice.status) {
-                            invoiceRepository.updateInvoice(updatedInvoice)
-                        }
+                        // We also need to fetch the LATEST invoice document because addPayment updates it
+                        val freshInvoice = invoiceRepository.getInvoice(id) ?: invoice
 
                         _uiState.update {
                             it.copy(
-                                invoice = updatedInvoice,
+                                invoice = freshInvoice,
                                 payments = payments,
                                 isLoading = false
                             )
@@ -102,23 +89,12 @@ class InvoiceDetailViewModel @Inject constructor(
                     warehouseId = currentInvoice?.warehouseId ?: "",
                     amount = amount, 
                     paymentMethod = paymentMethod,
+                    paymentDate = Date(),
                     timestamp = Date()
                 )
-                val paymentId = paymentRepository.addPayment(payment)
-
-                // Record in treasury
-                val invoice = _uiState.value.invoice
-                val transaction = Transaction(
-                    type = TransactionType.PAYMENT,
-                    amount = amount,
-                    description = "دفعة فاتورة: ${invoice?.customerName ?: ""} (رقم: ${invoice?.invoiceNumber ?: ""})",
-                    relatedId = paymentId, // Use paymentId instead of invoiceId for granular tracking
-                    warehouseId = currentInvoice?.warehouseId,
-                    paymentMethod = paymentMethod
-                )
-                accountingRepository.addTransaction(transaction)
+                invoiceRepository.addPayment(invoiceId, payment)
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = "Failed to add payment") }
+                _uiState.update { it.copy(errorMessage = "فشل إضافة الدفعة: ${e.message}") }
             }
         }
     }
@@ -127,18 +103,10 @@ class InvoiceDetailViewModel @Inject constructor(
         viewModelScope.launch {
             if (newAmount <= 0) return@launch
             try {
-                val updatedPayment = payment.copy(amount = newAmount)
-                paymentRepository.updatePayment(updatedPayment)
-
-                // Also update treasury
-                val invoice = _uiState.value.invoice
-                accountingRepository.updateTransactionByRelatedId(
-                    relatedId = payment.id,
-                    newAmount = newAmount,
-                    newDescription = "تعديل دفعة فاتورة: ${invoice?.customerName ?: ""}"
-                )
+                val updatedPayment = payment.copy(amount = newAmount, paymentDate = Date())
+                invoiceRepository.updatePayment(updatedPayment)
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = "Failed to update payment") }
+                _uiState.update { it.copy(errorMessage = "فشل تحديث الدفعة: ${e.message}") }
             }
         }
     }
@@ -146,11 +114,9 @@ class InvoiceDetailViewModel @Inject constructor(
     fun deletePayment(paymentId: String) {
         viewModelScope.launch {
             try {
-                paymentRepository.deletePayment(paymentId)
-                // Also delete from treasury
-                accountingRepository.deleteTransactionsByRelatedId(paymentId)
+                invoiceRepository.deletePayment(paymentId, invoiceId)
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = "Failed to delete payment") }
+                _uiState.update { it.copy(errorMessage = "فشل حذف الدفعة: ${e.message}") }
             }
         }
     }

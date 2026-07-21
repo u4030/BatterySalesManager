@@ -28,6 +28,7 @@ class ReportsViewModel @Inject constructor(
     private val summaryRepository: SummaryRepository,
     private val billRepository: BillRepository,
     private val oldBatteryRepository: OldBatteryRepository,
+    private val scrapWarehouseRepository: ScrapWarehouseRepository,
     private val userRepository: UserRepository,
     private val settingsManager: com.batterysales.utils.SettingsManager,
     private val firestore: FirebaseFirestore
@@ -183,62 +184,44 @@ class ReportsViewModel @Inject constructor(
         }
     }
 
-    // --- NUCLEAR STRATEGY: Load ENTIRE inventory from ONE document with FALLBACK ---
+    // --- NUCLEAR STRATEGY: Load ENTIRE inventory via Real-time Flow ---
+    private var inventoryJob: kotlinx.coroutines.Job? = null
     fun loadInventoryReport(reset: Boolean = false) {
-        viewModelScope.launch {
+        inventoryJob?.cancel()
+        inventoryJob = viewModelScope.launch {
             try {
                 _isInventoryLoading.value = true
                 val user = userRepository.getCurrentUser()
                 val seller = user?.role == "seller"
                 val whId = if (seller) user?.warehouseId else null
 
-                val summary = summaryRepository.getInventorySummary(whId)
-                
-                val query = _barcodeFilter.value
-                val items = if (summary != null) {
-                    summary.items.values.asSequence()
-                        .filter { if (query.isNullOrBlank()) true else it.productName.contains(query, ignoreCase = true) || it.barcode == query }
-                        .filter { if (seller) it.currentStock > 0 else true }
-                        .map { item ->
-                            InventoryReportItem(
-                                product = Product(id = item.productId, name = item.productName),
-                                variant = ProductVariant(id = item.variantId, productId = item.productId, capacity = item.capacity, barcode = item.barcode, weightedAverageCost = item.weightedAverageCost, sellingPrice = item.sellingPrice, specification = item.specification),
-                                warehouseQuantities = if (whId != null) mapOf(whId to item.currentStock) else emptyMap(),
-                                totalQuantity = item.currentStock,
-                                averageCost = item.weightedAverageCost,
-                                totalCostValue = item.currentStock * item.weightedAverageCost
-                            )
-                        }.toList()
-                } else {
-                    // Fallback to heavy collection scan if summary is missing
-                    val variants = productVariantRepository.getAllVariants()
-                    variants.asSequence()
-                        .filter { !it.archived }
-                        .filter { if (query.isNullOrBlank()) true else (it.productName?.contains(query, ignoreCase = true) ?: false) || it.barcode == query }
-                        .map { v ->
-                            val qty = if (whId != null) v.currentStock?.get(whId) ?: 0 else v.currentStock?.values?.sum() ?: 0
-                            InventoryReportItem(
-                                product = Product(id = v.productId, name = v.productName ?: "Unknown"),
-                                variant = v,
-                                warehouseQuantities = if (whId != null) mapOf(whId to qty) else v.currentStock ?: emptyMap(),
-                                totalQuantity = qty,
-                                averageCost = v.weightedAverageCost,
-                                totalCostValue = qty * v.weightedAverageCost
-                            )
-                        }
-                        .filter { if (seller) it.totalQuantity > 0 else true }
-                        .toList()
-                }
+                summaryRepository.getInventorySummaryFlow(whId)
+                    .onEach { summary ->
+                        val query = _barcodeFilter.value
+                        val items = summary.items.values.asSequence()
+                            .filter { if (query.isNullOrBlank()) true else it.productName.contains(query, ignoreCase = true) || it.barcode == query }
+                            .filter { if (seller) it.currentStock > 0 else true }
+                            .map { item ->
+                                InventoryReportItem(
+                                    product = Product(id = item.productId, name = item.productName),
+                                    variant = ProductVariant(id = item.variantId, productId = item.productId, capacity = item.capacity, barcode = item.barcode, weightedAverageCost = item.weightedAverageCost, sellingPrice = item.sellingPrice, specification = item.specification),
+                                    warehouseQuantities = if (whId != null) mapOf(whId to item.currentStock) else emptyMap(),
+                                    totalQuantity = item.currentStock,
+                                    averageCost = item.weightedAverageCost,
+                                    totalCostValue = item.currentStock * item.weightedAverageCost
+                                )
+                            }.toList()
 
-                val finalItems = items.sortedWith(compareByDescending<InventoryReportItem> { it.product.name }.thenByDescending { it.variant.capacity })
-                _inventoryReportItems.value = finalItems
-                _grandTotalInventoryQuantity.value = finalItems.sumOf { it.totalQuantity }
-                _grandTotalInventoryValue.value = finalItems.sumOf { it.totalCostValue }
-                _allInventoryItemNames.value = finalItems.map { it.product.name }.distinct()
-
+                        val finalItems = items.sortedWith(compareByDescending<InventoryReportItem> { it.product.name }.thenByDescending { it.variant.capacity })
+                        _inventoryReportItems.value = finalItems
+                        _grandTotalInventoryQuantity.value = finalItems.sumOf { it.totalQuantity }
+                        _grandTotalInventoryValue.value = finalItems.sumOf { it.totalCostValue }
+                        _allInventoryItemNames.value = finalItems.map { it.product.name }.distinct()
+                        _isInventoryLoading.value = false
+                    }
+                    .launchIn(viewModelScope)
             } catch (e: Exception) {
                 Log.e("ReportsViewModel", "Error loading nuclear inventory", e)
-            } finally {
                 _isInventoryLoading.value = false
             }
         }
@@ -339,9 +322,11 @@ class ReportsViewModel @Inject constructor(
                     val spec = if (entry.specification.isBlank()) {
                         variantsCache[entry.productVariantId]?.specification ?: ""
                     } else entry.specification
-                    entry.copy(specification = spec)
+                    val updatedCap = variantsCache[entry.productVariantId]?.capacity ?: entry.capacity
+                    val updatedName = variantsCache[entry.productVariantId]?.productName ?: entry.productName
+                    entry.copy(specification = spec, capacity = updatedCap, productName = updatedName)
                 }.filter { entry ->
-                    entry.status == "approved" &&
+                    entry.status == "approved" && entry.totalCost != 0.0 &&
                             (adjustedStart == null || !entry.getEffectiveDate().before(Date(adjustedStart))) &&
                             (adjustedEnd == null || !entry.getEffectiveDate().after(Date(adjustedEnd))) &&
                             (supplier.resetDate == null || !entry.getEffectiveDate().before(supplier.resetDate))
@@ -427,9 +412,11 @@ class ReportsViewModel @Inject constructor(
                             val itemSpec = if (item.specification.isBlank()) {
                                 variantsCache[item.productVariantId]?.specification ?: ""
                             } else item.specification
+                            val updatedCap = variantsCache[item.productVariantId]?.capacity ?: item.capacity
+                            val updatedName = variantsCache[item.productVariantId]?.productName ?: item.productName
                             item.copy(
-                                productName = item.productName.trim().ifEmpty { representative.productName.trim().ifEmpty { "منتج غير معروف" } },
-                                capacity = if (item.capacity == 0) representative.capacity else item.capacity,
+                                productName = updatedName.trim().ifEmpty { representative.productName.trim().ifEmpty { "منتج غير معروف" } },
+                                capacity = updatedCap,
                                 specification = itemSpec
                             )
                         },
@@ -483,34 +470,29 @@ class ReportsViewModel @Inject constructor(
         }
     }
 
+    private var scrapJob: kotlinx.coroutines.Job? = null
     fun loadScrapReport() {
-        viewModelScope.launch {
+        scrapJob?.cancel()
+        scrapJob = viewModelScope.launch {
             _isScrapLoading.value = true
-            try {
-                val summary = oldBatteryRepository.getStockSummary()
-                _oldBatterySummary.value = summary
+            val user = userRepository.getCurrentUser()
+            val seller = user?.role == "seller"
 
-                val user = userRepository.getCurrentUser()
-                val seller = user?.role == "seller"
+            scrapWarehouseRepository.getScrapWarehouses()
+                .onEach { allScrapWh: List<ScrapWarehouse> ->
+                    val active = allScrapWh.filter { it.isActive }
 
-                val scrapWhRef = firestore.collection(ScrapWarehouse.COLLECTION_NAME)
-                val snapshot = scrapWhRef.get().await()
-                val allScrapWh = snapshot.documents.mapNotNull { it.toObject(ScrapWarehouse::class.java)?.copy(id = it.id) }
-                    .filter { it.isActive }
-
-                if (seller) {
-                    val myScrapWh = allScrapWh.find { it.parentWarehouseId == user?.warehouseId }
-                    if (myScrapWh != null) {
-                        _scrapWarehouses.value = listOf(myScrapWh)
+                    if (seller) {
+                        val myScrapWh = active.find { it.parentWarehouseId == user?.warehouseId }
+                        _scrapWarehouses.value = if (myScrapWh != null) listOf(myScrapWh) else emptyList()
+                        _oldBatterySummary.value = Pair(myScrapWh?.totalQuantity ?: 0, myScrapWh?.totalAmperes ?: 0.0)
                     } else {
-                        _scrapWarehouses.value = emptyList()
+                        _scrapWarehouses.value = active.sortedBy { it.name }
+                        _oldBatterySummary.value = Pair(active.sumOf { it.totalQuantity }, active.sumOf { it.totalAmperes })
                     }
-                } else {
-                    _scrapWarehouses.value = allScrapWh.sortedBy { it.name }
+                    _isScrapLoading.value = false
                 }
-            } finally {
-                _isScrapLoading.value = false
-            }
+                .launchIn(viewModelScope)
         }
     }
 }

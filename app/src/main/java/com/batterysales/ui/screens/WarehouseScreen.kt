@@ -1,8 +1,10 @@
 package com.batterysales.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -12,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.batterysales.viewmodel.WarehouseViewModel
@@ -28,6 +31,8 @@ fun WarehouseScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val keyboardController = com.batterysales.ui.components.LocalCustomKeyboardController.current
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val scope = rememberCoroutineScope()
 
     var showAddDialog by remember { mutableStateOf(false) }
     var warehouseToEdit by remember { mutableStateOf<Warehouse?>(null) }
@@ -50,7 +55,8 @@ fun WarehouseScreen(
             )
         }
     ) { padding ->
-        Column(modifier = Modifier.padding(padding).fillMaxSize()) {
+        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+        Column(modifier = Modifier.fillMaxSize()) {
             // Warehouse Selection (Admin only)
             if (uiState.isAdmin && uiState.warehouses.isNotEmpty()) {
                 var expanded by remember { mutableStateOf(false) }
@@ -121,6 +127,7 @@ fun WarehouseScreen(
 
             // List
             LazyColumn(
+                state = listState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -210,6 +217,45 @@ fun WarehouseScreen(
                     }
                 }
             }
+        }
+
+        if (uiState.isSubmitting) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.3f))
+                    .clickable(enabled = false) {},
+                contentAlignment = Alignment.Center
+            ) {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        CircularProgressIndicator(color = Color(0xFFFB8C00))
+                        Text("جاري حفظ التغييرات والمزامنة...", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        if (uiState.inventoryItems.isNotEmpty()) {
+            com.batterysales.ui.components.SidebarAlphabetNavigation(
+                onLetterSelected = { letter ->
+                    val index = uiState.inventoryItems.indexOfFirst {
+                        it.product.name.trim().startsWith(letter.toString(), ignoreCase = true)
+                    }
+                    if (index != -1) {
+                        scope.launch { listState.animateScrollToItem(index) }
+                    }
+                },
+                modifier = Modifier.align(Alignment.CenterEnd).padding(end = 4.dp, top = 80.dp, bottom = 10.dp)
+            )
+        }
         }
     }
 

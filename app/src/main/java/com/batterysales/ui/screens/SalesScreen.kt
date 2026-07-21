@@ -82,6 +82,7 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
     Scaffold(
         containerColor = bgColor
     ) { padding ->
+        Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
             // Gradient Header
             SharedHeader(
@@ -404,6 +405,31 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
                     Spacer(modifier = Modifier.height(16.dp))
                 }
             }
+        }
+
+        if (uiState.isSubmitting) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.3f))
+                    .clickable(enabled = false) {},
+                contentAlignment = Alignment.Center
+            ) {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        CircularProgressIndicator(color = accentColor)
+                        Text("جاري إنشاء الفاتورة والمزامنة...", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
         }
     }
 }

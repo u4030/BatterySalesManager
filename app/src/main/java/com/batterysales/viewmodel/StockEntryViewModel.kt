@@ -173,6 +173,8 @@ class StockEntryViewModel @Inject constructor(
 
     fun onProductSelected(product: Product) {
         viewModelScope.launch {
+            val productSupplier = _uiState.value.suppliers.find { it.id == product.supplierId }
+
             _uiState.update {
                 it.copy(
                     selectedProduct = product,
@@ -180,7 +182,9 @@ class StockEntryViewModel @Inject constructor(
                     variants = emptyList(),
                     isLoading = false,
                     quantity = if (it.isEditMode) it.quantity else "",
-                    costValue = if (it.isEditMode) it.costValue else ""
+                    costValue = if (it.isEditMode) it.costValue else "",
+                    selectedSupplier = productSupplier ?: it.selectedSupplier,
+                    supplierName = productSupplier?.name ?: it.supplierName
                 )
             }
             try {
@@ -207,6 +211,19 @@ class StockEntryViewModel @Inject constructor(
                 selectedVariant = if (it.isEditMode) it.selectedVariant else null,
                 variants = if (it.isEditMode) it.variants else emptyList()
             )
+        }
+    }
+
+    /**
+     * Returns a list of products filtered by the selected supplier.
+     */
+    fun getFilteredProducts(): List<Product> {
+        val supplierId = uiState.value.selectedSupplier?.id
+        return if (supplierId.isNullOrEmpty()) {
+            uiState.value.products
+        } else {
+            // Include products with matching supplierId OR empty supplierId (legacy support)
+            uiState.value.products.filter { it.supplierId == supplierId || it.supplierId.isEmpty() }
         }
     }
     fun onQuantityChanged(quantity: String) { _uiState.update { it.copy(quantity = quantity) } }
