@@ -124,6 +124,10 @@ class SummaryRepository @Inject constructor(
                 )).copy(
                     currentStock = (oldItemWh?.currentStock ?: 0) + qtyChange,
                     weightedAverageCost = targetCost,
+                    capacity = variant.capacity,
+                    productName = variant.productName ?: "Unknown",
+                    barcode = variant.barcode,
+                    sellingPrice = variant.sellingPrice,
                     specification = variant.specification,
                     isDiscontinued = variant.isDiscontinued,
                     updatedAt = Date()
@@ -158,6 +162,10 @@ class SummaryRepository @Inject constructor(
             )).copy(
                 currentStock = (oldItemGlobal?.currentStock ?: 0) + totalQtyChange,
                 weightedAverageCost = targetCost,
+                capacity = variant.capacity,
+                productName = variant.productName ?: "Unknown",
+                barcode = variant.barcode,
+                sellingPrice = variant.sellingPrice,
                 specification = variant.specification,
                 isDiscontinued = variant.isDiscontinued,
                 updatedAt = Date()
