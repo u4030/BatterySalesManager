@@ -103,6 +103,9 @@ class ProductVariantRepository @Inject constructor(
                     .get().await().documents
             } else emptyList()
 
+            val productDoc = firestore.collection("products").document(variant.productId).get().await()
+            val supplierId = productDoc.getString("supplierId") ?: ""
+
             firestore.runTransaction { transaction ->
                 val variantRef = firestore.collection(ProductVariant.COLLECTION_NAME).document(variant.id)
                 
@@ -111,6 +114,10 @@ class ProductVariantRepository @Inject constructor(
 
                 // 2. Writes
                 transaction.set(variantRef, variant)
+
+                if (supplierId.isNotEmpty()) {
+                    summaryRepository.invalidateSupplierReportCache(transaction, supplierId)
+                }
 
                 if (variant.archived) {
                     summaryRepository.removeInventoryItem(transaction, snapshots, warehouseIds, variant.id)

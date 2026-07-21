@@ -322,7 +322,9 @@ class ReportsViewModel @Inject constructor(
                     val spec = if (entry.specification.isBlank()) {
                         variantsCache[entry.productVariantId]?.specification ?: ""
                     } else entry.specification
-                    entry.copy(specification = spec)
+                    val updatedCap = variantsCache[entry.productVariantId]?.capacity ?: entry.capacity
+                    val updatedName = variantsCache[entry.productVariantId]?.productName ?: entry.productName
+                    entry.copy(specification = spec, capacity = updatedCap, productName = updatedName)
                 }.filter { entry ->
                     entry.status == "approved" && entry.totalCost != 0.0 &&
                             (adjustedStart == null || !entry.getEffectiveDate().before(Date(adjustedStart))) &&
@@ -410,9 +412,11 @@ class ReportsViewModel @Inject constructor(
                             val itemSpec = if (item.specification.isBlank()) {
                                 variantsCache[item.productVariantId]?.specification ?: ""
                             } else item.specification
+                            val updatedCap = variantsCache[item.productVariantId]?.capacity ?: item.capacity
+                            val updatedName = variantsCache[item.productVariantId]?.productName ?: item.productName
                             item.copy(
-                                productName = item.productName.trim().ifEmpty { representative.productName.trim().ifEmpty { "منتج غير معروف" } },
-                                capacity = if (item.capacity == 0) representative.capacity else item.capacity,
+                                productName = updatedName.trim().ifEmpty { representative.productName.trim().ifEmpty { "منتج غير معروف" } },
+                                capacity = updatedCap,
                                 specification = itemSpec
                             )
                         },
