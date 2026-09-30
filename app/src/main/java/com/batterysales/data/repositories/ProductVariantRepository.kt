@@ -142,11 +142,11 @@ class ProductVariantRepository @Inject constructor(
                             
                             // Reverse from Global Stats
                             val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
-                            transaction.update(statsRef, mapOf(
+                            transaction.set(statsRef, mapOf(
                                 "totalSupplierDebt" to com.google.firebase.firestore.FieldValue.increment(-cost),
                                 "totalInventoryValue" to com.google.firebase.firestore.FieldValue.increment(-cost),
                                 "totalInventoryQuantity" to com.google.firebase.firestore.FieldValue.increment(-(entry.quantity - entry.returnedQuantity).toLong())
-                            ))
+                            ), com.google.firebase.firestore.SetOptions.merge())
                         }
                         transaction.update(doc.reference, "status", "archived")
                     }
@@ -163,11 +163,42 @@ class ProductVariantRepository @Inject constructor(
                     }
                 }
 
-                // If discontinued, cleanup alerts
+                // Alert sync on discontinuation state change
                 if (variant.isDiscontinued) {
                     warehouseIds.forEach { whId ->
                         val alertRef = firestore.collection("system_alerts").document("low_stock_${variant.id}_$whId")
                         transaction.delete(alertRef)
+                    }
+                } else if (!variant.archived) {
+                    warehouseIds.forEach { whId ->
+                        val currentQty = (variant.currentStock?.get(whId) as? Number)?.toInt() ?: 0
+                        val threshold = variant.minQuantities[whId] ?: variant.minQuantity
+                        val alertRef = firestore.collection("system_alerts").document("low_stock_${variant.id}_$whId")
+                        
+                        if (threshold > 0 && currentQty <= threshold) {
+                            val whSnap = snapshots.warehouseSummaries[whId]
+                            val whName = whSnap?.id?.removePrefix("inventory_wh_") ?: "مخزن"
+                            val specSuffix = if (variant.specification.isNotBlank()) " | ${variant.specification}" else ""
+                            
+                            transaction.set(alertRef, com.batterysales.data.models.SystemAlert(
+                                id = alertRef.id,
+                                type = com.batterysales.data.models.SystemAlert.TYPE_LOW_STOCK,
+                                title = "مخزون منخفض: ${variant.productName ?: ""}",
+                                message = "${variant.capacity}A$specSuffix في $whName | الكمية: $currentQty (الحد: $threshold)",
+                                relatedId = variant.id,
+                                warehouseId = whId,
+                                warehouseName = whName,
+                                timestamp = java.util.Date(),
+                                data = mapOf(
+                                    "capacity" to variant.capacity,
+                                    "specification" to variant.specification,
+                                    "currentStock" to currentQty,
+                                    "threshold" to threshold
+                                )
+                            ))
+                        } else {
+                            transaction.delete(alertRef)
+                        }
                     }
                 }
             }.await()

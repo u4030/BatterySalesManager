@@ -446,25 +446,59 @@ fun StockEntryContent(
         val networkHelper = (androidx.compose.ui.platform.LocalContext.current.applicationContext as com.batterysales.BatterySalesApp).networkHelper 
         val isOnlineLocal by networkHelper.isOnlineFlow.collectAsState(initial = true)
 
-        Button(
-            onClick = {
-                keyboardController.hideKeyboard()
-                viewModel.onSaveClicked()
-            },
-            modifier = Modifier.fillMaxWidth().height(56.dp),
-            shape = RoundedCornerShape(16.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Color(0xFFEF4444),
-                disabledContainerColor = Color(0xFFEF4444).copy(alpha = 0.5f)
-            ),
-            enabled = !uiState.isSubmitting && isOnlineLocal
-        ) { 
-            if (uiState.isSubmitting) {
-                CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
-            } else {
-                Icon(Icons.Default.Save, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(if (uiState.isEditMode) "تحديث القيد" else "حفظ إدخال المخزون", fontWeight = FontWeight.Bold) 
+        if (uiState.isEditMode && uiState.isPendingStatus && uiState.isAdmin) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        keyboardController.hideKeyboard()
+                        viewModel.onSaveClicked(approveOnSave = false)
+                    },
+                    modifier = Modifier.weight(1f).height(56.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    enabled = !uiState.isSubmitting && isOnlineLocal
+                ) {
+                    Text("حفظ التعديلات", fontWeight = FontWeight.Bold)
+                }
+
+                Button(
+                    onClick = {
+                        keyboardController.hideKeyboard()
+                        viewModel.onSaveClicked(approveOnSave = true)
+                    },
+                    modifier = Modifier.weight(1f).height(56.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                    enabled = !uiState.isSubmitting && isOnlineLocal
+                ) {
+                    Icon(Icons.Default.Check, contentDescription = null)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("اعتماد وموافقة", fontWeight = FontWeight.Bold)
+                }
+            }
+        } else {
+            Button(
+                onClick = {
+                    keyboardController.hideKeyboard()
+                    viewModel.onSaveClicked()
+                },
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFEF4444),
+                    disabledContainerColor = Color(0xFFEF4444).copy(alpha = 0.5f)
+                ),
+                enabled = !uiState.isSubmitting && isOnlineLocal
+            ) { 
+                if (uiState.isSubmitting) {
+                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+                } else {
+                    Icon(Icons.Default.Save, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(if (uiState.isEditMode) "تحديث القيد" else "حفظ إدخال المخزون", fontWeight = FontWeight.Bold) 
+                }
             }
         }
     }

@@ -67,6 +67,7 @@ fun AccountingScreen(
     }
     val balance by viewModel.balance.collectAsState()
     val totalExpenses by viewModel.totalExpenses.collectAsState()
+    val isSubmitting by viewModel.isSubmitting.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val listState = rememberLazyListState()
     var showAddTransactionDialog by remember { mutableStateOf(false) }
@@ -109,7 +110,8 @@ fun AccountingScreen(
         )
     }
 
-    Scaffold(
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
         containerColor = bgColor,
         floatingActionButton = {
             if (canUseTreasury) {
@@ -416,6 +418,35 @@ fun AccountingScreen(
         }
     }
 
+        if (isSubmitting) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.5f))
+                    .clickable(enabled = false) {},
+                contentAlignment = Alignment.Center
+            ) {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        CircularProgressIndicator(color = accentColor)
+                        Text(
+                            text = "جاري معالجة العملية والمزامنة...",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+    }
     if (showAddTransactionDialog) {
         AddTransactionDialog(
             type = selectedType,

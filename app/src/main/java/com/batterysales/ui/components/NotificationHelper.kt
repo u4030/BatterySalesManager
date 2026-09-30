@@ -20,7 +20,14 @@ object NotificationHelper {
     private const val CHANNEL_NAME = "Battery Sales Notifications"
     private const val GROUP_KEY_ALERTS = "com.batterysales.ALERTS"
 
-    fun showNotification(context: Context, title: String, message: String, playSound: Boolean = true, notificationId: Int = System.currentTimeMillis().toInt()) {
+    fun showNotification(
+        context: Context,
+        title: String,
+        message: String,
+        playSound: Boolean = true,
+        notificationId: Int = System.currentTimeMillis().toInt(),
+        badgeCount: Int = 0
+    ) {
         val prefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
         val fontSizeScale = prefs.getFloat("font_size_scale", 1.0f)
         val isBold = prefs.getBoolean("is_bold", false)
@@ -46,6 +53,7 @@ object NotificationHelper {
                 description = "Notifications for stock updates and low stock alerts"
                 enableLights(true)
                 enableVibration(true)
+                setShowBadge(true)
             }
             notificationManager.createNotificationChannel(channel)
         }
@@ -71,26 +79,15 @@ object NotificationHelper {
                 if (playSound) {
                     setSound(soundUri)
                 }
+                if (badgeCount > 0) {
+                    setNumber(badgeCount)
+                }
             }
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(pendingIntent)
             .build()
 
-        // Summary notification for grouping
-        val summaryNotification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.al_asriya)
-            .setContentTitle("تنبيهات النظام")
-            .setContentText("لديك تنبيهات جديدة بانتظار المراجعة")
-            .setStyle(NotificationCompat.InboxStyle()
-                .setSummaryText("تنبيهات النظام"))
-            .setGroup(GROUP_KEY_ALERTS)
-            .setGroupSummary(true)
-            .setAutoCancel(true)
-            .setSilent(true)
-            .build()
-
         notificationManager.notify(notificationId, notification)
-        notificationManager.notify(1000, summaryNotification)
     }
 }
  

@@ -189,7 +189,7 @@ class BillRepository @Inject constructor(
             }
             
             if (statsUpdates.size > 1) {
-                transaction.update(statsRef, statsUpdates)
+                transaction.set(statsRef, statsUpdates, com.google.firebase.firestore.SetOptions.merge())
             }
         }.await()
 
@@ -224,7 +224,7 @@ class BillRepository @Inject constructor(
             val bill = snapshot.toObject(Bill::class.java)?.copy(id = snapshot.id) ?: return@runTransaction
             
             val targetMethod = if (bill.billType == BillType.CHECK) "bank" else "cash"
-            val targetWhId = if (bill.warehouseId.isNullOrEmpty() || bill.warehouseId == "main_treasury") mainWhId else bill.warehouseId!!
+            val targetWhId = if (bill.billType == BillType.BILL) mainWhId else (if (bill.warehouseId.isNullOrEmpty() || bill.warehouseId == "main_treasury") mainWhId else bill.warehouseId!!)
 
             val snapshots = summaryRepository.getSummarySnapshots(transaction, listOf(targetWhId))
 
@@ -335,7 +335,7 @@ class BillRepository @Inject constructor(
                 statsUpdates["totalCashBalance"] = com.google.firebase.firestore.FieldValue.increment(-paymentAmount)
             }
             
-            transaction.update(statsRef, statsUpdates)
+            transaction.set(statsRef, statsUpdates, com.google.firebase.firestore.SetOptions.merge())
         }.await()
 
         // Trigger FIFO settlement
@@ -356,11 +356,11 @@ class BillRepository @Inject constructor(
             val freshBill = snapshot.toObject(Bill::class.java)?.copy(id = snapshot.id) ?: return@runTransaction
             
             val targetMethod = if (freshBill.billType == BillType.CHECK) "bank" else "cash"
-            val targetWhId = if (warehouseId.isBlank() && (freshBill.warehouseId.isNullOrEmpty() || freshBill.warehouseId == "main_treasury")) {
+            val targetWhId = if (freshBill.billType == BillType.BILL) mainWhId else (if (warehouseId.isBlank() && (freshBill.warehouseId.isNullOrEmpty() || freshBill.warehouseId == "main_treasury")) {
                 mainWhId
             } else {
                 warehouseId.ifBlank { freshBill.warehouseId ?: mainWhId }
-            }
+            })
 
             val snapshots = summaryRepository.getSummarySnapshots(transaction, listOf(targetWhId))
 
@@ -482,6 +482,7 @@ class BillRepository @Inject constructor(
 
     suspend fun deleteBill(billId: String) {
         val billRef = firestore.collection(Bill.COLLECTION_NAME).document(billId)
+        val mainWhId = getMainWarehouseId()
         
         var supplierIdToSync: String? = null
 
@@ -499,8 +500,14 @@ class BillRepository @Inject constructor(
             val billSnap = transaction.get(billRef)
             val bill = billSnap.toObject(Bill::class.java) ?: return@runTransaction
             supplierIdToSync = bill.supplierId
+
+            val targetWhId = if (bill.billType == BillType.BILL) {
+                mainWhId
+            } else {
+                if (bill.warehouseId.isNullOrEmpty() || bill.warehouseId == "main_treasury") mainWhId else bill.warehouseId!!
+            }
             
-            val snapshots = summaryRepository.getSummarySnapshots(transaction, listOf(bill.warehouseId ?: "global"))
+            val snapshots = summaryRepository.getSummarySnapshots(transaction, listOf(targetWhId))
             val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
 
             // 2. Writes
@@ -515,7 +522,7 @@ class BillRepository @Inject constructor(
 
             if (creditToRemove > 0) {
                 // Adjust totalSupplierDebt in SystemStats
-                transaction.update(statsRef, "totalSupplierDebt", com.google.firebase.firestore.FieldValue.increment(creditToRemove))
+                transaction.set(statsRef, mapOf("totalSupplierDebt" to com.google.firebase.firestore.FieldValue.increment(creditToRemove)), com.google.firebase.firestore.SetOptions.merge())
 
                 // Update Supplier Denormalized Totals
                 if (bill.supplierId.isNotEmpty()) {
@@ -538,15 +545,15 @@ class BillRepository @Inject constructor(
             // These totals represent actual money spent (paidAmount)
             bankTransactions.documents.forEach { doc ->
                 val amt = doc.getDouble("amount") ?: 0.0
-                transaction.update(statsRef, "totalBankBalance", com.google.firebase.firestore.FieldValue.increment(amt))
-                summaryRepository.applyFinancialUpdate(transaction, snapshots, bill.warehouseId ?: "global", bankChange = amt)
+                transaction.set(statsRef, mapOf("totalBankBalance" to com.google.firebase.firestore.FieldValue.increment(amt)), com.google.firebase.firestore.SetOptions.merge())
+                summaryRepository.applyFinancialUpdate(transaction, snapshots, targetWhId, bankChange = amt)
                 transaction.delete(doc.reference)
             }
             
             treasuryTransactions.documents.forEach { doc ->
                 val amt = doc.getDouble("amount") ?: 0.0
-                transaction.update(statsRef, "totalCashBalance", com.google.firebase.firestore.FieldValue.increment(amt))
-                summaryRepository.applyFinancialUpdate(transaction, snapshots, bill.warehouseId ?: "global", cashChange = amt)
+                transaction.set(statsRef, mapOf("totalCashBalance" to com.google.firebase.firestore.FieldValue.increment(amt)), com.google.firebase.firestore.SetOptions.merge())
+                summaryRepository.applyFinancialUpdate(transaction, snapshots, targetWhId, cashChange = amt)
                 transaction.delete(doc.reference)
             }
 
@@ -554,9 +561,9 @@ class BillRepository @Inject constructor(
             val remainingCommitment = bill.amount - bill.paidAmount
             if (remainingCommitment > 0.001) {
                 if (bill.billType == BillType.CHECK) {
-                    transaction.update(statsRef, "totalUnpaidChecks", com.google.firebase.firestore.FieldValue.increment(-remainingCommitment))
+                    transaction.set(statsRef, mapOf("totalUnpaidChecks" to com.google.firebase.firestore.FieldValue.increment(-remainingCommitment)), com.google.firebase.firestore.SetOptions.merge())
                 } else if (bill.billType == BillType.BILL) {
-                    transaction.update(statsRef, "totalUnpaidBills", com.google.firebase.firestore.FieldValue.increment(-remainingCommitment))
+                    transaction.set(statsRef, mapOf("totalUnpaidBills" to com.google.firebase.firestore.FieldValue.increment(-remainingCommitment)), com.google.firebase.firestore.SetOptions.merge())
                 }
             }
         }.await()

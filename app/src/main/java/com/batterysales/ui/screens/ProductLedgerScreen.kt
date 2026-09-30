@@ -298,14 +298,15 @@ fun LedgerItemCard(
     val entry = item.entry
     var menuExpanded by remember { mutableStateOf(false) }
     val isSale = entry.supplier == "Sale"
-    val isTransfer = entry.costPrice == 0.0
+    val isTransfer = entry.orderId.startsWith("transfer_") || entry.supplier == "Transfer"
 
     val quantityColor = when {
         entry.quantity > 0 -> Color(0xFF10B981)
         else -> Color(0xFFEF4444)
     }
     val typeText = when {
-        isSale -> "عملية بيع"
+        isSale && entry.quantity < 0 -> "عملية بيع"
+        isSale && entry.quantity > 0 -> "إلغاء بيع / مرتجع مبيعات"
         isTransfer && entry.quantity < 0 -> "ترحيل مخزون (إخراج)"
         isTransfer && entry.quantity > 0 -> "ترحيل مخزون (إدخال)"
         else -> "عملية شراء"
@@ -416,21 +417,21 @@ fun LedgerItemCard(
                         color = Color(0xFF3B82F6)
                     )
                 }
-                if (entry.invoiceNumber.isNotEmpty()) {
+                if (isAdmin && entry.invoiceNumber.isNotEmpty()) {
                     InfoBadge(
                         label = "رقم الفاتورة/المرجع",
                         value = entry.invoiceNumber,
                         color = Color(0xFF8B5CF6)
                     )
                 }
-                if (entry.totalCost > 0) {
+                if (isAdmin && entry.totalCost > 0) {
                     InfoBadge(
                         label = "إجمالي القيمة",
                         value = "JD ${String.format("%.3f", entry.totalCost)}",
                         color = Color(0xFFFB8C00)
                     )
                 }
-                if (entry.costPrice > 0) {
+                if (isAdmin && entry.costPrice > 0) {
                     InfoBadge(
                         label = if (isSale) "سعر البيع" else "التكلفة",
                         value = "JD ${String.format("%.3f", entry.costPrice)}",

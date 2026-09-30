@@ -21,6 +21,7 @@ data class InvoiceDetailUiState(
     val payments: List<Payment> = emptyList(),
     val stockEntries: List<com.batterysales.data.models.StockEntry> = emptyList(),
     val isLoading: Boolean = true,
+    val isSubmitting: Boolean = false,
     val errorMessage: String? = null
 )
 
@@ -82,6 +83,7 @@ class InvoiceDetailViewModel @Inject constructor(
     fun addPayment(amount: Double, paymentMethod: String = "cash") {
         viewModelScope.launch {
             if (amount <= 0) return@launch
+            _uiState.update { it.copy(isSubmitting = true) }
             try {
                 val currentInvoice = _uiState.value.invoice
                 val payment = Payment(
@@ -95,6 +97,8 @@ class InvoiceDetailViewModel @Inject constructor(
                 invoiceRepository.addPayment(invoiceId, payment)
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = "فشل إضافة الدفعة: ${e.message}") }
+            } finally {
+                _uiState.update { it.copy(isSubmitting = false) }
             }
         }
     }
@@ -102,21 +106,27 @@ class InvoiceDetailViewModel @Inject constructor(
     fun updatePayment(payment: Payment, newAmount: Double) {
         viewModelScope.launch {
             if (newAmount <= 0) return@launch
+            _uiState.update { it.copy(isSubmitting = true) }
             try {
                 val updatedPayment = payment.copy(amount = newAmount, paymentDate = Date())
                 invoiceRepository.updatePayment(updatedPayment)
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = "فشل تحديث الدفعة: ${e.message}") }
+            } finally {
+                _uiState.update { it.copy(isSubmitting = false) }
             }
         }
     }
 
     fun deletePayment(paymentId: String) {
         viewModelScope.launch {
+            _uiState.update { it.copy(isSubmitting = true) }
             try {
                 invoiceRepository.deletePayment(paymentId, invoiceId)
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = "فشل حذف الدفعة: ${e.message}") }
+            } finally {
+                _uiState.update { it.copy(isSubmitting = false) }
             }
         }
     }

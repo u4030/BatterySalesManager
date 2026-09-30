@@ -147,12 +147,12 @@ class StockEntryRepository @Inject constructor(
                 val cost = finalEntry.getNetCost()
                 val qty = finalEntry.quantity - finalEntry.returnedQuantity
                 
-                transaction.update(statsRef, mapOf(
+                transaction.set(statsRef, mapOf(
                     "totalInventoryQuantity" to com.google.firebase.firestore.FieldValue.increment(qty.toLong()),
                     "totalInventoryValue" to com.google.firebase.firestore.FieldValue.increment(cost),
                     "totalSupplierDebt" to com.google.firebase.firestore.FieldValue.increment(cost),
                     "updatedAt" to Date()
-                ))
+                ), com.google.firebase.firestore.SetOptions.merge())
             }
         }.await()
 
@@ -340,12 +340,12 @@ class StockEntryRepository @Inject constructor(
             }
 
             if (totalCostChange != 0.0 || totalQtyChange != 0L) {
-                transaction.update(statsRef, mapOf(
+                transaction.set(statsRef, mapOf(
                     "totalInventoryQuantity" to com.google.firebase.firestore.FieldValue.increment(totalQtyChange),
                     "totalInventoryValue" to com.google.firebase.firestore.FieldValue.increment(totalCostChange),
                     "totalSupplierDebt" to com.google.firebase.firestore.FieldValue.increment(totalCostChange),
                     "updatedAt" to Date()
-                ))
+                ), com.google.firebase.firestore.SetOptions.merge())
             }
         }.await()
 
@@ -402,9 +402,11 @@ class StockEntryRepository @Inject constructor(
             val snapshots = summaryRepository.getSummarySnapshots(transaction, listOf(sourceWarehouseId, destinationWarehouseId))
 
             // --- WRITE PHASE ---
+            val transferBatchId = "transfer_${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(6)}"
             val sourceDocRef = firestore.collection(StockEntry.COLLECTION_NAME).document()
             val sourceStockEntry = StockEntry(
                 id = sourceDocRef.id,
+                orderId = transferBatchId,
                 productVariantId = productVariantId,
                 productName = productName,
                 capacity = capacity,
@@ -421,6 +423,7 @@ class StockEntryRepository @Inject constructor(
             val destinationDocRef = firestore.collection(StockEntry.COLLECTION_NAME).document()
             val destinationStockEntry = StockEntry(
                 id = destinationDocRef.id,
+                orderId = transferBatchId,
                 productVariantId = productVariantId,
                 productName = productName,
                 capacity = capacity,
@@ -686,12 +689,12 @@ class StockEntryRepository @Inject constructor(
 
             // 5. Commit Stats
             if (statsDeltas.isNotEmpty()) {
-                transaction.update(statsRef, mapOf(
+                transaction.set(statsRef, mapOf(
                     "totalInventoryQuantity" to com.google.firebase.firestore.FieldValue.increment((statsDeltas["qty"] ?: 0.0).toLong()),
                     "totalInventoryValue" to com.google.firebase.firestore.FieldValue.increment(statsDeltas["value"] ?: 0.0),
                     "totalSupplierDebt" to com.google.firebase.firestore.FieldValue.increment(statsDeltas["debt"] ?: 0.0),
                     "updatedAt" to Date()
-                ))
+                ), com.google.firebase.firestore.SetOptions.merge())
             }
         }.await()
 
@@ -807,7 +810,7 @@ class StockEntryRepository @Inject constructor(
                 bankTransactions.forEach { transaction.delete(it.reference) }
                 treasuryTransactions.forEach { transaction.delete(it.reference) }
 
-                transaction.update(statsRef, statsUpdates)
+                transaction.set(statsRef, statsUpdates, com.google.firebase.firestore.SetOptions.merge())
 
                 if (oldEntry != null && oldEntry.supplierId.isNotEmpty()) {
                     summaryRepository.invalidateSupplierReportCache(transaction, oldEntry.supplierId)
@@ -840,7 +843,8 @@ class StockEntryRepository @Inject constructor(
             .whereEqualTo("status", "pending")
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
-                    close(error)
+                    Log.e("StockEntryRepository", "Error in getPendingEntriesFlow listener", error)
+                    trySend(emptyList())
                     return@addSnapshotListener
                 }
                 if (snapshot != null) {
@@ -961,12 +965,12 @@ class StockEntryRepository @Inject constructor(
             val statsRef = firestore.collection(SystemStats.COLLECTION_NAME).document(SystemStats.DOCUMENT_ID)
             val cost = entry.getNetCost()
             val qty = entry.quantity - entry.returnedQuantity
-            transaction.update(statsRef, mapOf(
+            transaction.set(statsRef, mapOf(
                 "totalInventoryQuantity" to com.google.firebase.firestore.FieldValue.increment(qty.toLong()),
                 "totalInventoryValue" to com.google.firebase.firestore.FieldValue.increment(cost),
                 "totalSupplierDebt" to com.google.firebase.firestore.FieldValue.increment(cost),
                 "updatedAt" to Date()
-            ))
+            ), com.google.firebase.firestore.SetOptions.merge())
         }.await()
 
         val approvedEntry = getStockEntryById(entryId)

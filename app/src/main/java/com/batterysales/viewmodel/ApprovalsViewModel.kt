@@ -46,6 +46,9 @@ class ApprovalsViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    private val _isSubmitting = MutableStateFlow(false)
+    val isSubmitting: StateFlow<Boolean> = _isSubmitting.asStateFlow()
+
     private var currentUser: com.batterysales.data.models.User? = null
 
     init {
@@ -57,48 +60,49 @@ class ApprovalsViewModel @Inject constructor(
 
     private fun loadPendingEntries() {
         viewModelScope.launch {
-            combine(
-                listOf(
-                    stockEntryRepository.getPendingEntriesFlow(),
-                    approvalRepository.getPendingRequestsFlow(),
-                    productRepository.getProducts(),
-                    productVariantRepository.getAllVariantsFlow(),
-                    warehouseRepository.getWarehouses(),
+            _isLoading.value = true
+            try {
+                val warehouses = try { warehouseRepository.getWarehousesOnce() } catch (e: Exception) { emptyList() }
+
+                combine(
+                    stockEntryRepository.getPendingEntriesFlow().catch { emit(emptyList()) },
+                    approvalRepository.getPendingRequestsFlow().catch { emit(emptyList()) },
                     refreshTrigger
-                )
-            ) { args: Array<Any?> ->
-                val entries = args[0] as List<StockEntry>
-                val requests = args[1] as List<ApprovalRequest>
-                val products = args[2] as List<Product>
-                val variants = args[3] as List<ProductVariant>
-                val warehouses = args[4] as List<Warehouse>
+                ) { entries, requests, _ ->
+                    val stockItems = entries.map { entry ->
+                        val warehouse = warehouses.find { it.id == entry.warehouseId }
 
-                val stockItems = entries.map { entry ->
-                    val variant = variants.find { it.id == entry.productVariantId }
-                    val product = products.find { it.id == variant?.productId }
-                    val warehouse = warehouses.find { it.id == entry.warehouseId }
+                        ApprovalItem(
+                            entry = entry,
+                            productName = entry.productName.ifEmpty { "منتج غير معروف" },
+                            variantCapacity = if (entry.capacity > 0) "${entry.capacity}A" else "",
+                            warehouseName = warehouse?.name ?: "مخزن غير معروف",
+                            type = "STOCK_ENTRY"
+                        )
+                    }
 
-                    ApprovalItem(
-                        entry = entry,
-                        productName = product?.name ?: "منتج غير معروف",
-                        variantCapacity = if (variant != null) "${variant.capacity}A" else "",
-                        warehouseName = warehouse?.name ?: "مخزن غير معروف",
-                        type = "STOCK_ENTRY"
-                    )
+                    val requestItems = requests.map { req ->
+                        ApprovalItem(
+                            request = req,
+                            productName = req.productName,
+                            variantCapacity = if (req.variantCapacity.isNotEmpty()) "${req.variantCapacity}A" else "",
+                            type = if (req.targetType == ApprovalRequest.TARGET_PRODUCT) "PRODUCT_REQUEST" else "VARIANT_REQUEST"
+                        )
+                    }
+
+                    (stockItems + requestItems).sortedByDescending {
+                        it.entry?.timestamp?.time ?: it.request?.timestamp?.time ?: 0L
+                    }
+                }.catch { e ->
+                    Log.e("ApprovalsViewModel", "Error combining approval flows", e)
+                    emit(emptyList())
+                }.collect { items ->
+                    _approvalItems.value = items
+                    _isLoading.value = false
                 }
-
-                val requestItems = requests.map { req ->
-                    ApprovalItem(
-                        request = req,
-                        productName = req.productName,
-                        variantCapacity = if (req.variantCapacity.isNotEmpty()) "${req.variantCapacity}A" else "",
-                        type = if (req.targetType == ApprovalRequest.TARGET_PRODUCT) "PRODUCT_REQUEST" else "VARIANT_REQUEST"
-                    )
-                }
-
-                (stockItems + requestItems).sortedByDescending { it.entry?.timestamp ?: it.request?.timestamp }
-            }.collect { items ->
-                _approvalItems.value = items
+            } catch (e: Exception) {
+                Log.e("ApprovalsViewModel", "Exception in loadPendingEntries", e)
+                _approvalItems.value = emptyList()
                 _isLoading.value = false
             }
         }
@@ -111,25 +115,40 @@ class ApprovalsViewModel @Inject constructor(
 
     fun approveEntry(entryId: String) {
         viewModelScope.launch {
-            stockEntryRepository.approveEntry(entryId)
-            
-            // تحديث الروابط التلقائية للمورد بعد الموافقة
-            stockEntryRepository.getStockEntryById(entryId)?.let { entry ->
-                if (entry.supplierId.isNotEmpty()) {
-                    billRepository.autoLinkBillsForSupplier(entry.supplierId)
+            _isSubmitting.value = true
+            try {
+                stockEntryRepository.approveEntry(entryId)
+                
+                // تحديث الروابط التلقائية للمورد بعد الموافقة
+                stockEntryRepository.getStockEntryById(entryId)?.let { entry ->
+                    if (entry.supplierId.isNotEmpty()) {
+                        billRepository.autoLinkBillsForSupplier(entry.supplierId)
+                    }
                 }
+            } catch (e: Exception) {
+                Log.e("ApprovalsViewModel", "Error approving entry", e)
+            } finally {
+                _isSubmitting.value = false
             }
         }
     }
 
     fun rejectEntry(entryId: String) {
         viewModelScope.launch {
-            stockEntryRepository.deleteStockEntry(entryId)
+            _isSubmitting.value = true
+            try {
+                stockEntryRepository.deleteStockEntry(entryId)
+            } catch (e: Exception) {
+                Log.e("ApprovalsViewModel", "Error rejecting entry", e)
+            } finally {
+                _isSubmitting.value = false
+            }
         }
     }
 
     fun approveRequest(request: ApprovalRequest) {
         viewModelScope.launch {
+            _isSubmitting.value = true
             try {
                 when (request.targetType) {
                     ApprovalRequest.TARGET_PRODUCT -> {
@@ -151,14 +170,23 @@ class ApprovalsViewModel @Inject constructor(
                 }
                 approvalRepository.updateRequestStatus(request.id, ApprovalRequest.STATUS_APPROVED, currentUser?.id)
             } catch (e: Exception) {
-                // Log or handle error
+                Log.e("ApprovalsViewModel", "Error approving request", e)
+            } finally {
+                _isSubmitting.value = false
             }
         }
     }
 
     fun rejectRequest(requestId: String) {
         viewModelScope.launch {
-            approvalRepository.updateRequestStatus(requestId, ApprovalRequest.STATUS_REJECTED, currentUser?.id)
+            _isSubmitting.value = true
+            try {
+                approvalRepository.updateRequestStatus(requestId, ApprovalRequest.STATUS_REJECTED, currentUser?.id)
+            } catch (e: Exception) {
+                Log.e("ApprovalsViewModel", "Error rejecting request", e)
+            } finally {
+                _isSubmitting.value = false
+            }
         }
     }
 }
