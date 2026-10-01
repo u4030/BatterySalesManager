@@ -1,6 +1,7 @@
 package com.batterysales.data.models
 
 import com.google.firebase.firestore.Exclude
+import com.google.firebase.firestore.PropertyName
 import java.util.Date
 
 /**
@@ -22,6 +23,7 @@ data class ProductVariant(
     val createdAt: Date = Date(),
     val updatedAt: Date = Date(),
     val archived: Boolean = false,
+    @get:PropertyName("isDiscontinued")
     val isDiscontinued: Boolean = false
 ) {
     companion object {

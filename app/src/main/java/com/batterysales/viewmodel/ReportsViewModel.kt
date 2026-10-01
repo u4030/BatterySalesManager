@@ -187,10 +187,13 @@ class ReportsViewModel @Inject constructor(
     // --- NUCLEAR STRATEGY: Load ENTIRE inventory via Real-time Flow ---
     private var inventoryJob: kotlinx.coroutines.Job? = null
     fun loadInventoryReport(reset: Boolean = false) {
+        if (inventoryJob?.isActive == true && !reset && _inventoryReportItems.value.isNotEmpty()) return
         inventoryJob?.cancel()
         inventoryJob = viewModelScope.launch {
             try {
-                _isInventoryLoading.value = true
+                if (_inventoryReportItems.value.isEmpty()) {
+                    _isInventoryLoading.value = true
+                }
                 val user = userRepository.getCurrentUser()
                 val seller = user?.role == "seller"
                 val whId = if (seller) user?.warehouseId else null

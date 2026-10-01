@@ -44,11 +44,7 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
     val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
 
     DisposableEffect(lifecycleOwner) {
-        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-                viewModel.refreshAll()
-            }
-        }
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, _ -> }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
@@ -182,7 +178,10 @@ fun ReportsScreen(navController: NavController, viewModel: ReportsViewModel = hi
                                 }
                             }
 
-                            items(inventoryItems) { reportItem ->
+                            items(
+                                items = inventoryItems,
+                                key = { "${it.product.id}_${it.variant.id}" }
+                            ) { reportItem ->
                                 Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                                     ReportItemCard(
                                         item = reportItem,
