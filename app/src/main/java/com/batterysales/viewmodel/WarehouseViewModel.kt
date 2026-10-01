@@ -82,6 +82,7 @@ class WarehouseViewModel @Inject constructor(
             val summary = cachedSummary
             val items = if (summary != null) {
                 summary.items.values.asSequence()
+                    .filter { !it.isDiscontinued }
                     .filter { if (query.isBlank()) true else it.productName.contains(query, ignoreCase = true) || it.barcode == query }
                     .map { item ->
                         InventoryReportItem(
@@ -99,7 +100,7 @@ class WarehouseViewModel @Inject constructor(
                 // Fallback filtering
                 val variants = variantRepository.getAllVariants()
                 variants.asSequence()
-                    .filter { !it.archived }
+                    .filter { !it.archived && !it.isDiscontinued }
                     .filter { if (query.isBlank()) true else (it.productName?.contains(query, ignoreCase = true) ?: false) || it.barcode == query }
                     .map { v ->
                         val qty = (v.currentStock?.get(targetWhId) as? Number)?.toInt() ?: 0

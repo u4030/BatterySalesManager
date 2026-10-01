@@ -305,7 +305,8 @@ fun LedgerItemCard(
         else -> Color(0xFFEF4444)
     }
     val typeText = when {
-        isSale -> "عملية بيع"
+        isSale && entry.quantity < 0 -> "عملية بيع"
+        isSale && entry.quantity > 0 -> "إلغاء بيع / مرتجع مبيعات"
         isTransfer && entry.quantity < 0 -> "ترحيل مخزون (إخراج)"
         isTransfer && entry.quantity > 0 -> "ترحيل مخزون (إدخال)"
         else -> "عملية شراء"

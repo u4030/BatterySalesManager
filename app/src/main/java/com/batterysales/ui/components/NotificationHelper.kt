@@ -46,6 +46,7 @@ object NotificationHelper {
                 description = "Notifications for stock updates and low stock alerts"
                 enableLights(true)
                 enableVibration(true)
+                setShowBadge(true)
             }
             notificationManager.createNotificationChannel(channel)
         }
@@ -76,21 +77,7 @@ object NotificationHelper {
             .setContentIntent(pendingIntent)
             .build()
 
-        // Summary notification for grouping
-        val summaryNotification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.al_asriya)
-            .setContentTitle("تنبيهات النظام")
-            .setContentText("لديك تنبيهات جديدة بانتظار المراجعة")
-            .setStyle(NotificationCompat.InboxStyle()
-                .setSummaryText("تنبيهات النظام"))
-            .setGroup(GROUP_KEY_ALERTS)
-            .setGroupSummary(true)
-            .setAutoCancel(true)
-            .setSilent(true)
-            .build()
-
         notificationManager.notify(notificationId, notification)
-        notificationManager.notify(1000, summaryNotification)
     }
 }
  

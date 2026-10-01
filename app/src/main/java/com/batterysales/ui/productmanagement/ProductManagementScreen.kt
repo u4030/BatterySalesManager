@@ -733,12 +733,12 @@ fun EditVariantDialog(
     onUpdateVariant: (ProductVariant) -> Unit,
     onGenerateBarcode: () -> String
 ) {
-    var capacity by remember { mutableStateOf(variant.capacity.toString()) }
-    var specification by remember { mutableStateOf(variant.specification) }
-    var barcode by remember { mutableStateOf(variant.barcode) }
-    var isDiscontinued by remember { mutableStateOf(variant.isDiscontinued) }
-    var minQuantity by remember { mutableStateOf(variant.minQuantity.toString()) }
-    var minQuantities by remember { mutableStateOf(variant.minQuantities.mapValues { it.value.toString() }.toMutableMap()) }
+    var capacity by remember(variant) { mutableStateOf(variant.capacity.toString()) }
+    var specification by remember(variant) { mutableStateOf(variant.specification) }
+    var barcode by remember(variant) { mutableStateOf(variant.barcode) }
+    var isDiscontinued by remember(variant) { mutableStateOf(variant.isDiscontinued) }
+    var minQuantity by remember(variant) { mutableStateOf(variant.minQuantity.toString()) }
+    var minQuantities by remember(variant) { mutableStateOf(variant.minQuantities.mapValues { it.value.toString() }.toMutableMap()) }
     var showScanner by remember { mutableStateOf(false) }
 
     if (showScanner) {
