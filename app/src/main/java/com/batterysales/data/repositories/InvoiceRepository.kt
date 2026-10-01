@@ -322,7 +322,19 @@ class InvoiceRepository @Inject constructor(
 
             // Cleanup
             payments.documents.forEach { transaction.delete(it.reference) }
-            stockEntries.documents.forEach { transaction.delete(it.reference) }
+            stockEntries.documents.forEach { doc ->
+                val entry = doc.toObject(com.batterysales.data.models.StockEntry::class.java)
+                if (entry != null && entry.supplier == "Sale" && entry.quantity < 0) {
+                    transaction.update(doc.reference, mapOf(
+                        "quantity" to -entry.quantity,
+                        "invoiceId" to com.google.firebase.firestore.FieldValue.delete(),
+                        "invoiceNumber" to if (invoice.invoiceNumber.isNotEmpty()) "إلغاء فاتورة #${invoice.invoiceNumber}" else "إلغاء فاتورة",
+                        "timestamp" to Date()
+                    ))
+                } else {
+                    transaction.delete(doc.reference)
+                }
+            }
             uniqueTreasuryRefs.forEach { transaction.delete(it.reference) }
             uniqueBankRefs.forEach { transaction.delete(it.reference) }
             

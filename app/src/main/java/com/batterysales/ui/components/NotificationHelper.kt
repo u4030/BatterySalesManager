@@ -20,7 +20,14 @@ object NotificationHelper {
     private const val CHANNEL_NAME = "Battery Sales Notifications"
     private const val GROUP_KEY_ALERTS = "com.batterysales.ALERTS"
 
-    fun showNotification(context: Context, title: String, message: String, playSound: Boolean = true, notificationId: Int = System.currentTimeMillis().toInt()) {
+    fun showNotification(
+        context: Context,
+        title: String,
+        message: String,
+        playSound: Boolean = true,
+        notificationId: Int = System.currentTimeMillis().toInt(),
+        badgeCount: Int = 0
+    ) {
         val prefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
         val fontSizeScale = prefs.getFloat("font_size_scale", 1.0f)
         val isBold = prefs.getBoolean("is_bold", false)
@@ -71,6 +78,9 @@ object NotificationHelper {
             .apply {
                 if (playSound) {
                     setSound(soundUri)
+                }
+                if (badgeCount > 0) {
+                    setNumber(badgeCount)
                 }
             }
             .setPriority(NotificationCompat.PRIORITY_HIGH)
