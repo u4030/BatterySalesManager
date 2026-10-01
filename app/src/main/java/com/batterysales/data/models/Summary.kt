@@ -1,5 +1,6 @@
 package com.batterysales.data.models
 
+import com.google.firebase.firestore.PropertyName
 import java.util.Date
 
 /**
@@ -17,6 +18,7 @@ data class InventorySummaryItem(
     val weightedAverageCost: Double = 0.0,
     val sellingPrice: Double = 0.0,
     val updatedAt: Date = Date(),
+    @get:PropertyName("isDiscontinued")
     val isDiscontinued: Boolean = false
 )
 

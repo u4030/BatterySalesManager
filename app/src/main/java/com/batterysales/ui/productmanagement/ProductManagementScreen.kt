@@ -443,20 +443,49 @@ fun ProductCard(
 @Composable
 fun VariantItemRow(variant: ProductVariant, onEdit: () -> Unit, onDelete: () -> Unit, onPrint: () -> Unit) {
     val accentColor = Color(0xFFFB8C00)
+    val isDiscontinued = variant.isDiscontinued
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.03f)),
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+        colors = CardDefaults.cardColors(
+            containerColor = if (isDiscontinued) Color(0xFFEF4444).copy(alpha = 0.10f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.03f)
+        ),
+        border = androidx.compose.foundation.BorderStroke(
+            width = if (isDiscontinued) 1.5.dp else 1.dp,
+            color = if (isDiscontinued) Color(0xFFEF4444).copy(alpha = 0.4f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)
+        )
     ) {
-        Row(
-            modifier = Modifier.padding(12.dp).fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            if (isDiscontinued) {
+                Surface(
+                    color = Color(0xFFEF4444).copy(alpha = 0.2f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(Icons.Default.Block, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "صنف موقوف التوريد",
+                            color = Color(0xFFEF4444),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(
                     onClick = onDelete,
@@ -526,11 +555,12 @@ fun VariantItemRow(variant: ProductVariant, onEdit: () -> Unit, onDelete: () -> 
             Box(
                 modifier = Modifier
                     .size(40.dp)
-                    .background(accentColor.copy(alpha = 0.15f), RoundedCornerShape(8.dp)),
+                    .background(if (isDiscontinued) Color(0xFFEF4444).copy(alpha = 0.15f) else accentColor.copy(alpha = 0.15f), RoundedCornerShape(8.dp)),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Default.LocalOffer, contentDescription = null, tint = accentColor, modifier = Modifier.size(18.dp))
+                Icon(if (isDiscontinued) Icons.Default.Block else Icons.Default.LocalOffer, contentDescription = null, tint = if (isDiscontinued) Color(0xFFEF4444) else accentColor, modifier = Modifier.size(18.dp))
             }
+        }
         }
     }
 }
