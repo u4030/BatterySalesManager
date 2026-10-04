@@ -402,9 +402,11 @@ class StockEntryRepository @Inject constructor(
             val snapshots = summaryRepository.getSummarySnapshots(transaction, listOf(sourceWarehouseId, destinationWarehouseId))
 
             // --- WRITE PHASE ---
+            val transferBatchId = "transfer_${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(6)}"
             val sourceDocRef = firestore.collection(StockEntry.COLLECTION_NAME).document()
             val sourceStockEntry = StockEntry(
                 id = sourceDocRef.id,
+                orderId = transferBatchId,
                 productVariantId = productVariantId,
                 productName = productName,
                 capacity = capacity,
@@ -421,6 +423,7 @@ class StockEntryRepository @Inject constructor(
             val destinationDocRef = firestore.collection(StockEntry.COLLECTION_NAME).document()
             val destinationStockEntry = StockEntry(
                 id = destinationDocRef.id,
+                orderId = transferBatchId,
                 productVariantId = productVariantId,
                 productName = productName,
                 capacity = capacity,
@@ -840,7 +843,8 @@ class StockEntryRepository @Inject constructor(
             .whereEqualTo("status", "pending")
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
-                    close(error)
+                    Log.e("StockEntryRepository", "Error in getPendingEntriesFlow listener", error)
+                    trySend(emptyList())
                     return@addSnapshotListener
                 }
                 if (snapshot != null) {

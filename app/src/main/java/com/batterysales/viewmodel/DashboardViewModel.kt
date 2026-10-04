@@ -109,6 +109,13 @@ class DashboardViewModel @Inject constructor(
         awaitClose { listener.remove() }
     }
 
+    private val pendingCountFlow: Flow<Int> = combine(
+        stockEntryRepository.getPendingEntriesFlow().catch { emit(emptyList()) },
+        approvalRepository.getPendingRequestsFlow().catch { emit(emptyList()) }
+    ) { entries, reqs ->
+        entries.size + reqs.size
+    }
+
     val uiState: StateFlow<DashboardUiState> = combine(
         userRepository.getCurrentUserFlow(),
         summaryRepository.getFinancialStatusFlow(),
@@ -116,6 +123,7 @@ class DashboardViewModel @Inject constructor(
         summaryRepository.getInventorySummaryFlow(null),
         alertsFlow,
         upcomingBillsFlow,
+        pendingCountFlow,
         _heavyData
     ) { args: Array<Any?> ->
         val user = args[0] as? User
@@ -126,10 +134,13 @@ class DashboardViewModel @Inject constructor(
         val alerts = args[4] as? List<SystemAlert> ?: emptyList()
         @Suppress("UNCHECKED_CAST")
         val realTimeBills = args[5] as? List<Bill> ?: emptyList()
-        val heavy = args[6] as? HeavyData
+        val realTimePendingCount = args[6] as? Int ?: 0
+        val heavy = args[7] as? HeavyData
 
         if (user == null) return@combine DashboardUiState(isLoading = false)
         if (heavy == null) return@combine DashboardUiState(isLoading = true)
+
+        val pendingCount = if (user.role == "admin") realTimePendingCount else 0
 
         val activeUpcomingBills = if (user.role == User.ROLE_SELLER) emptyList() else realTimeBills
 
@@ -193,12 +204,12 @@ class DashboardViewModel @Inject constructor(
         }
 
         DashboardUiState(
-            pendingApprovalsCount = heavy.pendingCount,
+            pendingApprovalsCount = pendingCount,
             lowStockVariants = lowStockItems,
             upcomingBills = activeUpcomingBills,
             warehouseStats = whStats,
             systemStats = systemStats,
-            notifications = constructNotifications(activeUpcomingBills, heavy.pendingCount, lowStockItems, Date()),
+            notifications = constructNotifications(activeUpcomingBills, pendingCount, lowStockItems, Date()),
             isLoading = false
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DashboardUiState())
