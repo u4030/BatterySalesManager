@@ -57,30 +57,22 @@ class ApprovalsViewModel @Inject constructor(
 
     private fun loadPendingEntries() {
         viewModelScope.launch {
+            _isLoading.value = true
             try {
+                val warehouses = try { warehouseRepository.getWarehousesOnce() } catch (e: Exception) { emptyList() }
+
                 combine(
                     stockEntryRepository.getPendingEntriesFlow().catch { emit(emptyList()) },
                     approvalRepository.getPendingRequestsFlow().catch { emit(emptyList()) },
-                    productRepository.getProducts().catch { emit(emptyList()) },
-                    productVariantRepository.getAllVariantsFlow().catch { emit(emptyList()) },
-                    warehouseRepository.getWarehouses().catch { emit(emptyList()) },
                     refreshTrigger
-                ) { args: Array<Any?> ->
-                    val entries = (args.getOrNull(0) as? List<*>)?.filterIsInstance<StockEntry>() ?: emptyList()
-                    val requests = (args.getOrNull(1) as? List<*>)?.filterIsInstance<ApprovalRequest>() ?: emptyList()
-                    val products = (args.getOrNull(2) as? List<*>)?.filterIsInstance<Product>() ?: emptyList()
-                    val variants = (args.getOrNull(3) as? List<*>)?.filterIsInstance<ProductVariant>() ?: emptyList()
-                    val warehouses = (args.getOrNull(4) as? List<*>)?.filterIsInstance<Warehouse>() ?: emptyList()
-
+                ) { entries, requests, _ ->
                     val stockItems = entries.map { entry ->
-                        val variant = variants.find { it.id == entry.productVariantId }
-                        val product = products.find { it.id == variant?.productId }
                         val warehouse = warehouses.find { it.id == entry.warehouseId }
 
                         ApprovalItem(
                             entry = entry,
-                            productName = product?.name ?: entry.productName.ifEmpty { "منتج غير معروف" },
-                            variantCapacity = if (variant != null) "${variant.capacity}A" else if (entry.capacity > 0) "${entry.capacity}A" else "",
+                            productName = entry.productName.ifEmpty { "منتج غير معروف" },
+                            variantCapacity = if (entry.capacity > 0) "${entry.capacity}A" else "",
                             warehouseName = warehouse?.name ?: "مخزن غير معروف",
                             type = "STOCK_ENTRY"
                         )
