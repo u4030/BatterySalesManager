@@ -59,11 +59,11 @@ class ApprovalsViewModel @Inject constructor(
         viewModelScope.launch {
             combine(
                 listOf(
-                    stockEntryRepository.getPendingEntriesFlow(),
-                    approvalRepository.getPendingRequestsFlow(),
-                    productRepository.getProducts(),
-                    productVariantRepository.getAllVariantsFlow(),
-                    warehouseRepository.getWarehouses(),
+                    stockEntryRepository.getPendingEntriesFlow().catch { emit(emptyList()) },
+                    approvalRepository.getPendingRequestsFlow().catch { emit(emptyList()) },
+                    productRepository.getProducts().catch { emit(emptyList()) },
+                    productVariantRepository.getAllVariantsFlow().catch { emit(emptyList()) },
+                    warehouseRepository.getWarehouses().catch { emit(emptyList()) },
                     refreshTrigger
                 )
             ) { args: Array<Any?> ->
