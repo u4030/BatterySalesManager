@@ -92,12 +92,30 @@ class DashboardViewModel @Inject constructor(
         awaitClose { listener.remove() }
     }
 
+    private val upcomingBillsFlow: Flow<List<Bill>> = callbackFlow {
+        val listener = firestore.collection(Bill.COLLECTION_NAME)
+            .whereNotEqualTo("status", BillStatus.PAID)
+            .addSnapshotListener { snap, e ->
+                if (e != null) return@addSnapshotListener
+                val nextWeek = Calendar.getInstance().apply {
+                    add(Calendar.DAY_OF_YEAR, 7)
+                    set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59)
+                }
+                val bills = snap?.documents?.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) }
+                    ?.filter { it.dueDate != null && !it.dueDate.after(nextWeek.time) }
+                    ?.sortedBy { it.dueDate } ?: emptyList()
+                trySend(bills)
+            }
+        awaitClose { listener.remove() }
+    }
+
     val uiState: StateFlow<DashboardUiState> = combine(
         userRepository.getCurrentUserFlow(),
         summaryRepository.getFinancialStatusFlow(),
         summaryRepository.getSuppliersOverviewFlow(),
         summaryRepository.getInventorySummaryFlow(null),
         alertsFlow,
+        upcomingBillsFlow,
         _heavyData
     ) { args: Array<Any?> ->
         val user = args[0] as? User
@@ -106,10 +124,14 @@ class DashboardViewModel @Inject constructor(
         val globalInventory = args[3] as? InventorySummary ?: InventorySummary()
         @Suppress("UNCHECKED_CAST")
         val alerts = args[4] as? List<SystemAlert> ?: emptyList()
-        val heavy = args[5] as? HeavyData
+        @Suppress("UNCHECKED_CAST")
+        val realTimeBills = args[5] as? List<Bill> ?: emptyList()
+        val heavy = args[6] as? HeavyData
 
         if (user == null) return@combine DashboardUiState(isLoading = false)
         if (heavy == null) return@combine DashboardUiState(isLoading = true)
+
+        val activeUpcomingBills = if (user.role == User.ROLE_SELLER) emptyList() else realTimeBills
 
         val isAdmin = user.role == "admin"
         val userWarehouseId = user.warehouseId
@@ -173,10 +195,10 @@ class DashboardViewModel @Inject constructor(
         DashboardUiState(
             pendingApprovalsCount = heavy.pendingCount,
             lowStockVariants = lowStockItems,
-            upcomingBills = heavy.upcomingBills,
+            upcomingBills = activeUpcomingBills,
             warehouseStats = whStats,
             systemStats = systemStats,
-            notifications = constructNotifications(heavy.upcomingBills, heavy.pendingCount, lowStockItems, Date()),
+            notifications = constructNotifications(activeUpcomingBills, heavy.pendingCount, lowStockItems, Date()),
             isLoading = false
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DashboardUiState())
