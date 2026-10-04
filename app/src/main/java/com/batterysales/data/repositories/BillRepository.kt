@@ -224,7 +224,7 @@ class BillRepository @Inject constructor(
             val bill = snapshot.toObject(Bill::class.java)?.copy(id = snapshot.id) ?: return@runTransaction
             
             val targetMethod = if (bill.billType == BillType.CHECK) "bank" else "cash"
-            val targetWhId = if (bill.warehouseId.isNullOrEmpty() || bill.warehouseId == "main_treasury") mainWhId else bill.warehouseId!!
+            val targetWhId = if (bill.billType == BillType.BILL) mainWhId else (if (bill.warehouseId.isNullOrEmpty() || bill.warehouseId == "main_treasury") mainWhId else bill.warehouseId!!)
 
             val snapshots = summaryRepository.getSummarySnapshots(transaction, listOf(targetWhId))
 
@@ -356,11 +356,11 @@ class BillRepository @Inject constructor(
             val freshBill = snapshot.toObject(Bill::class.java)?.copy(id = snapshot.id) ?: return@runTransaction
             
             val targetMethod = if (freshBill.billType == BillType.CHECK) "bank" else "cash"
-            val targetWhId = if (warehouseId.isBlank() && (freshBill.warehouseId.isNullOrEmpty() || freshBill.warehouseId == "main_treasury")) {
+            val targetWhId = if (freshBill.billType == BillType.BILL) mainWhId else (if (warehouseId.isBlank() && (freshBill.warehouseId.isNullOrEmpty() || freshBill.warehouseId == "main_treasury")) {
                 mainWhId
             } else {
                 warehouseId.ifBlank { freshBill.warehouseId ?: mainWhId }
-            }
+            })
 
             val snapshots = summaryRepository.getSummarySnapshots(transaction, listOf(targetWhId))
 
