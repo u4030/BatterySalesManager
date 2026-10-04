@@ -58,19 +58,22 @@ class ApprovalsViewModel @Inject constructor(
     private fun loadPendingEntries() {
         viewModelScope.launch {
             combine(
-                listOf(
-                    stockEntryRepository.getPendingEntriesFlow().catch { emit(emptyList()) },
-                    approvalRepository.getPendingRequestsFlow().catch { emit(emptyList()) },
-                    productRepository.getProducts().catch { emit(emptyList()) },
-                    productVariantRepository.getAllVariantsFlow().catch { emit(emptyList()) },
-                    warehouseRepository.getWarehouses().catch { emit(emptyList()) },
-                    refreshTrigger
-                )
+                stockEntryRepository.getPendingEntriesFlow().catch { emit(emptyList()) },
+                approvalRepository.getPendingRequestsFlow().catch { emit(emptyList()) },
+                productRepository.getProducts().catch { emit(emptyList()) },
+                productVariantRepository.getAllVariantsFlow().catch { emit(emptyList()) },
+                warehouseRepository.getWarehouses().catch { emit(emptyList()) },
+                refreshTrigger
             ) { args: Array<Any?> ->
+                @Suppress("UNCHECKED_CAST")
                 val entries = args[0] as List<StockEntry>
+                @Suppress("UNCHECKED_CAST")
                 val requests = args[1] as List<ApprovalRequest>
+                @Suppress("UNCHECKED_CAST")
                 val products = args[2] as List<Product>
+                @Suppress("UNCHECKED_CAST")
                 val variants = args[3] as List<ProductVariant>
+                @Suppress("UNCHECKED_CAST")
                 val warehouses = args[4] as List<Warehouse>
 
                 val stockItems = entries.map { entry ->
