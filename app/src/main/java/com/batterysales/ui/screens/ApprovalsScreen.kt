@@ -87,21 +87,21 @@ fun ApprovalsScreen(
                             item = item,
                             onApprove = { 
                                 if (item.type == "STOCK_ENTRY") {
-                                    viewModel.approveEntry(item.entry!!.id)
+                                    item.entry?.id?.let { viewModel.approveEntry(it) }
                                 } else {
-                                    viewModel.approveRequest(item.request!!)
+                                    item.request?.let { viewModel.approveRequest(it) }
                                 }
                             },
                             onReject = { 
                                 if (item.type == "STOCK_ENTRY") {
-                                    viewModel.rejectEntry(item.entry!!.id)
+                                    item.entry?.id?.let { viewModel.rejectEntry(it) }
                                 } else {
-                                    viewModel.rejectRequest(item.request!!.id)
+                                    item.request?.id?.let { viewModel.rejectRequest(it) }
                                 }
                             },
                             onEdit = { 
                                 if (item.type == "STOCK_ENTRY") {
-                                    navController.navigate("stock_entry?entryId=${item.entry!!.id}")
+                                    item.entry?.id?.let { navController.navigate("stock_entry?entryId=$it") }
                                 }
                             }
                         )
@@ -349,13 +349,15 @@ fun ApprovalCard(item: ApprovalItem, onApprove: () -> Unit, onReject: () -> Unit
                     }
                 }
 
+                val itemDate = if (isStockEntry) item.entry?.timestamp else item.request?.timestamp
+                val formattedDate = itemDate?.let { dateFormatter.format(it) } ?: "---"
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.AccessTime, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text(text = dateFormatter.format(if (isStockEntry) item.entry!!.timestamp else item.request!!.timestamp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(text = formattedDate, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 
-                val requesterName = if (isStockEntry) item.entry!!.createdByUserName else item.request!!.requesterName
+                val requesterName = if (isStockEntry) (item.entry?.createdByUserName ?: "") else (item.request?.requesterName ?: "")
                 if (requesterName.isNotEmpty()) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
