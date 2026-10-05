@@ -46,6 +46,9 @@ class ApprovalsViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    private val _isSubmitting = MutableStateFlow(false)
+    val isSubmitting: StateFlow<Boolean> = _isSubmitting.asStateFlow()
+
     private var currentUser: com.batterysales.data.models.User? = null
 
     init {
@@ -112,25 +115,40 @@ class ApprovalsViewModel @Inject constructor(
 
     fun approveEntry(entryId: String) {
         viewModelScope.launch {
-            stockEntryRepository.approveEntry(entryId)
-            
-            // تحديث الروابط التلقائية للمورد بعد الموافقة
-            stockEntryRepository.getStockEntryById(entryId)?.let { entry ->
-                if (entry.supplierId.isNotEmpty()) {
-                    billRepository.autoLinkBillsForSupplier(entry.supplierId)
+            _isSubmitting.value = true
+            try {
+                stockEntryRepository.approveEntry(entryId)
+
+                // تحديث الروابط التلقائية للمورد بعد الموافقة
+                stockEntryRepository.getStockEntryById(entryId)?.let { entry ->
+                    if (entry.supplierId.isNotEmpty()) {
+                        billRepository.autoLinkBillsForSupplier(entry.supplierId)
+                    }
                 }
+            } catch (e: Exception) {
+                Log.e("ApprovalsViewModel", "Error approving entry", e)
+            } finally {
+                _isSubmitting.value = false
             }
         }
     }
 
     fun rejectEntry(entryId: String) {
         viewModelScope.launch {
-            stockEntryRepository.deleteStockEntry(entryId)
+            _isSubmitting.value = true
+            try {
+                stockEntryRepository.deleteStockEntry(entryId)
+            } catch (e: Exception) {
+                Log.e("ApprovalsViewModel", "Error rejecting entry", e)
+            } finally {
+                _isSubmitting.value = false
+            }
         }
     }
 
     fun approveRequest(request: ApprovalRequest) {
         viewModelScope.launch {
+            _isSubmitting.value = true
             try {
                 when (request.targetType) {
                     ApprovalRequest.TARGET_PRODUCT -> {
@@ -152,14 +170,23 @@ class ApprovalsViewModel @Inject constructor(
                 }
                 approvalRepository.updateRequestStatus(request.id, ApprovalRequest.STATUS_APPROVED, currentUser?.id)
             } catch (e: Exception) {
-                // Log or handle error
+                Log.e("ApprovalsViewModel", "Error approving request", e)
+            } finally {
+                _isSubmitting.value = false
             }
         }
     }
 
     fun rejectRequest(requestId: String) {
         viewModelScope.launch {
-            approvalRepository.updateRequestStatus(requestId, ApprovalRequest.STATUS_REJECTED, currentUser?.id)
+            _isSubmitting.value = true
+            try {
+                approvalRepository.updateRequestStatus(requestId, ApprovalRequest.STATUS_REJECTED, currentUser?.id)
+            } catch (e: Exception) {
+                Log.e("ApprovalsViewModel", "Error rejecting request", e)
+            } finally {
+                _isSubmitting.value = false
+            }
         }
     }
 }
