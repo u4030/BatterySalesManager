@@ -192,13 +192,33 @@ class DashboardViewModel @Inject constructor(
             val capacity = (alert.data["capacity"] as? Number)?.toInt() ?: summary?.capacity ?: 0
             val specification = (alert.data["specification"] as? String) ?: summary?.specification ?: ""
             
+            val rawQty = alert.data["currentStock"] ?: alert.data["currentQuantity"]
+            val currentQty = when {
+                rawQty is Number -> rawQty.toInt()
+                rawQty is String -> rawQty.toIntOrNull() ?: 0
+                else -> {
+                    Regex("""الكمية:\s*(\d+)""").find(alert.message)?.groupValues?.get(1)?.toIntOrNull()
+                        ?: summary?.currentStock ?: 0
+                }
+            }
+
+            val rawMin = alert.data["threshold"] ?: alert.data["minQuantity"]
+            val minQty = when {
+                rawMin is Number -> rawMin.toInt()
+                rawMin is String -> rawMin.toIntOrNull() ?: 0
+                else -> {
+                    Regex("""الحد:\s*(\d+)""").find(alert.message)?.groupValues?.get(1)?.toIntOrNull()
+                        ?: summary?.minQuantity ?: 0
+                }
+            }
+
             LowStockItem(
                 variantId = alert.relatedId,
                 productName = summary?.productName ?: alert.title.replace("مخزون منخفض: ", ""),
                 capacity = capacity,
                 specification = specification,
-                currentQuantity = (alert.data["currentStock"] as? Number)?.toInt() ?: 0,
-                minQuantity = (alert.data["threshold"] as? Number)?.toInt() ?: 0,
+                currentQuantity = currentQty,
+                minQuantity = minQty,
                 warehouseName = heavy.warehouses.find { it.id == alert.warehouseId }?.name ?: alert.warehouseName ?: "مخزن"
             )
         }
