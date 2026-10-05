@@ -286,7 +286,7 @@ class DashboardViewModel @Inject constructor(
         
         lowStockItems.forEach { item ->
             val specLabel = if (item.specification.isNotBlank()) "${item.specification}|" else ""
-            val message = "(${item.warehouseName}: $specLabel${item.capacity} أمبير)"
+            val message = "(${item.warehouseName}: $specLabel${item.capacity} أمبير) | المتاح: ${item.currentQuantity} | الحد الأدنى: ${item.minQuantity}"
             val route = "product_ledger/${item.variantId}/${item.productName}/${item.capacity}/${item.specification.ifEmpty { "no_spec" }}"
             
             allNotifications.add(AppNotification(
