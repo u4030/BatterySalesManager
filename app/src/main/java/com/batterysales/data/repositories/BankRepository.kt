@@ -47,7 +47,7 @@ class BankRepository @Inject constructor(
             summaryRepository.applyFinancialUpdate(transactionOp, snapshots, warehouseId = "global", bankChange = change)
             
             // Update Global Stats
-            transactionOp.update(statsRef, "totalBankBalance", com.google.firebase.firestore.FieldValue.increment(change))
+            transactionOp.set(statsRef, mapOf("totalBankBalance" to com.google.firebase.firestore.FieldValue.increment(change)), com.google.firebase.firestore.SetOptions.merge())
         }.await()
 
         return docRef.id
@@ -76,7 +76,7 @@ class BankRepository @Inject constructor(
             summaryRepository.applyFinancialUpdate(transactionOp, snapshots, warehouseId = "global", bankChange = totalBankChange)
             
             // Update Global Stats
-            transactionOp.update(statsRef, "totalBankBalance", com.google.firebase.firestore.FieldValue.increment(totalBankChange))
+            transactionOp.set(statsRef, mapOf("totalBankBalance" to com.google.firebase.firestore.FieldValue.increment(totalBankChange)), com.google.firebase.firestore.SetOptions.merge())
         }.await()
     }
 
@@ -166,7 +166,7 @@ class BankRepository @Inject constructor(
                 summaryRepository.applyFinancialUpdate(transactionOp, snapshots, warehouseId = "global", bankChange = bankChange)
                 
                 // Update Global Stats
-                transactionOp.update(statsRef, "totalBankBalance", com.google.firebase.firestore.FieldValue.increment(bankChange))
+                transactionOp.set(statsRef, mapOf("totalBankBalance" to com.google.firebase.firestore.FieldValue.increment(bankChange)), com.google.firebase.firestore.SetOptions.merge())
             }
         }.await()
     }

@@ -189,7 +189,7 @@ class BillRepository @Inject constructor(
             }
             
             if (statsUpdates.size > 1) {
-                transaction.update(statsRef, statsUpdates)
+                transaction.set(statsRef, statsUpdates, com.google.firebase.firestore.SetOptions.merge())
             }
         }.await()
 
@@ -335,7 +335,7 @@ class BillRepository @Inject constructor(
                 statsUpdates["totalCashBalance"] = com.google.firebase.firestore.FieldValue.increment(-paymentAmount)
             }
             
-            transaction.update(statsRef, statsUpdates)
+            transaction.set(statsRef, statsUpdates, com.google.firebase.firestore.SetOptions.merge())
         }.await()
 
         // Trigger FIFO settlement
@@ -515,7 +515,7 @@ class BillRepository @Inject constructor(
 
             if (creditToRemove > 0) {
                 // Adjust totalSupplierDebt in SystemStats
-                transaction.update(statsRef, "totalSupplierDebt", com.google.firebase.firestore.FieldValue.increment(creditToRemove))
+                transaction.set(statsRef, mapOf("totalSupplierDebt" to com.google.firebase.firestore.FieldValue.increment(creditToRemove)), com.google.firebase.firestore.SetOptions.merge())
 
                 // Update Supplier Denormalized Totals
                 if (bill.supplierId.isNotEmpty()) {
@@ -538,14 +538,14 @@ class BillRepository @Inject constructor(
             // These totals represent actual money spent (paidAmount)
             bankTransactions.documents.forEach { doc ->
                 val amt = doc.getDouble("amount") ?: 0.0
-                transaction.update(statsRef, "totalBankBalance", com.google.firebase.firestore.FieldValue.increment(amt))
+                transaction.set(statsRef, mapOf("totalBankBalance" to com.google.firebase.firestore.FieldValue.increment(amt)), com.google.firebase.firestore.SetOptions.merge())
                 summaryRepository.applyFinancialUpdate(transaction, snapshots, bill.warehouseId ?: "global", bankChange = amt)
                 transaction.delete(doc.reference)
             }
             
             treasuryTransactions.documents.forEach { doc ->
                 val amt = doc.getDouble("amount") ?: 0.0
-                transaction.update(statsRef, "totalCashBalance", com.google.firebase.firestore.FieldValue.increment(amt))
+                transaction.set(statsRef, mapOf("totalCashBalance" to com.google.firebase.firestore.FieldValue.increment(amt)), com.google.firebase.firestore.SetOptions.merge())
                 summaryRepository.applyFinancialUpdate(transaction, snapshots, bill.warehouseId ?: "global", cashChange = amt)
                 transaction.delete(doc.reference)
             }
@@ -554,9 +554,9 @@ class BillRepository @Inject constructor(
             val remainingCommitment = bill.amount - bill.paidAmount
             if (remainingCommitment > 0.001) {
                 if (bill.billType == BillType.CHECK) {
-                    transaction.update(statsRef, "totalUnpaidChecks", com.google.firebase.firestore.FieldValue.increment(-remainingCommitment))
+                    transaction.set(statsRef, mapOf("totalUnpaidChecks" to com.google.firebase.firestore.FieldValue.increment(-remainingCommitment)), com.google.firebase.firestore.SetOptions.merge())
                 } else if (bill.billType == BillType.BILL) {
-                    transaction.update(statsRef, "totalUnpaidBills", com.google.firebase.firestore.FieldValue.increment(-remainingCommitment))
+                    transaction.set(statsRef, mapOf("totalUnpaidBills" to com.google.firebase.firestore.FieldValue.increment(-remainingCommitment)), com.google.firebase.firestore.SetOptions.merge())
                 }
             }
         }.await()

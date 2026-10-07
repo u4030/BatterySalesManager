@@ -52,13 +52,11 @@ class WarehouseRepository @Inject constructor(
             // 2. Initialize Financial Status block for this warehouse
             val financialRef = firestore.collection("summaries").document("financial_status")
             val financialSnap = transaction.get(financialRef)
-            val financial = financialSnap.toObject(com.batterysales.data.models.FinancialStatus::class.java)
+            val financial = financialSnap.toObject(com.batterysales.data.models.FinancialStatus::class.java) ?: com.batterysales.data.models.FinancialStatus()
             
-            if (financial != null) {
-                val updatedBalances = financial.warehouseBalances.toMutableMap()
-                updatedBalances[finalWhId] = com.batterysales.data.models.WarehouseBalance(warehouseId = finalWhId)
-                transaction.update(financialRef, "warehouseBalances", updatedBalances)
-            }
+            val updatedBalances = financial.warehouseBalances.toMutableMap()
+            updatedBalances[finalWhId] = com.batterysales.data.models.WarehouseBalance(warehouseId = finalWhId)
+            transaction.set(financialRef, financial.copy(warehouseBalances = updatedBalances), com.google.firebase.firestore.SetOptions.merge())
         }.await()
     }
 

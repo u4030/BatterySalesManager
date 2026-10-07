@@ -471,7 +471,7 @@ class InvoiceRepository @Inject constructor(
                 )
             }
 
-            transaction.update(statsRef, statsUpdates)
+            transaction.set(statsRef, statsUpdates, com.google.firebase.firestore.SetOptions.merge())
 
             if (oldBatteryTransaction != null) {
                 val scrapRef = firestore.collection(com.batterysales.data.models.OldBatteryTransaction.COLLECTION_NAME).document()
@@ -566,7 +566,7 @@ class InvoiceRepository @Inject constructor(
                 statsUpdates["totalCashBalance"] = com.google.firebase.firestore.FieldValue.increment(finalPayment.amount)
             }
 
-            transaction.update(statsRef, statsUpdates)
+            transaction.set(statsRef, statsUpdates, com.google.firebase.firestore.SetOptions.merge())
         }.await()
     }
 
@@ -658,7 +658,7 @@ class InvoiceRepository @Inject constructor(
             } else {
                 statsUpdates["totalCashBalance"] = com.google.firebase.firestore.FieldValue.increment(diff)
             }
-            transaction.update(statsRef, statsUpdates)
+            transaction.set(statsRef, statsUpdates, com.google.firebase.firestore.SetOptions.merge())
         }.await()
     }
 
@@ -766,7 +766,7 @@ class InvoiceRepository @Inject constructor(
             } else {
                 statsUpdates["totalCashBalance"] = com.google.firebase.firestore.FieldValue.increment(-oldPayment.amount)
             }
-            transaction.update(statsRef, statsUpdates)
+            transaction.set(statsRef, statsUpdates, com.google.firebase.firestore.SetOptions.merge())
         }.await()
     }
 }

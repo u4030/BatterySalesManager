@@ -142,11 +142,11 @@ class ProductVariantRepository @Inject constructor(
                             
                             // Reverse from Global Stats
                             val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
-                            transaction.update(statsRef, mapOf(
+                            transaction.set(statsRef, mapOf(
                                 "totalSupplierDebt" to com.google.firebase.firestore.FieldValue.increment(-cost),
                                 "totalInventoryValue" to com.google.firebase.firestore.FieldValue.increment(-cost),
                                 "totalInventoryQuantity" to com.google.firebase.firestore.FieldValue.increment(-(entry.quantity - entry.returnedQuantity).toLong())
-                            ))
+                            ), com.google.firebase.firestore.SetOptions.merge())
                         }
                         transaction.update(doc.reference, "status", "archived")
                     }
