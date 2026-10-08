@@ -55,6 +55,11 @@ class BankRepository @Inject constructor(
 
     suspend fun updateTransaction(transaction: BankTransaction, forceSystemUpdate: Boolean = false) {
         val docRef = firestore.collection(BankTransaction.COLLECTION_NAME).document(transaction.id)
+
+        // Find linked treasury transaction (where relatedId == transaction.id)
+        val linkedTreasurySnap = firestore.collection(com.batterysales.data.models.Transaction.COLLECTION_NAME)
+            .whereEqualTo("relatedId", transaction.id).get().await()
+
         firestore.runTransaction { transactionOp ->
             // 1. Reads
             val oldTrans = transactionOp.get(docRef).toObject(BankTransaction::class.java)
@@ -63,7 +68,12 @@ class BankRepository @Inject constructor(
                 throw Exception("هذا القيد مدار من قبل النظام (فاتورة/شيك)، يرجى تعديله من المصدر لضمان دقة البيانات.")
             }
 
-            val snapshots = summaryRepository.getSummarySnapshots(transactionOp, listOf("global"))
+            val warehouseIds = mutableListOf("global")
+            linkedTreasurySnap.documents.forEach { doc ->
+                doc.getString("warehouseId")?.let { if (it.isNotBlank()) warehouseIds.add(it) }
+            }
+
+            val snapshots = summaryRepository.getSummarySnapshots(transactionOp, warehouseIds.distinct())
             val statsRef = firestore.collection(SystemStats.COLLECTION_NAME).document(SystemStats.DOCUMENT_ID)
 
             // 2. Writes
@@ -77,6 +87,25 @@ class BankRepository @Inject constructor(
             
             // Update Global Stats
             transactionOp.set(statsRef, mapOf("totalBankBalance" to com.google.firebase.firestore.FieldValue.increment(totalBankChange)), com.google.firebase.firestore.SetOptions.merge())
+
+            // Sync linked treasury transaction if exists
+            linkedTreasurySnap.documents.forEach { doc ->
+                val oldTreasury = doc.toObject(com.batterysales.data.models.Transaction::class.java)
+                val oldAmount = oldTreasury?.amount ?: 0.0
+                val amountDiff = transaction.amount - oldAmount
+
+                transactionOp.update(doc.reference, mapOf(
+                    "amount" to transaction.amount,
+                    "description" to "تغذية رصيد بنك: ${transaction.description}",
+                    "createdAt" to (transaction.date ?: java.util.Date())
+                ))
+
+                if (Math.abs(amountDiff) > 0.001 && oldTreasury?.warehouseId != null) {
+                    val treasuryChange = if (oldTreasury.type == com.batterysales.data.models.TransactionType.INCOME) amountDiff else -amountDiff
+                    summaryRepository.applyFinancialUpdate(transactionOp, snapshots, warehouseId = oldTreasury.warehouseId, cashChange = treasuryChange)
+                    transactionOp.set(statsRef, mapOf("totalCashBalance" to com.google.firebase.firestore.FieldValue.increment(treasuryChange)), com.google.firebase.firestore.SetOptions.merge())
+                }
+            }
         }.await()
     }
 

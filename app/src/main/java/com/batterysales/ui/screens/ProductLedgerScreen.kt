@@ -89,13 +89,12 @@ fun ProductLedgerScreen(
     }
 
     // Auto-scroll to highlighted entry
-    LaunchedEffect(pagingItems.itemCount, viewModel.highlightEntryId) {
-        if (viewModel.highlightEntryId != null) {
-            for (i in 0 until pagingItems.itemCount) {
-                if (pagingItems[i]?.entry?.id == viewModel.highlightEntryId) {
-                    listState.animateScrollToItem(i + 1) // +1 for Header
-                    break
-                }
+    LaunchedEffect(pagingItems.itemSnapshotList, viewModel.highlightEntryId) {
+        val targetId = viewModel.highlightEntryId
+        if (targetId != null) {
+            val index = pagingItems.itemSnapshotList.indexOfFirst { it?.entry?.id == targetId }
+            if (index != -1) {
+                listState.animateScrollToItem(index + 1) // +1 for Header
             }
         }
     }
