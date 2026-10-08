@@ -462,6 +462,30 @@ fun OldBatteryReportSectionRedesigned(scrapWarehouses: List<ScrapWarehouse>, old
 @OptIn(ExperimentalLayoutApi::class)
 private fun supplierReportSectionRedesigned(scope: androidx.compose.foundation.lazy.LazyListScope, viewModel: ReportsViewModel, supplierItems: List<SupplierSummaryItem>, navController: NavController) {
     scope.item { SupplierReportControls(viewModel) }
+
+    if (supplierItems.isNotEmpty()) {
+        scope.item {
+            androidx.compose.foundation.lazy.LazyRow(
+                modifier = Modifier.fillMaxWidth(),
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(supplierItems.size) { idx ->
+                    val item = supplierItems[idx]
+                    FilterChip(
+                        selected = false,
+                        onClick = { navController.navigate("supplier_details/${item.supplierId}") },
+                        label = { Text(item.name) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    )
+                }
+            }
+        }
+    }
+
     val totalSuppliersDebt = supplierItems.sumOf { it.currentBalance }
     scope.item {
         Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f))) {
@@ -537,9 +561,10 @@ fun SupplierReportControls(viewModel: ReportsViewModel) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun PurchaseOrderCard(po: com.batterysales.data.models.PurchaseOrderItem, dateFormatter: java.text.SimpleDateFormat, navController: NavController) {
+fun PurchaseOrderCard(po: com.batterysales.data.models.PurchaseOrderItem, dateFormatter: java.text.SimpleDateFormat, navController: NavController, supplierName: String = "") {
     var expanded by remember { mutableStateOf(false) }
     val isFullyCovered = po.remainingBalance <= 0.001
+    val displaySupplier = supplierName.ifEmpty { po.entry.supplier }
 
     Card(
         modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp).clickable { expanded = !expanded }, 
@@ -548,9 +573,17 @@ fun PurchaseOrderCard(po: com.batterysales.data.models.PurchaseOrderItem, dateFo
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            // Header Row: Date & Invoice Tag
+            // Header Row: Date, Supplier Name & Invoice Tag
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { 
                 Column {
+                    if (displaySupplier.isNotBlank()) {
+                        Text(
+                            text = "المورد: $displaySupplier",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
                     Text(
                         text = dateFormatter.format(po.entry.getEffectiveDate()), 
                         style = MaterialTheme.typography.titleMedium, 
