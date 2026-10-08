@@ -67,6 +67,7 @@ fun BankScreen(
     val balance by viewModel.balance.collectAsState()
     val totalWithdrawals by viewModel.totalWithdrawals.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val isSubmitting by viewModel.isSubmitting.collectAsState()
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val listState = rememberLazyListState()
@@ -100,7 +101,8 @@ fun BankScreen(
         )
     }
 
-    Scaffold(
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
         containerColor = bgColor,
         floatingActionButton = {
             Column(
@@ -330,6 +332,35 @@ fun BankScreen(
         }
     }
 
+        if (isSubmitting) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.5f))
+                    .clickable(enabled = false) {},
+                contentAlignment = Alignment.Center
+            ) {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        CircularProgressIndicator(color = accentColor)
+                        Text(
+                            text = "جاري معالجة العملية والمزامنة...",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+    }
     if (showDateRangePicker) {
         com.batterysales.ui.components.AppDateRangePickerDialog(
             state = dateRangePickerState,

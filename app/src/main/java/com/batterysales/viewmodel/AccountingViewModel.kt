@@ -105,13 +105,11 @@ class AccountingViewModel @Inject constructor(
         ) { status, whId, method ->
             if (whId == null || whId == "all") {
                 if (method == "bank") status.globalBankBalance 
-                else if (method == "cash") status.globalCashBalance 
-                else status.globalCashBalance + status.globalBankBalance
+                else status.globalCashBalance
             } else {
                 val whBalance = status.warehouseBalances[whId]
                 if (method == "bank") whBalance?.bankBalance ?: 0.0
-                else if (method == "cash") whBalance?.cashBalance ?: 0.0
-                else (whBalance?.cashBalance ?: 0.0) + (whBalance?.bankBalance ?: 0.0)
+                else whBalance?.cashBalance ?: 0.0
             }
         }
         .onEach { _balance.value = it }
@@ -150,13 +148,11 @@ class AccountingViewModel @Inject constructor(
             if (status != null) {
                 if (whId == null || whId == "all") {
                     _balance.value = if (method == "bank") status.globalBankBalance 
-                                    else if (method == "cash") status.globalCashBalance 
-                                    else status.globalCashBalance + status.globalBankBalance
+                                    else status.globalCashBalance
                 } else {
                     val whBalance = status.warehouseBalances[whId]
                     _balance.value = if (method == "bank") whBalance?.bankBalance ?: 0.0
-                                    else if (method == "cash") whBalance?.cashBalance ?: 0.0
-                                    else (whBalance?.cashBalance ?: 0.0) + (whBalance?.bankBalance ?: 0.0)
+                                    else whBalance?.cashBalance ?: 0.0
                 }
             } else {
                 // Fallback to heavy calculation if summary is missing
