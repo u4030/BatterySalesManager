@@ -1,6 +1,7 @@
 package com.batterysales.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -63,10 +64,11 @@ fun InvoiceDetailScreen(
         colors = listOf(Color(0xFFE53935), Color(0xFFFB8C00))
     )
 
-    Scaffold(
-        containerColor = bgColor,
-        snackbarHost = { SnackbarHost(snackbarHostState) }
-    ) { paddingValues ->
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+            containerColor = bgColor,
+            snackbarHost = { SnackbarHost(snackbarHostState) }
+        ) { paddingValues ->
         if (uiState.isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
@@ -313,6 +315,35 @@ fun InvoiceDetailScreen(
                 Spacer(modifier = Modifier.height(32.dp))
             }
         }
+
+        if (uiState.isSubmitting) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.5f))
+                    .clickable(enabled = false) {},
+                contentAlignment = Alignment.Center
+            ) {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        CircularProgressIndicator(color = accentColor)
+                        Text(
+                            text = "جاري معالجة الدفعة والمزامنة...",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
     }
 
     if (showPaymentDialog && uiState.invoice != null) {
@@ -375,6 +406,7 @@ fun InvoiceDetailScreen(
     }
 }
 
+}
 @Composable
 private fun InfoRowItem(label: String, value: String, icon: androidx.compose.ui.graphics.vector.ImageVector) {
     Row(

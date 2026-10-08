@@ -482,6 +482,7 @@ class BillRepository @Inject constructor(
 
     suspend fun deleteBill(billId: String) {
         val billRef = firestore.collection(Bill.COLLECTION_NAME).document(billId)
+        val mainWhId = getMainWarehouseId()
         
         var supplierIdToSync: String? = null
 
@@ -499,8 +500,14 @@ class BillRepository @Inject constructor(
             val billSnap = transaction.get(billRef)
             val bill = billSnap.toObject(Bill::class.java) ?: return@runTransaction
             supplierIdToSync = bill.supplierId
+
+            val targetWhId = if (bill.billType == BillType.BILL) {
+                mainWhId
+            } else {
+                if (bill.warehouseId.isNullOrEmpty() || bill.warehouseId == "main_treasury") mainWhId else bill.warehouseId!!
+            }
             
-            val snapshots = summaryRepository.getSummarySnapshots(transaction, listOf(bill.warehouseId ?: "global"))
+            val snapshots = summaryRepository.getSummarySnapshots(transaction, listOf(targetWhId))
             val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
 
             // 2. Writes
@@ -539,14 +546,14 @@ class BillRepository @Inject constructor(
             bankTransactions.documents.forEach { doc ->
                 val amt = doc.getDouble("amount") ?: 0.0
                 transaction.set(statsRef, mapOf("totalBankBalance" to com.google.firebase.firestore.FieldValue.increment(amt)), com.google.firebase.firestore.SetOptions.merge())
-                summaryRepository.applyFinancialUpdate(transaction, snapshots, bill.warehouseId ?: "global", bankChange = amt)
+                summaryRepository.applyFinancialUpdate(transaction, snapshots, targetWhId, bankChange = amt)
                 transaction.delete(doc.reference)
             }
             
             treasuryTransactions.documents.forEach { doc ->
                 val amt = doc.getDouble("amount") ?: 0.0
                 transaction.set(statsRef, mapOf("totalCashBalance" to com.google.firebase.firestore.FieldValue.increment(amt)), com.google.firebase.firestore.SetOptions.merge())
-                summaryRepository.applyFinancialUpdate(transaction, snapshots, bill.warehouseId ?: "global", cashChange = amt)
+                summaryRepository.applyFinancialUpdate(transaction, snapshots, targetWhId, cashChange = amt)
                 transaction.delete(doc.reference)
             }
 
