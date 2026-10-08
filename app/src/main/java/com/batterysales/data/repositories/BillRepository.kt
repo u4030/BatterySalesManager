@@ -727,23 +727,38 @@ class BillRepository @Inject constructor(
             }
             transaction.update(billRef, finalUpdates)
 
+            val checkDiff = if (bill.billType == BillType.CHECK) (bill.amount - oldBill.amount) else 0.0
+            val billDiff = if (bill.billType == BillType.BILL) (bill.amount - oldBill.amount) else 0.0
+            var bankDiff = 0.0
+
             // --- Propagate to Bank Transactions ---
             bankTransactions.documents.forEach { doc ->
+                val oldAmt = doc.getDouble("amount") ?: 0.0
+                val targetAmt = if (bill.billType == BillType.CHECK || bill.billType == BillType.TRANSFER) bill.amount else bill.paidAmount
+                val bDiff = targetAmt - oldAmt
+                if (Math.abs(bDiff) > 0.001 && bill.billType == BillType.TRANSFER) {
+                    bankDiff += bDiff
+                }
+
                 val updates = mutableMapOf<String, Any>(
                     "description" to "دفعة مورد (${if(bill.billType == BillType.CHECK) "شيك" else "تحويل"}): ${bill.description}",
                     "referenceNumber" to bill.referenceNumber,
-                    "date" to (bill.dueDate ?: Date())
+                    "date" to (bill.dueDate ?: Date()),
+                    "amount" to targetAmt
                 )
-                // For Transfer, the bank amount is the bill amount
-                if (bill.billType == BillType.TRANSFER) {
-                    updates["amount"] = bill.amount
-                    val bankDiff = bill.amount - (doc.getDouble("amount") ?: 0.0)
-                    if (Math.abs(bankDiff) > 0.001) {
-                        transaction.update(statsRef, "totalBankBalance", com.google.firebase.firestore.FieldValue.increment(-bankDiff))
-                        summaryRepository.applyFinancialUpdate(transaction, snapshots, bill.warehouseId ?: "global", bankChange = -bankDiff)
-                    }
-                }
                 transaction.update(doc.reference, updates)
+            }
+
+            // Update Summaries for financial status (Checks, Bills, Bank)
+            if (Math.abs(checkDiff) > 0.001 || Math.abs(billDiff) > 0.001 || Math.abs(bankDiff) > 0.001) {
+                summaryRepository.applyFinancialUpdate(
+                    transaction = transaction,
+                    snapshots = snapshots,
+                    warehouseId = bill.warehouseId ?: "global",
+                    bankChange = -bankDiff,
+                    checkChange = checkDiff,
+                    billChange = billDiff
+                )
             }
 
             // Adjust Unpaid commitments in stats if amount changed
@@ -753,7 +768,7 @@ class BillRepository @Inject constructor(
                 val diff = newRemaining - oldRemaining
                 if (Math.abs(diff) > 0.001) {
                     val field = if (bill.billType == BillType.CHECK) "totalUnpaidChecks" else "totalUnpaidBills"
-                    transaction.update(statsRef, field, com.google.firebase.firestore.FieldValue.increment(diff))
+                    transaction.set(statsRef, mapOf(field to com.google.firebase.firestore.FieldValue.increment(diff)), com.google.firebase.firestore.SetOptions.merge())
                 }
             }
 
