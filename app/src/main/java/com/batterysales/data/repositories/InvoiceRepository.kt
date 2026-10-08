@@ -493,6 +493,20 @@ class InvoiceRepository @Inject constructor(
 
     suspend fun addPayment(invoiceId: String, payment: Payment) {
         val invoiceRef = firestore.collection(Invoice.COLLECTION_NAME).document(invoiceId)
+        
+        // Fetch existing payments for this invoice to verify if invoice was already collected today
+        val existingPaymentsSnap = firestore.collection(Payment.COLLECTION_NAME)
+            .whereEqualTo("invoiceId", invoiceId)
+            .get().await()
+            
+        val now = Date()
+        val pDate = payment.paymentDate ?: now
+        val isPaymentToday = com.batterysales.utils.DateUtils.isSameDay(pDate, now)
+        val hasPriorPaymentToday = isPaymentToday && existingPaymentsSnap.documents.any { doc ->
+            val date = doc.getDate("paymentDate") ?: doc.getDate("timestamp")
+            date != null && com.batterysales.utils.DateUtils.isSameDay(date, now)
+        }
+
         firestore.runTransaction { transaction ->
             // --- READ PHASE ---
             val invoiceSnap = transaction.get(invoiceRef)
@@ -545,6 +559,9 @@ class InvoiceRepository @Inject constructor(
                 "updatedAt" to Date()
             ))
 
+            // Only increment unique invoice count if this invoice had NO prior payments today
+            val countChange = if (isPaymentToday && !hasPriorPaymentToday) 1 else 0
+
             summaryRepository.applyFinancialUpdate(
                 transaction = transaction,
                 snapshots = summarySnapshots,
@@ -552,8 +569,8 @@ class InvoiceRepository @Inject constructor(
                 cashChange = if (finalPayment.paymentMethod != "bank") finalPayment.amount else 0.0,
                 bankChange = if (finalPayment.paymentMethod == "bank") finalPayment.amount else 0.0,
                 pendingCollectionChange = -finalPayment.amount,
-                todayCollectionChange = finalPayment.amount,
-                todayCollectionCountChange = 1
+                todayCollectionChange = if (isPaymentToday) finalPayment.amount else 0.0,
+                todayCollectionCountChange = countChange
             )
 
             val statsUpdates = mutableMapOf<String, Any>(
@@ -712,11 +729,21 @@ class InvoiceRepository @Inject constructor(
         val invoiceRef = firestore.collection(Invoice.COLLECTION_NAME).document(invoiceId)
         val paymentRef = firestore.collection(Payment.COLLECTION_NAME).document(paymentId)
 
-        // Find linked ledger entries
+        // Find linked ledger entries and remaining payments for this invoice
         val treasuryTransactions = firestore.collection(com.batterysales.data.models.Transaction.COLLECTION_NAME)
             .whereEqualTo("relatedId", paymentId).get().await().documents
         val bankTransactions = firestore.collection(com.batterysales.data.models.BankTransaction.COLLECTION_NAME)
             .whereEqualTo("billId", paymentId).get().await().documents
+        val allInvoicePaymentsSnap = firestore.collection(Payment.COLLECTION_NAME)
+            .whereEqualTo("invoiceId", invoiceId).get().await()
+
+        val now = Date()
+        val otherPaymentsToday = allInvoicePaymentsSnap.documents
+            .filter { it.id != paymentId }
+            .any { doc ->
+                val date = doc.getDate("paymentDate") ?: doc.getDate("timestamp")
+                date != null && com.batterysales.utils.DateUtils.isSameDay(date, now)
+            }
 
         firestore.runTransaction { transaction ->
             // --- READ PHASE ---
@@ -744,8 +771,8 @@ class InvoiceRepository @Inject constructor(
             ))
 
             // Only reverse from today if it was paid today
-            val now = Date()
             val wasToday = com.batterysales.utils.DateUtils.isSameDay(oldPayment.paymentDate, now)
+            val countChange = if (wasToday && !otherPaymentsToday) -1 else 0
 
             summaryRepository.applyFinancialUpdate(
                 transaction = transaction,
@@ -755,7 +782,7 @@ class InvoiceRepository @Inject constructor(
                 bankChange = if (oldPayment.paymentMethod == "bank") -oldPayment.amount else 0.0,
                 pendingCollectionChange = oldPayment.amount,
                 todayCollectionChange = if (wasToday) -oldPayment.amount else 0.0,
-                todayCollectionCountChange = if (wasToday) -1 else 0
+                todayCollectionCountChange = countChange
             )
 
             val statsUpdates = mutableMapOf<String, Any>(

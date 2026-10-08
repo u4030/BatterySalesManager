@@ -55,6 +55,15 @@ class BankRepository @Inject constructor(
 
     suspend fun updateTransaction(transaction: BankTransaction, forceSystemUpdate: Boolean = false) {
         val docRef = firestore.collection(BankTransaction.COLLECTION_NAME).document(transaction.id)
+        
+        // Find linked treasury transaction (where relatedId == transaction.id)
+        val linkedTreasurySnap = firestore.collection(com.batterysales.data.models.Transaction.COLLECTION_NAME)
+            .whereEqualTo("relatedId", transaction.id).get().await()
+
+        // Check if linked to a Bill or Payment via billId
+        val billRef = if (!transaction.billId.isNullOrEmpty()) firestore.collection(com.batterysales.data.models.Bill.COLLECTION_NAME).document(transaction.billId) else null
+        val paymentRef = if (!transaction.billId.isNullOrEmpty()) firestore.collection(com.batterysales.data.models.Payment.COLLECTION_NAME).document(transaction.billId) else null
+
         firestore.runTransaction { transactionOp ->
             // 1. Reads
             val oldTrans = transactionOp.get(docRef).toObject(BankTransaction::class.java)
@@ -63,7 +72,15 @@ class BankRepository @Inject constructor(
                 throw Exception("هذا القيد مدار من قبل النظام (فاتورة/شيك)، يرجى تعديله من المصدر لضمان دقة البيانات.")
             }
 
-            val snapshots = summaryRepository.getSummarySnapshots(transactionOp, listOf("global"))
+            val billSnap = billRef?.let { transactionOp.get(it) }
+            val paymentSnap = paymentRef?.let { transactionOp.get(it) }
+
+            val warehouseIds = mutableListOf("global")
+            linkedTreasurySnap.documents.forEach { doc ->
+                doc.getString("warehouseId")?.let { if (it.isNotBlank()) warehouseIds.add(it) }
+            }
+
+            val snapshots = summaryRepository.getSummarySnapshots(transactionOp, warehouseIds.distinct())
             val statsRef = firestore.collection(SystemStats.COLLECTION_NAME).document(SystemStats.DOCUMENT_ID)
 
             // 2. Writes
@@ -73,10 +90,93 @@ class BankRepository @Inject constructor(
             val newChange = if (transaction.type == BankTransactionType.DEPOSIT) transaction.amount else -transaction.amount
             val totalBankChange = oldChange + newChange
 
-            summaryRepository.applyFinancialUpdate(transactionOp, snapshots, warehouseId = "global", bankChange = totalBankChange)
+            var checkChangeDelta = 0.0
+            var billChangeDelta = 0.0
+
+            // If linked to a Bill (Check or Promissory note)
+            if (billSnap != null && billSnap.exists()) {
+                val oldBill = billSnap.toObject(com.batterysales.data.models.Bill::class.java)
+                if (oldBill != null) {
+                    val amountDiff = transaction.amount - (oldTrans?.amount ?: 0.0)
+                    val newPaid = oldBill.paidAmount + amountDiff
+                    val newStatus = when {
+                        newPaid >= oldBill.amount -> com.batterysales.data.models.BillStatus.PAID
+                        newPaid > 0 -> com.batterysales.data.models.BillStatus.PARTIAL
+                        else -> com.batterysales.data.models.BillStatus.UNPAID
+                    }
+                    transactionOp.update(billRef, mapOf(
+                        "paidAmount" to newPaid,
+                        "status" to newStatus,
+                        "updatedAt" to java.util.Date()
+                    ))
+
+                    if (oldBill.billType == com.batterysales.data.models.BillType.CHECK) {
+                        checkChangeDelta = -amountDiff
+                        transactionOp.set(statsRef, mapOf("totalUnpaidChecks" to com.google.firebase.firestore.FieldValue.increment(-amountDiff)), com.google.firebase.firestore.SetOptions.merge())
+                    } else if (oldBill.billType == com.batterysales.data.models.BillType.BILL) {
+                        billChangeDelta = -amountDiff
+                        transactionOp.set(statsRef, mapOf("totalUnpaidBills" to com.google.firebase.firestore.FieldValue.increment(-amountDiff)), com.google.firebase.firestore.SetOptions.merge())
+                    }
+                }
+            }
+
+            // If linked to a Payment (Invoice payment)
+            if (paymentSnap != null && paymentSnap.exists()) {
+                val oldPayment = paymentSnap.toObject(com.batterysales.data.models.Payment::class.java)
+                if (oldPayment != null) {
+                    val amountDiff = transaction.amount - oldPayment.amount
+                    transactionOp.update(paymentRef!!, mapOf(
+                        "amount" to transaction.amount,
+                        "paymentDate" to (transaction.date ?: java.util.Date())
+                    ))
+
+                    val invRef = firestore.collection(com.batterysales.data.models.Invoice.COLLECTION_NAME).document(oldPayment.invoiceId)
+                    val invSnap = transactionOp.get(invRef)
+                    val oldInv = invSnap.toObject(com.batterysales.data.models.Invoice::class.java)
+                    if (oldInv != null) {
+                        val newPaid = oldInv.paidAmount + amountDiff
+                        val newRem = oldInv.totalAmount - newPaid
+                        transactionOp.update(invRef, mapOf(
+                            "paidAmount" to newPaid,
+                            "remainingAmount" to newRem,
+                            "status" to (if (newRem <= 0.001) "paid" else "pending"),
+                            "updatedAt" to java.util.Date()
+                        ))
+                    }
+                    transactionOp.set(statsRef, mapOf("totalCustomerDebt" to com.google.firebase.firestore.FieldValue.increment(-amountDiff)), com.google.firebase.firestore.SetOptions.merge())
+                }
+            }
+
+            summaryRepository.applyFinancialUpdate(
+                transaction = transactionOp,
+                snapshots = snapshots,
+                warehouseId = "global",
+                bankChange = totalBankChange,
+                checkChange = checkChangeDelta,
+                billChange = billChangeDelta
+            )
             
             // Update Global Stats
             transactionOp.set(statsRef, mapOf("totalBankBalance" to com.google.firebase.firestore.FieldValue.increment(totalBankChange)), com.google.firebase.firestore.SetOptions.merge())
+
+            // Sync linked treasury transaction if exists
+            linkedTreasurySnap.documents.forEach { doc ->
+                val oldTreasury = doc.toObject(com.batterysales.data.models.Transaction::class.java)
+                val oldAmount = oldTreasury?.amount ?: 0.0
+                val amountDiff = transaction.amount - oldAmount
+                
+                transactionOp.update(doc.reference, mapOf(
+                    "amount" to transaction.amount,
+                    "description" to "تغذية رصيد بنك: ${transaction.description}",
+                    "createdAt" to (transaction.date ?: java.util.Date())
+                ))
+
+                if (Math.abs(amountDiff) > 0.001 && oldTreasury?.warehouseId != null) {
+                    val treasuryChange = if (oldTreasury.type == com.batterysales.data.models.TransactionType.INCOME) amountDiff else -amountDiff
+                    summaryRepository.applyFinancialUpdate(transactionOp, snapshots, warehouseId = oldTreasury.warehouseId, cashChange = treasuryChange)
+                    transactionOp.set(statsRef, mapOf("totalCashBalance" to com.google.firebase.firestore.FieldValue.increment(treasuryChange)), com.google.firebase.firestore.SetOptions.merge())
+                }
+            }
         }.await()
     }
 

@@ -91,10 +91,20 @@ class BillViewModel @Inject constructor(
             _isDataLoaded.value = true // Ensure we try to load/find it
         }
 
-        // --- ELITE STRATEGY: One read for unpaid total ---
+        // --- ELITE STRATEGY: Real-time suppliers stream & unpaid total ---
+        supplierRepository.getSuppliers()
+            .onEach { list ->
+                _suppliers.value = list
+                val selectedId = _selectedSupplierId.value
+                if (selectedId != null) {
+                    val fresh = list.find { it.id == selectedId }
+                    _selectedSupplierBalance.value = fresh?.currentBalance
+                }
+            }
+            .launchIn(viewModelScope)
+
         viewModelScope.launch { 
             loadUnpaidFromSummary() 
-            _suppliers.value = supplierRepository.getSuppliersOnce()
         }
         loadData()
     }
@@ -111,6 +121,7 @@ class BillViewModel @Inject constructor(
         _isLoading.value = true
         viewModelScope.launch {
             loadUnpaidFromSummary()
+            _suppliers.value = supplierRepository.getSuppliersOnce()
             refreshTrigger.value += 1
             _isLoading.value = false
         }

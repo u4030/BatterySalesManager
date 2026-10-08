@@ -231,12 +231,56 @@ class AccountingViewModel @Inject constructor(
 
     fun transferDailyIncomeToMain() {
         viewModelScope.launch {
-            _isLoading.value = true
+            _isSubmitting.value = true
             try {
-                // Simplified for brevity - actual logic would involve summing today's income
-                // and creating a transfer transaction.
-                loadBalancesFromSummary()
-            } finally { _isLoading.value = false }
+                val currentWhId = _selectedWarehouseId.value
+                val allWh = warehouseRepository.getWarehousesOnce()
+                val mainWh = allWh.find { it.isMain } ?: allWh.find { it.name.contains("رئيسي") || it.name.lowercase().contains("main") } ?: allWh.firstOrNull()
+
+                if (currentWhId == null || currentWhId == "all" || currentWhId == mainWh?.id) {
+                    _errorMessage.value = "يرجى تحديد مستودع فرعي لترحيل رصيده إلى الخزينة الرئيسية."
+                    return@launch
+                }
+
+                val currentWh = allWh.find { it.id == currentWhId }
+                val subWhName = currentWh?.name ?: "المستودع الفرعي"
+                val status = summaryRepository.getFinancialStatus()
+                val subCashBalance = status?.warehouseBalances?.get(currentWhId)?.cashBalance ?: 0.0
+
+                if (subCashBalance <= 0.001) {
+                    _errorMessage.value = "رصيد الكاش الحالي في $subWhName يساوي صفر أو أقل، لا يتوفر رصيد للترحيل."
+                    return@launch
+                }
+
+                val targetMainId = mainWh?.id ?: "main_treasury"
+                val expenseRefId = repository.addTransaction(Transaction(
+                    type = TransactionType.EXPENSE,
+                    amount = subCashBalance,
+                    description = "ترحيل رصيد كاش إلى الخزينة الرئيسية (${mainWh?.name ?: "الرئيسي"})",
+                    warehouseId = currentWhId,
+                    paymentMethod = "cash",
+                    createdAt = Date(),
+                    isSystemManaged = true
+                ))
+
+                repository.addTransaction(Transaction(
+                    type = TransactionType.INCOME,
+                    amount = subCashBalance,
+                    description = "استلام ترحيل رصيد كاش من $subWhName",
+                    warehouseId = targetMainId,
+                    paymentMethod = "cash",
+                    relatedId = expenseRefId,
+                    createdAt = Date(),
+                    isSystemManaged = true
+                ))
+
+                loadData(reset = true)
+            } catch (e: Exception) {
+                Log.e("AccountingViewModel", "Error transferring daily income to main", e)
+                _errorMessage.value = "فشل ترحيل الرصيد: ${e.localizedMessage}"
+            } finally {
+                _isSubmitting.value = false
+            }
         }
     }
 
@@ -282,7 +326,9 @@ class AccountingViewModel @Inject constructor(
         viewModelScope.launch {
             _isSubmitting.value = true
             try {
-                repository.deleteTransaction(id)
+                val user = userRepository.getCurrentUser()
+                val isAdmin = user?.role == "admin"
+                repository.deleteTransaction(id, forceSystemUpdate = isAdmin)
                 loadData(reset = true)
             } catch (e: Exception) {
                 _errorMessage.value = e.message

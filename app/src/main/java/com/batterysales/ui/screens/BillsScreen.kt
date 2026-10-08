@@ -580,6 +580,36 @@ fun AddBillDialog(
             enabled = true
         )
 
+        if (selectedSupplier != null) {
+            val uncoveredDebt = selectedSupplier!!.currentBalance
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (uncoveredDebt > 0) Color(0xFFEF4444).copy(alpha = 0.12f) else Color(0xFF10B981).copy(alpha = 0.12f)
+                ),
+                shape = RoundedCornerShape(12.dp),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp, 
+                    if (uncoveredDebt > 0) Color(0xFFEF4444).copy(alpha = 0.3f) else Color(0xFF10B981).copy(alpha = 0.3f)
+                )
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                        text = "إجمالي القيمة المالية الغير مغطاة للمورد",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "JD ${String.format("%,.3f", uncoveredDebt)}",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = if (uncoveredDebt > 0) Color(0xFFEF4444) else Color(0xFF10B981)
+                    )
+                }
+            }
+        }
+
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = amount,
             onValueChange = { amount = it },

@@ -238,20 +238,27 @@ class ReportsViewModel @Inject constructor(
                 val overview = summaryRepository.getSuppliersOverview()
                 val suppliersMap = overview?.suppliers ?: emptyMap()
                 
-                var filtered = if (query.isNotBlank()) {
+                val dbSuppliers = supplierRepository.getSuppliersOnce(query)
+                val dbMap = dbSuppliers.associateBy { it.id }
+
+                val overviewList = if (query.isNotBlank()) {
                     suppliersMap.values.filter { it.name.contains(query, ignoreCase = true) }
                 } else {
                     suppliersMap.values.toList()
+                }
+
+                val combined = dbSuppliers.map { s ->
+                    val item = suppliersMap[s.id]
+                    SupplierSummaryItem(
+                        supplierId = s.id,
+                        name = s.name,
+                        currentBalance = s.currentBalance,
+                        totalDebit = if (s.totalDebit > 0) s.totalDebit else (item?.totalDebit ?: 0.0),
+                        totalCredit = if (s.totalCredit > 0) s.totalCredit else (item?.totalCredit ?: 0.0)
+                    )
                 }.sortedBy { it.name }
 
-                if (filtered.isEmpty()) {
-                    val fallback = supplierRepository.getSuppliersOnce(query)
-                    _suppliersOverviewList.value = fallback.map { s ->
-                        SupplierSummaryItem(s.id, s.name, s.currentBalance, s.totalDebit, s.totalCredit)
-                    }
-                } else {
-                    _suppliersOverviewList.value = filtered
-                }
+                _suppliersOverviewList.value = combined
             } finally {
                 _isSupplierLoading.value = false
             }
@@ -481,9 +488,15 @@ class ReportsViewModel @Inject constructor(
             val user = userRepository.getCurrentUser()
             val seller = user?.role == "seller"
 
+            val warehousesMap = try { warehouseRepository.getWarehousesOnce().associateBy { it.id } } catch(e: Exception) { emptyMap() }
+
             scrapWarehouseRepository.getScrapWarehouses()
                 .onEach { allScrapWh: List<ScrapWarehouse> ->
-                    val active = allScrapWh.filter { it.isActive }
+                    val active = allScrapWh.filter { it.isActive }.map { scrapWh ->
+                        val parentWh = warehousesMap[scrapWh.parentWarehouseId]
+                        val resolvedName = parentWh?.name ?: scrapWh.name.removePrefix("سكراب - ")
+                        scrapWh.copy(name = resolvedName)
+                    }
                     
                     if (seller) {
                         val myScrapWh = active.find { it.parentWarehouseId == user?.warehouseId }

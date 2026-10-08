@@ -116,9 +116,15 @@ class OldBatteryViewModel @Inject constructor(
     private fun observeScrapWarehouses(user: com.batterysales.data.models.User?) {
         scrapJob?.cancel()
         scrapJob = viewModelScope.launch {
+            val warehousesMap = try { warehouseRepository.getWarehousesOnce().associateBy { it.id } } catch (e: Exception) { emptyMap() }
+
             scrapWarehouseRepository.getScrapWarehouses()
                 .onEach { allScrapWh ->
-                    val active = allScrapWh.filter { it.isActive }
+                    val active = allScrapWh.filter { it.isActive }.map { scrapWh ->
+                        val parentWh = warehousesMap[scrapWh.parentWarehouseId]
+                        val resolvedName = parentWh?.name ?: scrapWh.name.removePrefix("سكراب - ")
+                        scrapWh.copy(name = resolvedName)
+                    }
                     
                     val filtered = if (user?.role == "seller") {
                         active.filter { it.parentWarehouseId == user.warehouseId }
