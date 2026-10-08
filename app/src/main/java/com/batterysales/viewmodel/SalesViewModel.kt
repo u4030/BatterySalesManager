@@ -179,6 +179,8 @@ class SalesViewModel @Inject constructor(
                 else -> null
             }
 
+            val (autoQty, autoAmps) = calculateAutoScrapValues(_uiState.value.quantity, selectedVar)
+
             _uiState.update { 
                 it.copy(
                     selectedProduct = product,
@@ -186,6 +188,8 @@ class SalesViewModel @Inject constructor(
                     stockLevels = newStockMap,
                     selectedVariant = selectedVar,
                     sellingPrice = selectedVar?.let { sv -> if (sv.sellingPrice > 0.0) sv.sellingPrice.toString() else "" } ?: it.sellingPrice,
+                    oldBatteriesQuantity = autoQty,
+                    oldBatteriesTotalAmps = autoAmps,
                     isLoading = false 
                 ) 
             }
@@ -195,11 +199,23 @@ class SalesViewModel @Inject constructor(
         }
     }
 
+    private fun calculateAutoScrapValues(qtyStr: String, variant: ProductVariant?): Pair<String, String> {
+        val qty = qtyStr.toIntOrNull() ?: 0
+        val capacity = variant?.capacity ?: 0
+        val totalAmps = qty * capacity
+        val autoQtyStr = if (qty > 0) qty.toString() else ""
+        val autoAmpsStr = if (totalAmps > 0) totalAmps.toString() else ""
+        return Pair(autoQtyStr, autoAmpsStr)
+    }
+
     fun onVariantSelected(variant: ProductVariant) {
+        val (autoQty, autoAmps) = calculateAutoScrapValues(_uiState.value.quantity, variant)
         _uiState.update { 
             it.copy(
                 selectedVariant = variant,
-                sellingPrice = if (variant.sellingPrice > 0.0) variant.sellingPrice.toString() else ""
+                sellingPrice = if (variant.sellingPrice > 0.0) variant.sellingPrice.toString() else "",
+                oldBatteriesQuantity = autoQty,
+                oldBatteriesTotalAmps = autoAmps
             )
         }
     }
@@ -211,7 +227,14 @@ class SalesViewModel @Inject constructor(
     }
 
     fun onQuantityChanged(quantity: String) {
-        _uiState.update { it.copy(quantity = quantity) }
+        val (autoQty, autoAmps) = calculateAutoScrapValues(quantity, _uiState.value.selectedVariant)
+        _uiState.update {
+            it.copy(
+                quantity = quantity,
+                oldBatteriesQuantity = autoQty,
+                oldBatteriesTotalAmps = autoAmps
+            )
+        }
     }
 
     fun onSellingPriceChanged(price: String) {
