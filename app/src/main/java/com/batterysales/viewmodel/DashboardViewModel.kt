@@ -92,12 +92,38 @@ class DashboardViewModel @Inject constructor(
         awaitClose { listener.remove() }
     }
 
+    private val upcomingBillsFlow: Flow<List<Bill>> = callbackFlow {
+        val listener = firestore.collection(Bill.COLLECTION_NAME)
+            .whereNotEqualTo("status", BillStatus.PAID)
+            .addSnapshotListener { snap, e ->
+                if (e != null) return@addSnapshotListener
+                val nextWeek = Calendar.getInstance().apply {
+                    add(Calendar.DAY_OF_YEAR, 7)
+                    set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59)
+                }
+                val bills = snap?.documents?.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) }
+                    ?.filter { it.dueDate != null && !it.dueDate.after(nextWeek.time) }
+                    ?.sortedBy { it.dueDate } ?: emptyList()
+                trySend(bills)
+            }
+        awaitClose { listener.remove() }
+    }
+
+    private val pendingCountFlow: Flow<Int> = combine(
+        stockEntryRepository.getPendingEntriesFlow().catch { emit(emptyList()) },
+        approvalRepository.getPendingRequestsFlow().catch { emit(emptyList()) }
+    ) { entries, reqs ->
+        entries.size + reqs.size
+    }
+
     val uiState: StateFlow<DashboardUiState> = combine(
         userRepository.getCurrentUserFlow(),
         summaryRepository.getFinancialStatusFlow(),
         summaryRepository.getSuppliersOverviewFlow(),
         summaryRepository.getInventorySummaryFlow(null),
         alertsFlow,
+        upcomingBillsFlow,
+        pendingCountFlow,
         _heavyData
     ) { args: Array<Any?> ->
         val user = args[0] as? User
@@ -106,10 +132,17 @@ class DashboardViewModel @Inject constructor(
         val globalInventory = args[3] as? InventorySummary ?: InventorySummary()
         @Suppress("UNCHECKED_CAST")
         val alerts = args[4] as? List<SystemAlert> ?: emptyList()
-        val heavy = args[5] as? HeavyData
+        @Suppress("UNCHECKED_CAST")
+        val realTimeBills = args[5] as? List<Bill> ?: emptyList()
+        val realTimePendingCount = args[6] as? Int ?: 0
+        val heavy = args[7] as? HeavyData
 
         if (user == null) return@combine DashboardUiState(isLoading = false)
         if (heavy == null) return@combine DashboardUiState(isLoading = true)
+
+        val pendingCount = if (user.role == "admin") realTimePendingCount else 0
+
+        val activeUpcomingBills = if (user.role == User.ROLE_SELLER) emptyList() else realTimeBills
 
         val isAdmin = user.role == "admin"
         val userWarehouseId = user.warehouseId
@@ -159,24 +192,44 @@ class DashboardViewModel @Inject constructor(
             val capacity = (alert.data["capacity"] as? Number)?.toInt() ?: summary?.capacity ?: 0
             val specification = (alert.data["specification"] as? String) ?: summary?.specification ?: ""
             
+            val rawQty = alert.data["currentStock"] ?: alert.data["currentQuantity"]
+            val currentQty = when {
+                rawQty is Number -> rawQty.toInt()
+                rawQty is String -> rawQty.toIntOrNull() ?: 0
+                else -> {
+                    Regex("""الكمية:\s*(\d+)""").find(alert.message)?.groupValues?.get(1)?.toIntOrNull()
+                        ?: summary?.currentStock ?: 0
+                }
+            }
+
+            val rawMin = alert.data["threshold"] ?: alert.data["minQuantity"]
+            val minQty = when {
+                rawMin is Number -> rawMin.toInt()
+                rawMin is String -> rawMin.toIntOrNull() ?: 0
+                else -> {
+                    Regex("""الحد:\s*(\d+)""").find(alert.message)?.groupValues?.get(1)?.toIntOrNull()
+                        ?: summary?.minQuantity ?: 0
+                }
+            }
+
             LowStockItem(
                 variantId = alert.relatedId,
                 productName = summary?.productName ?: alert.title.replace("مخزون منخفض: ", ""),
                 capacity = capacity,
                 specification = specification,
-                currentQuantity = (alert.data["currentStock"] as? Number)?.toInt() ?: 0,
-                minQuantity = (alert.data["threshold"] as? Number)?.toInt() ?: 0,
+                currentQuantity = currentQty,
+                minQuantity = minQty,
                 warehouseName = heavy.warehouses.find { it.id == alert.warehouseId }?.name ?: alert.warehouseName ?: "مخزن"
             )
         }
 
         DashboardUiState(
-            pendingApprovalsCount = heavy.pendingCount,
+            pendingApprovalsCount = pendingCount,
             lowStockVariants = lowStockItems,
-            upcomingBills = heavy.upcomingBills,
+            upcomingBills = activeUpcomingBills,
             warehouseStats = whStats,
             systemStats = systemStats,
-            notifications = constructNotifications(heavy.upcomingBills, heavy.pendingCount, lowStockItems, Date()),
+            notifications = constructNotifications(activeUpcomingBills, pendingCount, lowStockItems, Date()),
             isLoading = false
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DashboardUiState())
@@ -253,7 +306,7 @@ class DashboardViewModel @Inject constructor(
         
         lowStockItems.forEach { item ->
             val specLabel = if (item.specification.isNotBlank()) "${item.specification}|" else ""
-            val message = "(${item.warehouseName}: $specLabel${item.capacity} أمبير)"
+            val message = "(${item.warehouseName}: $specLabel${item.capacity} أمبير) | المتاح: ${item.currentQuantity} | الحد الأدنى: ${item.minQuantity}"
             val route = "product_ledger/${item.variantId}/${item.productName}/${item.capacity}/${item.specification.ifEmpty { "no_spec" }}"
             
             allNotifications.add(AppNotification(

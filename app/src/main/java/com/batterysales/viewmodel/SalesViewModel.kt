@@ -52,9 +52,44 @@ class SalesViewModel @Inject constructor(
 
     private var currentUser: User? = null
     private var cachedInventorySummary: InventorySummary? = null
+    private var summaryJob: kotlinx.coroutines.Job? = null
 
     init {
         loadInitialData()
+    }
+
+    private fun observeInventorySummary(warehouseId: String?) {
+        summaryJob?.cancel()
+        summaryJob = viewModelScope.launch {
+            summaryRepository.getInventorySummaryFlow(warehouseId)
+                .onEach { summary ->
+                    cachedInventorySummary = summary
+
+                    val user = currentUser
+                    val isSeller = user?.role == User.ROLE_SELLER
+                    val summaryItems = summary.items.values
+                    val availableProductIds = summaryItems.filter { it.currentStock > 0 }.map { it.productId }.toSet()
+
+                    val currentProducts = productRepository.getProductsOnce()
+                    val filteredProducts = if (isSeller && availableProductIds.isNotEmpty()) {
+                        currentProducts.filter { !it.archived && availableProductIds.contains(it.id) }
+                    } else {
+                        currentProducts.filter { !it.archived }
+                    }
+
+                    _uiState.update { state ->
+                        state.copy(
+                            products = filteredProducts.sortedBy { p -> p.name }
+                        )
+                    }
+
+                    val selectedProd = _uiState.value.selectedProduct
+                    if (selectedProd != null) {
+                        loadVariantsForProduct(selectedProd, _uiState.value.selectedVariant?.id)
+                    }
+                }
+                .launchIn(viewModelScope)
+        }
     }
 
     private fun loadInitialData() {
@@ -66,33 +101,26 @@ class SalesViewModel @Inject constructor(
 
                 val isSeller = user?.role == User.ROLE_SELLER
                 val userWarehouseId = user?.warehouseId ?: ""
-                
-                // Fetch Summary
-                cachedInventorySummary = summaryRepository.getInventorySummary(if (isSeller) userWarehouseId else null)
                 val warehouses = warehouseRepository.getWarehousesOnce()
                 val products = productRepository.getProductsOnce()
 
-                // Fallback: If summary is empty (first time), allow loading products from collection
-                val summaryItems = cachedInventorySummary?.items?.values ?: emptyList()
-                val availableProductIds = summaryItems.filter { it.currentStock > 0 }.map { it.productId }.toSet()
-
-                val filteredProducts = if (isSeller && availableProductIds.isNotEmpty()) {
-                    products.filter { !it.archived && availableProductIds.contains(it.id) }
-                } else {
-                    products.filter { !it.archived }
-                }
+                val activeWarehouses = warehouses.filter { it.isActive }
+                val selectedWh = if (isSeller) activeWarehouses.find { w -> w.id == userWarehouseId } else activeWarehouses.firstOrNull()
+                val initialWhId = selectedWh?.id ?: userWarehouseId.ifEmpty { null }
 
                 _uiState.update {
                     it.copy(
-                        products = filteredProducts.sortedBy { p -> p.name },
-                        warehouses = warehouses.filter { w -> w.isActive },
-                        selectedWarehouse = if (isSeller) warehouses.find { w -> w.id == userWarehouseId } else null,
+                        products = products.filter { !it.archived }.sortedBy { p -> p.name },
+                        warehouses = activeWarehouses,
+                        selectedWarehouse = selectedWh,
                         isWarehouseFixed = isSeller,
                         userRole = user?.role ?: "",
                         userWarehouseId = userWarehouseId,
                         isLoading = false
                     )
                 }
+
+                observeInventorySummary(initialWhId)
             } catch (e: Exception) {
                 Log.e("SalesViewModel", "Error loading initial data", e)
                 _uiState.update { it.copy(isLoading = false, errorMessage = "فشل تحميل البيانات") }
@@ -108,56 +136,55 @@ class SalesViewModel @Inject constructor(
 
     private suspend fun loadVariantsForProduct(product: Product, targetVariantId: String? = null) {
         try {
-            _uiState.update { it.copy(isLoading = true, selectedProduct = product, selectedVariant = if (targetVariantId != null) it.selectedVariant else null) }
+            val selectedWhId = _uiState.value.selectedWarehouse?.id ?: currentUser?.warehouseId ?: ""
             
-            // --- ELITE STRATEGY: Targeted Load from Summary Cache ---
-            val summaryItems = cachedInventorySummary?.items?.values ?: emptyList()
-            var variantsForProduct = summaryItems.filter { it.productId == product.id && !it.isDiscontinued }
-                .map { item -> 
-                    ProductVariant(
-                        id = item.variantId,
-                        productId = item.productId,
-                        capacity = item.capacity,
-                        barcode = item.barcode,
-                        sellingPrice = item.sellingPrice,
-                        specification = item.specification,
-                        weightedAverageCost = item.weightedAverageCost,
-                        productName = item.productName,
-                        isDiscontinued = item.isDiscontinued,
-                        currentStock = mapOf((cachedInventorySummary?.warehouseId ?: "global") to item.currentStock)
-                    )
-                }.sortedBy { it.capacity }
+            var variantsForProduct = productVariantRepository.getVariantsForProduct(product.id)
+                .filter { !it.archived && !it.isDiscontinued }
+                .sortedBy { it.capacity }
 
-            // Targeted Cloud Fetch ONLY if variant list is empty or incomplete
-            if (variantsForProduct.isEmpty()) {
-                variantsForProduct = productVariantRepository.getVariantsForProduct(product.id)
-                    .filter { !it.archived && !it.isDiscontinued }
-                    .sortedBy { it.capacity }
+            val summaryItems = cachedInventorySummary?.items ?: emptyMap()
+
+            val variantsWithStock = variantsForProduct.map { variant ->
+                val stockFromSummary = summaryItems[variant.id]?.currentStock
+                val stockFromVariantMap = (variant.currentStock?.get(selectedWhId) as? Number)?.toInt()
+                val finalStock = stockFromSummary ?: stockFromVariantMap ?: 0
+
+                val newStockMap = (variant.currentStock ?: emptyMap()).toMutableMap()
+                newStockMap[selectedWhId] = finalStock
+
+                variant.copy(
+                    sellingPrice = if (variant.sellingPrice > 0.0) variant.sellingPrice else (summaryItems[variant.id]?.sellingPrice ?: 0.0),
+                    weightedAverageCost = if (variant.weightedAverageCost > 0.0) variant.weightedAverageCost else (summaryItems[variant.id]?.weightedAverageCost ?: 0.0),
+                    currentStock = newStockMap
+                )
             }
 
             val userWhId = currentUser?.warehouseId ?: ""
-            val selectedWhId = _uiState.value.selectedWarehouse?.id ?: userWhId.ifEmpty { "global" }
-
             val filteredVariants = if (currentUser?.role == User.ROLE_SELLER && userWhId.isNotEmpty()) {
-                variantsForProduct.filter { (it.currentStock?.get(userWhId) ?: 0) > 0 || variantsForProduct.size <= 2 }
+                variantsWithStock.filter { (it.currentStock?.get(userWhId) ?: 0) > 0 || variantsWithStock.size <= 2 }
             } else {
-                variantsForProduct
+                variantsWithStock
             }
 
             val newStockMap = _uiState.value.stockLevels.toMutableMap()
             filteredVariants.forEach { v ->
-                // Map the stock to the CORRECT key that the UI expects
-                val qty = v.currentStock?.get(selectedWhId) ?: v.currentStock?.get("global") ?: 0
+                val qty = v.currentStock?.get(selectedWhId) ?: 0
                 newStockMap[Pair(v.id, selectedWhId)] = qty
             }
 
-            val selectedVar = if (targetVariantId != null) filteredVariants.find { it.id == targetVariantId } else null
+            val currentSelected = _uiState.value.selectedVariant
+            val selectedVar = when {
+                targetVariantId != null -> filteredVariants.find { it.id == targetVariantId }
+                currentSelected != null -> filteredVariants.find { it.id == currentSelected.id }
+                else -> null
+            }
 
             _uiState.update { 
                 it.copy(
+                    selectedProduct = product,
                     variants = filteredVariants, 
                     stockLevels = newStockMap,
-                    selectedVariant = selectedVar ?: it.selectedVariant,
+                    selectedVariant = selectedVar,
                     sellingPrice = selectedVar?.let { sv -> if (sv.sellingPrice > 0.0) sv.sellingPrice.toString() else "" } ?: it.sellingPrice,
                     isLoading = false 
                 ) 
@@ -178,23 +205,9 @@ class SalesViewModel @Inject constructor(
     }
 
     fun onWarehouseSelected(warehouse: Warehouse) {
+        if (_uiState.value.selectedWarehouse?.id == warehouse.id) return
         _uiState.update { it.copy(selectedWarehouse = warehouse) }
-        
-        viewModelScope.launch {
-            try {
-                _uiState.update { it.copy(isLoading = true) }
-                // ELITE STRATEGY: Refresh inventory summary for the selected warehouse
-                val summary = summaryRepository.getInventorySummary(warehouse.id)
-                cachedInventorySummary = summary
-                
-                val state = uiState.value
-                state.selectedProduct?.let { product ->
-                    loadVariantsForProduct(product, state.selectedVariant?.id)
-                }
-            } finally {
-                _uiState.update { it.copy(isLoading = false) }
-            }
-        }
+        observeInventorySummary(warehouse.id)
     }
 
     fun onQuantityChanged(quantity: String) {

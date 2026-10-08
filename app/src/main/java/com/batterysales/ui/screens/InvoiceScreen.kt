@@ -61,11 +61,30 @@ fun InvoiceScreen(
 
     if (uiState.invoiceToDelete != null) {
         AlertDialog(
-            onDismissRequest = { viewModel.onDismissDeleteDialog() },
+            onDismissRequest = { if (!uiState.isSubmitting) viewModel.onDismissDeleteDialog() },
             title = { Text("تأكيد الحذف") },
             text = { Text(uiState.deletionWarningMessage) },
-            confirmButton = { Button(onClick = { viewModel.onConfirmDelete() }) { Text("حذف") } },
-            dismissButton = { Button(onClick = { viewModel.onDismissDeleteDialog() }) { Text("إلغاء") } }
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.onConfirmDelete() },
+                    enabled = !uiState.isSubmitting,
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    if (uiState.isSubmitting) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("جاري الحذف...")
+                    } else {
+                        Text("حذف")
+                    }
+                }
+            },
+            dismissButton = {
+                Button(
+                    onClick = { viewModel.onDismissDeleteDialog() },
+                    enabled = !uiState.isSubmitting
+                ) { Text("إلغاء") }
+            }
         )
     }
 
@@ -119,13 +138,14 @@ fun InvoiceScreen(
     Scaffold(
         containerColor = bgColor
     ) { paddingValues ->
-        LazyColumn(
-            state = listState,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
             // Gradient Header
             item {
                 SharedHeader(
@@ -309,6 +329,31 @@ fun InvoiceScreen(
                 Spacer(modifier = Modifier.height(16.dp))
             }
         }
+
+        if (uiState.isSubmitting) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.3f))
+                    .clickable(enabled = false) {},
+                contentAlignment = Alignment.Center
+            ) {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        CircularProgressIndicator(color = accentColor)
+                        Text("جاري المعالجة والحذف...", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
     }
 }
 

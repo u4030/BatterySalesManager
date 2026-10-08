@@ -1,6 +1,7 @@
 package com.batterysales.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -35,6 +36,7 @@ fun ApprovalsScreen(
 ) {
     val items by viewModel.approvalItems.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val isSubmitting by viewModel.isSubmitting.collectAsState()
 
     val bgColor = MaterialTheme.colorScheme.background
     val accentColor = Color(0xFFFB8C00)
@@ -42,68 +44,99 @@ fun ApprovalsScreen(
         colors = listOf(Color(0xFFE53935), Color(0xFFFB8C00))
     )
 
-    Scaffold(
-        containerColor = bgColor
-    ) { paddingValues ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .imePadding(),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            contentPadding = PaddingValues(bottom = 32.dp)
-        ) {
-            // Gradient Header
-            item {
-                SharedHeader(
-                    title = "الموافقات المعلقة",
-                    onBackClick = { navController.popBackStack() },
-                    actions = {
-                        HeaderIconButton(
-                            icon = Icons.Default.Refresh,
-                            onClick = { /* Reload logic if available */ },
-                            contentDescription = "Refresh"
-                        )
-                    }
-                )
-            }
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+            containerColor = bgColor
+        ) { paddingValues ->
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .imePadding(),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                contentPadding = PaddingValues(bottom = 32.dp)
+            ) {
+                // Gradient Header
+                item {
+                    SharedHeader(
+                        title = "الموافقات المعلقة",
+                        onBackClick = { navController.popBackStack() },
+                        actions = {
+                            HeaderIconButton(
+                                icon = Icons.Default.Refresh,
+                                onClick = { viewModel.refresh() },
+                                contentDescription = "Refresh"
+                            )
+                        }
+                    )
+                }
 
-            if (isLoading) {
-                item {
-                    Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                if (isLoading) {
+                    item {
+                        Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = accentColor)
+                        }
+                    }
+                } else if (items.isEmpty()) {
+                    item {
+                        Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                            Text("لا توجد طلبات موافقة معلقة", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                        }
+                    }
+                } else {
+                    items(items) { item ->
+                        Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                            ApprovalCard(
+                                item = item,
+                                onApprove = {
+                                    if (item.type == "STOCK_ENTRY") {
+                                        item.entry?.id?.let { viewModel.approveEntry(it) }
+                                    } else {
+                                        item.request?.let { viewModel.approveRequest(it) }
+                                    }
+                                },
+                                onReject = {
+                                    if (item.type == "STOCK_ENTRY") {
+                                        item.entry?.id?.let { viewModel.rejectEntry(it) }
+                                    } else {
+                                        item.request?.id?.let { viewModel.rejectRequest(it) }
+                                    }
+                                },
+                                onEdit = {
+                                    if (item.type == "STOCK_ENTRY") {
+                                        item.entry?.id?.let { navController.navigate("stock_entry?entryId=$it") }
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        if (isSubmitting) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.5f))
+                    .clickable(enabled = false) {},
+                contentAlignment = Alignment.Center
+            ) {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
                         CircularProgressIndicator(color = accentColor)
-                    }
-                }
-            } else if (items.isEmpty()) {
-                item {
-                    Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
-                        Text("لا توجد طلبات موافقة معلقة", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                    }
-                }
-            } else {
-                items(items) { item ->
-                    Box(modifier = Modifier.padding(horizontal = 16.dp)) {
-                        ApprovalCard(
-                            item = item,
-                            onApprove = { 
-                                if (item.type == "STOCK_ENTRY") {
-                                    viewModel.approveEntry(item.entry!!.id)
-                                } else {
-                                    viewModel.approveRequest(item.request!!)
-                                }
-                            },
-                            onReject = { 
-                                if (item.type == "STOCK_ENTRY") {
-                                    viewModel.rejectEntry(item.entry!!.id)
-                                } else {
-                                    viewModel.rejectRequest(item.request!!.id)
-                                }
-                            },
-                            onEdit = { 
-                                if (item.type == "STOCK_ENTRY") {
-                                    navController.navigate("stock_entry?entryId=${item.entry!!.id}")
-                                }
-                            }
+                        Text(
+                            text = "جاري معالجة الطلب والمزامنة...",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }
@@ -349,13 +382,15 @@ fun ApprovalCard(item: ApprovalItem, onApprove: () -> Unit, onReject: () -> Unit
                     }
                 }
 
+                val itemDate = if (isStockEntry) item.entry?.timestamp else item.request?.timestamp
+                val formattedDate = itemDate?.let { dateFormatter.format(it) } ?: "---"
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.AccessTime, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text(text = dateFormatter.format(if (isStockEntry) item.entry!!.timestamp else item.request!!.timestamp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(text = formattedDate, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 
-                val requesterName = if (isStockEntry) item.entry!!.createdByUserName else item.request!!.requesterName
+                val requesterName = if (isStockEntry) (item.entry?.createdByUserName ?: "") else (item.request?.requesterName ?: "")
                 if (requesterName.isNotEmpty()) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)

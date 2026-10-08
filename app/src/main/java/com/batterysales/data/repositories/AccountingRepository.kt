@@ -160,9 +160,9 @@ class AccountingRepository @Inject constructor(
 
             // Update Global Balances
             if (finalTransaction.paymentMethod == "cash") {
-                transactionOp.update(statsRef, "totalCashBalance", com.google.firebase.firestore.FieldValue.increment(change))
+                transactionOp.set(statsRef, mapOf("totalCashBalance" to com.google.firebase.firestore.FieldValue.increment(change)), com.google.firebase.firestore.SetOptions.merge())
             } else if (finalTransaction.paymentMethod == "bank") {
-                transactionOp.update(statsRef, "totalBankBalance", com.google.firebase.firestore.FieldValue.increment(change))
+                transactionOp.set(statsRef, mapOf("totalBankBalance" to com.google.firebase.firestore.FieldValue.increment(change)), com.google.firebase.firestore.SetOptions.merge())
             }
         }.await()
 
@@ -214,9 +214,9 @@ class AccountingRepository @Inject constructor(
 
             // Update Global Balances
             if (transactionData.paymentMethod == "cash") {
-                transactionOp.update(statsRef, "totalCashBalance", com.google.firebase.firestore.FieldValue.increment(-transactionData.amount))
+                transactionOp.set(statsRef, mapOf("totalCashBalance" to com.google.firebase.firestore.FieldValue.increment(-transactionData.amount)), com.google.firebase.firestore.SetOptions.merge())
             } else if (transactionData.paymentMethod == "bank") {
-                transactionOp.update(statsRef, "totalBankBalance", com.google.firebase.firestore.FieldValue.increment(-transactionData.amount))
+                transactionOp.set(statsRef, mapOf("totalBankBalance" to com.google.firebase.firestore.FieldValue.increment(-transactionData.amount)), com.google.firebase.firestore.SetOptions.merge())
             }
         }.await()
     }
@@ -264,9 +264,9 @@ class AccountingRepository @Inject constructor(
 
             // Update Global Balances
             if (transaction.paymentMethod == "cash") {
-                transactionOp.update(statsRef, "totalCashBalance", com.google.firebase.firestore.FieldValue.increment(totalChange))
+                transactionOp.set(statsRef, mapOf("totalCashBalance" to com.google.firebase.firestore.FieldValue.increment(totalChange)), com.google.firebase.firestore.SetOptions.merge())
             } else if (transaction.paymentMethod == "bank") {
-                transactionOp.update(statsRef, "totalBankBalance", com.google.firebase.firestore.FieldValue.increment(totalChange))
+                transactionOp.set(statsRef, mapOf("totalBankBalance" to com.google.firebase.firestore.FieldValue.increment(totalChange)), com.google.firebase.firestore.SetOptions.merge())
             }
         }.await()
 
@@ -331,10 +331,10 @@ class AccountingRepository @Inject constructor(
                 // Update Global Balances
                 if (trans.paymentMethod == "cash") {
                     val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
-                    transactionOp.update(statsRef, "totalCashBalance", com.google.firebase.firestore.FieldValue.increment(change))
+                    transactionOp.set(statsRef, mapOf("totalCashBalance" to com.google.firebase.firestore.FieldValue.increment(change)), com.google.firebase.firestore.SetOptions.merge())
                 } else if (trans.paymentMethod == "bank") {
                     val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
-                    transactionOp.update(statsRef, "totalBankBalance", com.google.firebase.firestore.FieldValue.increment(change))
+                    transactionOp.set(statsRef, mapOf("totalBankBalance" to com.google.firebase.firestore.FieldValue.increment(change)), com.google.firebase.firestore.SetOptions.merge())
                 }
             }
             relId
@@ -366,11 +366,13 @@ class AccountingRepository @Inject constructor(
 
         if (snapshots.isEmpty) return
 
-        val batch = firestore.batch()
         snapshots.documents.forEach { doc ->
-            batch.delete(doc.reference)
+            try {
+                deleteTransaction(doc.id, forceSystemUpdate = true)
+            } catch (e: Exception) {
+                doc.reference.delete().await()
+            }
         }
-        batch.commit().await()
     }
 
     suspend fun updateTransactionByRelatedId(relatedId: String, newAmount: Double? = null, newDescription: String? = null) {

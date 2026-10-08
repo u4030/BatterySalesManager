@@ -247,7 +247,8 @@ class AppNotificationManager @Inject constructor(
                             "تنبيه المخزون",
                             "لديك عدد ${relevantAlerts.size} أصناف برصيد منخفض",
                             playSound = false,
-                            notificationId = 2000
+                            notificationId = 2000,
+                            badgeCount = relevantAlerts.size
                         )
                     }
                     return@addSnapshotListener

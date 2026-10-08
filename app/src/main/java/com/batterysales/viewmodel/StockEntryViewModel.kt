@@ -36,6 +36,7 @@ data class StockEntryUiState(
     val stockItems: List<StockEntryItem> = emptyList(),
     val userRole: String = "seller",
     val isEditMode: Boolean = false,
+    val isPendingStatus: Boolean = false,
     val isLoading: Boolean = true,
     val errorMessage: String? = null,
     val isSubmitting: Boolean = false,
@@ -149,10 +150,11 @@ class StockEntryViewModel @Inject constructor(
                 invoiceDate = entry.invoiceDate,
                 quantity = entry.quantity.toString(),
                 returnedQuantity = entry.returnedQuantity.toString(),
-                costValue = entry.costPrice.toString(),
+                costValue = if (entry.costPrice > 0) entry.costPrice.toString() else "",
                 minQuantity = variant.minQuantity.toString(),
                 costInputMode = CostInputMode.BY_ITEM,
                 supplierName = entry.supplier,
+                isPendingStatus = entry.status == "pending",
                 stockItems = listOf(
                     StockEntryItem(
                         id = entry.id,
@@ -287,7 +289,7 @@ class StockEntryViewModel @Inject constructor(
         _uiState.update { it.copy(stockItems = it.stockItems + newItem, quantity = "", costValue = "") }
     }
 
-    fun onSaveClicked() {
+    fun onSaveClicked(approveOnSave: Boolean = false) {
         if (uiState.value.isSubmitting) return
 
         val state = uiState.value
@@ -351,6 +353,10 @@ class StockEntryViewModel @Inject constructor(
                     )
                     stockEntryRepository.updateStockEntry(updatedEntry)
                     
+                    if (approveOnSave) {
+                        stockEntryRepository.approveEntry(updatedEntry.id)
+                    }
+
                     // تحديث الروابط التلقائية للمورد
                     if (updatedEntry.supplierId.isNotEmpty()) {
                         billRepository.autoLinkBillsForSupplier(updatedEntry.supplierId)

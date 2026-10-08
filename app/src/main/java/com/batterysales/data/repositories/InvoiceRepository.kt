@@ -322,7 +322,19 @@ class InvoiceRepository @Inject constructor(
 
             // Cleanup
             payments.documents.forEach { transaction.delete(it.reference) }
-            stockEntries.documents.forEach { transaction.delete(it.reference) }
+            stockEntries.documents.forEach { doc ->
+                val entry = doc.toObject(com.batterysales.data.models.StockEntry::class.java)
+                if (entry != null && entry.supplier == "Sale" && entry.quantity < 0) {
+                    transaction.update(doc.reference, mapOf(
+                        "quantity" to -entry.quantity,
+                        "invoiceId" to com.google.firebase.firestore.FieldValue.delete(),
+                        "invoiceNumber" to if (invoice.invoiceNumber.isNotEmpty()) "إلغاء فاتورة #${invoice.invoiceNumber}" else "إلغاء فاتورة",
+                        "timestamp" to Date()
+                    ))
+                } else {
+                    transaction.delete(doc.reference)
+                }
+            }
             uniqueTreasuryRefs.forEach { transaction.delete(it.reference) }
             uniqueBankRefs.forEach { transaction.delete(it.reference) }
             
@@ -375,7 +387,7 @@ class InvoiceRepository @Inject constructor(
             val finalStockEntry = stockEntry.copy(id = stockRef.id, invoiceId = finalInvoice.id)
             transaction.set(stockRef, finalStockEntry)
 
-            if (variant != null && variant.currentStock != null) {
+            if (variant != null) {
                 val rawStock = vSnap.get("currentStock") as? Map<String, Any> ?: emptyMap()
                 val currentStockMap = rawStock.mapValues { (it.value as? Number)?.toInt() ?: 0 }.toMutableMap()
                 val netQtyChange = finalStockEntry.quantity - finalStockEntry.returnedQuantity
@@ -459,7 +471,7 @@ class InvoiceRepository @Inject constructor(
                 )
             }
 
-            transaction.update(statsRef, statsUpdates)
+            transaction.set(statsRef, statsUpdates, com.google.firebase.firestore.SetOptions.merge())
 
             if (oldBatteryTransaction != null) {
                 val scrapRef = firestore.collection(com.batterysales.data.models.OldBatteryTransaction.COLLECTION_NAME).document()
@@ -554,7 +566,7 @@ class InvoiceRepository @Inject constructor(
                 statsUpdates["totalCashBalance"] = com.google.firebase.firestore.FieldValue.increment(finalPayment.amount)
             }
 
-            transaction.update(statsRef, statsUpdates)
+            transaction.set(statsRef, statsUpdates, com.google.firebase.firestore.SetOptions.merge())
         }.await()
     }
 
@@ -646,7 +658,7 @@ class InvoiceRepository @Inject constructor(
             } else {
                 statsUpdates["totalCashBalance"] = com.google.firebase.firestore.FieldValue.increment(diff)
             }
-            transaction.update(statsRef, statsUpdates)
+            transaction.set(statsRef, statsUpdates, com.google.firebase.firestore.SetOptions.merge())
         }.await()
     }
 
@@ -754,7 +766,7 @@ class InvoiceRepository @Inject constructor(
             } else {
                 statsUpdates["totalCashBalance"] = com.google.firebase.firestore.FieldValue.increment(-oldPayment.amount)
             }
-            transaction.update(statsRef, statsUpdates)
+            transaction.set(statsRef, statsUpdates, com.google.firebase.firestore.SetOptions.merge())
         }.await()
     }
 }

@@ -181,6 +181,7 @@ class SummaryRepository @Inject constructor(
             version = globalSummary.version + 1
         ))
         
+        cachedSyncRegistry = null
         incrementSyncVersion(transaction, "inventory")
     }
 
@@ -554,6 +555,13 @@ class SummaryRepository @Inject constructor(
         } catch (e: Exception) { null }
     }
 
+    fun invalidateCache() {
+        cachedInventorySummary = emptyMap()
+        cachedSyncRegistry = null
+        cachedSuppliersOverview = null
+        cachedFinancialStatus = null
+    }
+
     fun incrementSyncVersion(transaction: Transaction, type: String) {
         val registryRef = summariesCollection.document("sync_registry")
         val field = when (type) {
@@ -563,6 +571,8 @@ class SummaryRepository @Inject constructor(
             else -> return
         }
         
+        cachedSyncRegistry = null
+
         // Use Set with Merge to ensure document creation if it doesn't exist
         transaction.set(registryRef, mapOf(
             field to com.google.firebase.firestore.FieldValue.increment(1),
