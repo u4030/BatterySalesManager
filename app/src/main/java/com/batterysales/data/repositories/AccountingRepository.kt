@@ -366,11 +366,13 @@ class AccountingRepository @Inject constructor(
 
         if (snapshots.isEmpty) return
 
-        val batch = firestore.batch()
         snapshots.documents.forEach { doc ->
-            batch.delete(doc.reference)
+            try {
+                deleteTransaction(doc.id, forceSystemUpdate = true)
+            } catch (e: Exception) {
+                doc.reference.delete().await()
+            }
         }
-        batch.commit().await()
     }
 
     suspend fun updateTransactionByRelatedId(relatedId: String, newAmount: Double? = null, newDescription: String? = null) {
