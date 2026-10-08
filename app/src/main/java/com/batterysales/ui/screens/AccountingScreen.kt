@@ -74,6 +74,7 @@ fun AccountingScreen(
     var selectedType by remember { mutableStateOf(TransactionType.INCOME) }
     var transactionToEdit by remember { mutableStateOf<Transaction?>(null) }
     var showDeleteConfirm by remember { mutableStateOf<Transaction?>(null) }
+    var showTransferConfirmDialog by remember { mutableStateOf(false) }
 
     val selectedTab by viewModel.selectedTab.collectAsState()
     var showDateRangePicker by remember { mutableStateOf(false) }
@@ -189,8 +190,8 @@ fun AccountingScreen(
                             Row {
                                 if (currentUser?.role == "admin") {
                                     HeaderIconButton(
-                                        icon = Icons.Default.Send,
-                                        onClick = { viewModel.transferDailyIncomeToMain() },
+                                        icon = Icons.AutoMirrored.Filled.Send,
+                                        onClick = { showTransferConfirmDialog = true },
                                         contentDescription = "Transfer to Main"
                                     )
                                 }
@@ -447,6 +448,24 @@ fun AccountingScreen(
             }
         }
     }
+    if (showTransferConfirmDialog) {
+        val selectedWhName = warehouses.find { it.id == selectedWarehouseId }?.name ?: "المستودع المحدد"
+        AlertDialog(
+            onDismissRequest = { showTransferConfirmDialog = false },
+            title = { Text("تأكيد ترحيل الصندوق") },
+            text = { Text("هل تريد ترحيل كامل رصيد الصندوق الكاش من '$selectedWhName' إلى الخزينة الرئيسية؟") },
+            confirmButton = {
+                Button(onClick = {
+                    showTransferConfirmDialog = false
+                    viewModel.transferDailyIncomeToMain()
+                }) { Text("تأكيد الترحيل") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showTransferConfirmDialog = false }) { Text("إلغاء") }
+            }
+        )
+    }
+
     if (showAddTransactionDialog) {
         AddTransactionDialog(
             type = selectedType,
