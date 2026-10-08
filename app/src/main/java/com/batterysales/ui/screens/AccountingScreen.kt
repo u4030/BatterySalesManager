@@ -513,33 +513,42 @@ fun AccountingScreen(
     }
 
     if (showDeleteConfirm != null) {
-        val isLinkedToBill = showDeleteConfirm?.relatedId?.isNotEmpty() == true || showDeleteConfirm?.isSystemManaged == true
-        
+        val trans = showDeleteConfirm!!
+        val isTransfer = trans.description?.contains("ترحيل") == true
+        val isLinkedOrManaged = trans.relatedId?.isNotEmpty() == true || trans.isSystemManaged
+        val isAdmin = currentUser?.role == "admin"
+
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = null },
-            title = { Text(if (isLinkedToBill) "تنبيه" else "حذف العملية") },
+            title = { Text(if (isTransfer && !isAdmin) "تنبيه صلاحيات" else if (isLinkedOrManaged && !isTransfer) "تنبيه" else "حذف العملية") },
             text = { 
-                if (isLinkedToBill) {
+                if (isTransfer && !isAdmin) {
+                    Text("عملية حذف قيد الترحيل من المستودع الفرعي هي من صلاحيات المستخدم المسؤول فقط وحصراً.")
+                } else if (isLinkedOrManaged && !isTransfer) {
                     Text("هذا القيد نظامي ومرتبط بعملية أخرى. لحذفه، يرجى الانتقال إلى الشاشة المختصة (الكمبيالات مثلاً) والحذف من هناك لضمان دقة البيانات.")
+                } else if (isTransfer && isAdmin) {
+                    Text("هل أنت متأكد من حذف قيد الترحيل هذا؟ سيتم إلغاء الترحيل وإعادة تخصيص المبلغ في الخزينة الرئيسية والفرعية.")
                 } else {
                     Text("هل أنت متأكد من حذف هذه العملية المالية؟ لا يمكن التراجع عن هذا الإجراء.")
                 }
             },
             confirmButton = {
-                if (!isLinkedToBill) {
+                if (isTransfer && !isAdmin) {
+                    Button(onClick = { showDeleteConfirm = null }) { Text("فهمت") }
+                } else if (isLinkedOrManaged && !isTransfer) {
+                    Button(onClick = { showDeleteConfirm = null }) { Text("فهمت") }
+                } else {
                     Button(
                         onClick = {
-                            viewModel.deleteTransaction(showDeleteConfirm!!.id)
+                            viewModel.deleteTransaction(trans.id)
                             showDeleteConfirm = null
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                     ) { Text("حذف") }
-                } else {
-                    Button(onClick = { showDeleteConfirm = null }) { Text("فهمت") }
                 }
             },
             dismissButton = {
-                if (!isLinkedToBill) {
+                if (!isLinkedOrManaged || (isTransfer && isAdmin)) {
                     TextButton(onClick = { showDeleteConfirm = null }) { Text("إلغاء") }
                 }
             }

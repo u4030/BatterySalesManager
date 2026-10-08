@@ -326,7 +326,9 @@ class AccountingViewModel @Inject constructor(
         viewModelScope.launch {
             _isSubmitting.value = true
             try {
-                repository.deleteTransaction(id)
+                val user = userRepository.getCurrentUser()
+                val isAdmin = user?.role == "admin"
+                repository.deleteTransaction(id, forceSystemUpdate = isAdmin)
                 loadData(reset = true)
             } catch (e: Exception) {
                 _errorMessage.value = e.message

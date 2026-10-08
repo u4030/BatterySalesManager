@@ -340,22 +340,24 @@ class AccountingRepository @Inject constructor(
             relId
         }.await()
 
-        val batch = firestore.batch()
-        // Delete the counterpart if it exists
-        if (relatedId != null) {
-            batch.delete(firestore.collection(Transaction.COLLECTION_NAME).document(relatedId))
-        }
+        val counterpartIds = mutableSetOf<String>()
+        if (relatedId != null) counterpartIds.add(relatedId)
 
-        // Also delete any transaction that points TO this one
         val pointingSnap = firestore.collection(Transaction.COLLECTION_NAME)
             .whereEqualTo("relatedId", transactionId)
             .get().await()
 
-        pointingSnap.documents.forEach { pointingDoc ->
-            batch.delete(pointingDoc.reference)
+        pointingSnap.documents.forEach { doc ->
+            counterpartIds.add(doc.id)
         }
 
-        batch.commit().await()
+        counterpartIds.forEach { cId ->
+            try {
+                deleteTransaction(cId, forceSystemUpdate = true)
+            } catch (e: Exception) {
+                // Ignore if already deleted
+            }
+        }
     }
 
     suspend fun deleteTransactionsByRelatedId(relatedId: String) {

@@ -488,9 +488,15 @@ class ReportsViewModel @Inject constructor(
             val user = userRepository.getCurrentUser()
             val seller = user?.role == "seller"
 
+            val warehousesMap = try { warehouseRepository.getWarehousesOnce().associateBy { it.id } } catch(e: Exception) { emptyMap() }
+
             scrapWarehouseRepository.getScrapWarehouses()
                 .onEach { allScrapWh: List<ScrapWarehouse> ->
-                    val active = allScrapWh.filter { it.isActive }
+                    val active = allScrapWh.filter { it.isActive }.map { scrapWh ->
+                        val parentWh = warehousesMap[scrapWh.parentWarehouseId]
+                        val resolvedName = parentWh?.name ?: scrapWh.name.removePrefix("سكراب - ")
+                        scrapWh.copy(name = resolvedName)
+                    }
                     
                     if (seller) {
                         val myScrapWh = active.find { it.parentWarehouseId == user?.warehouseId }
