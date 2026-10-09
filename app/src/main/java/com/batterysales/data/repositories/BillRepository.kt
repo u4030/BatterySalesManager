@@ -79,9 +79,8 @@ class BillRepository @Inject constructor(
             // --- WRITE PHASE ---
             transaction.set(docRef, finalBill)
             
-            // For Commitments (Checks/Bills), we credit the FULL amount immediately
-            // to the supplier's FIFO pool, even if not yet cleared. This ensures invoices are "Covered".
-            val creditToApply = if (finalBill.billType == BillType.CHECK || finalBill.billType == BillType.BILL) {
+            // Accrual / Settled Debt: Credit ONLY actual settled amounts to totalCredit
+            val creditToApply = if (finalBill.status == BillStatus.PAID) {
                 finalBill.amount
             } else {
                 finalBill.paidAmount
@@ -855,16 +854,16 @@ class BillRepository @Inject constructor(
         val positiveEntries = entries.filter { it.totalCost > 0 }
         val returns = entries.filter { it.totalCost < 0 }
 
-        // Calculate Pool
-        val totalReturnCredit = returns.sumOf { -it.totalCost }
-        val totalBillCredit = bills.sumOf { b ->
-            if (b.billType == BillType.CHECK || b.billType == BillType.BILL || b.relatedEntryId != null) b.amount else b.paidAmount
-        }
-        val totalManualAllocation = bills.sumOf { it.manualAllocation }
+        // Calculate Pool with exact precision to avoid floating-point artifacts (-0.000)
+        val totalReturnCredit = cleanDouble(returns.sumOf { -it.totalCost })
+        val totalBillCredit = cleanDouble(bills.sumOf { b ->
+            if (b.status == BillStatus.PAID) b.amount else b.paidAmount
+        })
+        val totalManualAllocation = cleanDouble(bills.sumOf { it.manualAllocation })
         
-        val totalCreditPool = totalReturnCredit + totalBillCredit
-        val unallocatedPool = (totalCreditPool - totalManualAllocation).coerceAtLeast(0.0)
-        val totalDebit = positiveEntries.sumOf { it.totalCost }
+        val totalCreditPool = cleanDouble(totalReturnCredit + totalBillCredit)
+        val unallocatedPool = cleanDouble((totalCreditPool - totalManualAllocation).coerceAtLeast(0.0))
+        val totalDebit = cleanDouble(positiveEntries.sumOf { it.totalCost })
 
         // Split updates into batches to handle the 500-op limit
         val allDocsToUpdate = positiveEntries
@@ -930,10 +929,10 @@ class BillRepository @Inject constructor(
         // --- CALCULATION PHASE (Out of transaction for performance and scale) ---
         val creditSources = (
             supplierBills.filter { 
-                it.billType == BillType.CHECK || it.billType == BillType.BILL || it.paidAmount > 0.001 || (it.relatedEntryId != null && it.amount > 0.001)
+                it.paidAmount > 0.001 || it.status == BillStatus.PAID
             }
                 .map { b ->
-                    val totalAmount = if (b.billType == BillType.CHECK || b.billType == BillType.BILL || b.relatedEntryId != null) b.amount else b.paidAmount
+                    val totalAmount = cleanDouble(if (b.status == BillStatus.PAID) b.amount else b.paidAmount)
                     val typeLabel = when(b.billType){ BillType.CHECK -> "شيك"; BillType.BILL -> "كمبيالة"; else -> "دفعة" }
                     val fullNote = if (b.referenceNumber.isNotEmpty()) "$typeLabel (#${b.referenceNumber})" else typeLabel
                     CreditSource(
@@ -951,7 +950,7 @@ class BillRepository @Inject constructor(
                     id = r.id,
                     type = "مرتجع مواد",
                     ref = r.invoiceNumber,
-                    amount = -r.totalCost,
+                    amount = cleanDouble(-r.totalCost),
                     date = r.getEffectiveDate(),
                     manualEntryId = null,
                     manualAllocation = 0.0
@@ -971,11 +970,11 @@ class BillRepository @Inject constructor(
                     val source = activeAutoSources.first()
                     if (source.amount <= 0.001) { activeAutoSources.removeAt(0); continue }
                     
-                    val allocation = minOf(state.remainingBalance, source.amount)
-                    state.remainingBalance -= allocation
-                    state.linkedAllocations[source.id] = (state.linkedAllocations[source.id] ?: 0.0) + allocation
+                    val allocation = cleanDouble(minOf(state.remainingBalance, source.amount))
+                    state.remainingBalance = cleanDouble(state.remainingBalance - allocation)
+                    state.linkedAllocations[source.id] = cleanDouble((state.linkedAllocations[source.id] ?: 0.0) + allocation)
                     state.settlementNotes.add(source.type)
-                    activeAutoSources[0] = source.copy(amount = source.amount - allocation)
+                    activeAutoSources[0] = source.copy(amount = cleanDouble(source.amount - allocation))
                 }
             }
         }
@@ -998,7 +997,7 @@ class BillRepository @Inject constructor(
             balanceChanged || statusChanged || allocationsChanged || notesChanged
         }
 
-        val finalUnallocated = Math.max(0.0, activeAutoSources.sumOf { (it.amount as Number).toDouble() })
+        val finalUnallocated = cleanDouble(Math.max(0.0, activeAutoSources.sumOf { (it.amount as Number).toDouble() }))
 
         // Process updates in chunks of 450 to respect Firestore limits
         if (changedStates.isNotEmpty()) {
@@ -1054,6 +1053,13 @@ class BillRepository @Inject constructor(
             .get()
             .await()
         return snapshot.documents.mapNotNull { it.getString("relatedEntryId") }.toSet()
+    }
+
+    private fun cleanDouble(value: Double): Double {
+        if (value.isNaN() || value.isInfinite()) return 0.0
+        val bd = java.math.BigDecimal.valueOf(value).setScale(3, java.math.RoundingMode.HALF_UP)
+        val res = bd.toDouble()
+        return if (Math.abs(res) < 0.0001) 0.0 else res
     }
 
     suspend fun getLinkedAmounts(): Map<String, Double> {

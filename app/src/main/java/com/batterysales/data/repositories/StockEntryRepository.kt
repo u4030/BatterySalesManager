@@ -1313,5 +1313,30 @@ class StockEntryRepository @Inject constructor(
             billRepository.get().autoLinkBillsForSupplier(entry.supplierId)
         }
     }
+
+    suspend fun getNextInvoiceNumber(supplierId: String, isOfficial: Boolean): String {
+        if (supplierId.isEmpty()) return ""
+        return try {
+            val snap = firestore.collection(StockEntry.COLLECTION_NAME)
+                .whereEqualTo("supplierId", supplierId)
+                .get().await()
+            val prefix = if (isOfficial) "INV-" else "INT-"
+            val entries = snap.documents.mapNotNull { it.toObject(StockEntry::class.java) }
+                .map { it.invoiceNumber.trim() }
+                .filter { it.startsWith(prefix, ignoreCase = true) }
+
+            var maxSeq = 0
+            for (inv in entries) {
+                val numStr = inv.substringAfter(prefix).takeWhile { it.isDigit() }
+                val num = numStr.toIntOrNull() ?: 0
+                if (num > maxSeq) maxSeq = num
+            }
+            val nextSeq = maxSeq + 1
+            String.format("%s%03d", prefix, nextSeq)
+        } catch (e: Exception) {
+            Log.e("StockEntryRepository", "Error generating next invoice number", e)
+            if (isOfficial) "INV-001" else "INT-001"
+        }
+    }
 }
  
