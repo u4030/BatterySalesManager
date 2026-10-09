@@ -45,6 +45,24 @@ class SupplierRepository @Inject constructor(
         return snapshot.documents.mapNotNull { it.toObject(Supplier::class.java)?.copy(id = it.id) }
     }
 
+    fun getSupplierFlow(supplierId: String): Flow<Supplier?> = callbackFlow {
+        val listenerRegistration = firestore.collection(Supplier.COLLECTION_NAME)
+            .document(supplierId)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                if (snapshot != null && snapshot.exists()) {
+                    val supplier = snapshot.toObject(Supplier::class.java)?.copy(id = snapshot.id)
+                    trySend(supplier).isSuccess
+                } else {
+                    trySend(null).isSuccess
+                }
+            }
+        awaitClose { listenerRegistration.remove() }
+    }
+
     suspend fun getSupplier(supplierId: String): Supplier? {
         val snapshot = firestore.collection(Supplier.COLLECTION_NAME)
             .document(supplierId)

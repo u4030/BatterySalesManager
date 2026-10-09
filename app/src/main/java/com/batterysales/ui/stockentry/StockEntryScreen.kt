@@ -220,13 +220,29 @@ fun StockEntryContent(
                     }
                 }
 
-                CustomKeyboardTextField(
-                    value = uiState.invoiceNumber,
-                    onValueChange = viewModel::onInvoiceNumberChanged,
-                    label = "رقم الفاتورة / المرجع",
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    keyboardType = KeyboardLanguage.NUMERIC
-                )
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CustomKeyboardTextField(
+                        value = uiState.invoiceNumber,
+                        onValueChange = viewModel::onInvoiceNumberChanged,
+                        label = "رقم الفاتورة / المرجع (اختياري)",
+                        modifier = Modifier.weight(1f),
+                        keyboardType = KeyboardLanguage.NUMERIC
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    IconButton(
+                        onClick = { viewModel.generateInvoiceNumberOnDemand() },
+                        modifier = Modifier.padding(top = 8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AutoFixHigh,
+                            contentDescription = "توليد رقم تسلسلي تلقائي",
+                            tint = Color(0xFFFB8C00)
+                        )
+                    }
+                }
 
                 // Invoice Date Selection
                 var showDatePicker by remember { mutableStateOf(false) }

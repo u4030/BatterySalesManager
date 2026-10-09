@@ -21,11 +21,17 @@ data class SupplierReportItem(
     val obligatedOrders: List<PurchaseOrderItem> // Orders linked to checks/bills
 )
 
+data class SettlementNoteItem(
+    val note: String,
+    val status: String // "PAID", "PARTIAL", "UNPAID"
+)
+
 data class PurchaseOrderItem(
     val entry: StockEntry,
     val linkedPaidAmount: Double,
     val remainingBalance: Double,
     val referenceNumbers: List<String> = emptyList(),
+    val noteDetails: List<SettlementNoteItem> = emptyList(),
     val items: List<StockEntry> = emptyList(),
     val autoLinkedAmount: Double = 0.0,
     val hasManualLink: Boolean = false,

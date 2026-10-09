@@ -109,6 +109,17 @@ class BankViewModel @Inject constructor(
         }
         loadData()
         observeFinancialStatus()
+        observeBankTransactionsRealtime()
+    }
+
+    private fun observeBankTransactionsRealtime() {
+        repository.getAllTransactionsFlow()
+            .onEach {
+                refreshTrigger.value += 1
+                loadBalancesFromSummary()
+                loadTotals()
+            }
+            .launchIn(viewModelScope)
     }
 
     private fun observeFinancialStatus() {

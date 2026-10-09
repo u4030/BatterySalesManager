@@ -56,14 +56,21 @@ class StockTransferViewModel @Inject constructor(
 
                 // --- ELITE STRATEGY: Load setup data with MINIMAL reads ---
                 val warehouses = warehouseRepository.getWarehousesOnce()
+                val activeWarehouses = warehouses.filter { it.isActive }
                 val products = productRepository.getProductsOnce()
                 cachedInventorySummary = summaryRepository.getInventorySummary(if (user?.role == "seller") user.warehouseId else null)
+
+                val sourceWh = if (user?.role == "seller") activeWarehouses.find { w -> w.id == user.warehouseId } else null
+                val destWh = if (sourceWh != null && activeWarehouses.size == 2) {
+                    activeWarehouses.firstOrNull { it.id != sourceWh.id }
+                } else null
 
                 _uiState.update {
                     it.copy(
                         products = products.filter { !it.archived }.sortedBy { it.name },
-                        warehouses = warehouses.filter { it.isActive },
-                        sourceWarehouse = if (user?.role == "seller") warehouses.find { w -> w.id == user.warehouseId } else null,
+                        warehouses = activeWarehouses,
+                        sourceWarehouse = sourceWh,
+                        destinationWarehouse = destWh,
                         isSourceWarehouseFixed = user?.role == "seller",
                         isLoading = false
                     )
@@ -114,7 +121,14 @@ class StockTransferViewModel @Inject constructor(
     }
 
     fun onSourceWarehouseSelected(warehouse: Warehouse) {
-        _uiState.update { it.copy(sourceWarehouse = warehouse, isLoading = true) }
+        val activeWhs = uiState.value.warehouses
+        val autoDest = if (activeWhs.size == 2 || uiState.value.destinationWarehouse?.id == warehouse.id) {
+            activeWhs.firstOrNull { it.id != warehouse.id }
+        } else {
+            uiState.value.destinationWarehouse
+        }
+
+        _uiState.update { it.copy(sourceWarehouse = warehouse, destinationWarehouse = autoDest, isLoading = true) }
         
         viewModelScope.launch {
             try {
@@ -185,7 +199,18 @@ class StockTransferViewModel @Inject constructor(
                     status = if (currentUser?.role == "seller") "pending" else "approved",
                     createdBy = currentUser?.id ?: "", createdByUserName = currentUser?.displayName ?: ""
                 )
-                _uiState.update { it.copy(isFinished = true, isSubmitting = false) }
+                // Clear fields and reset state for next operation instead of closing screen
+                _uiState.update {
+                    it.copy(
+                        selectedProduct = null,
+                        selectedVariant = null,
+                        variants = emptyList(),
+                        quantity = "",
+                        isFinished = true,
+                        isSubmitting = false,
+                        errorMessage = null
+                    )
+                }
             } catch (e: Exception) {
                 Log.e("StockTransferVM", "Transfer error", e)
                 _uiState.update { it.copy(errorMessage = "فشل النقل: ${e.message}", isSubmitting = false) }

@@ -51,6 +51,7 @@ fun BillsScreen(
 ) {
     val pagingItems = viewModel.bills.collectAsLazyPagingItems()
     val warehouses by viewModel.warehouses.collectAsState()
+    val supplierOverpayments by viewModel.supplierOverpayments.collectAsState()
     val lifecycleOwner = LocalLifecycleOwner.current
 
     val networkHelper = (androidx.compose.ui.platform.LocalContext.current.applicationContext as com.batterysales.BatterySalesApp).networkHelper 
@@ -77,15 +78,46 @@ fun BillsScreen(
     val highlightBillId by viewModel.highlightBillId.collectAsState()
     val listState = rememberLazyListState()
 
-    LaunchedEffect(pagingItems.itemCount, highlightBillId) {
-        if (highlightBillId != null && pagingItems.itemCount > 0) {
-            for (i in 0 until pagingItems.itemCount) {
-                if (pagingItems[i]?.id == highlightBillId) {
-                    listState.animateScrollToItem(i + 1) // +1 because of the header
-                    kotlinx.coroutines.delay(2000)
-                    viewModel.clearHighlight()
-                    break
+    val rawBills = remember(pagingItems.itemSnapshotList, highlightBillId, suppliers) {
+        val list = pagingItems.itemSnapshotList.items.filterNotNull()
+        val hId = highlightBillId
+
+        list.sortedWith(
+            compareByDescending<Bill> { it.id == hId }
+                .thenByDescending { bill ->
+                    val supplier = suppliers.find { s -> s.id == bill.supplierId }
+                    if (supplier != null && bill.status != BillStatus.PAID && supplier.totalDebit > 0) {
+                        val unpaidSupplierBills = list
+                            .filter { it.supplierId == supplier.id && it.status != BillStatus.PAID }
+                            .sortedBy { it.createdAt ?: Date(0) }
+                        
+                        var runningPurchaseBalance = supplier.totalDebit
+                        var isExcess = false
+                        for (unpaid in unpaidSupplierBills) {
+                            if (unpaid.id == bill.id) {
+                                if (runningPurchaseBalance <= 0.001 || bill.amount > runningPurchaseBalance + 0.001) {
+                                    isExcess = true
+                                }
+                                break
+                            } else {
+                                runningPurchaseBalance = (runningPurchaseBalance - unpaid.amount).coerceAtLeast(0.0)
+                            }
+                        }
+                        isExcess || bill.needsAdjustment
+                    } else {
+                        bill.needsAdjustment
+                    }
                 }
+        )
+    }
+
+    LaunchedEffect(rawBills.size, highlightBillId) {
+        if (highlightBillId != null && rawBills.isNotEmpty()) {
+            val index = rawBills.indexOfFirst { it.id == highlightBillId }
+            if (index != -1) {
+                listState.animateScrollToItem(index + 1) // +1 because of the header
+                kotlinx.coroutines.delay(2000)
+                viewModel.clearHighlight()
             }
         }
     }
@@ -181,16 +213,72 @@ fun BillsScreen(
                         }
                     }
 
-                    if (selectedSupplierId != null && selectedSupplierBalance != null) {
+                    if (selectedSupplierId == null && supplierOverpayments.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        supplierOverpayments.forEach { (supId, overpaymentVal) ->
+                            val supName = suppliers.find { it.id == supId }?.name ?: ""
+                            Card(
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF0284C7).copy(alpha = 0.12f)),
+                                shape = RoundedCornerShape(12.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF0284C7).copy(alpha = 0.3f))
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "رصيد فائض مسدد للمورد ($supName):",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "JD ${String.format("%,.3f", overpaymentVal)}",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = Color(0xFF0284C7)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if (selectedSupplierId != null) {
+                        val overpaymentVal = supplierOverpayments[selectedSupplierId] ?: 0.0
+                        val isExcess = overpaymentVal > 0.001
+                        val selSupplier = suppliers.find { it.id == selectedSupplierId }
+                        val uncoveredDebt = maxOf(0.0, selSupplier?.currentBalance ?: (selectedSupplierBalance ?: 0.0))
+
+                        val displayColor = if (isExcess) Color(0xFF0284C7) else if (uncoveredDebt > 0) Color(0xFFEF4444) else Color(0xFF10B981)
+                        val labelText = if (isExcess) "رصيد فائض مسدد للمورد:" else "الرصيد غير المغطى المتبقي:"
+                        val displayValue = if (isExcess) overpaymentVal else uncoveredDebt
+
                         Spacer(modifier = Modifier.height(12.dp))
                         Card(
                             modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)),
-                            shape = RoundedCornerShape(12.dp)
+                            colors = CardDefaults.cardColors(containerColor = displayColor.copy(alpha = 0.12f)),
+                            shape = RoundedCornerShape(12.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, displayColor.copy(alpha = 0.3f))
                         ) {
-                            Row(modifier = Modifier.padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Text("إجمالي رصيد المورد المتبقي:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                                Text("JD ${String.format("%.3f", selectedSupplierBalance)}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, color = if ((selectedSupplierBalance ?: 0.0) > 0) Color(0xFFEF4444) else Color(0xFF10B981))
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = labelText,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "JD ${String.format("%,.3f", displayValue)}",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = displayColor
+                                )
                             }
                         }
                     }
@@ -223,21 +311,53 @@ fun BillsScreen(
                 }
             }
 
-            items(pagingItems.itemCount) { index ->
-                val billItem = pagingItems[index]
-                billItem?.let { b ->
-                    val supplier = suppliers.find { it.id == b.supplierId }
-                    val isHighlighted = b.id == highlightBillId
-                    Box(modifier = Modifier.padding(horizontal = 16.dp)) {
-                        BillItemCard(
-                            bill = b,
-                            supplierName = supplier?.name ?: "",
-                            isHighlighted = isHighlighted,
-                            onPayClick = { selectedBillForPayment = b },
-                            onDeleteClick = { billToDelete = b },
-                            onEditClick = { billToEdit = b }
-                        )
+            items(rawBills.size) { index ->
+                val b = rawBills[index]
+                val supplier = suppliers.find { it.id == b.supplierId }
+                val isHighlighted = b.id == highlightBillId
+
+                val (needsAdj, warnMsg) = remember(b, supplier?.totalDebit, rawBills) {
+                    if (supplier != null && b.status != BillStatus.PAID && supplier.totalDebit > 0) {
+                        val unpaidSupplierBills = rawBills
+                            .filter { it.supplierId == supplier.id && it.status != BillStatus.PAID }
+                            .sortedBy { it.createdAt ?: Date(0) }
+                        
+                        var runningPurchaseBalance = supplier.totalDebit
+                        var computedNote: String? = null
+                        var isExcess = false
+
+                        for (bill in unpaidSupplierBills) {
+                            if (bill.id == b.id) {
+                                if (runningPurchaseBalance <= 0.001) {
+                                    isExcess = true
+                                    computedNote = "كمبيالة/شيك فائض بالكامل عن المشتريات الحالية - يُوصى بحذفها يدوياً"
+                                } else if (bill.amount > runningPurchaseBalance + 0.001) {
+                                    isExcess = true
+                                    computedNote = "تتجاوز صافي المشتريات الحالي (${String.format("%,.3f", runningPurchaseBalance)} د.أ) - يرجى تعديل قيمتها إلى ${String.format("%,.3f", runningPurchaseBalance)} د.أ"
+                                }
+                                break
+                            } else {
+                                runningPurchaseBalance = (runningPurchaseBalance - bill.amount).coerceAtLeast(0.0)
+                            }
+                        }
+
+                        if (isExcess) Pair(true, computedNote) else Pair(b.needsAdjustment, b.warningNote)
+                    } else {
+                        Pair(b.needsAdjustment, b.warningNote)
                     }
+                }
+
+                val evaluatedBill = b.copy(needsAdjustment = needsAdj, warningNote = warnMsg)
+
+                Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                    BillItemCard(
+                        bill = evaluatedBill,
+                        supplierName = supplier?.name ?: "",
+                        isHighlighted = isHighlighted,
+                        onPayClick = { selectedBillForPayment = evaluatedBill },
+                        onDeleteClick = { billToDelete = evaluatedBill },
+                        onEditClick = { billToEdit = evaluatedBill }
+                    )
                 }
             }
 
@@ -300,6 +420,7 @@ fun BillsScreen(
             suppliers = suppliers,
             pendingPurchases = pendingPurchases,
             warehouses = warehouses,
+            supplierOverpayments = supplierOverpayments,
             currentUser = user,
             onDismiss = { showAddBillDialog = false },
             onAdd = { desc, amount, date, type, ref, supplierId, relatedEntryId, warehouseId, payImmediately ->
@@ -350,11 +471,23 @@ fun BillItemCard(bill: Bill, supplierName: String, isHighlighted: Boolean = fals
     val isPaid = bill.status == BillStatus.PAID
     val isPartial = bill.status == BillStatus.PARTIAL
 
-    val statusColor = when {
-        isPaid -> Color(0xFF10B981)
-        isPartial -> Color(0xFFFACC15)
-        else -> Color(0xFFEF4444)
+    val billTypeLabel = when(bill.billType) {
+        BillType.CHECK -> "شيك"
+        BillType.BILL -> "كمبيالة"
+        BillType.TRANSFER -> "تحويل"
+        BillType.CASH -> "نقدي"
+        BillType.VISA -> "فيزا"
+        BillType.E_WALLET -> "محفظة"
     }
+
+    val documentCoverageColor = when {
+        bill.status == BillStatus.PAID -> Color(0xFF10B981) // Green - Finally Settled
+        bill.paidAmount >= bill.amount - 0.001 -> Color(0xFF3B82F6) // Blue - Fully Covered
+        bill.paidAmount > 0.001 || bill.status == BillStatus.PARTIAL -> Color(0xFFFB8C00) // Orange - Partially Covered
+        else -> Color(0xFFEF4444) // Red - Uncovered
+    }
+
+    val statusColor = documentCoverageColor
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -362,9 +495,41 @@ fun BillItemCard(bill: Bill, supplierName: String, isHighlighted: Boolean = fals
         colors = CardDefaults.cardColors(
             containerColor = if (isHighlighted) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
         ),
-        border = if (isHighlighted) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
+        border = if (bill.needsAdjustment) {
+            androidx.compose.foundation.BorderStroke(2.dp, Color(0xFFC2410C))
+        } else if (isHighlighted) {
+            androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+        } else null
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
+            if (bill.needsAdjustment) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                    color = Color(0xFFC2410C).copy(alpha = 0.12f),
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFC2410C).copy(alpha = 0.4f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = Color(0xFFC2410C),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = bill.warningNote ?: "تم إرجاع/تعديل الطلبية المرتبطة - يرجى تعديل قيمة الكمبيالة إلى القيمة الجديدة أو إلغاؤها يدوياً",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFC2410C)
+                        )
+                    }
+                }
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -436,11 +601,19 @@ fun BillItemCard(bill: Bill, supplierName: String, isHighlighted: Boolean = fals
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     
+                    Text(
+                        text = "نوع المستند: $billTypeLabel",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = documentCoverageColor
+                    )
+
                     if (bill.referenceNumber.isNotEmpty()) {
                         Text(
-                            text = "رقم السند: ${bill.referenceNumber}",
+                            text = "رقم المستند: ${bill.referenceNumber}",
                             style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFFFB8C00)
+                            fontWeight = FontWeight.Bold,
+                            color = documentCoverageColor
                         )
                     }
                 }
@@ -518,12 +691,14 @@ fun AddBillDialog(
     suppliers: List<com.batterysales.data.models.Supplier>,
     pendingPurchases: List<com.batterysales.data.models.StockEntry>,
     warehouses: List<com.batterysales.data.models.Warehouse>,
+    supplierOverpayments: Map<String, Double> = emptyMap(),
     currentUser: com.batterysales.data.models.User?,
     onDismiss: () -> Unit,
     onAdd: (String, Double, Date, BillType, String, String, String?, String?, Boolean) -> Unit
 ) {
     var description by remember { mutableStateOf("") }
-    var selectedSupplier by remember { mutableStateOf<com.batterysales.data.models.Supplier?>(null) }
+    var selectedSupplierId by remember { mutableStateOf<String?>(null) }
+    val selectedSupplier = suppliers.find { it.id == selectedSupplierId }
     var selectedWarehouseId by remember { mutableStateOf<String?>(null) }
     var amount by remember { mutableStateOf("") }
     var refNum by remember { mutableStateOf("") }
@@ -575,36 +750,37 @@ fun AddBillDialog(
             selectedValue = selectedSupplier?.name ?: "بدون مورد",
             options = listOf("بدون مورد") + suppliers.map { it.name },
             onOptionSelected = { index ->
-                selectedSupplier = if (index == 0) null else suppliers[index - 1]
+                selectedSupplierId = if (index == 0) null else suppliers[index - 1].id
             },
             enabled = true
         )
 
         if (selectedSupplier != null) {
-            val uncoveredDebt = selectedSupplier!!.currentBalance
+            val overpaymentVal = supplierOverpayments[selectedSupplier!!.id] ?: 0.0
+            val isExcess = overpaymentVal > 0.001
+            val uncoveredDebt = maxOf(0.0, selectedSupplier!!.currentBalance)
+            val displayColor = if (isExcess) Color(0xFF0284C7) else if (uncoveredDebt > 0) Color(0xFFEF4444) else Color(0xFF10B981)
+            val labelText = if (isExcess) "رصيد فائض مسدد للمورد" else "إجمالي القيمة المالية الغير مغطاة للمورد"
+            val displayValue = if (isExcess) overpaymentVal else uncoveredDebt
+
             Card(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (uncoveredDebt > 0) Color(0xFFEF4444).copy(alpha = 0.12f) else Color(0xFF10B981).copy(alpha = 0.12f)
-                ),
+                colors = CardDefaults.cardColors(containerColor = displayColor.copy(alpha = 0.12f)),
                 shape = RoundedCornerShape(12.dp),
-                border = androidx.compose.foundation.BorderStroke(
-                    1.dp, 
-                    if (uncoveredDebt > 0) Color(0xFFEF4444).copy(alpha = 0.3f) else Color(0xFF10B981).copy(alpha = 0.3f)
-                )
+                border = androidx.compose.foundation.BorderStroke(1.dp, displayColor.copy(alpha = 0.3f))
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
                     Text(
-                        text = "إجمالي القيمة المالية الغير مغطاة للمورد",
+                        text = labelText,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "JD ${String.format("%,.3f", uncoveredDebt)}",
+                        text = "JD ${String.format("%,.3f", displayValue)}",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.ExtraBold,
-                        color = if (uncoveredDebt > 0) Color(0xFFEF4444) else Color(0xFF10B981)
+                        color = displayColor
                     )
                 }
             }
@@ -733,6 +909,7 @@ fun EditBillDialog(
     onDismiss: () -> Unit,
     onConfirm: (Bill) -> Unit
 ) {
+    val isPaid = bill.status == BillStatus.PAID
     var description by remember { mutableStateOf(bill.description) }
     var selectedSupplier by remember { mutableStateOf(suppliers.find { it.id == bill.supplierId }) }
     var amount by remember { mutableStateOf(bill.amount.toString()) }
@@ -751,14 +928,24 @@ fun EditBillDialog(
         confirmButton = {
             Button(onClick = {
                 val amt = amount.toDoubleOrNull() ?: bill.amount
-                onConfirm(bill.copy(description = description, amount = amt, dueDate = selectedDate, billType = selectedType, referenceNumber = refNum, supplierId = selectedSupplier?.id ?: ""))
+                onConfirm(bill.copy(description = description, amount = if (isPaid) bill.amount else amt, dueDate = selectedDate, billType = if (isPaid) bill.billType else selectedType, referenceNumber = refNum, supplierId = if (isPaid) bill.supplierId else (selectedSupplier?.id ?: "")))
             }) { Text("حفظ التعديلات") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("إلغاء") }
         }
     ) {
-        Text("تنبيه: تعديل الوصف سيقوم بتعديل وصف العمليات المتعلقة في الخزينة.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        if (isPaid) {
+            Text(
+                "تنبيه: هذا القيد مسدد نهائياً. يسمح بتعديل الوصف ورقم السند وتاريخ الاستحقاق فقط.",
+                color = Color(0xFFFB8C00),
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Bold
+            )
+        } else {
+            Text("تنبيه: تعديل الوصف سيقوم بتعديل وصف العمليات المتعلقة في الخزينة.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        }
+
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = description,
             onValueChange = { description = it },
@@ -767,8 +954,9 @@ fun EditBillDialog(
         )
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = amount,
-            onValueChange = { amount = it },
+            onValueChange = { if (!isPaid) amount = it },
             label = "المبلغ الإجمالي",
+            enabled = !isPaid,
             keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
         )
         com.batterysales.ui.components.CustomKeyboardTextField(
@@ -782,8 +970,8 @@ fun EditBillDialog(
             label = "المورد (اختياري)",
             selectedValue = selectedSupplier?.name ?: "بدون مورد",
             options = listOf("بدون مورد") + suppliers.map { it.name },
-            onOptionSelected = { index -> selectedSupplier = if (index == 0) null else suppliers[index - 1] },
-            enabled = true
+            onOptionSelected = { index -> if (!isPaid) selectedSupplier = if (index == 0) null else suppliers[index - 1] },
+            enabled = !isPaid
         )
 
         Text("نوع الالتزام:", fontSize = 14.sp, fontWeight = FontWeight.Medium)
@@ -796,7 +984,8 @@ fun EditBillDialog(
             BillType.entries.forEach { type ->
                 FilterChip(
                     selected = selectedType == type,
-                    onClick = { selectedType = type },
+                    onClick = { if (!isPaid) selectedType = type },
+                    enabled = !isPaid,
                     label = {
                         Text(
                             when (type) {

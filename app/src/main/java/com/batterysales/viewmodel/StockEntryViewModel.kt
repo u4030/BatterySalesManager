@@ -216,6 +216,18 @@ class StockEntryViewModel @Inject constructor(
         }
     }
 
+    fun generateInvoiceNumberOnDemand() {
+        val supplier = _uiState.value.selectedSupplier
+        viewModelScope.launch {
+            val autoNumber = if (supplier != null) {
+                stockEntryRepository.getNextInvoiceNumber(supplier.id, supplier.isOfficial)
+            } else {
+                "INV-" + (System.currentTimeMillis() % 10000).toString().padStart(4, '0')
+            }
+            _uiState.update { it.copy(invoiceNumber = autoNumber) }
+        }
+    }
+
     /**
      * Returns a list of products filtered by the selected supplier.
      */
@@ -286,7 +298,7 @@ class StockEntryViewModel @Inject constructor(
             return
         }
 
-        _uiState.update { it.copy(stockItems = it.stockItems + newItem, quantity = "", costValue = "") }
+        _uiState.update { it.copy(stockItems = it.stockItems + newItem, quantity = "") }
     }
 
     fun onSaveClicked(approveOnSave: Boolean = false) {

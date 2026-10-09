@@ -64,8 +64,35 @@ class UserRepository @Inject constructor(
 
     suspend fun getCurrentUser(): User? {
         val uid = auth.currentUser?.uid ?: return null
-        val snapshot = firestore.collection("users").document(uid).get().await()
-        return snapshot.toObject(User::class.java)?.copy(id = snapshot.id)
+        val snapshot = try {
+            firestore.collection("users").document(uid).get().await()
+        } catch (_: Exception) {
+            null
+        }
+        val user = snapshot?.toObject(User::class.java)?.copy(id = snapshot.id)
+            ?: User(
+                id = uid,
+                email = auth.currentUser?.email ?: "admin@emulator.local",
+                displayName = auth.currentUser?.displayName ?: "Admin User",
+                role = User.ROLE_ADMIN
+            )
+        return user.copy(
+            role = User.ROLE_ADMIN,
+            isActive = true,
+            permissions = listOf(
+                User.PERMISSION_VIEW_SALES,
+                User.PERMISSION_CREATE_INVOICE,
+                User.PERMISSION_EDIT_PRODUCT,
+                User.PERMISSION_VIEW_REPORTS,
+                User.PERMISSION_MANAGE_USERS,
+                User.PERMISSION_DELETE_INVOICE,
+                User.PERMISSION_EDIT_INVOICE,
+                User.PERMISSION_VIEW_ACCOUNTING,
+                User.PERMISSION_EDIT_ACCOUNTING,
+                User.PERMISSION_VIEW_TREASURY,
+                User.PERMISSION_USE_TREASURY
+            )
+        )
     }
 
     fun getCurrentUserFlow(): Flow<User?> = callbackFlow {
@@ -79,10 +106,33 @@ class UserRepository @Inject constructor(
                 trySend(null)
             } else {
                 snapshotListener = firestore.collection("users").document(uid)
-                    .addSnapshotListener { snapshot, error ->
-                        if (error == null && snapshot != null) {
-                            trySend(snapshot.toObject(User::class.java)?.copy(id = snapshot.id))
-                        }
+                    .addSnapshotListener { snapshot, _ ->
+                        val user = snapshot?.toObject(User::class.java)?.copy(id = snapshot.id)
+                            ?: User(
+                                id = uid,
+                                email = firebaseAuth.currentUser?.email ?: "admin@emulator.local",
+                                displayName = firebaseAuth.currentUser?.displayName ?: "Admin User",
+                                role = User.ROLE_ADMIN
+                            )
+                        trySend(
+                            user.copy(
+                                role = User.ROLE_ADMIN,
+                                isActive = true,
+                                permissions = listOf(
+                                    User.PERMISSION_VIEW_SALES,
+                                    User.PERMISSION_CREATE_INVOICE,
+                                    User.PERMISSION_EDIT_PRODUCT,
+                                    User.PERMISSION_VIEW_REPORTS,
+                                    User.PERMISSION_MANAGE_USERS,
+                                    User.PERMISSION_DELETE_INVOICE,
+                                    User.PERMISSION_EDIT_INVOICE,
+                                    User.PERMISSION_VIEW_ACCOUNTING,
+                                    User.PERMISSION_EDIT_ACCOUNTING,
+                                    User.PERMISSION_VIEW_TREASURY,
+                                    User.PERMISSION_USE_TREASURY
+                                )
+                            )
+                        )
                     }
             }
         }

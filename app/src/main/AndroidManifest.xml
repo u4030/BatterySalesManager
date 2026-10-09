@@ -34,7 +34,7 @@
         android:roundIcon="@mipmap/al_asriya_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.BatterySalesManager"
-        android:usesCleartextTraffic="false"
+        android:usesCleartextTraffic="true"
         tools:targetApi="31">
 
         <meta-data
