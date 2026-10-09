@@ -13,7 +13,9 @@ data class Transaction(
     val paymentMethod: String = "cash", // cash, e-wallet, visa
     val createdAt: Date = Date(),
     val notes: String = "",
-    val isSystemManaged: Boolean = false
+    val isSystemManaged: Boolean = false,
+    @get:com.google.firebase.firestore.PropertyName("auditNotes")
+    val auditNotes: List<String> = emptyList()
 ) {
     companion object {
         const val COLLECTION_NAME = "transactions"

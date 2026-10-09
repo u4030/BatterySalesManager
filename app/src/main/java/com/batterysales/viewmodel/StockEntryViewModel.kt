@@ -214,6 +214,12 @@ class StockEntryViewModel @Inject constructor(
                 variants = if (it.isEditMode) it.variants else emptyList()
             )
         }
+        if (supplier != null && !_uiState.value.isEditMode) {
+            viewModelScope.launch {
+                val autoNumber = stockEntryRepository.getNextInvoiceNumber(supplier.id, supplier.isOfficial)
+                _uiState.update { it.copy(invoiceNumber = autoNumber) }
+            }
+        }
     }
 
     /**
@@ -286,7 +292,7 @@ class StockEntryViewModel @Inject constructor(
             return
         }
 
-        _uiState.update { it.copy(stockItems = it.stockItems + newItem, quantity = "", costValue = "") }
+        _uiState.update { it.copy(stockItems = it.stockItems + newItem, quantity = "") }
     }
 
     fun onSaveClicked(approveOnSave: Boolean = false) {

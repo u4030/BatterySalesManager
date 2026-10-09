@@ -74,9 +74,19 @@ class ProductRepository @Inject constructor(
     }
 
     suspend fun deleteProduct(productId: String) {
-        firestore.collection(Product.COLLECTION_NAME)
-            .document(productId)
-            .delete()
-            .await()
+        // Soft delete product (archived = true) to prevent damaging historical supplier/ledger records
+        val productRef = firestore.collection(Product.COLLECTION_NAME).document(productId)
+        productRef.update("archived", true).await()
+
+        // Soft delete all product variants under this product
+        val variantsSnap = firestore.collection(com.batterysales.data.models.ProductVariant.COLLECTION_NAME)
+            .whereEqualTo("productId", productId)
+            .get().await()
+
+        val batch = firestore.batch()
+        variantsSnap.documents.forEach { doc ->
+            batch.update(doc.reference, "archived", true)
+        }
+        batch.commit().await()
     }
 } 

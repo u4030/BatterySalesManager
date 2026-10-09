@@ -8,6 +8,7 @@ import com.google.firebase.firestore.AggregateSource
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 
@@ -15,6 +16,24 @@ class AccountingRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
     private val summaryRepository: SummaryRepository
 ) {
+
+    fun getTransactionsFlow(warehouseId: String? = null): kotlinx.coroutines.flow.Flow<List<Transaction>> = kotlinx.coroutines.flow.callbackFlow {
+        var query: Query = firestore.collection(Transaction.COLLECTION_NAME)
+        if (warehouseId != null && warehouseId != "all") {
+            query = query.whereEqualTo("warehouseId", warehouseId)
+        }
+        val listener = query.addSnapshotListener { snap, err ->
+            if (err != null) {
+                close(err)
+                return@addSnapshotListener
+            }
+            if (snap != null) {
+                val list = snap.documents.mapNotNull { it.toObject(Transaction::class.java)?.copy(id = it.id) }
+                trySend(list)
+            }
+        }
+        awaitClose { listener.remove() }
+    }
 
     suspend fun getAllTransactions(): List<Transaction> {
         val snapshot = firestore.collection(Transaction.COLLECTION_NAME)
@@ -221,7 +240,7 @@ class AccountingRepository @Inject constructor(
         }.await()
     }
 
-    suspend fun updateTransaction(transaction: Transaction, forceSystemUpdate: Boolean = false) {
+    suspend fun updateTransaction(transaction: Transaction, forceSystemUpdate: Boolean = false, editorName: String = "") {
         val docRef = firestore.collection(Transaction.COLLECTION_NAME).document(transaction.id)
 
         firestore.runTransaction { transactionOp ->
@@ -235,8 +254,14 @@ class AccountingRepository @Inject constructor(
             val snapshots = summaryRepository.getSummarySnapshots(transactionOp, listOfNotNull(transaction.warehouseId))
             val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
 
+            val timestampStr = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
+            val editorInfo = if (editorName.isNotBlank()) " بواسطة $editorName" else ""
+            val auditNote = "تعديل بتاريخ $timestampStr$editorInfo: المبلغ السابق (${oldTrans?.amount ?: 0.0}) -> المبلغ الجديد (${transaction.amount})"
+            val updatedNotes = (oldTrans?.auditNotes ?: emptyList()) + auditNote
+            val finalTrans = transaction.copy(auditNotes = updatedNotes)
+
             // 2. Writes
-            transactionOp.set(docRef, transaction)
+            transactionOp.set(docRef, finalTrans)
 
             // Calculate Changes
             val oldChange = if (oldTrans != null) {
