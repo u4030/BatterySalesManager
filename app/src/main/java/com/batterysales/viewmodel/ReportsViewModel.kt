@@ -265,11 +265,44 @@ class ReportsViewModel @Inject constructor(
         }
     }
 
+    private fun cleanDouble(value: Double): Double {
+        if (value.isNaN() || value.isInfinite()) return 0.0
+        val bd = java.math.BigDecimal.valueOf(value).setScale(3, java.math.RoundingMode.HALF_UP)
+        val res = bd.toDouble()
+        return if (Math.abs(res) < 0.0001) 0.0 else res
+    }
+
+    private var selectedSupplierObserverJob: kotlinx.coroutines.Job? = null
+
+    private fun observeSelectedSupplierRealtime(supplierId: String) {
+        selectedSupplierObserverJob?.cancel()
+        selectedSupplierObserverJob = viewModelScope.launch {
+            supplierRepository.getSupplierFlow(supplierId).collect { freshSupplier ->
+                if (freshSupplier != null) {
+                    val current = _selectedSupplierReport.value
+                    if (current != null) {
+                        val newCredit = cleanDouble(Math.max(0.0, freshSupplier.totalCredit))
+                        val newDebit = cleanDouble(freshSupplier.totalDebit)
+                        val newBalance = cleanDouble(newDebit - newCredit)
+                        _selectedSupplierReport.value = current.copy(
+                            supplier = freshSupplier,
+                            totalDebit = newDebit,
+                            totalCredit = newCredit,
+                            balance = newBalance
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     fun onSupplierSelected(supplierId: String?) {
         _selectedSupplierId.value = supplierId
         if (supplierId != null) {
             loadDetailedSupplierReport(supplierId)
+            observeSelectedSupplierRealtime(supplierId)
         } else {
+            selectedSupplierObserverJob?.cancel()
             _selectedSupplierReport.value = null
         }
     }
@@ -442,12 +475,12 @@ class ReportsViewModel @Inject constructor(
                 val positiveOrders = purchaseOrders.filter { it.entry.totalCost > 0 }
                     .sortedWith(compareByDescending<PurchaseOrderItem> { it.entry.getEffectiveDate() }.thenByDescending { it.entry.timestamp })
 
-                val totalDebit = if (start == null && end == null) supplier.totalDebit else positiveOrders.sumOf { it.entry.totalCost }
-                val totalCredit = if (start == null && end == null) supplier.totalCredit else (
-                    supplierBills.sumOf { b -> if (b.billType == BillType.CHECK || b.billType == BillType.BILL) b.amount else b.paidAmount }
+                val totalDebit = cleanDouble(if (start == null && end == null) supplier.totalDebit else positiveOrders.sumOf { it.entry.totalCost })
+                val totalCredit = cleanDouble(if (start == null && end == null) Math.max(0.0, supplier.totalCredit) else Math.max(0.0, (
+                    supplierBills.sumOf { b -> if (b.status == BillStatus.PAID) b.amount else b.paidAmount }
                     + purchaseOrders.filter { it.entry.totalCost < 0 }.sumOf { -it.entry.totalCost }
-                )
-                val balance = if (start == null && end == null) supplier.currentBalance else (totalDebit - totalCredit)
+                )))
+                val balance = cleanDouble(totalDebit - totalCredit)
 
                 val finalOrdersForDisplay = positiveOrders
 

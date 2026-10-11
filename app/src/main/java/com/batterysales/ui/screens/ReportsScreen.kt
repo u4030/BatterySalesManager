@@ -590,11 +590,19 @@ fun PurchaseOrderCard(po: com.batterysales.data.models.PurchaseOrderItem, dateFo
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
+                    val coverageColor = when {
+                        po.remainingBalance <= 0.001 && po.isCleared -> Color(0xFF10B981) // Green - Finally Settled
+                        po.remainingBalance <= 0.001 -> Color(0xFF3B82F6)                 // Blue - Fully Covered
+                        po.totalLinkedAmount > 0.001 -> Color(0xFFFB8C00)                  // Orange - Partially Covered
+                        else -> Color(0xFFEF4444)                                          // Red - Uncovered
+                    }
+
                     if (po.entry.invoiceNumber.isNotEmpty()) {
                         Text(
-                            text = "فاتورة: ${po.entry.invoiceNumber}",
+                            text = "رقم المستند/الفاتورة: ${po.entry.invoiceNumber}",
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            fontWeight = FontWeight.Bold,
+                            color = coverageColor
                         )
                     }
                 }

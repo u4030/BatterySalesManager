@@ -350,11 +350,23 @@ fun BillItemCard(bill: Bill, supplierName: String, isHighlighted: Boolean = fals
     val isPaid = bill.status == BillStatus.PAID
     val isPartial = bill.status == BillStatus.PARTIAL
 
-    val statusColor = when {
-        isPaid -> Color(0xFF10B981)
-        isPartial -> Color(0xFFFACC15)
-        else -> Color(0xFFEF4444)
+    val billTypeLabel = when(bill.billType) {
+        BillType.CHECK -> "شيك"
+        BillType.BILL -> "كمبيالة"
+        BillType.TRANSFER -> "تحويل"
+        BillType.CASH -> "نقدي"
+        BillType.VISA -> "فيزا"
+        BillType.E_WALLET -> "محفظة"
     }
+
+    val documentCoverageColor = when {
+        bill.status == BillStatus.PAID -> Color(0xFF10B981) // Green - Finally Settled
+        bill.paidAmount >= bill.amount - 0.001 -> Color(0xFF3B82F6) // Blue - Fully Covered
+        bill.paidAmount > 0.001 || bill.status == BillStatus.PARTIAL -> Color(0xFFFB8C00) // Orange - Partially Covered
+        else -> Color(0xFFEF4444) // Red - Uncovered
+    }
+
+    val statusColor = documentCoverageColor
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -436,11 +448,19 @@ fun BillItemCard(bill: Bill, supplierName: String, isHighlighted: Boolean = fals
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     
+                    Text(
+                        text = "نوع المستند: $billTypeLabel",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = documentCoverageColor
+                    )
+
                     if (bill.referenceNumber.isNotEmpty()) {
                         Text(
-                            text = "رقم السند: ${bill.referenceNumber}",
+                            text = "رقم المستند: ${bill.referenceNumber}",
                             style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFFFB8C00)
+                            fontWeight = FontWeight.Bold,
+                            color = documentCoverageColor
                         )
                     }
                 }
@@ -523,7 +543,8 @@ fun AddBillDialog(
     onAdd: (String, Double, Date, BillType, String, String, String?, String?, Boolean) -> Unit
 ) {
     var description by remember { mutableStateOf("") }
-    var selectedSupplier by remember { mutableStateOf<com.batterysales.data.models.Supplier?>(null) }
+    var selectedSupplierId by remember { mutableStateOf<String?>(null) }
+    val selectedSupplier = suppliers.find { it.id == selectedSupplierId }
     var selectedWarehouseId by remember { mutableStateOf<String?>(null) }
     var amount by remember { mutableStateOf("") }
     var refNum by remember { mutableStateOf("") }
@@ -575,7 +596,7 @@ fun AddBillDialog(
             selectedValue = selectedSupplier?.name ?: "بدون مورد",
             options = listOf("بدون مورد") + suppliers.map { it.name },
             onOptionSelected = { index ->
-                selectedSupplier = if (index == 0) null else suppliers[index - 1]
+                selectedSupplierId = if (index == 0) null else suppliers[index - 1].id
             },
             enabled = true
         )
