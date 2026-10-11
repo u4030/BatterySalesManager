@@ -109,10 +109,13 @@ class ProductVariantRepository @Inject constructor(
             firestore.runTransaction { transaction ->
                 val variantRef = firestore.collection(ProductVariant.COLLECTION_NAME).document(variant.id)
                 
-                // 1. Reads
+                // 1. All Reads First (Strict Read-Before-Write)
                 val snapshots = summaryRepository.getSummarySnapshots(transaction, warehouseIds)
+                val warehouseDocsMap = warehouseIds.associateWith { whId ->
+                    transaction.get(firestore.collection("warehouses").document(whId))
+                }
 
-                // 2. Writes
+                // 2. All Writes Second
                 transaction.set(variantRef, variant)
 
                 if (supplierId.isNotEmpty()) {
@@ -177,8 +180,8 @@ class ProductVariantRepository @Inject constructor(
                         val alertRef = firestore.collection("system_alerts").document("low_stock_${variant.id}_$whId")
                         
                         if (threshold > 0 && currentQty <= threshold) {
-                            val whDoc = transaction.get(firestore.collection("warehouses").document(whId))
-                            val whName = whDoc.getString("name") ?: "مخزن"
+                            val whDoc = warehouseDocsMap[whId]
+                            val whName = whDoc?.getString("name") ?: "مخزن"
                             val specSuffix = if (variant.specification.isNotBlank()) " | ${variant.specification}" else ""
                             
                             transaction.set(alertRef, com.batterysales.data.models.SystemAlert(
