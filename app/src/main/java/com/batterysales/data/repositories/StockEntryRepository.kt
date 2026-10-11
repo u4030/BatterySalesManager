@@ -441,8 +441,22 @@ class StockEntryRepository @Inject constructor(
             if (status == "approved" && variant != null) {
                 val currentStockMap = variant.currentStock ?: emptyMap()
                 val newStockMap = currentStockMap.toMutableMap()
-                val sourceOldQty = (newStockMap[sourceWarehouseId] as? Number)?.toInt() ?: 0
-                val destOldQty = (newStockMap[destinationWarehouseId] as? Number)?.toInt() ?: 0
+                var sourceOldQty = (newStockMap[sourceWarehouseId] as? Number)?.toInt() ?: 0
+                var destOldQty = (newStockMap[destinationWarehouseId] as? Number)?.toInt() ?: 0
+
+                // Fallback to warehouse inventory summary if variant.currentStock key was uninitialized
+                if (sourceOldQty == 0) {
+                    val whSummaryQty = snapshots.warehouseSummaries[sourceWarehouseId]?.items?.get(productVariantId)?.currentStock ?: 0
+                    if (whSummaryQty > 0) {
+                        sourceOldQty = whSummaryQty
+                    }
+                }
+                if (destOldQty == 0) {
+                    val whSummaryQty = snapshots.warehouseSummaries[destinationWarehouseId]?.items?.get(productVariantId)?.currentStock ?: 0
+                    if (whSummaryQty > 0) {
+                        destOldQty = whSummaryQty
+                    }
+                }
 
                 // Strict check: Prevent negative stock in source warehouse
                 if (sourceOldQty < quantity) {
