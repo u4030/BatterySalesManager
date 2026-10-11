@@ -54,7 +54,8 @@ data class LowStockItem(
     val specification: String,
     val currentQuantity: Int,
     val minQuantity: Int,
-    val warehouseName: String
+    val warehouseName: String,
+    val warehouseId: String = ""
 )
 
 @HiltViewModel
@@ -219,7 +220,8 @@ class DashboardViewModel @Inject constructor(
                 specification = specification,
                 currentQuantity = currentQty,
                 minQuantity = minQty,
-                warehouseName = heavy.warehouses.find { it.id == alert.warehouseId }?.name ?: alert.warehouseName ?: "مخزن"
+                warehouseName = heavy.warehouses.find { it.id == alert.warehouseId }?.name ?: alert.warehouseName ?: "مخزن",
+                warehouseId = alert.warehouseId ?: ""
             )
         }
 
@@ -310,7 +312,7 @@ class DashboardViewModel @Inject constructor(
             val route = "product_ledger/${item.variantId}/${item.productName}/${item.capacity}/${item.specification.ifEmpty { "no_spec" }}"
             
             allNotifications.add(AppNotification(
-                "low_stock_${item.variantId}_${item.warehouseName}", 
+                "low_stock_${item.variantId}_${item.warehouseId.ifBlank { item.warehouseName }}",
                 "مخزون منخفض: ${item.productName}", 
                 message, 
                 NotificationType.LOW_STOCK, 

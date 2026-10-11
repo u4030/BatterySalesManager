@@ -876,8 +876,41 @@ class StockEntryRepository @Inject constructor(
                         summaryRepository.applySupplierUpdate(transaction, snapshots, oldEntry.supplierId, variant.productName ?: "", creditChange = cost)
                     }
                 }
+
+                // Sync Low Stock Alerts
+                val threshold = variant.minQuantities[entry.warehouseId] ?: variant.minQuantity
+                val alertRef = firestore.collection(SystemAlert.COLLECTION_NAME).document("low_stock_${variant.id}_${entry.warehouseId}")
+                val newWhQty = (newStockMap[entry.warehouseId] ?: 0)
+                val pName = if (!variant.productName.isNullOrBlank()) variant.productName!! else "منتج"
+                if (!variant.isDiscontinued && !variant.archived && threshold > 0 && newWhQty <= threshold) {
+                    val whSnap = snapshots.warehouseSummaries[entry.warehouseId]
+                    val whName = whSnap?.id?.removePrefix("inventory_wh_") ?: "مخزن"
+                    val specSuffix = if (variant.specification.isNotBlank()) " | ${variant.specification}" else ""
+                    transaction.set(alertRef, SystemAlert(
+                        id = alertRef.id,
+                        type = SystemAlert.TYPE_LOW_STOCK,
+                        title = "مخزون منخفض: $pName",
+                        message = "${variant.capacity}A$specSuffix في $whName | الكمية المتاحة: $newWhQty (الحد: $threshold)",
+                        relatedId = variant.id,
+                        warehouseId = entry.warehouseId,
+                        warehouseName = whName,
+                        timestamp = Date(),
+                        data = mapOf(
+                            "capacity" to variant.capacity,
+                            "specification" to variant.specification,
+                            "currentStock" to newWhQty,
+                            "threshold" to threshold
+                        )
+                    ))
+                } else {
+                    transaction.delete(alertRef)
+                }
             }
         }.await()
+
+        if (oldEntry != null && oldEntry.supplierId.isNotEmpty()) {
+            billRepository.get().autoLinkBillsForSupplier(oldEntry.supplierId)
+        }
     }
 
     suspend fun getPendingCount(): Int {

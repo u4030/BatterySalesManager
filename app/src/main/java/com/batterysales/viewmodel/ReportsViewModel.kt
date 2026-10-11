@@ -322,24 +322,28 @@ class ReportsViewModel @Inject constructor(
                     val cachedReport = summaryRepository.getSupplierReportCache(supplierId)
                     val supplier = supplierRepository.getSupplier(supplierId)
                     if (cachedReport != null && supplier != null) {
-                        _selectedSupplierReport.value = SupplierReportItem(
-                            supplier = supplier,
-                            totalDebit = cachedReport.totalDebit,
-                            totalCredit = cachedReport.totalCredit,
-                            balance = cachedReport.balance,
-                            targetProgress = if (supplier.yearlyTarget > 0) cachedReport.totalDebit / supplier.yearlyTarget else 0.0,
-                            regularOrders = cachedReport.regularOrders.map { it.toOrderItem() },
-                            obligatedOrders = cachedReport.obligatedOrders.map { it.toOrderItem() }
-                        )
-                        _isSupplierLoading.value = false
-                        
-                        // Background incremental sync only if there is unallocated credit
-                        if (supplier.unallocatedCredit > 0.001) {
-                            viewModelScope.launch { 
-                                try { billRepository.autoLinkBillsForSupplier(supplierId) } catch (e: Exception) {} 
+                        val cacheMatches = Math.abs(cachedReport.totalDebit - supplier.totalDebit) < 0.01 &&
+                                           Math.abs(cachedReport.totalCredit - supplier.totalCredit) < 0.01
+                        if (cacheMatches) {
+                            _selectedSupplierReport.value = SupplierReportItem(
+                                supplier = supplier,
+                                totalDebit = cleanDouble(Math.max(0.0, cachedReport.totalDebit)),
+                                totalCredit = cleanDouble(Math.max(0.0, cachedReport.totalCredit)),
+                                balance = cleanDouble(cachedReport.balance),
+                                targetProgress = if (supplier.yearlyTarget > 0) cachedReport.totalDebit / supplier.yearlyTarget else 0.0,
+                                regularOrders = cachedReport.regularOrders.map { it.toOrderItem() },
+                                obligatedOrders = cachedReport.obligatedOrders.map { it.toOrderItem() }
+                            )
+                            _isSupplierLoading.value = false
+
+                            // Background incremental sync only if there is unallocated credit
+                            if (supplier.unallocatedCredit > 0.001) {
+                                viewModelScope.launch {
+                                    try { billRepository.autoLinkBillsForSupplier(supplierId) } catch (e: Exception) {}
+                                }
                             }
+                            return@launch
                         }
-                        return@launch
                     }
                 }
 

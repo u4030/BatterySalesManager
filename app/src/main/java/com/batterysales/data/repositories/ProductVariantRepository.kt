@@ -110,13 +110,28 @@ class ProductVariantRepository @Inject constructor(
                 val variantRef = firestore.collection(ProductVariant.COLLECTION_NAME).document(variant.id)
                 
                 // 1. All Reads First (Strict Read-Before-Write)
+                val existingSnap = transaction.get(variantRef)
+                val existingVariant = existingSnap.toObject(ProductVariant::class.java)
+
                 val snapshots = summaryRepository.getSummarySnapshots(transaction, warehouseIds)
                 val warehouseDocsMap = warehouseIds.associateWith { whId ->
                     transaction.get(firestore.collection("warehouses").document(whId))
                 }
 
+                // Merge currentStock from DB so in-memory stale stock doesn't overwrite newly added stock
+                val dbStockMap = existingVariant?.currentStock ?: emptyMap()
+                val mergedStockMap = (variant.currentStock ?: emptyMap()).toMutableMap()
+                dbStockMap.forEach { (whId, qty) ->
+                    val dbQty = (qty as? Number)?.toInt() ?: 0
+                    val memQty = (mergedStockMap[whId] as? Number)?.toInt() ?: 0
+                    if (dbQty > memQty) {
+                        mergedStockMap[whId] = dbQty
+                    }
+                }
+                val finalVariantToSave = variant.copy(currentStock = mergedStockMap)
+
                 // 2. All Writes Second
-                transaction.set(variantRef, variant)
+                transaction.set(variantRef, finalVariantToSave)
 
                 if (supplierId.isNotEmpty()) {
                     summaryRepository.invalidateSupplierReportCache(transaction, supplierId)
@@ -175,7 +190,7 @@ class ProductVariantRepository @Inject constructor(
                 } else if (!variant.archived) {
                     val pName = if (!variant.productName.isNullOrBlank()) variant.productName!! else (productDoc.getString("name") ?: "منتج")
                     warehouseIds.forEach { whId ->
-                        val currentQty = (variant.currentStock?.get(whId) as? Number)?.toInt() ?: 0
+                        val currentQty = (finalVariantToSave.currentStock?.get(whId) as? Number)?.toInt() ?: 0
                         val threshold = variant.minQuantities[whId] ?: variant.minQuantity
                         val alertRef = firestore.collection("system_alerts").document("low_stock_${variant.id}_$whId")
                         

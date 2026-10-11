@@ -74,6 +74,10 @@ class BankRepository @Inject constructor(
 
             val billSnap = billRef?.let { transactionOp.get(it) }
             val paymentSnap = paymentRef?.let { transactionOp.get(it) }
+            val oldPayment = paymentSnap?.toObject(com.batterysales.data.models.Payment::class.java)
+
+            val invRef = oldPayment?.let { firestore.collection(com.batterysales.data.models.Invoice.COLLECTION_NAME).document(it.invoiceId) }
+            val invSnap = invRef?.let { transactionOp.get(it) }
 
             val warehouseIds = mutableListOf("global")
             linkedTreasurySnap.documents.forEach { doc ->
@@ -121,30 +125,25 @@ class BankRepository @Inject constructor(
             }
 
             // If linked to a Payment (Invoice payment)
-            if (paymentSnap != null && paymentSnap.exists()) {
-                val oldPayment = paymentSnap.toObject(com.batterysales.data.models.Payment::class.java)
-                if (oldPayment != null) {
-                    val amountDiff = transaction.amount - oldPayment.amount
-                    transactionOp.update(paymentRef!!, mapOf(
-                        "amount" to transaction.amount,
-                        "paymentDate" to (transaction.date ?: java.util.Date())
-                    ))
+            if (oldPayment != null && paymentRef != null && invRef != null && invSnap != null) {
+                val amountDiff = transaction.amount - oldPayment.amount
+                transactionOp.update(paymentRef, mapOf(
+                    "amount" to transaction.amount,
+                    "paymentDate" to (transaction.date ?: java.util.Date())
+                ))
 
-                    val invRef = firestore.collection(com.batterysales.data.models.Invoice.COLLECTION_NAME).document(oldPayment.invoiceId)
-                    val invSnap = transactionOp.get(invRef)
-                    val oldInv = invSnap.toObject(com.batterysales.data.models.Invoice::class.java)
-                    if (oldInv != null) {
-                        val newPaid = oldInv.paidAmount + amountDiff
-                        val newRem = oldInv.totalAmount - newPaid
-                        transactionOp.update(invRef, mapOf(
-                            "paidAmount" to newPaid,
-                            "remainingAmount" to newRem,
-                            "status" to (if (newRem <= 0.001) "paid" else "pending"),
-                            "updatedAt" to java.util.Date()
-                        ))
-                    }
-                    transactionOp.set(statsRef, mapOf("totalCustomerDebt" to com.google.firebase.firestore.FieldValue.increment(-amountDiff)), com.google.firebase.firestore.SetOptions.merge())
+                val oldInv = invSnap.toObject(com.batterysales.data.models.Invoice::class.java)
+                if (oldInv != null) {
+                    val newPaid = oldInv.paidAmount + amountDiff
+                    val newRem = oldInv.totalAmount - newPaid
+                    transactionOp.update(invRef, mapOf(
+                        "paidAmount" to newPaid,
+                        "remainingAmount" to newRem,
+                        "status" to (if (newRem <= 0.001) "paid" else "pending"),
+                        "updatedAt" to java.util.Date()
+                    ))
                 }
+                transactionOp.set(statsRef, mapOf("totalCustomerDebt" to com.google.firebase.firestore.FieldValue.increment(-amountDiff)), com.google.firebase.firestore.SetOptions.merge())
             }
 
             summaryRepository.applyFinancialUpdate(

@@ -258,6 +258,40 @@ class InvoiceRepository @Inject constructor(
                 
                 if (variantChanged) {
                     transaction.update(vSnap.reference, "currentStock", currentStockMap)
+
+                    // Clear low stock alert if restored stock goes above threshold
+                    warehouseVariantDeltas.forEach { (whId, vDeltas) ->
+                        val delta = vDeltas[vid] ?: 0
+                        if (delta != 0) {
+                            val newQty = currentStockMap[whId] ?: 0
+                            val threshold = variant.minQuantities[whId] ?: variant.minQuantity
+                            val alertRef = firestore.collection("system_alerts").document("low_stock_${vid}_$whId")
+                            if (!variant.isDiscontinued && !variant.archived && threshold > 0 && newQty <= threshold) {
+                                val whSnap = summarySnapshots.warehouseSummaries[whId]
+                                val whName = whSnap?.id?.removePrefix("inventory_wh_") ?: "مخزن"
+                                val pName = if (!variant.productName.isNullOrBlank()) variant.productName!! else "منتج"
+                                val specSuffix = if (variant.specification.isNotBlank()) " | ${variant.specification}" else ""
+                                transaction.set(alertRef, com.batterysales.data.models.SystemAlert(
+                                    id = alertRef.id,
+                                    type = com.batterysales.data.models.SystemAlert.TYPE_LOW_STOCK,
+                                    title = "مخزون منخفض: $pName",
+                                    message = "${variant.capacity}A$specSuffix في $whName | الكمية المتاحة: $newQty (الحد: $threshold)",
+                                    relatedId = variant.id,
+                                    warehouseId = whId,
+                                    warehouseName = whName,
+                                    timestamp = java.util.Date(),
+                                    data = mapOf(
+                                        "capacity" to variant.capacity,
+                                        "specification" to variant.specification,
+                                        "currentStock" to newQty,
+                                        "threshold" to threshold
+                                    )
+                                ))
+                            } else {
+                                transaction.delete(alertRef)
+                            }
+                        }
+                    }
                 }
             }
 
@@ -291,21 +325,23 @@ class InvoiceRepository @Inject constructor(
             
             whPaymentGroups.forEach { (whId, whPayments) ->
                 var todayAmt = 0.0
-                var todayCount = 0
+                var hasTodayPayment = false
                 
                 whPayments.forEach { doc ->
                     val amt = doc.getDouble("amount") ?: 0.0
                     val pDate = doc.getDate("paymentDate") ?: doc.getDate("timestamp") ?: Date(0)
                     if (com.batterysales.utils.DateUtils.isSameDay(pDate, now)) {
                         todayAmt += amt
-                        todayCount++
+                        hasTodayPayment = true
                     }
                 }
+
+                val todayCountDelta = if (hasTodayPayment) -1 else 0
 
                 financialDeltas[whId] = com.batterysales.data.repositories.SummaryRepository.FinancialDelta(
                     pendingCollectionChange = if (whId == invoice.warehouseId) -invoice.remainingAmount else 0.0,
                     todayCollectionChange = -todayAmt,
-                    todayCollectionCountChange = -todayCount,
+                    todayCollectionCountChange = todayCountDelta,
                     cashChange = -whPayments.filter { it.getString("paymentMethod") != "bank" }.sumOf { it.getDouble("amount") ?: 0.0 },
                     bankChange = -whPayments.filter { it.getString("paymentMethod") == "bank" }.sumOf { it.getDouble("amount") ?: 0.0 }
                 )
