@@ -86,29 +86,45 @@ class AccountingRepository @Inject constructor(
         return totalIncome - totalExpense
     }
 
+    private fun cleanDouble(value: Double): Double {
+        if (value.isNaN() || value.isInfinite()) return 0.0
+        val bd = java.math.BigDecimal.valueOf(value).setScale(3, java.math.RoundingMode.HALF_UP)
+        val res = bd.toDouble()
+        return if (Math.abs(res) < 0.0001) 0.0 else res
+    }
+
     suspend fun getTotalExpenses(
         warehouseId: String? = null,
         paymentMethod: String? = null,
         startDate: Long? = null,
         endDate: Long? = null
     ): Double {
-        val expenseTypes = listOf("EXPENSE", "REFUND", "expense", "refund", "Expense", "Refund")
-        var baseQuery: Query = firestore.collection(Transaction.COLLECTION_NAME)
-            .whereIn("type", expenseTypes)
+        return try {
+            var baseQuery: Query = firestore.collection(Transaction.COLLECTION_NAME)
+            if (warehouseId != null && warehouseId != "all") {
+                baseQuery = baseQuery.whereEqualTo("warehouseId", warehouseId)
+            }
+            if (paymentMethod != null && paymentMethod != "all") {
+                baseQuery = baseQuery.whereEqualTo("paymentMethod", paymentMethod)
+            }
 
-        if (warehouseId != null) {
-            baseQuery = baseQuery.whereEqualTo("warehouseId", warehouseId)
-        }
-        if (paymentMethod != null) {
-            baseQuery = baseQuery.whereEqualTo("paymentMethod", paymentMethod)
-        }
-        if (startDate != null && endDate != null) {
-            baseQuery = baseQuery.whereGreaterThanOrEqualTo("createdAt", java.util.Date(com.batterysales.utils.DateUtils.getStartOfDay(startDate)))
-                .whereLessThanOrEqualTo("createdAt", java.util.Date(com.batterysales.utils.DateUtils.getEndOfDay(endDate)))
-        }
+            val snapshot = baseQuery.get().await()
+            val expenseTypesUpper = listOf("EXPENSE", "REFUND")
 
-        val snapshot = try { baseQuery.aggregate(AggregateField.sum("amount")).get(AggregateSource.SERVER).await() } catch(e: Exception) { null }
-        return (snapshot?.get(AggregateField.sum("amount")) as? Number)?.toDouble() ?: 0.0
+            val total = snapshot.documents.mapNotNull { it.toObject(Transaction::class.java) }
+                .filter { trans ->
+                    val isExpense = expenseTypesUpper.contains(trans.type.name.uppercase())
+                    val time = trans.createdAt.time
+                    val startMatch = startDate == null || time >= com.batterysales.utils.DateUtils.getStartOfDay(startDate)
+                    val endMatch = endDate == null || time <= com.batterysales.utils.DateUtils.getEndOfDay(endDate)
+                    isExpense && startMatch && endMatch
+                }
+                .sumOf { it.amount }
+
+            cleanDouble(total)
+        } catch (e: Exception) {
+            0.0
+        }
     }
 
     suspend fun getTransactionsPaginated(
