@@ -170,20 +170,21 @@ class ProductVariantRepository @Inject constructor(
                         transaction.delete(alertRef)
                     }
                 } else if (!variant.archived) {
+                    val pName = if (!variant.productName.isNullOrBlank()) variant.productName!! else (productDoc.getString("name") ?: "منتج")
                     warehouseIds.forEach { whId ->
                         val currentQty = (variant.currentStock?.get(whId) as? Number)?.toInt() ?: 0
                         val threshold = variant.minQuantities[whId] ?: variant.minQuantity
                         val alertRef = firestore.collection("system_alerts").document("low_stock_${variant.id}_$whId")
                         
                         if (threshold > 0 && currentQty <= threshold) {
-                            val whSnap = snapshots.warehouseSummaries[whId]
-                            val whName = whSnap?.id?.removePrefix("inventory_wh_") ?: "مخزن"
+                            val whDoc = transaction.get(firestore.collection("warehouses").document(whId))
+                            val whName = whDoc.getString("name") ?: "مخزن"
                             val specSuffix = if (variant.specification.isNotBlank()) " | ${variant.specification}" else ""
                             
                             transaction.set(alertRef, com.batterysales.data.models.SystemAlert(
                                 id = alertRef.id,
                                 type = com.batterysales.data.models.SystemAlert.TYPE_LOW_STOCK,
-                                title = "مخزون منخفض: ${variant.productName ?: ""}",
+                                title = "مخزون منخفض: $pName",
                                 message = "${variant.capacity}A$specSuffix في $whName | الكمية: $currentQty (الحد: $threshold)",
                                 relatedId = variant.id,
                                 warehouseId = whId,
