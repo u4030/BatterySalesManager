@@ -182,15 +182,24 @@ fun BillsScreen(
                     }
 
                     if (selectedSupplierId != null && selectedSupplierBalance != null) {
+                        val selSupplier = suppliers.find { it.id == selectedSupplierId }
+                        val coveredBalance = selSupplier?.totalCredit ?: 0.0
                         Spacer(modifier = Modifier.height(12.dp))
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)),
                             shape = RoundedCornerShape(12.dp)
                         ) {
-                            Row(modifier = Modifier.padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Text("إجمالي رصيد المورد المتبقي:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                                Text("JD ${String.format("%.3f", selectedSupplierBalance)}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, color = if ((selectedSupplierBalance ?: 0.0) > 0) Color(0xFFEF4444) else Color(0xFF10B981))
+                            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                    Text("إجمالي الرصيد المدور:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                                    Text("JD ${String.format("%.3f", selectedSupplierBalance)}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, color = if ((selectedSupplierBalance ?: 0.0) > 0) Color(0xFFEF4444) else Color(0xFF10B981))
+                                }
+                                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                    Text("إجمالي الرصيد المغطى:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                                    Text("JD ${String.format("%.3f", coveredBalance)}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, color = Color(0xFF10B981))
+                                }
                             }
                         }
                     }
@@ -754,6 +763,7 @@ fun EditBillDialog(
     onDismiss: () -> Unit,
     onConfirm: (Bill) -> Unit
 ) {
+    val isPaid = bill.status == BillStatus.PAID
     var description by remember { mutableStateOf(bill.description) }
     var selectedSupplier by remember { mutableStateOf(suppliers.find { it.id == bill.supplierId }) }
     var amount by remember { mutableStateOf(bill.amount.toString()) }
@@ -772,14 +782,24 @@ fun EditBillDialog(
         confirmButton = {
             Button(onClick = {
                 val amt = amount.toDoubleOrNull() ?: bill.amount
-                onConfirm(bill.copy(description = description, amount = amt, dueDate = selectedDate, billType = selectedType, referenceNumber = refNum, supplierId = selectedSupplier?.id ?: ""))
+                onConfirm(bill.copy(description = description, amount = if (isPaid) bill.amount else amt, dueDate = selectedDate, billType = if (isPaid) bill.billType else selectedType, referenceNumber = refNum, supplierId = if (isPaid) bill.supplierId else (selectedSupplier?.id ?: "")))
             }) { Text("حفظ التعديلات") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("إلغاء") }
         }
     ) {
-        Text("تنبيه: تعديل الوصف سيقوم بتعديل وصف العمليات المتعلقة في الخزينة.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        if (isPaid) {
+            Text(
+                "تنبيه: هذا القيد مسدد نهائياً. يسمح بتعديل الوصف ورقم السند وتاريخ الاستحقاق فقط.",
+                color = Color(0xFFFB8C00),
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Bold
+            )
+        } else {
+            Text("تنبيه: تعديل الوصف سيقوم بتعديل وصف العمليات المتعلقة في الخزينة.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        }
+
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = description,
             onValueChange = { description = it },
@@ -788,8 +808,9 @@ fun EditBillDialog(
         )
         com.batterysales.ui.components.CustomKeyboardTextField(
             value = amount,
-            onValueChange = { amount = it },
+            onValueChange = { if (!isPaid) amount = it },
             label = "المبلغ الإجمالي",
+            enabled = !isPaid,
             keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
         )
         com.batterysales.ui.components.CustomKeyboardTextField(
@@ -803,8 +824,8 @@ fun EditBillDialog(
             label = "المورد (اختياري)",
             selectedValue = selectedSupplier?.name ?: "بدون مورد",
             options = listOf("بدون مورد") + suppliers.map { it.name },
-            onOptionSelected = { index -> selectedSupplier = if (index == 0) null else suppliers[index - 1] },
-            enabled = true
+            onOptionSelected = { index -> if (!isPaid) selectedSupplier = if (index == 0) null else suppliers[index - 1] },
+            enabled = !isPaid
         )
 
         Text("نوع الالتزام:", fontSize = 14.sp, fontWeight = FontWeight.Medium)
@@ -817,7 +838,8 @@ fun EditBillDialog(
             BillType.entries.forEach { type ->
                 FilterChip(
                     selected = selectedType == type,
-                    onClick = { selectedType = type },
+                    onClick = { if (!isPaid) selectedType = type },
+                    enabled = !isPaid,
                     label = {
                         Text(
                             when (type) {

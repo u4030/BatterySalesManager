@@ -146,16 +146,14 @@ class BankRepository @Inject constructor(
                 transactionOp.set(statsRef, mapOf("totalCustomerDebt" to com.google.firebase.firestore.FieldValue.increment(-amountDiff)), com.google.firebase.firestore.SetOptions.merge())
             }
 
-            summaryRepository.applyFinancialUpdate(
-                transaction = transactionOp,
-                snapshots = snapshots,
-                warehouseId = "global",
+            val financialDeltas = mutableMapOf<String, SummaryRepository.FinancialDelta>()
+            financialDeltas["global"] = SummaryRepository.FinancialDelta(
                 bankChange = totalBankChange,
                 checkChange = checkChangeDelta,
                 billChange = billChangeDelta
             )
-            
-            // Update Global Stats
+
+            // Update Global Stats for bank balance
             transactionOp.set(statsRef, mapOf("totalBankBalance" to com.google.firebase.firestore.FieldValue.increment(totalBankChange)), com.google.firebase.firestore.SetOptions.merge())
 
             // Sync linked treasury transaction if exists
@@ -163,19 +161,24 @@ class BankRepository @Inject constructor(
                 val oldTreasury = doc.toObject(com.batterysales.data.models.Transaction::class.java)
                 val oldAmount = oldTreasury?.amount ?: 0.0
                 val amountDiff = transaction.amount - oldAmount
-                
+                val targetWh = oldTreasury?.warehouseId ?: "global"
+
                 transactionOp.update(doc.reference, mapOf(
                     "amount" to transaction.amount,
                     "description" to "تغذية رصيد بنك: ${transaction.description}",
                     "createdAt" to (transaction.date ?: java.util.Date())
                 ))
 
-                if (Math.abs(amountDiff) > 0.001 && oldTreasury?.warehouseId != null) {
+                if (Math.abs(amountDiff) > 0.001 && oldTreasury != null) {
                     val treasuryChange = if (oldTreasury.type == com.batterysales.data.models.TransactionType.INCOME) amountDiff else -amountDiff
-                    summaryRepository.applyFinancialUpdate(transactionOp, snapshots, warehouseId = oldTreasury.warehouseId, cashChange = treasuryChange)
+                    val existingDelta = financialDeltas[targetWh] ?: SummaryRepository.FinancialDelta()
+                    financialDeltas[targetWh] = existingDelta.copy(cashChange = existingDelta.cashChange + treasuryChange)
                     transactionOp.set(statsRef, mapOf("totalCashBalance" to com.google.firebase.firestore.FieldValue.increment(treasuryChange)), com.google.firebase.firestore.SetOptions.merge())
                 }
             }
+
+            // Single atomic summary update to prevent overwriting financial_status
+            summaryRepository.applyFinancialUpdates(transactionOp, snapshots, financialDeltas)
         }.await()
     }
 

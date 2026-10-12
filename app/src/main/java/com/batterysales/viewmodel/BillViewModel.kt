@@ -121,7 +121,6 @@ class BillViewModel @Inject constructor(
         _isLoading.value = true
         viewModelScope.launch {
             loadUnpaidFromSummary()
-            _suppliers.value = supplierRepository.getSuppliersOnce()
             refreshTrigger.value += 1
             _isLoading.value = false
         }
