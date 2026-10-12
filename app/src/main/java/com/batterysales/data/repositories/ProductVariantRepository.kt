@@ -65,7 +65,12 @@ class ProductVariantRepository @Inject constructor(
 
         if (summaryRepository != null) {
             val warehousesSnap = firestore.collection("warehouses").get().await()
-            val warehouseIds = warehousesSnap.documents.map { it.id }
+            val warehouseDocs = warehousesSnap.documents
+            val warehouseIds = warehouseDocs.map { it.id }
+            val warehouseNames = warehouseDocs.associate { it.id to (it.getString("name") ?: "مخزن") }
+
+            val productDoc = firestore.collection("products").document(variant.productId).get().await()
+            val pName = if (!finalVariant.productName.isNullOrBlank()) finalVariant.productName!! else (productDoc.getString("name") ?: "منتج")
 
             firestore.runTransaction { transaction ->
                 // 1. Reads
@@ -84,6 +89,30 @@ class ProductVariantRepository @Inject constructor(
                         variant = finalVariant,
                         qtyChange = 0
                     )
+
+                    // Generate initial low-stock alerts for empty warehouses if threshold > 0
+                    val threshold = finalVariant.minQuantities[whId] ?: finalVariant.minQuantity
+                    val alertRef = firestore.collection("system_alerts").document("low_stock_${finalVariant.id}_$whId")
+                    if (!finalVariant.isDiscontinued && !finalVariant.archived && threshold > 0) {
+                        val whName = warehouseNames[whId] ?: "مخزن"
+                        val specSuffix = if (finalVariant.specification.isNotBlank()) " | ${finalVariant.specification}" else ""
+                        transaction.set(alertRef, com.batterysales.data.models.SystemAlert(
+                            id = alertRef.id,
+                            type = com.batterysales.data.models.SystemAlert.TYPE_LOW_STOCK,
+                            title = "مخزون منخفض: $pName",
+                            message = "${finalVariant.capacity}A$specSuffix في $whName | الكمية المتاحة: 0 (الحد: $threshold)",
+                            relatedId = finalVariant.id,
+                            warehouseId = whId,
+                            warehouseName = whName,
+                            timestamp = java.util.Date(),
+                            data = mapOf(
+                                "capacity" to finalVariant.capacity,
+                                "specification" to finalVariant.specification,
+                                "currentStock" to 0,
+                                "threshold" to threshold
+                            )
+                        ))
+                    }
                 }
             }.await()
         } else {

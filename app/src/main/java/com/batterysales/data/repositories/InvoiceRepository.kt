@@ -410,6 +410,9 @@ class InvoiceRepository @Inject constructor(
             val vSnap = transaction.get(variantRef)
             val variant = vSnap.toObject(com.batterysales.data.models.ProductVariant::class.java)?.copy(id = vSnap.id)
             
+            val whSnap = transaction.get(firestore.collection("warehouses").document(stockEntry.warehouseId))
+            val warehouseName = whSnap.getString("name") ?: "مخزن"
+
             val summarySnapshots = summaryRepository.getSummarySnapshots(
                 transaction = transaction, 
                 warehouseIds = listOf(stockEntry.warehouseId),
@@ -442,15 +445,19 @@ class InvoiceRepository @Inject constructor(
                 // Low Stock Check
                 val threshold = variant.minQuantities[finalStockEntry.warehouseId] ?: variant.minQuantity
                 val newQty = currentStockMap[finalStockEntry.warehouseId] ?: 0
-                if (threshold > 0 && newQty <= threshold) {
-                    val alertRef = firestore.collection(com.batterysales.data.models.SystemAlert.COLLECTION_NAME).document("low_stock_${variant.id}_${finalStockEntry.warehouseId}")
+                val alertRef = firestore.collection(com.batterysales.data.models.SystemAlert.COLLECTION_NAME).document("low_stock_${variant.id}_${finalStockEntry.warehouseId}")
+                val pName = if (!variant.productName.isNullOrBlank()) variant.productName!! else "منتج"
+                val specSuffix = if (variant.specification.isNotBlank()) " | ${variant.specification}" else ""
+
+                if (!variant.isDiscontinued && !variant.archived && threshold > 0 && newQty <= threshold) {
                     transaction.set(alertRef, com.batterysales.data.models.SystemAlert(
                         id = alertRef.id,
                         type = com.batterysales.data.models.SystemAlert.TYPE_LOW_STOCK,
-                        title = "مخزون منخفض: ${variant.productName ?: ""}",
-                        message = "${variant.capacity}A | الكمية الحالية: $newQty (الحد: $threshold)",
+                        title = "مخزون منخفض: $pName",
+                        message = "${variant.capacity}A$specSuffix في $warehouseName | الكمية المتاحة: $newQty (الحد: $threshold)",
                         relatedId = variant.id,
                         warehouseId = finalStockEntry.warehouseId,
+                        warehouseName = warehouseName,
                         timestamp = Date(),
                         data = mapOf(
                             "capacity" to variant.capacity, 
@@ -459,6 +466,8 @@ class InvoiceRepository @Inject constructor(
                             "threshold" to threshold
                         )
                     ))
+                } else {
+                    transaction.delete(alertRef)
                 }
             }
 
