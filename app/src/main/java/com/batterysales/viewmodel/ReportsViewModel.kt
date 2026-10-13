@@ -249,12 +249,16 @@ class ReportsViewModel @Inject constructor(
 
                 val combined = dbSuppliers.map { s ->
                     val item = suppliersMap[s.id]
+                    val actualPaidCredit = cleanDouble(
+                        billRepository.getBillsBySuppliers(listOf(s.id), listOf(s.name))
+                            .sumOf { b -> if (b.status == BillStatus.PAID) b.amount else b.paidAmount }
+                    )
                     SupplierSummaryItem(
                         supplierId = s.id,
                         name = s.name,
                         currentBalance = s.currentBalance,
                         totalDebit = if (s.totalDebit > 0) s.totalDebit else (item?.totalDebit ?: 0.0),
-                        totalCredit = if (s.totalCredit > 0) s.totalCredit else (item?.totalCredit ?: 0.0)
+                        totalCredit = actualPaidCredit
                     )
                 }.sortedBy { it.name }
 
@@ -440,6 +444,25 @@ class ReportsViewModel @Inject constructor(
                         listOf(coverageSummary)
                     } else emptyList()
 
+                    val noteDetailsList = aggregatedNotes.map { noteStr ->
+                        val refMatch = Regex("#([A-Za-z0-9_-]+)").find(noteStr)?.groupValues?.get(1)
+                        val matchedBill = if (refMatch != null) allBills.find { it.referenceNumber == refMatch } else null
+                        val statusStr = if (matchedBill != null) {
+                            when {
+                                matchedBill.status == BillStatus.PAID || matchedBill.paidAmount >= matchedBill.amount - 0.001 -> "PAID"
+                                matchedBill.paidAmount > 0.001 -> "PARTIAL"
+                                else -> "UNPAID"
+                            }
+                        } else {
+                            when {
+                                noteStr.contains("مرتجع") || noteStr.contains("نقدي") || noteStr.contains("تحويل") || noteStr.contains("مسدد") -> "PAID"
+                                noteStr.contains("جزئ") -> "PARTIAL"
+                                else -> if (effectiveBalance <= 0.001 && clearedAmount >= totalOrderCost - 0.001) "PAID" else if (totalCovered > 0.001) "PARTIAL" else "UNPAID"
+                            }
+                        }
+                        com.batterysales.data.models.SettlementNoteItem(noteStr, statusStr)
+                    }
+
                     PurchaseOrderItem(
                         entry = representative.copy(
                             totalCost = totalOrderCost,
@@ -449,6 +472,8 @@ class ReportsViewModel @Inject constructor(
                         linkedPaidAmount = clearedAmount,
                         autoLinkedAmount = 0.0,
                         remainingBalance = effectiveBalance,
+                        referenceNumbers = aggregatedNotes,
+                        noteDetails = noteDetailsList,
                         items = sortedGroup.map { item ->
                             val itemSpec = if (item.specification.isBlank()) {
                                 variantsCache[item.productVariantId]?.specification ?: ""
@@ -461,7 +486,6 @@ class ReportsViewModel @Inject constructor(
                                 specification = itemSpec
                             )
                         },
-                        referenceNumbers = aggregatedNotes,
                         hasManualLink = aggregatedNotes.any { it.contains("ارتباط يدوي") },
                         totalActualPaid = clearedAmount,
                         totalLinkedAmount = totalCovered,

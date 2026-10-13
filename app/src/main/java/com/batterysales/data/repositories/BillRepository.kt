@@ -1038,12 +1038,7 @@ class BillRepository @Inject constructor(
 
     private class MemoryEntryState(val entry: StockEntry) {
         var remainingBalance: Double = entry.getNetCost()
-        // Aggressively filter out anything that looks like the old technical notes
-        // but KEEP notes that have (#number) as they are the new detailed notes
-        val settlementNotes: MutableList<String> = entry.settlementNotes.filter { 
-            val isOldTechnical = it.contains("JD") || (it.contains("(") && !it.contains("(#"))
-            !isOldTechnical
-        }.toMutableList()
+        val settlementNotes: MutableList<String> = mutableListOf()
         val linkedAllocations: MutableMap<String, Double> = mutableMapOf()
     }
 

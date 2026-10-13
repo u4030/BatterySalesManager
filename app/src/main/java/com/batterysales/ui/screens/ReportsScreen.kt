@@ -637,35 +637,49 @@ fun PurchaseOrderCard(po: com.batterysales.data.models.PurchaseOrderItem, dateFo
             }
 
             // Settlement Details Section (Simplified box as per user image request)
-            val allNotes = po.referenceNumbers.filter { it.isNotBlank() }
-            if (allNotes.isNotEmpty()) {
-                val statusColor = if (isFullyCovered) {
-                    if (po.isCleared) Color(0xFF10B981) else Color(0xFF3B82F6)
-                } else if (po.totalLinkedAmount > 0.001) {
-                    Color(0xFFFB8C00)
-                } else {
-                    Color(0xFFEF4444)
+            val notesList = if (po.noteDetails.isNotEmpty()) po.noteDetails else po.referenceNumbers.filter { it.isNotBlank() }.map { note ->
+                val statusStr = when {
+                    note.contains("مرتجع") || note.contains("مسدد") -> "PAID"
+                    note.contains("جزئ") -> "PARTIAL"
+                    else -> if (isFullyCovered) (if (po.isCleared) "PAID" else "PARTIAL") else if (po.totalLinkedAmount > 0.001) "PARTIAL" else "UNPAID"
                 }
+                com.batterysales.data.models.SettlementNoteItem(note, statusStr)
+            }
 
-                Surface(
+            if (notesList.isNotEmpty()) {
+                Column(
                     modifier = Modifier.fillMaxWidth(),
-                    color = statusColor.copy(alpha = 0.12f),
-                    shape = RoundedCornerShape(16.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.5.dp, statusColor.copy(alpha = 0.4f))
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Column(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        allNotes.forEach { note ->
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(16.dp), tint = statusColor)
+                    notesList.forEach { noteItem ->
+                        val itemColor = when (noteItem.status) {
+                            "PAID" -> Color(0xFF10B981)     // Green - Full payment
+                            "PARTIAL" -> Color(0xFFFB8C00)  // Orange - Partial payment
+                            else -> Color(0xFFEF4444)       // Red - Unpaid
+                        }
+
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = itemColor.copy(alpha = 0.12f),
+                            shape = RoundedCornerShape(12.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, itemColor.copy(alpha = 0.35f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Info,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = itemColor
+                                )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = note, 
-                                    style = MaterialTheme.typography.titleSmall, 
+                                    text = noteItem.note,
+                                    style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.ExtraBold,
-                                    color = statusColor
+                                    color = itemColor
                                 )
                             }
                         }
