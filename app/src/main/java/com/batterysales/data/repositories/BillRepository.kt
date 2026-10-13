@@ -135,23 +135,23 @@ class BillRepository @Inject constructor(
                 )
             }
 
-            var amountToPool = creditToApply
+            val billCoverageAmount = finalBill.amount
 
             // 2. Update Supplier Totals and unallocatedCredit
             if (finalBill.supplierId.isNotEmpty()) {
                 summaryRepository.invalidateSupplierReportCache(transaction, finalBill.supplierId)
                 val supplierRef = firestore.collection("suppliers").document(finalBill.supplierId)
-                if (creditToApply > 0) {
-                    transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(creditToApply))
-                    transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-creditToApply))
-                    transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(creditToApply))
+                if (billCoverageAmount > 0) {
+                    transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(billCoverageAmount))
+                    transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-billCoverageAmount))
+                    transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(billCoverageAmount))
 
                     summaryRepository.applySupplierUpdate(
                         transaction = transaction,
                         snapshots = snapshots,
                         supplierId = finalBill.supplierId,
                         name = "", // Optional name backfill
-                        creditChange = creditToApply
+                        creditChange = billCoverageAmount
                     )
                 }
             }
@@ -857,7 +857,7 @@ class BillRepository @Inject constructor(
         // Calculate Pool with exact precision to avoid floating-point artifacts (-0.000)
         val totalReturnCredit = cleanDouble(returns.sumOf { -it.totalCost })
         val totalBillCredit = cleanDouble(bills.sumOf { b ->
-            if (b.status == BillStatus.PAID) b.amount else b.paidAmount
+            b.amount
         })
         val totalManualAllocation = cleanDouble(bills.sumOf { it.manualAllocation })
         
@@ -929,10 +929,10 @@ class BillRepository @Inject constructor(
         // --- CALCULATION PHASE (Out of transaction for performance and scale) ---
         val creditSources = (
             supplierBills.filter { 
-                it.paidAmount > 0.001 || it.status == BillStatus.PAID
+                it.amount > 0.001
             }
                 .map { b ->
-                    val totalAmount = cleanDouble(if (b.status == BillStatus.PAID) b.amount else b.paidAmount)
+                    val totalAmount = cleanDouble(b.amount)
                     val typeLabel = when(b.billType){ BillType.CHECK -> "شيك"; BillType.BILL -> "كمبيالة"; else -> "دفعة" }
                     val fullNote = if (b.referenceNumber.isNotEmpty()) "$typeLabel (#${b.referenceNumber})" else typeLabel
                     CreditSource(

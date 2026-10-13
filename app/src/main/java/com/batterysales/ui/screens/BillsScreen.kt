@@ -181,25 +181,38 @@ fun BillsScreen(
                         }
                     }
 
-                    if (selectedSupplierId != null && selectedSupplierBalance != null) {
+                    if (selectedSupplierId != null) {
                         val selSupplier = suppliers.find { it.id == selectedSupplierId }
-                        val coveredBalance = selSupplier?.totalCredit ?: 0.0
+                        val uncoveredDebt = selSupplier?.currentBalance ?: (selectedSupplierBalance ?: 0.0)
                         Spacer(modifier = Modifier.height(12.dp))
                         Card(
                             modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)),
-                            shape = RoundedCornerShape(12.dp)
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (uncoveredDebt > 0) Color(0xFFEF4444).copy(alpha = 0.12f) else Color(0xFF10B981).copy(alpha = 0.12f)
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            border = androidx.compose.foundation.BorderStroke(
+                                1.dp,
+                                if (uncoveredDebt > 0) Color(0xFFEF4444).copy(alpha = 0.3f) else Color(0xFF10B981).copy(alpha = 0.3f)
+                            )
                         ) {
-                            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                    Text("إجمالي الرصيد المدور:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                                    Text("JD ${String.format("%.3f", selectedSupplierBalance)}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, color = if ((selectedSupplierBalance ?: 0.0) > 0) Color(0xFFEF4444) else Color(0xFF10B981))
-                                }
-                                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                    Text("إجمالي الرصيد المغطى:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                                    Text("JD ${String.format("%.3f", coveredBalance)}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, color = Color(0xFF10B981))
-                                }
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "الرصيد غير المغطى المتبقي:",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "JD ${String.format("%,.3f", uncoveredDebt)}",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = if (uncoveredDebt > 0) Color(0xFFEF4444) else Color(0xFF10B981)
+                                )
                             }
                         }
                     }

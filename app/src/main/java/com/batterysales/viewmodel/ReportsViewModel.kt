@@ -281,14 +281,8 @@ class ReportsViewModel @Inject constructor(
                 if (freshSupplier != null) {
                     val current = _selectedSupplierReport.value
                     if (current != null) {
-                        val newCredit = cleanDouble(Math.max(0.0, freshSupplier.totalCredit))
-                        val newDebit = cleanDouble(freshSupplier.totalDebit)
-                        val newBalance = cleanDouble(newDebit - newCredit)
                         _selectedSupplierReport.value = current.copy(
-                            supplier = freshSupplier,
-                            totalDebit = newDebit,
-                            totalCredit = newCredit,
-                            balance = newBalance
+                            supplier = freshSupplier
                         )
                     }
                 }
@@ -480,10 +474,11 @@ class ReportsViewModel @Inject constructor(
                     .sortedWith(compareByDescending<PurchaseOrderItem> { it.entry.getEffectiveDate() }.thenByDescending { it.entry.timestamp })
 
                 val totalDebit = cleanDouble(if (start == null && end == null) supplier.totalDebit else positiveOrders.sumOf { it.entry.totalCost })
-                val totalCredit = cleanDouble(if (start == null && end == null) Math.max(0.0, supplier.totalCredit) else Math.max(0.0, (
+                val actualPaidCredit = cleanDouble(
                     supplierBills.sumOf { b -> if (b.status == BillStatus.PAID) b.amount else b.paidAmount }
                     + purchaseOrders.filter { it.entry.totalCost < 0 }.sumOf { -it.entry.totalCost }
-                )))
+                )
+                val totalCredit = actualPaidCredit
                 val balance = cleanDouble(totalDebit - totalCredit)
 
                 val finalOrdersForDisplay = positiveOrders
