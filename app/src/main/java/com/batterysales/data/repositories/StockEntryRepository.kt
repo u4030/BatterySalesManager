@@ -809,9 +809,15 @@ class StockEntryRepository @Inject constructor(
 
             if (entry != null && entry.status == "approved" && variant != null && variantRef != null) {
                 val currentStockMap = variant.currentStock ?: emptyMap()
-                val newStockMap = currentStockMap.toMutableMap()
+                val currentWhStock = currentStockMap[entry.warehouseId] ?: 0
                 val qtyToRevert = entry.quantity - entry.returnedQuantity
-                newStockMap[entry.warehouseId] = (newStockMap[entry.warehouseId] ?: 0) - qtyToRevert
+
+                if (currentWhStock < qtyToRevert) {
+                    throw IllegalStateException("لا يمكن حذف هذه الطلبية نظراً لبيع أو تحويل جزء من مخزونها (${qtyToRevert - currentWhStock} حبة مخرجة). يرجى استخدام خيار إرجاع المشتريات للكمية المتاحة فقط.")
+                }
+
+                val newStockMap = currentStockMap.toMutableMap()
+                newStockMap[entry.warehouseId] = currentWhStock - qtyToRevert
                 
                 transaction.update(variantRef, mapOf(
                     "currentStock" to newStockMap,
@@ -837,27 +843,25 @@ class StockEntryRepository @Inject constructor(
                     "updatedAt" to Date()
                 )
 
-                // Process linked bills collected outside the transaction
+                // Preserve linked bills without auto-deleting them, mark with warning badge & alert
                 linkedBills.forEach { bill ->
-                    transaction.delete(firestore.collection(Bill.COLLECTION_NAME).document(bill.id))
-                    
-                    if (bill.paidAmount > 0.001) {
-                        if (bill.billType == BillType.CASH) statsUpdates["totalCashBalance"] = com.google.firebase.firestore.FieldValue.increment(bill.paidAmount)
-                        else if (bill.billType == BillType.TRANSFER) statsUpdates["totalBankBalance"] = com.google.firebase.firestore.FieldValue.increment(bill.paidAmount)
-                    }
+                    val billRef = firestore.collection(Bill.COLLECTION_NAME).document(bill.id)
+                    transaction.update(billRef, mapOf(
+                        "needsAdjustment" to true,
+                        "warningNote" to "تم حذف/إرجاع طلبية الشراء رقم (#${entry.invoiceNumber}) المرتبطة - يرجى تعديل قيمة الكمبيالة إلى القيمة الجديدة أو إلغاؤها يدوياً"
+                    ))
 
-                    // Reverse commitments
-                    val commitment = bill.amount - bill.paidAmount
-                    if (commitment > 0.001) {
-                        if (bill.billType == BillType.CHECK) {
-                            statsUpdates["totalUnpaidChecks"] = com.google.firebase.firestore.FieldValue.increment(-commitment)
-                        } else if (bill.billType == BillType.BILL) {
-                            statsUpdates["totalUnpaidBills"] = com.google.firebase.firestore.FieldValue.increment(-commitment)
-                        }
-                    }
+                    val alertRef = firestore.collection(SystemAlert.COLLECTION_NAME).document("bill_adj_${bill.id}")
+                    transaction.set(alertRef, mapOf(
+                        "id" to "bill_adj_${bill.id}",
+                        "type" to SystemAlert.TYPE_FINANCIAL_DUE,
+                        "title" to "تنبيه كمبيالة/شيك معلق",
+                        "message" to "تم حذف/تعديل طلبية الشراء رقم (#${entry.invoiceNumber}) المرتبطة بالكمبيالة رقم (#${bill.referenceNumber}). يرجى مراجعتها.",
+                        "relatedId" to bill.id,
+                        "timestamp" to Date(),
+                        "isRead" to false
+                    ))
                 }
-
-                bankTransactions.forEach { transaction.delete(it.reference) }
                 treasuryTransactions.forEach { transaction.delete(it.reference) }
 
                 transaction.set(statsRef, statsUpdates, com.google.firebase.firestore.SetOptions.merge())
@@ -1364,6 +1368,13 @@ class StockEntryRepository @Inject constructor(
             val variant = variantSnap.toObject(ProductVariant::class.java)?.copy(id = variantSnap.id)
             val snapshots = summaryRepository.getSummarySnapshots(transaction, listOf(entry.warehouseId))
 
+            if (variant != null) {
+                val currentWhStock = variant.currentStock?.get(entry.warehouseId) ?: 0
+                if (quantity > currentWhStock) {
+                    throw IllegalStateException("الكمية المراد إرجاعها ($quantity) أكبر من المخزون المتاح بالمستودع ($currentWhStock).")
+                }
+            }
+
             // 2. Writes
             val newReturnedQty = freshEntry.returnedQuantity + quantity
             transaction.update(docRef, mapOf(
@@ -1374,7 +1385,8 @@ class StockEntryRepository @Inject constructor(
             // Update Variant Stock
             if (variant != null) {
                 val newStockMap = variant.currentStock?.toMutableMap() ?: mutableMapOf()
-                newStockMap[entry.warehouseId] = (newStockMap[entry.warehouseId] ?: 0) - quantity
+                val currentWhStock = newStockMap[entry.warehouseId] ?: 0
+                newStockMap[entry.warehouseId] = currentWhStock - quantity
                 transaction.update(variantRef, "currentStock", newStockMap)
                 
                 // Update Summary

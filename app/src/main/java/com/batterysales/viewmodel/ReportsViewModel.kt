@@ -143,6 +143,18 @@ class ReportsViewModel @Inject constructor(
         }
     }
 
+    fun recordSupplierRefund(supplierId: String, amount: Double, destination: String, description: String) {
+        viewModelScope.launch {
+            _isSupplierLoading.value = true
+            try {
+                billRepository.recordSupplierRefund(supplierId, amount, destination, description)
+                loadDetailedSupplierReport(supplierId)
+            } finally {
+                _isSupplierLoading.value = false
+            }
+        }
+    }
+
     fun triggerAutoLink(supplierId: String) {
         viewModelScope.launch {
             billRepository.autoLinkBillsForSupplier(supplierId)

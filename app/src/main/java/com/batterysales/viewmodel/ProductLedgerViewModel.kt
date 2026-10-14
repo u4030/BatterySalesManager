@@ -64,6 +64,11 @@ class ProductLedgerViewModel @Inject constructor(
     private val _searchQuery = MutableStateFlow("")
     val searchQuery = _searchQuery.asStateFlow()
 
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    val errorMessage = _errorMessage.asStateFlow()
+
+    fun clearErrorMessage() { _errorMessage.value = null }
+
     private val refreshTrigger = MutableStateFlow(0)
     private val _isDataLoaded = MutableStateFlow(false)
 
@@ -139,12 +144,20 @@ class ProductLedgerViewModel @Inject constructor(
         return productRepository.getProduct(productId)?.name
     }
 
+    suspend fun getAvailableStockForVariant(variantId: String, warehouseId: String): Int {
+        val variant = productVariantRepository.getVariant(variantId)
+        val stockMap = variant?.currentStock ?: emptyMap()
+        return stockMap[warehouseId] ?: 0
+    }
+
     fun processReturn(entry: StockEntry, quantity: Int, mode: String, notes: String) {
         viewModelScope.launch {
             _isLoading.value = true
             try {
                 stockEntryRepository.processReturn(entry, quantity, mode, notes)
                 loadData(reset = true)
+            } catch (e: Exception) {
+                _errorMessage.value = e.message ?: "حدث خطأ أثناء إرجاع المواد"
             } finally {
                 _isLoading.value = false
             }
@@ -157,6 +170,8 @@ class ProductLedgerViewModel @Inject constructor(
             try {
                 stockEntryRepository.deleteStockEntry(id)
                 loadData(reset = true)
+            } catch (e: Exception) {
+                _errorMessage.value = e.message ?: "حدث خطأ أثناء حذف قيد المخزون"
             } finally {
                 _isLoading.value = false
             }

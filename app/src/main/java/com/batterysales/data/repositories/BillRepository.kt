@@ -903,6 +903,79 @@ class BillRepository @Inject constructor(
      * Treats grouped StockEntries (Invoices) as single units.
      * Records detailed settlement notes including reference numbers.
      */
+    suspend fun recordSupplierRefund(
+        supplierId: String,
+        amount: Double,
+        destination: String,
+        description: String
+    ) {
+        if (amount <= 0.001) return
+        val mainWhId = getMainWarehouseId()
+
+        firestore.runTransaction { transaction ->
+            // READ PHASE
+            val supplierRef = firestore.collection("suppliers").document(supplierId)
+            val supplierSnap = transaction.get(supplierRef)
+            val supplier = supplierSnap.toObject(Supplier::class.java)?.copy(id = supplierSnap.id) ?: return@runTransaction
+            val snapshots = summaryRepository.getSummarySnapshots(transaction, listOf(mainWhId))
+
+            // WRITE PHASE
+            if (destination == "cash") {
+                val tRef = firestore.collection(com.batterysales.data.models.Transaction.COLLECTION_NAME).document()
+                transaction.set(tRef, com.batterysales.data.models.Transaction(
+                    id = tRef.id,
+                    amount = amount,
+                    type = com.batterysales.data.models.TransactionType.INCOME,
+                    description = "استرداد مالي من المورد (${supplier.name}): $description",
+                    warehouseId = mainWhId,
+                    paymentMethod = "cash",
+                    createdAt = Date(),
+                    isSystemManaged = true
+                ))
+
+                summaryRepository.applyFinancialUpdate(
+                    transaction = transaction,
+                    snapshots = snapshots,
+                    warehouseId = mainWhId,
+                    cashChange = amount
+                )
+            } else {
+                val bRef = firestore.collection(com.batterysales.data.models.BankTransaction.COLLECTION_NAME).document()
+                transaction.set(bRef, com.batterysales.data.models.BankTransaction(
+                    id = bRef.id,
+                    amount = amount,
+                    type = com.batterysales.data.models.BankTransactionType.DEPOSIT,
+                    description = "استرداد مالي بنكي من المورد (${supplier.name}): $description",
+                    date = Date(),
+                    isSystemManaged = true
+                ))
+
+                summaryRepository.applyFinancialUpdate(
+                    transaction = transaction,
+                    snapshots = snapshots,
+                    warehouseId = mainWhId,
+                    bankChange = amount
+                )
+            }
+
+            // Adjust supplier credit and current balance
+            transaction.update(supplierRef, mapOf(
+                "totalCredit" to com.google.firebase.firestore.FieldValue.increment(-amount),
+                "currentBalance" to com.google.firebase.firestore.FieldValue.increment(amount)
+            ))
+
+            summaryRepository.applySupplierUpdate(
+                transaction = transaction,
+                snapshots = snapshots,
+                supplierId = supplierId,
+                name = supplier.name,
+                creditChange = -amount
+            )
+        }.await()
+
+        autoLinkBillsForSupplier(supplierId)
+    }
+
     suspend fun autoLinkBillsForSupplier(supplierId: String, resetDate: Date? = null) {
         if (supplierId.isEmpty()) return
 

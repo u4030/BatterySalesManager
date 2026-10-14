@@ -184,17 +184,17 @@ fun BillsScreen(
                     if (selectedSupplierId != null) {
                         val selSupplier = suppliers.find { it.id == selectedSupplierId }
                         val uncoveredDebt = selSupplier?.currentBalance ?: (selectedSupplierBalance ?: 0.0)
+                        val isExcess = uncoveredDebt < -0.001
+                        val displayColor = if (isExcess) Color(0xFF0284C7) else if (uncoveredDebt > 0) Color(0xFFEF4444) else Color(0xFF10B981)
+                        val labelText = if (isExcess) "رصيد دائن فائض / دفعة مقدمة للمورد:" else "الرصيد غير المغطى المتبقي:"
+                        val displayValue = if (isExcess) -uncoveredDebt else uncoveredDebt
+
                         Spacer(modifier = Modifier.height(12.dp))
                         Card(
                             modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (uncoveredDebt > 0) Color(0xFFEF4444).copy(alpha = 0.12f) else Color(0xFF10B981).copy(alpha = 0.12f)
-                            ),
+                            colors = CardDefaults.cardColors(containerColor = displayColor.copy(alpha = 0.12f)),
                             shape = RoundedCornerShape(12.dp),
-                            border = androidx.compose.foundation.BorderStroke(
-                                1.dp,
-                                if (uncoveredDebt > 0) Color(0xFFEF4444).copy(alpha = 0.3f) else Color(0xFF10B981).copy(alpha = 0.3f)
-                            )
+                            border = androidx.compose.foundation.BorderStroke(1.dp, displayColor.copy(alpha = 0.3f))
                         ) {
                             Row(
                                 modifier = Modifier.fillMaxWidth().padding(12.dp),
@@ -202,16 +202,16 @@ fun BillsScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "الرصيد غير المغطى المتبقي:",
+                                    text = labelText,
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
-                                    text = "JD ${String.format("%,.3f", uncoveredDebt)}",
+                                    text = "JD ${String.format("%,.3f", displayValue)}",
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.ExtraBold,
-                                    color = if (uncoveredDebt > 0) Color(0xFFEF4444) else Color(0xFF10B981)
+                                    color = displayColor
                                 )
                             }
                         }
@@ -396,9 +396,41 @@ fun BillItemCard(bill: Bill, supplierName: String, isHighlighted: Boolean = fals
         colors = CardDefaults.cardColors(
             containerColor = if (isHighlighted) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
         ),
-        border = if (isHighlighted) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
+        border = if (bill.needsAdjustment) {
+            androidx.compose.foundation.BorderStroke(2.dp, Color(0xFFC2410C))
+        } else if (isHighlighted) {
+            androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+        } else null
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
+            if (bill.needsAdjustment) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                    color = Color(0xFFC2410C).copy(alpha = 0.12f),
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFC2410C).copy(alpha = 0.4f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = Color(0xFFC2410C),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = bill.warningNote ?: "تم إرجاع/تعديل الطلبية المرتبطة - يرجى تعديل قيمة الكمبيالة إلى القيمة الجديدة أو إلغاؤها يدوياً",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFC2410C)
+                        )
+                    }
+                }
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -624,30 +656,30 @@ fun AddBillDialog(
         )
 
         if (selectedSupplier != null) {
-            val uncoveredDebt = selectedSupplier!!.currentBalance
+            val debt = selectedSupplier!!.currentBalance
+            val isExcess = debt < -0.001
+            val displayColor = if (isExcess) Color(0xFF0284C7) else if (debt > 0) Color(0xFFEF4444) else Color(0xFF10B981)
+            val labelText = if (isExcess) "رصيد دائن فائض / دفعة مقدمة للمورد" else "إجمالي القيمة المالية الغير مغطاة للمورد"
+            val displayValue = if (isExcess) -debt else debt
+
             Card(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (uncoveredDebt > 0) Color(0xFFEF4444).copy(alpha = 0.12f) else Color(0xFF10B981).copy(alpha = 0.12f)
-                ),
+                colors = CardDefaults.cardColors(containerColor = displayColor.copy(alpha = 0.12f)),
                 shape = RoundedCornerShape(12.dp),
-                border = androidx.compose.foundation.BorderStroke(
-                    1.dp, 
-                    if (uncoveredDebt > 0) Color(0xFFEF4444).copy(alpha = 0.3f) else Color(0xFF10B981).copy(alpha = 0.3f)
-                )
+                border = androidx.compose.foundation.BorderStroke(1.dp, displayColor.copy(alpha = 0.3f))
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
                     Text(
-                        text = "إجمالي القيمة المالية الغير مغطاة للمورد",
+                        text = labelText,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "JD ${String.format("%,.3f", uncoveredDebt)}",
+                        text = "JD ${String.format("%,.3f", displayValue)}",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.ExtraBold,
-                        color = if (uncoveredDebt > 0) Color(0xFFEF4444) else Color(0xFF10B981)
+                        color = displayColor
                     )
                 }
             }
