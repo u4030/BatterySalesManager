@@ -285,14 +285,48 @@ fun BillsScreen(
                 billItem?.let { b ->
                     val supplier = suppliers.find { it.id == b.supplierId }
                     val isHighlighted = b.id == highlightBillId
+
+                    val (needsAdj, warnMsg) = remember(b, supplier?.totalDebit, pagingItems.itemSnapshotList) {
+                        if (supplier != null && b.status != BillStatus.PAID && supplier.totalDebit > 0) {
+                            val unpaidSupplierBills = pagingItems.itemSnapshotList.items
+                                .filter { it.supplierId == supplier.id && it.status != BillStatus.PAID }
+                                .sortedBy { it.createdAt ?: Date(0) }
+
+                            var runningPurchaseBalance = supplier.totalDebit
+                            var computedNote: String? = null
+                            var isExcess = false
+
+                            for (bill in unpaidSupplierBills) {
+                                if (bill.id == b.id) {
+                                    if (runningPurchaseBalance <= 0.001) {
+                                        isExcess = true
+                                        computedNote = "كمبيالة/شيك فائض بالكامل عن المشتريات الحالية - يُوصى بحذفها يدوياً"
+                                    } else if (bill.amount > runningPurchaseBalance + 0.001) {
+                                        isExcess = true
+                                        computedNote = "تتجاوز صافي المشتريات الحالي (${String.format("%,.3f", runningPurchaseBalance)} د.أ) - يرجى تعديل قيمتها إلى ${String.format("%,.3f", runningPurchaseBalance)} د.أ"
+                                    }
+                                    break
+                                } else {
+                                    runningPurchaseBalance = (runningPurchaseBalance - bill.amount).coerceAtLeast(0.0)
+                                }
+                            }
+
+                            if (isExcess) Pair(true, computedNote) else Pair(b.needsAdjustment, b.warningNote)
+                        } else {
+                            Pair(b.needsAdjustment, b.warningNote)
+                        }
+                    }
+
+                    val evaluatedBill = b.copy(needsAdjustment = needsAdj, warningNote = warnMsg)
+
                     Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                         BillItemCard(
-                            bill = b,
+                            bill = evaluatedBill,
                             supplierName = supplier?.name ?: "",
                             isHighlighted = isHighlighted,
-                            onPayClick = { selectedBillForPayment = b },
-                            onDeleteClick = { billToDelete = b },
-                            onEditClick = { billToEdit = b }
+                            onPayClick = { selectedBillForPayment = evaluatedBill },
+                            onDeleteClick = { billToDelete = evaluatedBill },
+                            onEditClick = { billToEdit = evaluatedBill }
                         )
                     }
                 }

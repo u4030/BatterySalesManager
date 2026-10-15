@@ -136,10 +136,13 @@ fun SupplierDetailsScreen(
                             }
                             Spacer(modifier = Modifier.height(12.dp))
                             var showRefundDialog by remember { mutableStateOf(false) }
-                            val isExcess = item.balance < -0.001
-                            val displayColor = if (isExcess) Color(0xFF0284C7) else if (item.balance > 0) Color(0xFFEF4444) else Color(0xFF10B981)
-                            val labelText = if (isExcess) "رصيد دائن فائض / دفعة مقدمة للمورد:" else "المتبقي بذمة المورد:"
-                            val displayValue = if (isExcess) -item.balance else item.balance
+                            val settledOverpayment = maxOf(0.0, item.totalCredit - item.totalDebit)
+                            val isExcess = settledOverpayment > 0.001
+                            val uncoveredDebt = maxOf(0.0, item.totalDebit - item.supplier.totalCredit)
+
+                            val displayColor = if (isExcess) Color(0xFF0284C7) else if (uncoveredDebt > 0.001) Color(0xFFEF4444) else Color(0xFF10B981)
+                            val labelText = if (isExcess) "رصيد فائض مسدد للمورد:" else "المتبقي بذمة المورد:"
+                            val displayValue = if (isExcess) settledOverpayment else uncoveredDebt
 
                             Card(
                                 modifier = Modifier.fillMaxWidth(),

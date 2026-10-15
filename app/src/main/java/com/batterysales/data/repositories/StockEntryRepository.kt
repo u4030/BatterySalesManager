@@ -1394,7 +1394,8 @@ class StockEntryRepository @Inject constructor(
             }
 
             // Financial Adjustment
-            val costToReturn = quantity * entry.costPrice
+            val unitCost = if (entry.quantity > 0) entry.getNetCost() / (entry.quantity - entry.returnedQuantity) else entry.costPrice
+            val costToReturn = quantity * unitCost
             if (mode == "supplier_balance" && entry.supplierId.isNotEmpty()) {
                 summaryRepository.invalidateSupplierReportCache(transaction, entry.supplierId)
                 val supplierRef = firestore.collection("suppliers").document(entry.supplierId)
