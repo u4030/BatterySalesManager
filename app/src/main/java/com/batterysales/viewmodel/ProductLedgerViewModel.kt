@@ -67,6 +67,7 @@ class ProductLedgerViewModel @Inject constructor(
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage = _errorMessage.asStateFlow()
 
+    fun setErrorMessage(msg: String) { _errorMessage.value = msg }
     fun clearErrorMessage() { _errorMessage.value = null }
 
     private val refreshTrigger = MutableStateFlow(0)

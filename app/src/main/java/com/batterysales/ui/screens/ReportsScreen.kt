@@ -542,8 +542,13 @@ fun SupplierSummaryCard(item: SupplierSummaryItem, onClick: () -> Unit) {
                     Text("JD ${String.format("%.3f", item.totalCredit)}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Color(0xFF10B981)) 
                 }
                 Column(modifier = Modifier.widthIn(min = 80.dp)) { 
-                    Text("المتبقي", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("JD ${String.format("%.3f", item.currentBalance)}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.ExtraBold, color = if (item.currentBalance > 0) Color(0xFFEF4444) else Color(0xFF10B981)) 
+                    val isExcess = item.currentBalance < -0.001
+                    val displayColor = if (isExcess) Color(0xFF0284C7) else if (item.currentBalance > 0) Color(0xFFEF4444) else Color(0xFF10B981)
+                    val labelText = if (isExcess) "فائض مسدد" else "المتبقي"
+                    val displayVal = if (isExcess) -item.currentBalance else item.currentBalance
+
+                    Text(labelText, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("JD ${String.format("%.3f", displayVal)}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.ExtraBold, color = displayColor)
                 }
             }
         }

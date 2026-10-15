@@ -43,6 +43,9 @@ class BillViewModel @Inject constructor(
     private val _suppliers = MutableStateFlow<List<Supplier>>(emptyList())
     val suppliers = _suppliers.asStateFlow()
 
+    private val _supplierOverpayments = MutableStateFlow<Map<String, Double>>(emptyMap())
+    val supplierOverpayments = _supplierOverpayments.asStateFlow()
+
     private val _totalUnpaid = MutableStateFlow(0.0)
     val totalUnpaid = _totalUnpaid.asStateFlow()
 
@@ -99,6 +102,18 @@ class BillViewModel @Inject constructor(
                 if (selectedId != null) {
                     val fresh = list.find { it.id == selectedId }
                     _selectedSupplierBalance.value = fresh?.currentBalance
+                }
+                viewModelScope.launch {
+                    val overpaymentsMap = mutableMapOf<String, Double>()
+                    list.forEach { supplier ->
+                        val supplierBills = repository.getBillsBySuppliers(listOf(supplier.id), listOf(supplier.name))
+                        val settledAmount = supplierBills.sumOf { b -> if (b.status == BillStatus.PAID) b.amount else b.paidAmount }
+                        val overpayment = (settledAmount - supplier.totalDebit).coerceAtLeast(0.0)
+                        if (overpayment > 0.001) {
+                            overpaymentsMap[supplier.id] = overpayment
+                        }
+                    }
+                    _supplierOverpayments.value = overpaymentsMap
                 }
             }
             .launchIn(viewModelScope)

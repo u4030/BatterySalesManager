@@ -84,7 +84,6 @@ class DashboardViewModel @Inject constructor(
 
     private val alertsFlow: Flow<List<SystemAlert>> = callbackFlow {
         val listener = firestore.collection(SystemAlert.COLLECTION_NAME)
-            .whereEqualTo("type", SystemAlert.TYPE_LOW_STOCK)
             .addSnapshotListener { snap, e ->
                 if (e != null) return@addSnapshotListener
                 val alerts = snap?.documents?.mapNotNull { it.toObject(SystemAlert::class.java) } ?: emptyList()

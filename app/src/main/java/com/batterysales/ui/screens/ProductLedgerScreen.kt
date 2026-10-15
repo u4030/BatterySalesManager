@@ -279,7 +279,15 @@ fun ProductLedgerScreen(
                                 },
                                 onDelete = { entryId ->
                                     if (it.entry.supplier != "Sale") {
-                                        showDeleteConfirmation = entryId
+                                        scope.launch {
+                                            val stock = viewModel.getAvailableStockForVariant(it.entry.productVariantId, it.entry.warehouseId)
+                                            val netQtyInEntry = it.entry.quantity - it.entry.returnedQuantity
+                                            if (stock < netQtyInEntry) {
+                                                viewModel.setErrorMessage("لا يمكن حذف هذه الطلبية نظراً لبيع أو تحويل جزء من مخزونها (${netQtyInEntry - stock} حبة مخرجة). يرجى استخدام خيار إرجاع المشتريات للكمية المتاحة فقط.")
+                                            } else {
+                                                showDeleteConfirmation = entryId
+                                            }
+                                        }
                                     }
                                 },
                                 onReturn = { entry ->

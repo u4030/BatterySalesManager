@@ -51,6 +51,7 @@ fun BillsScreen(
 ) {
     val pagingItems = viewModel.bills.collectAsLazyPagingItems()
     val warehouses by viewModel.warehouses.collectAsState()
+    val supplierOverpayments by viewModel.supplierOverpayments.collectAsState()
     val lifecycleOwner = LocalLifecycleOwner.current
 
     val networkHelper = (androidx.compose.ui.platform.LocalContext.current.applicationContext as com.batterysales.BatterySalesApp).networkHelper 
@@ -181,13 +182,47 @@ fun BillsScreen(
                         }
                     }
 
+                    if (selectedSupplierId == null && supplierOverpayments.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        supplierOverpayments.forEach { (supId, overpaymentVal) ->
+                            val supName = suppliers.find { it.id == supId }?.name ?: ""
+                            Card(
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF0284C7).copy(alpha = 0.12f)),
+                                shape = RoundedCornerShape(12.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF0284C7).copy(alpha = 0.3f))
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "رصيد فائض مسدد للمورد ($supName):",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "JD ${String.format("%,.3f", overpaymentVal)}",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = Color(0xFF0284C7)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     if (selectedSupplierId != null) {
+                        val overpaymentVal = supplierOverpayments[selectedSupplierId] ?: 0.0
+                        val isExcess = overpaymentVal > 0.001
                         val selSupplier = suppliers.find { it.id == selectedSupplierId }
-                        val uncoveredDebt = selSupplier?.currentBalance ?: (selectedSupplierBalance ?: 0.0)
-                        val isExcess = uncoveredDebt < -0.001
+                        val uncoveredDebt = maxOf(0.0, selSupplier?.currentBalance ?: (selectedSupplierBalance ?: 0.0))
+
                         val displayColor = if (isExcess) Color(0xFF0284C7) else if (uncoveredDebt > 0) Color(0xFFEF4444) else Color(0xFF10B981)
-                        val labelText = if (isExcess) "رصيد دائن فائض / دفعة مقدمة للمورد:" else "الرصيد غير المغطى المتبقي:"
-                        val displayValue = if (isExcess) -uncoveredDebt else uncoveredDebt
+                        val labelText = if (isExcess) "رصيد فائض مسدد للمورد:" else "الرصيد غير المغطى المتبقي:"
+                        val displayValue = if (isExcess) overpaymentVal else uncoveredDebt
 
                         Spacer(modifier = Modifier.height(12.dp))
                         Card(
@@ -322,6 +357,7 @@ fun BillsScreen(
             suppliers = suppliers,
             pendingPurchases = pendingPurchases,
             warehouses = warehouses,
+            supplierOverpayments = supplierOverpayments,
             currentUser = user,
             onDismiss = { showAddBillDialog = false },
             onAdd = { desc, amount, date, type, ref, supplierId, relatedEntryId, warehouseId, payImmediately ->
@@ -592,6 +628,7 @@ fun AddBillDialog(
     suppliers: List<com.batterysales.data.models.Supplier>,
     pendingPurchases: List<com.batterysales.data.models.StockEntry>,
     warehouses: List<com.batterysales.data.models.Warehouse>,
+    supplierOverpayments: Map<String, Double> = emptyMap(),
     currentUser: com.batterysales.data.models.User?,
     onDismiss: () -> Unit,
     onAdd: (String, Double, Date, BillType, String, String, String?, String?, Boolean) -> Unit
@@ -656,11 +693,12 @@ fun AddBillDialog(
         )
 
         if (selectedSupplier != null) {
-            val debt = selectedSupplier!!.currentBalance
-            val isExcess = debt < -0.001
-            val displayColor = if (isExcess) Color(0xFF0284C7) else if (debt > 0) Color(0xFFEF4444) else Color(0xFF10B981)
-            val labelText = if (isExcess) "رصيد دائن فائض / دفعة مقدمة للمورد" else "إجمالي القيمة المالية الغير مغطاة للمورد"
-            val displayValue = if (isExcess) -debt else debt
+            val overpaymentVal = supplierOverpayments[selectedSupplier!!.id] ?: 0.0
+            val isExcess = overpaymentVal > 0.001
+            val uncoveredDebt = maxOf(0.0, selectedSupplier!!.currentBalance)
+            val displayColor = if (isExcess) Color(0xFF0284C7) else if (uncoveredDebt > 0) Color(0xFFEF4444) else Color(0xFF10B981)
+            val labelText = if (isExcess) "رصيد فائض مسدد للمورد" else "إجمالي القيمة المالية الغير مغطاة للمورد"
+            val displayValue = if (isExcess) overpaymentVal else uncoveredDebt
 
             Card(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
