@@ -25,7 +25,9 @@ data class Bill(
     val autoLinkedEntryIds: List<String> = emptyList(), // الروابط التلقائية للطلبيات
     val autoAllocations: Map<String, Double> = emptyMap(), // المبالغ الموزعة تلقائياً لكل طلبية
     val manualAllocation: Double = 0.0, // المبلغ الموزع يدوياً
-    val warehouseId: String? = null // المستودع المرتبط
+    val warehouseId: String? = null, // المستودع المرتبط
+    val needsAdjustment: Boolean = false, // يحتاج لتعديل بعد إرجاع/حذف طلبية الشراء
+    val warningNote: String? = null // ملاحظة تنبيهية بخصوص التعديل
 ) {
     companion object {
         const val COLLECTION_NAME = "bills"

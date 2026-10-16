@@ -131,9 +131,32 @@ fun ProductLedgerScreen(
         }
     }
 
+    val ledgerError by viewModel.errorMessage.collectAsState()
+    if (ledgerError != null) {
+        AppDialog(
+            onDismiss = { viewModel.clearErrorMessage() },
+            title = "تحذير حماية المخزون",
+            confirmButton = {
+                Button(onClick = { viewModel.clearErrorMessage() }) { Text("موافق") }
+            }
+        ) {
+            Text(ledgerError!!, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+        }
+    }
+
+    var warehouseStockMap by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
+    LaunchedEffect(showReturnDialog) {
+        if (showReturnDialog != null) {
+            val stock = viewModel.getAvailableStockForVariant(showReturnDialog!!.productVariantId, showReturnDialog!!.warehouseId)
+            warehouseStockMap = mapOf(showReturnDialog!!.id to stock)
+        }
+    }
+
     if (showReturnDialog != null) {
+        val currentWhStock = warehouseStockMap[showReturnDialog!!.id] ?: (showReturnDialog!!.quantity - showReturnDialog!!.returnedQuantity)
         ReturnMaterialDialog(
             entry = showReturnDialog!!,
+            currentWarehouseStock = currentWhStock,
             onDismiss = { showReturnDialog = null },
             onConfirm = { qty, mode, notes ->
                 viewModel.processReturn(showReturnDialog!!, qty, mode, notes)
@@ -256,7 +279,15 @@ fun ProductLedgerScreen(
                                 },
                                 onDelete = { entryId ->
                                     if (it.entry.supplier != "Sale") {
-                                        showDeleteConfirmation = entryId
+                                        scope.launch {
+                                            val stock = viewModel.getAvailableStockForVariant(it.entry.productVariantId, it.entry.warehouseId)
+                                            val netQtyInEntry = it.entry.quantity - it.entry.returnedQuantity
+                                            if (stock < netQtyInEntry) {
+                                                viewModel.setErrorMessage("لا يمكن حذف هذه الطلبية نظراً لبيع أو تحويل جزء من مخزونها (${netQtyInEntry - stock} حبة مخرجة). يرجى استخدام خيار إرجاع المشتريات للكمية المتاحة فقط.")
+                                            } else {
+                                                showDeleteConfirmation = entryId
+                                            }
+                                        }
                                     }
                                 },
                                 onReturn = { entry ->
@@ -496,13 +527,15 @@ fun Date.toFormattedString(format: String): String {
 @Composable
 fun ReturnMaterialDialog(
     entry: StockEntry,
+    currentWarehouseStock: Int,
     onDismiss: () -> Unit,
     onConfirm: (Int, String, String) -> Unit
 ) {
     var returnQty by remember { mutableStateOf("") }
     var returnMode by remember { mutableStateOf("supplier_balance") } // "supplier_balance" or "treasury_cash"
     var notes by remember { mutableStateOf("") }
-    val availableToReturn = entry.quantity - entry.returnedQuantity
+    val remainingInEntry = entry.quantity - entry.returnedQuantity
+    val availableToReturn = minOf(remainingInEntry, currentWarehouseStock.coerceAtLeast(0))
 
     AppDialog(
         onDismiss = onDismiss,
@@ -517,7 +550,7 @@ fun ReturnMaterialDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
     ) {
-        Text("الكمية المتاحة للإرجاع: $availableToReturn", fontWeight = FontWeight.Bold)
+        Text("الكمية المتاحة للإرجاع: $availableToReturn (المتبقي بالمستودع)", fontWeight = FontWeight.Bold)
         
         CustomKeyboardTextField(
             value = returnQty,

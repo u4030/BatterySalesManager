@@ -95,6 +95,20 @@ class AccountingViewModel @Inject constructor(
         loadInitialData()
         loadData()
         observeFinancialStatus()
+        observeTransactionsRealtime()
+    }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private fun observeTransactionsRealtime() {
+        viewModelScope.launch {
+            _selectedWarehouseId.flatMapLatest { whId ->
+                repository.getTransactionsFlow(whId)
+            }.collect {
+                refreshTrigger.value += 1
+                loadBalancesFromSummary()
+                loadTotals()
+            }
+        }
     }
 
     private fun observeFinancialStatus() {
@@ -288,7 +302,8 @@ class AccountingViewModel @Inject constructor(
         viewModelScope.launch {
             _isSubmitting.value = true
             try {
-                repository.updateTransaction(transaction)
+                val user = userRepository.getCurrentUser()
+                repository.updateTransaction(transaction, editorName = user?.displayName ?: "")
                 loadData(reset = true)
             } catch (e: Exception) {
                 _errorMessage.value = e.message

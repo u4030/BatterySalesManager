@@ -486,7 +486,7 @@ private fun supplierReportSectionRedesigned(scope: androidx.compose.foundation.l
         }
     }
 
-    val totalSuppliersDebt = supplierItems.sumOf { it.currentBalance }
+    val totalSuppliersDebt = supplierItems.sumOf { maxOf(0.0, it.currentBalance) }
     scope.item {
         Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f))) {
             FlowRow(modifier = Modifier.padding(20.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalArrangement = Arrangement.Center) {
@@ -542,8 +542,13 @@ fun SupplierSummaryCard(item: SupplierSummaryItem, onClick: () -> Unit) {
                     Text("JD ${String.format("%.3f", item.totalCredit)}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = Color(0xFF10B981)) 
                 }
                 Column(modifier = Modifier.widthIn(min = 80.dp)) { 
-                    Text("المتبقي", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("JD ${String.format("%.3f", item.currentBalance)}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.ExtraBold, color = if (item.currentBalance > 0) Color(0xFFEF4444) else Color(0xFF10B981)) 
+                    val isExcess = item.currentBalance < -0.001
+                    val displayColor = if (isExcess) Color(0xFF0284C7) else if (item.currentBalance > 0) Color(0xFFEF4444) else Color(0xFF10B981)
+                    val labelText = if (isExcess) "فائض مسدد" else "المتبقي"
+                    val displayVal = if (isExcess) -item.currentBalance else item.currentBalance
+
+                    Text(labelText, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("JD ${String.format("%.3f", displayVal)}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.ExtraBold, color = displayColor)
                 }
             }
         }
@@ -590,11 +595,19 @@ fun PurchaseOrderCard(po: com.batterysales.data.models.PurchaseOrderItem, dateFo
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
+                    val coverageColor = when {
+                        po.remainingBalance <= 0.001 && po.isCleared -> Color(0xFF10B981) // Green - Finally Settled
+                        po.remainingBalance <= 0.001 -> Color(0xFF3B82F6)                 // Blue - Fully Covered
+                        po.totalLinkedAmount > 0.001 -> Color(0xFFFB8C00)                  // Orange - Partially Covered
+                        else -> Color(0xFFEF4444)                                          // Red - Uncovered
+                    }
+
                     if (po.entry.invoiceNumber.isNotEmpty()) {
                         Text(
-                            text = "فاتورة: ${po.entry.invoiceNumber}",
+                            text = "رقم المستند/الفاتورة: ${po.entry.invoiceNumber}",
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            fontWeight = FontWeight.Bold,
+                            color = coverageColor
                         )
                     }
                 }
@@ -629,35 +642,49 @@ fun PurchaseOrderCard(po: com.batterysales.data.models.PurchaseOrderItem, dateFo
             }
 
             // Settlement Details Section (Simplified box as per user image request)
-            val allNotes = po.referenceNumbers.filter { it.isNotBlank() }
-            if (allNotes.isNotEmpty()) {
-                val statusColor = if (isFullyCovered) {
-                    if (po.isCleared) Color(0xFF10B981) else Color(0xFF3B82F6)
-                } else if (po.totalLinkedAmount > 0.001) {
-                    Color(0xFFFB8C00)
-                } else {
-                    Color(0xFFEF4444)
+            val notesList = if (po.noteDetails.isNotEmpty()) po.noteDetails else po.referenceNumbers.filter { it.isNotBlank() }.map { note ->
+                val statusStr = when {
+                    note.contains("مرتجع") || note.contains("مسدد") -> "PAID"
+                    note.contains("جزئ") -> "PARTIAL"
+                    else -> if (isFullyCovered) (if (po.isCleared) "PAID" else "PARTIAL") else if (po.totalLinkedAmount > 0.001) "PARTIAL" else "UNPAID"
                 }
+                com.batterysales.data.models.SettlementNoteItem(note, statusStr)
+            }
 
-                Surface(
+            if (notesList.isNotEmpty()) {
+                Column(
                     modifier = Modifier.fillMaxWidth(),
-                    color = statusColor.copy(alpha = 0.12f),
-                    shape = RoundedCornerShape(16.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.5.dp, statusColor.copy(alpha = 0.4f))
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Column(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        allNotes.forEach { note ->
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(16.dp), tint = statusColor)
+                    notesList.forEach { noteItem ->
+                        val itemColor = when (noteItem.status) {
+                            "PAID" -> Color(0xFF10B981)     // Green - Full payment
+                            "PARTIAL" -> Color(0xFFFB8C00)  // Orange - Partial payment
+                            else -> Color(0xFFEF4444)       // Red - Unpaid
+                        }
+
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = itemColor.copy(alpha = 0.12f),
+                            shape = RoundedCornerShape(12.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, itemColor.copy(alpha = 0.35f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Info,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = itemColor
+                                )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = note, 
-                                    style = MaterialTheme.typography.titleSmall, 
+                                    text = noteItem.note,
+                                    style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.ExtraBold,
-                                    color = statusColor
+                                    color = itemColor
                                 )
                             }
                         }

@@ -37,9 +37,13 @@ fun StockTransferScreen(
     val keyboardController = com.batterysales.ui.components.LocalCustomKeyboardController.current
     var showScanner by remember { mutableStateOf(false) }
 
+    var showSuccessMessage by remember { mutableStateOf(false) }
+
     LaunchedEffect(uiState.isFinished) {
         if (uiState.isFinished) {
-            navController.popBackStack()
+            showSuccessMessage = true
+            kotlinx.coroutines.delay(3000)
+            showSuccessMessage = false
         }
     }
 
@@ -94,6 +98,22 @@ fun StockTransferScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                if (showSuccessMessage) {
+                    item {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF1B5E20)),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color.Green)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(text = "تمت عملية ترحيل المخزون بنجاح", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+
                 if (uiState.errorMessage != null) {
                     item {
                         Card(

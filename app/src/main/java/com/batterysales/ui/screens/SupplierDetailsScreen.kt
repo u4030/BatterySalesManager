@@ -135,27 +135,64 @@ fun SupplierDetailsScreen(
                                 }
                             }
                             Spacer(modifier = Modifier.height(12.dp))
+                            var showRefundDialog by remember { mutableStateOf(false) }
+                            val settledOverpayment = maxOf(0.0, item.totalCredit - item.totalDebit)
+                            val isExcess = settledOverpayment > 0.001
+                            val uncoveredDebt = maxOf(0.0, item.totalDebit - item.supplier.totalCredit)
+
+                            val displayColor = if (isExcess) Color(0xFF0284C7) else if (uncoveredDebt > 0.001) Color(0xFFEF4444) else Color(0xFF10B981)
+                            val labelText = if (isExcess) "رصيد فائض مسدد للمورد:" else "المتبقي بذمة المورد:"
+                            val displayValue = if (isExcess) settledOverpayment else uncoveredDebt
+
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
-                                colors = CardDefaults.cardColors(containerColor = if (item.balance > 0) Color(0xFFEF4444).copy(alpha = 0.1f) else Color(0xFF10B981).copy(alpha = 0.1f))
+                                colors = CardDefaults.cardColors(containerColor = displayColor.copy(alpha = 0.1f))
                             ) {
-                                FlowRow(
-                                    modifier = Modifier.padding(16.dp).fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                                ) {
-                                    Text(
-                                        text = "المتبقي بذمة المورد:", 
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(vertical = 4.dp)
-                                    )
-                                    Text(
-                                        text = "JD ${String.format("%.3f", item.balance)}", 
-                                        style = MaterialTheme.typography.headlineSmall, 
-                                        fontWeight = FontWeight.ExtraBold, 
-                                        color = if (item.balance > 0) Color(0xFFEF4444) else Color(0xFF10B981)
-                                    )
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    FlowRow(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        Text(
+                                            text = labelText,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(vertical = 4.dp),
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            text = "JD ${String.format("%,.3f", displayValue)}",
+                                            style = MaterialTheme.typography.headlineSmall,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = displayColor
+                                        )
+                                    }
+
+                                    if (isExcess) {
+                                        Spacer(modifier = Modifier.height(10.dp))
+                                        Button(
+                                            onClick = { showRefundDialog = true },
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                                            shape = RoundedCornerShape(12.dp),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text("استرداد نقدي/بنكي من المورد", fontWeight = FontWeight.Bold)
+                                        }
+                                    }
                                 }
+                            }
+
+                            if (showRefundDialog) {
+                                SupplierRefundDialog(
+                                    initialAmount = -item.balance,
+                                    onDismiss = { showRefundDialog = false },
+                                    onConfirm = { amt, dest, desc ->
+                                        viewModel.recordSupplierRefund(item.supplier.id, amt, dest, desc)
+                                        showRefundDialog = false
+                                    }
+                                )
                             }
                         }
                     }
@@ -217,6 +254,59 @@ fun SupplierDetailsScreen(
                 viewModel.onDateRangeSelected(dateRangePickerState.selectedStartDateMillis, dateRangePickerState.selectedEndDateMillis)
                 showDatePicker = false
             }
+        )
+    }
+}
+
+@Composable
+fun SupplierRefundDialog(
+    initialAmount: Double,
+    onDismiss: () -> Unit,
+    onConfirm: (Double, String, String) -> Unit
+) {
+    var amountText by remember { mutableStateOf(String.format(java.util.Locale.US, "%.3f", initialAmount)) }
+    var destination by remember { mutableStateOf("cash") } // "cash" or "bank"
+    var description by remember { mutableStateOf("استرداد رصيد دائن فائض من المورد") }
+
+    com.batterysales.ui.components.AppDialog(
+        onDismiss = onDismiss,
+        title = "استرداد نقدي/بنكي من المورد",
+        confirmButton = {
+            Button(onClick = {
+                val amt = amountText.toDoubleOrNull() ?: 0.0
+                if (amt > 0) {
+                    onConfirm(amt, destination, description)
+                }
+            }) { Text("تأكيد الاسترداد") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
+    ) {
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = amountText,
+            onValueChange = { amountText = it },
+            label = "المبلغ المسترد",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.NUMERIC
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+        Text("وجهة إيداع المبلغ:", style = MaterialTheme.typography.labelMedium)
+        Column {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { destination = "cash" }) {
+                RadioButton(selected = destination == "cash", onClick = { destination = "cash" })
+                Text("إيداع نقدي في خزينة المستودع الرئيسي")
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { destination = "bank" }) {
+                RadioButton(selected = destination == "bank", onClick = { destination = "bank" })
+                Text("إيداع في الحساب البنكي")
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+        com.batterysales.ui.components.CustomKeyboardTextField(
+            value = description,
+            onValueChange = { description = it },
+            label = "الوصف / ملاحظة",
+            keyboardType = com.batterysales.ui.components.KeyboardLanguage.ARABIC
         )
     }
 }
