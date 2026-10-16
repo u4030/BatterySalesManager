@@ -486,7 +486,7 @@ private fun supplierReportSectionRedesigned(scope: androidx.compose.foundation.l
         }
     }
 
-    val totalSuppliersDebt = supplierItems.sumOf { it.currentBalance }
+    val totalSuppliersDebt = supplierItems.sumOf { maxOf(0.0, it.currentBalance) }
     scope.item {
         Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f))) {
             FlowRow(modifier = Modifier.padding(20.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalArrangement = Arrangement.Center) {
