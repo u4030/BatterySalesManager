@@ -359,13 +359,29 @@ fun AccountingScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Search Bar
-                    CustomKeyboardTextField(
-                        value = searchQuery,
-                        onValueChange = { searchQuery = it },
+                    // Search Bar with Search Button
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
-                        label = "بحث بالوصف أو الرقم المرجعي..."
-                    )
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CustomKeyboardTextField(
+                            value = searchQuery,
+                            onValueChange = {
+                                searchQuery = it
+                                if (it.isBlank()) viewModel.onSearchQueryChanged("")
+                            },
+                            modifier = Modifier.weight(1f),
+                            label = "بحث بالوصف أو الرقم المرجعي...",
+                            onSearch = { viewModel.onSearchQueryChanged(searchQuery) }
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        IconButton(
+                            onClick = { viewModel.onSearchQueryChanged(searchQuery) },
+                            modifier = Modifier.padding(top = 8.dp)
+                        ) {
+                            Icon(Icons.Default.Search, contentDescription = "بحث", tint = accentColor)
+                        }
+                    }
 
                     if (dateRangePickerState.selectedStartDateMillis != null) {
                         Spacer(modifier = Modifier.height(12.dp))

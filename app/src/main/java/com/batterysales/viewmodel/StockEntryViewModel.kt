@@ -214,11 +214,17 @@ class StockEntryViewModel @Inject constructor(
                 variants = if (it.isEditMode) it.variants else emptyList()
             )
         }
-        if (supplier != null && !_uiState.value.isEditMode) {
-            viewModelScope.launch {
-                val autoNumber = stockEntryRepository.getNextInvoiceNumber(supplier.id, supplier.isOfficial)
-                _uiState.update { it.copy(invoiceNumber = autoNumber) }
+    }
+
+    fun generateInvoiceNumberOnDemand() {
+        val supplier = _uiState.value.selectedSupplier
+        viewModelScope.launch {
+            val autoNumber = if (supplier != null) {
+                stockEntryRepository.getNextInvoiceNumber(supplier.id, supplier.isOfficial)
+            } else {
+                "INV-" + (System.currentTimeMillis() % 10000).toString().padStart(4, '0')
             }
+            _uiState.update { it.copy(invoiceNumber = autoNumber) }
         }
     }
 

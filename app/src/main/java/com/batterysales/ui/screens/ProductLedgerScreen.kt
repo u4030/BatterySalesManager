@@ -189,6 +189,16 @@ fun ProductLedgerScreen(
         colors = listOf(Color(0xFFE53935), Color(0xFFFB8C00))
     )
 
+    val rawLedgerItems = remember(pagingItems.itemSnapshotList, viewModel.highlightEntryId) {
+        val list = pagingItems.itemSnapshotList.items.filterNotNull()
+        val highlightId = viewModel.highlightEntryId
+        if (!highlightId.isNullOrEmpty()) {
+            list.sortedWith(compareByDescending<LedgerItem> { it.entry.id == highlightId })
+        } else {
+            list
+        }
+    }
+
     Scaffold(
         containerColor = bgColor,
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -261,42 +271,40 @@ fun ProductLedgerScreen(
                     }
                 }
             } else {
-                items(pagingItems.itemCount) { index ->
-                    val item = pagingItems[index]
-                    item?.let {
-                        Box(modifier = Modifier.padding(horizontal = 16.dp)) {
-                            LedgerItemCard(
-                                item = it,
-                                isAdmin = isAdmin,
-                                productName = viewModel.productName,
-                                variantCapacity = viewModel.variantCapacity,
-                                variantSpecification = viewModel.variantSpecification,
-                                isHighlighted = it.entry.id == viewModel.highlightEntryId,
-                                onEdit = { entryId ->
-                                    if (it.entry.supplier != "Sale") {
-                                        navController.navigate("stock_entry?entryId=$entryId")
-                                    }
-                                },
-                                onDelete = { entryId ->
-                                    if (it.entry.supplier != "Sale") {
-                                        scope.launch {
-                                            val stock = viewModel.getAvailableStockForVariant(it.entry.productVariantId, it.entry.warehouseId)
-                                            val netQtyInEntry = it.entry.quantity - it.entry.returnedQuantity
-                                            if (stock < netQtyInEntry) {
-                                                viewModel.setErrorMessage("لا يمكن حذف هذه الطلبية نظراً لبيع أو تحويل جزء من مخزونها (${netQtyInEntry - stock} حبة مخرجة). يرجى استخدام خيار إرجاع المشتريات للكمية المتاحة فقط.")
-                                            } else {
-                                                showDeleteConfirmation = entryId
-                                            }
+                items(rawLedgerItems.size) { index ->
+                    val it = rawLedgerItems[index]
+                    Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                        LedgerItemCard(
+                            item = it,
+                            isAdmin = isAdmin,
+                            productName = viewModel.productName,
+                            variantCapacity = viewModel.variantCapacity,
+                            variantSpecification = viewModel.variantSpecification,
+                            isHighlighted = it.entry.id == viewModel.highlightEntryId,
+                            onEdit = { entryId ->
+                                if (it.entry.supplier != "Sale") {
+                                    navController.navigate("stock_entry?entryId=$entryId")
+                                }
+                            },
+                            onDelete = { entryId ->
+                                if (it.entry.supplier != "Sale") {
+                                    scope.launch {
+                                        val stock = viewModel.getAvailableStockForVariant(it.entry.productVariantId, it.entry.warehouseId)
+                                        val netQtyInEntry = it.entry.quantity - it.entry.returnedQuantity
+                                        if (stock < netQtyInEntry) {
+                                            viewModel.setErrorMessage("لا يمكن حذف هذه الطلبية نظراً لبيع أو تحويل جزء من مخزونها (${netQtyInEntry - stock} حبة مخرجة). يرجى استخدام خيار إرجاع المشتريات للكمية المتاحة فقط.")
+                                        } else {
+                                            showDeleteConfirmation = entryId
                                         }
                                     }
-                                },
-                                onReturn = { entry ->
-                                    if (entry.supplier != "Sale" && entry.quantity > 0) {
-                                        showReturnDialog = entry
-                                    }
                                 }
-                            )
-                        }
+                            },
+                            onReturn = { entry ->
+                                if (entry.supplier != "Sale" && entry.quantity > 0) {
+                                    showReturnDialog = entry
+                                }
+                            }
+                        )
                     }
                 }
             }
