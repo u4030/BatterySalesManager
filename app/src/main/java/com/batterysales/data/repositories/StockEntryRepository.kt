@@ -618,6 +618,20 @@ class StockEntryRepository @Inject constructor(
             val supplierDeltas = mutableMapOf<String, Pair<Double, Double>>() // supplierId -> (debitDelta, creditDelta)
             val statsDeltas = mutableMapOf<String, Double>() // key -> delta
 
+            // Strict Ledger Guard: Check if reducing entry quantity exceeds available warehouse stock
+            val oldNetQty = oldEntry.quantity - oldEntry.returnedQuantity
+            val newNetQty = entry.quantity - entry.returnedQuantity
+            if (oldEntry.status == "approved" && entry.status == "approved" && newNetQty < oldNetQty) {
+                val reduction = oldNetQty - newNetQty
+                val variant = variantsMap[oldEntry.productVariantId]
+                val currentWhStock = (variant?.currentStock?.get(oldEntry.warehouseId) as? Number)?.toInt() ?: 0
+                if (currentWhStock < reduction) {
+                    val dislocatedQty = reduction - currentWhStock
+                    val minAllowedQty = oldNetQty - currentWhStock
+                    throw IllegalStateException("لا يمكن تخفيض كمية الطلبية من $oldNetQty إلى $newNetQty حبة، نظراً لبيع أو ترحيل $dislocatedQty حبة من مخزونها المتاح بالمستودع ($currentWhStock حبة). الحد الأدنى المسموح للكمية بعد التعديل هو $minAllowedQty حبة.")
+                }
+            }
+
             // 1. Revert Old Entry if it was approved
             if (oldEntry.status == "approved") {
                 val variant = variantsMap[oldEntry.productVariantId]

@@ -78,14 +78,37 @@ fun BillsScreen(
     val highlightBillId by viewModel.highlightBillId.collectAsState()
     val listState = rememberLazyListState()
 
-    val rawBills = remember(pagingItems.itemSnapshotList, highlightBillId) {
+    val rawBills = remember(pagingItems.itemSnapshotList, highlightBillId, suppliers) {
         val list = pagingItems.itemSnapshotList.items.filterNotNull()
         val hId = highlightBillId
-        if (!hId.isNullOrEmpty()) {
-            list.sortedWith(compareByDescending<Bill> { it.id == hId })
-        } else {
-            list
-        }
+
+        list.sortedWith(
+            compareByDescending<Bill> { it.id == hId }
+                .thenByDescending { bill ->
+                    val supplier = suppliers.find { s -> s.id == bill.supplierId }
+                    if (supplier != null && bill.status != BillStatus.PAID && supplier.totalDebit > 0) {
+                        val unpaidSupplierBills = list
+                            .filter { it.supplierId == supplier.id && it.status != BillStatus.PAID }
+                            .sortedBy { it.createdAt ?: Date(0) }
+
+                        var runningPurchaseBalance = supplier.totalDebit
+                        var isExcess = false
+                        for (unpaid in unpaidSupplierBills) {
+                            if (unpaid.id == bill.id) {
+                                if (runningPurchaseBalance <= 0.001 || bill.amount > runningPurchaseBalance + 0.001) {
+                                    isExcess = true
+                                }
+                                break
+                            } else {
+                                runningPurchaseBalance = (runningPurchaseBalance - unpaid.amount).coerceAtLeast(0.0)
+                            }
+                        }
+                        isExcess || bill.needsAdjustment
+                    } else {
+                        bill.needsAdjustment
+                    }
+                }
+        )
     }
 
     LaunchedEffect(rawBills.size, highlightBillId) {
