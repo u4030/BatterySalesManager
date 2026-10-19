@@ -54,7 +54,8 @@ data class LowStockItem(
     val specification: String,
     val currentQuantity: Int,
     val minQuantity: Int,
-    val warehouseName: String
+    val warehouseName: String,
+    val warehouseId: String = ""
 )
 
 @HiltViewModel
@@ -83,7 +84,6 @@ class DashboardViewModel @Inject constructor(
 
     private val alertsFlow: Flow<List<SystemAlert>> = callbackFlow {
         val listener = firestore.collection(SystemAlert.COLLECTION_NAME)
-            .whereEqualTo("type", SystemAlert.TYPE_LOW_STOCK)
             .addSnapshotListener { snap, e ->
                 if (e != null) return@addSnapshotListener
                 val alerts = snap?.documents?.mapNotNull { it.toObject(SystemAlert::class.java) } ?: emptyList()
@@ -219,7 +219,8 @@ class DashboardViewModel @Inject constructor(
                 specification = specification,
                 currentQuantity = currentQty,
                 minQuantity = minQty,
-                warehouseName = heavy.warehouses.find { it.id == alert.warehouseId }?.name ?: alert.warehouseName ?: "مخزن"
+                warehouseName = heavy.warehouses.find { it.id == alert.warehouseId }?.name ?: alert.warehouseName ?: "مخزن",
+                warehouseId = alert.warehouseId ?: ""
             )
         }
 
@@ -310,7 +311,7 @@ class DashboardViewModel @Inject constructor(
             val route = "product_ledger/${item.variantId}/${item.productName}/${item.capacity}/${item.specification.ifEmpty { "no_spec" }}"
             
             allNotifications.add(AppNotification(
-                "low_stock_${item.variantId}_${item.warehouseName}", 
+                "low_stock_${item.variantId}_${item.warehouseId.ifBlank { item.warehouseName }}",
                 "مخزون منخفض: ${item.productName}", 
                 message, 
                 NotificationType.LOW_STOCK, 

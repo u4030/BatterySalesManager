@@ -15,6 +15,8 @@ data class Supplier(
     val totalCredit: Double = 0.0, // Denormalized: Total Payments + Returns
     val currentBalance: Double = 0.0, // Debit - Credit
     val unallocatedCredit: Double = 0.0, // الرصيد المتوفر للربط التلقائي (الذي لم يوزع على طلبيات بعد)
+    @get:com.google.firebase.firestore.PropertyName("isOfficial")
+    val isOfficial: Boolean = true,
     val resetDate: Date? = null,
     val createdAt: Date = Date(),
     val updatedAt: Date = Date()

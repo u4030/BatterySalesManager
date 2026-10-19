@@ -6,6 +6,7 @@ import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.PagingData
 import androidx.paging.cachedIn
+import androidx.paging.filter
 import com.batterysales.data.models.*
 import com.batterysales.data.paging.TransactionPagingSource
 import com.google.firebase.firestore.DocumentSnapshot
@@ -58,6 +59,9 @@ class AccountingViewModel @Inject constructor(
     private val _selectedYear = MutableStateFlow<Int?>(Calendar.getInstance().get(Calendar.YEAR))
     val selectedYear = _selectedYear.asStateFlow()
 
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery = _searchQuery.asStateFlow()
+
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage = _errorMessage.asStateFlow()
 
@@ -66,7 +70,7 @@ class AccountingViewModel @Inject constructor(
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val transactions: Flow<PagingData<Transaction>> = combine(
-        _selectedWarehouseId, _selectedTab, _selectedPaymentMethod, _startDate, _endDate, refreshTrigger, _isDataLoaded
+        _selectedWarehouseId, _selectedTab, _selectedPaymentMethod, _startDate, _endDate, refreshTrigger, _isDataLoaded, _searchQuery
     ) { args ->
         if (!(args[6] as Boolean)) return@combine null
         Filters(
@@ -86,7 +90,13 @@ class AccountingViewModel @Inject constructor(
                 startDate = filters.start,
                 endDate = filters.end
             )
-        }.flow.cachedIn(viewModelScope)
+        }.flow.map { pagingData ->
+            val query = _searchQuery.value
+            if (query.isBlank()) pagingData
+            else pagingData.filter { trans ->
+                trans.description.contains(query, ignoreCase = true) || trans.referenceNumber.contains(query, ignoreCase = true)
+            }
+        }.cachedIn(viewModelScope)
     }
 
     private data class Filters(val warehouseId: String?, val tab: Int, val paymentMethod: String?, val start: Long?, val end: Long?)
@@ -95,6 +105,20 @@ class AccountingViewModel @Inject constructor(
         loadInitialData()
         loadData()
         observeFinancialStatus()
+        observeTransactionsRealtime()
+    }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private fun observeTransactionsRealtime() {
+        viewModelScope.launch {
+            _selectedWarehouseId.flatMapLatest { whId ->
+                repository.getTransactionsFlow(whId)
+            }.collect {
+                refreshTrigger.value += 1
+                loadBalancesFromSummary()
+                loadTotals()
+            }
+        }
     }
 
     private fun observeFinancialStatus() {
@@ -225,6 +249,11 @@ class AccountingViewModel @Inject constructor(
         refreshTrigger.value += 1
     }
 
+    fun onSearchQueryChanged(query: String) {
+        _searchQuery.value = query
+        if (query.isNotEmpty()) _isDataLoaded.value = true
+    }
+
     fun clearError() {
         _errorMessage.value = null
     }
@@ -288,7 +317,8 @@ class AccountingViewModel @Inject constructor(
         viewModelScope.launch {
             _isSubmitting.value = true
             try {
-                repository.updateTransaction(transaction)
+                val user = userRepository.getCurrentUser()
+                repository.updateTransaction(transaction, editorName = user?.displayName ?: "")
                 loadData(reset = true)
             } catch (e: Exception) {
                 _errorMessage.value = e.message

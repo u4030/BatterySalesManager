@@ -79,9 +79,8 @@ class BillRepository @Inject constructor(
             // --- WRITE PHASE ---
             transaction.set(docRef, finalBill)
             
-            // For Commitments (Checks/Bills), we credit the FULL amount immediately
-            // to the supplier's FIFO pool, even if not yet cleared. This ensures invoices are "Covered".
-            val creditToApply = if (finalBill.billType == BillType.CHECK || finalBill.billType == BillType.BILL) {
+            // Accrual / Settled Debt: Credit ONLY actual settled amounts to totalCredit
+            val creditToApply = if (finalBill.status == BillStatus.PAID) {
                 finalBill.amount
             } else {
                 finalBill.paidAmount
@@ -136,23 +135,23 @@ class BillRepository @Inject constructor(
                 )
             }
 
-            var amountToPool = creditToApply
+            val billCoverageAmount = finalBill.amount
 
             // 2. Update Supplier Totals and unallocatedCredit
             if (finalBill.supplierId.isNotEmpty()) {
                 summaryRepository.invalidateSupplierReportCache(transaction, finalBill.supplierId)
                 val supplierRef = firestore.collection("suppliers").document(finalBill.supplierId)
-                if (creditToApply > 0) {
-                    transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(creditToApply))
-                    transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-creditToApply))
-                    transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(creditToApply))
+                if (billCoverageAmount > 0) {
+                    transaction.update(supplierRef, "totalCredit", com.google.firebase.firestore.FieldValue.increment(billCoverageAmount))
+                    transaction.update(supplierRef, "currentBalance", com.google.firebase.firestore.FieldValue.increment(-billCoverageAmount))
+                    transaction.update(supplierRef, "unallocatedCredit", com.google.firebase.firestore.FieldValue.increment(billCoverageAmount))
 
                     summaryRepository.applySupplierUpdate(
                         transaction = transaction,
                         snapshots = snapshots,
                         supplierId = finalBill.supplierId,
                         name = "", // Optional name backfill
-                        creditChange = creditToApply
+                        creditChange = billCoverageAmount
                     )
                 }
             }
@@ -855,16 +854,17 @@ class BillRepository @Inject constructor(
         val positiveEntries = entries.filter { it.totalCost > 0 }
         val returns = entries.filter { it.totalCost < 0 }
 
-        // Calculate Pool
-        val totalReturnCredit = returns.sumOf { -it.totalCost }
-        val totalBillCredit = bills.sumOf { b ->
-            if (b.billType == BillType.CHECK || b.billType == BillType.BILL || b.relatedEntryId != null) b.amount else b.paidAmount
-        }
-        val totalManualAllocation = bills.sumOf { it.manualAllocation }
+        // Calculate Pool with exact precision to avoid floating-point artifacts (-0.000)
+        val totalReturnCredit = cleanDouble(returns.sumOf { -it.totalCost })
+        val totalBillCredit = cleanDouble(bills.sumOf { b ->
+            b.amount
+        })
+        val totalManualAllocation = cleanDouble(bills.sumOf { it.manualAllocation })
         
-        val totalCreditPool = totalReturnCredit + totalBillCredit
-        val unallocatedPool = (totalCreditPool - totalManualAllocation).coerceAtLeast(0.0)
-        val totalDebit = positiveEntries.sumOf { it.totalCost }
+        val totalCreditPool = cleanDouble(totalReturnCredit + totalBillCredit)
+        val unallocatedPool = cleanDouble((totalCreditPool - totalManualAllocation).coerceAtLeast(0.0))
+        val netTotalDebit = cleanDouble(positiveEntries.sumOf { it.getNetCost() })
+        val netUncoveredBalance = cleanDouble((netTotalDebit - totalBillCredit).coerceAtLeast(0.0))
 
         // Split updates into batches to handle the 500-op limit
         val allDocsToUpdate = positiveEntries
@@ -874,7 +874,7 @@ class BillRepository @Inject constructor(
             firestore.runTransaction { transaction ->
                 chunk.forEach { entry ->
                     transaction.update(firestore.collection(StockEntry.COLLECTION_NAME).document(entry.id), mapOf(
-                        "remainingBalance" to entry.totalCost,
+                        "remainingBalance" to entry.getNetCost(),
                         "isSettled" to false,
                         "settlementNotes" to emptyList<String>(),
                         "linkedAllocations" to emptyMap<String, Double>()
@@ -886,9 +886,9 @@ class BillRepository @Inject constructor(
         firestore.runTransaction { transaction ->
             // Update Supplier Totals
             transaction.update(supplierRef, mapOf(
-                "totalDebit" to totalDebit,
+                "totalDebit" to netTotalDebit,
                 "totalCredit" to totalCreditPool,
-                "currentBalance" to (totalDebit - totalCreditPool),
+                "currentBalance" to netUncoveredBalance,
                 "unallocatedCredit" to unallocatedPool
             ))
             
@@ -904,6 +904,94 @@ class BillRepository @Inject constructor(
      * Treats grouped StockEntries (Invoices) as single units.
      * Records detailed settlement notes including reference numbers.
      */
+    suspend fun recordSupplierRefund(
+        supplierId: String,
+        amount: Double,
+        destination: String,
+        description: String
+    ) {
+        if (amount <= 0.001) return
+        val mainWhId = getMainWarehouseId()
+
+        firestore.runTransaction { transaction ->
+            // READ PHASE
+            val supplierRef = firestore.collection("suppliers").document(supplierId)
+            val supplierSnap = transaction.get(supplierRef)
+            val supplier = supplierSnap.toObject(Supplier::class.java)?.copy(id = supplierSnap.id) ?: return@runTransaction
+            val snapshots = summaryRepository.getSummarySnapshots(transaction, listOf(mainWhId))
+
+            // WRITE PHASE
+            if (destination == "cash") {
+                val tRef = firestore.collection(com.batterysales.data.models.Transaction.COLLECTION_NAME).document()
+                transaction.set(tRef, com.batterysales.data.models.Transaction(
+                    id = tRef.id,
+                    amount = amount,
+                    type = com.batterysales.data.models.TransactionType.INCOME,
+                    description = "استرداد مالي من المورد (${supplier.name}): $description",
+                    warehouseId = mainWhId,
+                    paymentMethod = "cash",
+                    createdAt = Date(),
+                    isSystemManaged = true
+                ))
+
+                summaryRepository.applyFinancialUpdate(
+                    transaction = transaction,
+                    snapshots = snapshots,
+                    warehouseId = mainWhId,
+                    cashChange = amount
+                )
+            } else {
+                val bRef = firestore.collection(com.batterysales.data.models.BankTransaction.COLLECTION_NAME).document()
+                transaction.set(bRef, com.batterysales.data.models.BankTransaction(
+                    id = bRef.id,
+                    amount = amount,
+                    type = com.batterysales.data.models.BankTransactionType.DEPOSIT,
+                    description = "استرداد مالي بنكي من المورد (${supplier.name}): $description",
+                    date = Date(),
+                    isSystemManaged = true
+                ))
+
+                summaryRepository.applyFinancialUpdate(
+                    transaction = transaction,
+                    snapshots = snapshots,
+                    warehouseId = mainWhId,
+                    bankChange = amount
+                )
+            }
+
+            // Record refund document in bills collection so settled credit is reduced
+            val refundBillRef = firestore.collection(Bill.COLLECTION_NAME).document()
+            val refundBill = Bill(
+                id = refundBillRef.id,
+                supplierId = supplierId,
+                amount = -amount,
+                paidAmount = -amount,
+                status = BillStatus.PAID,
+                billType = if (destination == "bank") BillType.TRANSFER else BillType.CASH,
+                description = "استرداد مالي فائض من المورد: $description",
+                createdAt = Date(),
+                updatedAt = Date()
+            )
+            transaction.set(refundBillRef, refundBill)
+
+            // Adjust supplier credit and current balance
+            transaction.update(supplierRef, mapOf(
+                "totalCredit" to com.google.firebase.firestore.FieldValue.increment(-amount),
+                "currentBalance" to com.google.firebase.firestore.FieldValue.increment(amount)
+            ))
+
+            summaryRepository.applySupplierUpdate(
+                transaction = transaction,
+                snapshots = snapshots,
+                supplierId = supplierId,
+                name = supplier.name,
+                creditChange = -amount
+            )
+        }.await()
+
+        autoLinkBillsForSupplier(supplierId)
+    }
+
     suspend fun autoLinkBillsForSupplier(supplierId: String, resetDate: Date? = null) {
         if (supplierId.isEmpty()) return
 
@@ -930,10 +1018,10 @@ class BillRepository @Inject constructor(
         // --- CALCULATION PHASE (Out of transaction for performance and scale) ---
         val creditSources = (
             supplierBills.filter { 
-                it.billType == BillType.CHECK || it.billType == BillType.BILL || it.paidAmount > 0.001 || (it.relatedEntryId != null && it.amount > 0.001)
+                it.amount > 0.001
             }
                 .map { b ->
-                    val totalAmount = if (b.billType == BillType.CHECK || b.billType == BillType.BILL || b.relatedEntryId != null) b.amount else b.paidAmount
+                    val totalAmount = cleanDouble(b.amount)
                     val typeLabel = when(b.billType){ BillType.CHECK -> "شيك"; BillType.BILL -> "كمبيالة"; else -> "دفعة" }
                     val fullNote = if (b.referenceNumber.isNotEmpty()) "$typeLabel (#${b.referenceNumber})" else typeLabel
                     CreditSource(
@@ -951,7 +1039,7 @@ class BillRepository @Inject constructor(
                     id = r.id,
                     type = "مرتجع مواد",
                     ref = r.invoiceNumber,
-                    amount = -r.totalCost,
+                    amount = cleanDouble(-r.totalCost),
                     date = r.getEffectiveDate(),
                     manualEntryId = null,
                     manualAllocation = 0.0
@@ -971,11 +1059,11 @@ class BillRepository @Inject constructor(
                     val source = activeAutoSources.first()
                     if (source.amount <= 0.001) { activeAutoSources.removeAt(0); continue }
                     
-                    val allocation = minOf(state.remainingBalance, source.amount)
-                    state.remainingBalance -= allocation
-                    state.linkedAllocations[source.id] = (state.linkedAllocations[source.id] ?: 0.0) + allocation
+                    val allocation = cleanDouble(minOf(state.remainingBalance, source.amount))
+                    state.remainingBalance = cleanDouble(state.remainingBalance - allocation)
+                    state.linkedAllocations[source.id] = cleanDouble((state.linkedAllocations[source.id] ?: 0.0) + allocation)
                     state.settlementNotes.add(source.type)
-                    activeAutoSources[0] = source.copy(amount = source.amount - allocation)
+                    activeAutoSources[0] = source.copy(amount = cleanDouble(source.amount - allocation))
                 }
             }
         }
@@ -998,7 +1086,16 @@ class BillRepository @Inject constructor(
             balanceChanged || statusChanged || allocationsChanged || notesChanged
         }
 
-        val finalUnallocated = Math.max(0.0, activeAutoSources.sumOf { (it.amount as Number).toDouble() })
+        val finalUnallocated = cleanDouble(Math.max(0.0, activeAutoSources.sumOf { (it.amount as Number).toDouble() }))
+        val netTotalDebit = cleanDouble(positiveEntries.sumOf { it.getNetCost() })
+        val totalIssuedBills = cleanDouble(supplierBills.sumOf { it.amount })
+        val netUncoveredBalance = cleanDouble((netTotalDebit - totalIssuedBills).coerceAtLeast(0.0))
+
+        // Invalidate supplier report cache so ReportsViewModel reloads fresh order metrics
+        try {
+            firestore.collection("suppliers").document(supplierId)
+                .collection("cache").document("report").delete().await()
+        } catch (e: Exception) {}
 
         // Process updates in chunks of 450 to respect Firestore limits
         if (changedStates.isNotEmpty()) {
@@ -1014,16 +1111,23 @@ class BillRepository @Inject constructor(
                     }
                     
                     // Update supplier pool in the same transaction
-                    transaction.update(firestore.collection("suppliers").document(supplierId), "unallocatedCredit", finalUnallocated)
+                    transaction.update(firestore.collection("suppliers").document(supplierId), mapOf(
+                        "totalDebit" to netTotalDebit,
+                        "currentBalance" to netUncoveredBalance,
+                        "unallocatedCredit" to finalUnallocated
+                    ))
+                    summaryRepository.invalidateSupplierReportCache(transaction, supplierId)
                 }.await()
             }
         } else {
-            // Even if no entries changed, the unallocatedCredit pool might have changed due to a new bill or deletion
-            val supplierRef = firestore.collection("suppliers").document(supplierId)
-            val currentSupplier = supplierRef.get().await().toObject(Supplier::class.java)
-            if (currentSupplier != null && Math.abs((currentSupplier.unallocatedCredit ?: 0.0) - finalUnallocated) > 0.001) {
-                supplierRef.update("unallocatedCredit", finalUnallocated).await()
-            }
+            firestore.runTransaction { transaction ->
+                transaction.update(firestore.collection("suppliers").document(supplierId), mapOf(
+                    "totalDebit" to netTotalDebit,
+                    "currentBalance" to netUncoveredBalance,
+                    "unallocatedCredit" to finalUnallocated
+                ))
+                summaryRepository.invalidateSupplierReportCache(transaction, supplierId)
+            }.await()
         }
     }
 
@@ -1039,12 +1143,7 @@ class BillRepository @Inject constructor(
 
     private class MemoryEntryState(val entry: StockEntry) {
         var remainingBalance: Double = entry.getNetCost()
-        // Aggressively filter out anything that looks like the old technical notes
-        // but KEEP notes that have (#number) as they are the new detailed notes
-        val settlementNotes: MutableList<String> = entry.settlementNotes.filter { 
-            val isOldTechnical = it.contains("JD") || (it.contains("(") && !it.contains("(#"))
-            !isOldTechnical
-        }.toMutableList()
+        val settlementNotes: MutableList<String> = mutableListOf()
         val linkedAllocations: MutableMap<String, Double> = mutableMapOf()
     }
 
@@ -1054,6 +1153,13 @@ class BillRepository @Inject constructor(
             .get()
             .await()
         return snapshot.documents.mapNotNull { it.getString("relatedEntryId") }.toSet()
+    }
+
+    private fun cleanDouble(value: Double): Double {
+        if (value.isNaN() || value.isInfinite()) return 0.0
+        val bd = java.math.BigDecimal.valueOf(value).setScale(3, java.math.RoundingMode.HALF_UP)
+        val res = bd.toDouble()
+        return if (Math.abs(res) < 0.0001) 0.0 else res
     }
 
     suspend fun getLinkedAmounts(): Map<String, Double> {

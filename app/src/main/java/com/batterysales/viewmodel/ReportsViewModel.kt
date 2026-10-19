@@ -143,6 +143,18 @@ class ReportsViewModel @Inject constructor(
         }
     }
 
+    fun recordSupplierRefund(supplierId: String, amount: Double, destination: String, description: String) {
+        viewModelScope.launch {
+            _isSupplierLoading.value = true
+            try {
+                billRepository.recordSupplierRefund(supplierId, amount, destination, description)
+                loadDetailedSupplierReport(supplierId)
+            } finally {
+                _isSupplierLoading.value = false
+            }
+        }
+    }
+
     fun triggerAutoLink(supplierId: String) {
         viewModelScope.launch {
             billRepository.autoLinkBillsForSupplier(supplierId)
@@ -249,12 +261,16 @@ class ReportsViewModel @Inject constructor(
 
                 val combined = dbSuppliers.map { s ->
                     val item = suppliersMap[s.id]
+                    val actualPaidCredit = cleanDouble(
+                        billRepository.getBillsBySuppliers(listOf(s.id), listOf(s.name))
+                            .sumOf { b -> if (b.status == BillStatus.PAID) b.amount else b.paidAmount }
+                    )
                     SupplierSummaryItem(
                         supplierId = s.id,
                         name = s.name,
                         currentBalance = s.currentBalance,
                         totalDebit = if (s.totalDebit > 0) s.totalDebit else (item?.totalDebit ?: 0.0),
-                        totalCredit = if (s.totalCredit > 0) s.totalCredit else (item?.totalCredit ?: 0.0)
+                        totalCredit = actualPaidCredit
                     )
                 }.sortedBy { it.name }
 
@@ -265,11 +281,38 @@ class ReportsViewModel @Inject constructor(
         }
     }
 
+    private fun cleanDouble(value: Double): Double {
+        if (value.isNaN() || value.isInfinite()) return 0.0
+        val bd = java.math.BigDecimal.valueOf(value).setScale(3, java.math.RoundingMode.HALF_UP)
+        val res = bd.toDouble()
+        return if (Math.abs(res) < 0.0001) 0.0 else res
+    }
+
+    private var selectedSupplierObserverJob: kotlinx.coroutines.Job? = null
+
+    private fun observeSelectedSupplierRealtime(supplierId: String) {
+        selectedSupplierObserverJob?.cancel()
+        selectedSupplierObserverJob = viewModelScope.launch {
+            supplierRepository.getSupplierFlow(supplierId).collect { freshSupplier ->
+                if (freshSupplier != null) {
+                    val current = _selectedSupplierReport.value
+                    if (current != null) {
+                        _selectedSupplierReport.value = current.copy(
+                            supplier = freshSupplier
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     fun onSupplierSelected(supplierId: String?) {
         _selectedSupplierId.value = supplierId
         if (supplierId != null) {
             loadDetailedSupplierReport(supplierId)
+            observeSelectedSupplierRealtime(supplierId)
         } else {
+            selectedSupplierObserverJob?.cancel()
             _selectedSupplierReport.value = null
         }
     }
@@ -289,24 +332,28 @@ class ReportsViewModel @Inject constructor(
                     val cachedReport = summaryRepository.getSupplierReportCache(supplierId)
                     val supplier = supplierRepository.getSupplier(supplierId)
                     if (cachedReport != null && supplier != null) {
-                        _selectedSupplierReport.value = SupplierReportItem(
-                            supplier = supplier,
-                            totalDebit = cachedReport.totalDebit,
-                            totalCredit = cachedReport.totalCredit,
-                            balance = cachedReport.balance,
-                            targetProgress = if (supplier.yearlyTarget > 0) cachedReport.totalDebit / supplier.yearlyTarget else 0.0,
-                            regularOrders = cachedReport.regularOrders.map { it.toOrderItem() },
-                            obligatedOrders = cachedReport.obligatedOrders.map { it.toOrderItem() }
-                        )
-                        _isSupplierLoading.value = false
-                        
-                        // Background incremental sync only if there is unallocated credit
-                        if (supplier.unallocatedCredit > 0.001) {
-                            viewModelScope.launch { 
-                                try { billRepository.autoLinkBillsForSupplier(supplierId) } catch (e: Exception) {} 
+                        val cacheMatches = Math.abs(cachedReport.totalDebit - supplier.totalDebit) < 0.01 &&
+                                           Math.abs(cachedReport.totalCredit - supplier.totalCredit) < 0.01
+                        if (cacheMatches) {
+                            _selectedSupplierReport.value = SupplierReportItem(
+                                supplier = supplier,
+                                totalDebit = cleanDouble(Math.max(0.0, cachedReport.totalDebit)),
+                                totalCredit = cleanDouble(Math.max(0.0, cachedReport.totalCredit)),
+                                balance = cleanDouble(cachedReport.balance),
+                                targetProgress = if (supplier.yearlyTarget > 0) cachedReport.totalDebit / supplier.yearlyTarget else 0.0,
+                                regularOrders = cachedReport.regularOrders.map { it.toOrderItem() },
+                                obligatedOrders = cachedReport.obligatedOrders.map { it.toOrderItem() }
+                            )
+                            _isSupplierLoading.value = false
+
+                            // Background incremental sync only if there is unallocated credit
+                            if (supplier.unallocatedCredit > 0.001) {
+                                viewModelScope.launch {
+                                    try { billRepository.autoLinkBillsForSupplier(supplierId) } catch (e: Exception) {}
+                                }
                             }
+                            return@launch
                         }
-                        return@launch
                     }
                 }
 
@@ -409,6 +456,25 @@ class ReportsViewModel @Inject constructor(
                         listOf(coverageSummary)
                     } else emptyList()
 
+                    val noteDetailsList = aggregatedNotes.map { noteStr ->
+                        val refMatch = Regex("#([A-Za-z0-9_-]+)").find(noteStr)?.groupValues?.get(1)
+                        val matchedBill = if (refMatch != null) allBills.find { it.referenceNumber == refMatch } else null
+                        val statusStr = if (matchedBill != null) {
+                            when {
+                                matchedBill.status == BillStatus.PAID || matchedBill.paidAmount >= matchedBill.amount - 0.001 -> "PAID"
+                                matchedBill.paidAmount > 0.001 -> "PARTIAL"
+                                else -> "UNPAID"
+                            }
+                        } else {
+                            when {
+                                noteStr.contains("مرتجع") || noteStr.contains("نقدي") || noteStr.contains("تحويل") || noteStr.contains("مسدد") -> "PAID"
+                                noteStr.contains("جزئ") -> "PARTIAL"
+                                else -> if (effectiveBalance <= 0.001 && clearedAmount >= totalOrderCost - 0.001) "PAID" else if (totalCovered > 0.001) "PARTIAL" else "UNPAID"
+                            }
+                        }
+                        com.batterysales.data.models.SettlementNoteItem(noteStr, statusStr)
+                    }
+
                     PurchaseOrderItem(
                         entry = representative.copy(
                             totalCost = totalOrderCost,
@@ -418,6 +484,8 @@ class ReportsViewModel @Inject constructor(
                         linkedPaidAmount = clearedAmount,
                         autoLinkedAmount = 0.0,
                         remainingBalance = effectiveBalance,
+                        referenceNumbers = aggregatedNotes,
+                        noteDetails = noteDetailsList,
                         items = sortedGroup.map { item ->
                             val itemSpec = if (item.specification.isBlank()) {
                                 variantsCache[item.productVariantId]?.specification ?: ""
@@ -430,7 +498,6 @@ class ReportsViewModel @Inject constructor(
                                 specification = itemSpec
                             )
                         },
-                        referenceNumbers = aggregatedNotes,
                         hasManualLink = aggregatedNotes.any { it.contains("ارتباط يدوي") },
                         totalActualPaid = clearedAmount,
                         totalLinkedAmount = totalCovered,
@@ -442,12 +509,13 @@ class ReportsViewModel @Inject constructor(
                 val positiveOrders = purchaseOrders.filter { it.entry.totalCost > 0 }
                     .sortedWith(compareByDescending<PurchaseOrderItem> { it.entry.getEffectiveDate() }.thenByDescending { it.entry.timestamp })
 
-                val totalDebit = if (start == null && end == null) supplier.totalDebit else positiveOrders.sumOf { it.entry.totalCost }
-                val totalCredit = if (start == null && end == null) supplier.totalCredit else (
-                    supplierBills.sumOf { b -> if (b.billType == BillType.CHECK || b.billType == BillType.BILL) b.amount else b.paidAmount }
+                val totalDebit = cleanDouble(if (start == null && end == null) supplier.totalDebit else positiveOrders.sumOf { it.entry.totalCost })
+                val actualPaidCredit = cleanDouble(
+                    supplierBills.sumOf { b -> if (b.status == BillStatus.PAID) b.amount else b.paidAmount }
                     + purchaseOrders.filter { it.entry.totalCost < 0 }.sumOf { -it.entry.totalCost }
                 )
-                val balance = if (start == null && end == null) supplier.currentBalance else (totalDebit - totalCredit)
+                val totalCredit = actualPaidCredit
+                val balance = cleanDouble(totalDebit - totalCredit)
 
                 val finalOrdersForDisplay = positiveOrders
 

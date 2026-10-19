@@ -400,8 +400,14 @@ fun InvoiceDetailScreen(
         PaymentHistoryDialog(
             payments = uiState.payments,
             onDismiss = { showPaymentHistoryDialog = false },
-            onEdit = { payment, newAmount -> viewModel.updatePayment(payment, newAmount) },
-            onDelete = { paymentId -> viewModel.deletePayment(paymentId) }
+            onEdit = { payment, newAmount ->
+                showPaymentHistoryDialog = false
+                viewModel.updatePayment(payment, newAmount)
+            },
+            onDelete = { paymentId ->
+                showPaymentHistoryDialog = false
+                viewModel.deletePayment(paymentId)
+            }
         )
     }
 }

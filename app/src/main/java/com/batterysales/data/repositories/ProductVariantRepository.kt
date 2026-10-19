@@ -65,7 +65,12 @@ class ProductVariantRepository @Inject constructor(
 
         if (summaryRepository != null) {
             val warehousesSnap = firestore.collection("warehouses").get().await()
-            val warehouseIds = warehousesSnap.documents.map { it.id }
+            val warehouseDocs = warehousesSnap.documents
+            val warehouseIds = warehouseDocs.map { it.id }
+            val warehouseNames = warehouseDocs.associate { it.id to (it.getString("name") ?: "مخزن") }
+
+            val productDoc = firestore.collection("products").document(variant.productId).get().await()
+            val pName = if (!finalVariant.productName.isNullOrBlank()) finalVariant.productName!! else (productDoc.getString("name") ?: "منتج")
 
             firestore.runTransaction { transaction ->
                 // 1. Reads
@@ -84,6 +89,30 @@ class ProductVariantRepository @Inject constructor(
                         variant = finalVariant,
                         qtyChange = 0
                     )
+
+                    // Generate initial low-stock alerts for empty warehouses if threshold > 0
+                    val threshold = finalVariant.minQuantities[whId] ?: finalVariant.minQuantity
+                    val alertRef = firestore.collection("system_alerts").document("low_stock_${finalVariant.id}_$whId")
+                    if (!finalVariant.isDiscontinued && !finalVariant.archived && threshold > 0) {
+                        val whName = warehouseNames[whId] ?: "مخزن"
+                        val specSuffix = if (finalVariant.specification.isNotBlank()) " | ${finalVariant.specification}" else ""
+                        transaction.set(alertRef, com.batterysales.data.models.SystemAlert(
+                            id = alertRef.id,
+                            type = com.batterysales.data.models.SystemAlert.TYPE_LOW_STOCK,
+                            title = "مخزون منخفض: $pName",
+                            message = "${finalVariant.capacity}A$specSuffix في $whName | الكمية المتاحة: 0 (الحد: $threshold)",
+                            relatedId = finalVariant.id,
+                            warehouseId = whId,
+                            warehouseName = whName,
+                            timestamp = java.util.Date(),
+                            data = mapOf(
+                                "capacity" to finalVariant.capacity,
+                                "specification" to finalVariant.specification,
+                                "currentStock" to 0,
+                                "threshold" to threshold
+                            )
+                        ))
+                    }
                 }
             }.await()
         } else {
@@ -109,11 +138,29 @@ class ProductVariantRepository @Inject constructor(
             firestore.runTransaction { transaction ->
                 val variantRef = firestore.collection(ProductVariant.COLLECTION_NAME).document(variant.id)
                 
-                // 1. Reads
-                val snapshots = summaryRepository.getSummarySnapshots(transaction, warehouseIds)
+                // 1. All Reads First (Strict Read-Before-Write)
+                val existingSnap = transaction.get(variantRef)
+                val existingVariant = existingSnap.toObject(ProductVariant::class.java)
 
-                // 2. Writes
-                transaction.set(variantRef, variant)
+                val snapshots = summaryRepository.getSummarySnapshots(transaction, warehouseIds)
+                val warehouseDocsMap = warehouseIds.associateWith { whId ->
+                    transaction.get(firestore.collection("warehouses").document(whId))
+                }
+
+                // Merge currentStock from DB so in-memory stale stock doesn't overwrite newly added stock
+                val dbStockMap = existingVariant?.currentStock ?: emptyMap()
+                val mergedStockMap = (variant.currentStock ?: emptyMap()).toMutableMap()
+                dbStockMap.forEach { (whId, qty) ->
+                    val dbQty = (qty as? Number)?.toInt() ?: 0
+                    val memQty = (mergedStockMap[whId] as? Number)?.toInt() ?: 0
+                    if (dbQty > memQty) {
+                        mergedStockMap[whId] = dbQty
+                    }
+                }
+                val finalVariantToSave = variant.copy(currentStock = mergedStockMap)
+
+                // 2. All Writes Second
+                transaction.set(variantRef, finalVariantToSave)
 
                 if (supplierId.isNotEmpty()) {
                     summaryRepository.invalidateSupplierReportCache(transaction, supplierId)
@@ -170,20 +217,21 @@ class ProductVariantRepository @Inject constructor(
                         transaction.delete(alertRef)
                     }
                 } else if (!variant.archived) {
+                    val pName = if (!variant.productName.isNullOrBlank()) variant.productName!! else (productDoc.getString("name") ?: "منتج")
                     warehouseIds.forEach { whId ->
-                        val currentQty = (variant.currentStock?.get(whId) as? Number)?.toInt() ?: 0
+                        val currentQty = (finalVariantToSave.currentStock?.get(whId) as? Number)?.toInt() ?: 0
                         val threshold = variant.minQuantities[whId] ?: variant.minQuantity
                         val alertRef = firestore.collection("system_alerts").document("low_stock_${variant.id}_$whId")
                         
                         if (threshold > 0 && currentQty <= threshold) {
-                            val whSnap = snapshots.warehouseSummaries[whId]
-                            val whName = whSnap?.id?.removePrefix("inventory_wh_") ?: "مخزن"
+                            val whDoc = warehouseDocsMap[whId]
+                            val whName = whDoc?.getString("name") ?: "مخزن"
                             val specSuffix = if (variant.specification.isNotBlank()) " | ${variant.specification}" else ""
                             
                             transaction.set(alertRef, com.batterysales.data.models.SystemAlert(
                                 id = alertRef.id,
                                 type = com.batterysales.data.models.SystemAlert.TYPE_LOW_STOCK,
-                                title = "مخزون منخفض: ${variant.productName ?: ""}",
+                                title = "مخزون منخفض: $pName",
                                 message = "${variant.capacity}A$specSuffix في $whName | الكمية: $currentQty (الحد: $threshold)",
                                 relatedId = variant.id,
                                 warehouseId = whId,
