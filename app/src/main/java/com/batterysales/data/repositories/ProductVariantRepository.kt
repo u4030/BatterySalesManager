@@ -44,8 +44,10 @@ class ProductVariantRepository @Inject constructor(
         awaitClose { listenerRegistration.remove() }
     }
 
-    fun getAllVariantsFlow(): Flow<List<ProductVariant>> = callbackFlow {
+    @Deprecated("Use getVariantsForProductFlow or VariantPagingSource to avoid broad listens")
+    fun getAllVariantsFlow(limit: Long = 100): Flow<List<ProductVariant>> = callbackFlow {
         val listenerRegistration = firestore.collection(ProductVariant.COLLECTION_NAME)
+            .limit(limit)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     close(error)
@@ -275,4 +277,3 @@ class ProductVariantRepository @Inject constructor(
         return snapshot.documents.firstOrNull()?.toObject(ProductVariant::class.java)?.copy(id = snapshot.documents.firstOrNull()?.id ?: "")
     }
 }
- 

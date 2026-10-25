@@ -11,6 +11,6 @@ data class SyncRegistry(
     val inventoryVersion: Long = 0,
     val suppliersVersion: Long = 0,
     val financialVersion: Long = 0,
+    val alertsVersion: Long = 0,
     val lastModified: Date = Date()
 )
- 
