@@ -22,6 +22,43 @@ class SummaryRepository @Inject constructor(
     private var cachedSuppliersOverview: SuppliersOverview? = null
     private var cachedFinancialStatus: FinancialStatus? = null
     private var cachedSyncRegistry: SyncRegistry? = null
+    private var cachedDashboardHub: DashboardHub? = null
+
+    /**
+     * CQRS: Single Document Reader for Dashboard Hub
+     */
+    fun getDashboardHubFlow(): Flow<DashboardHub> = callbackFlow {
+        val listener = summariesCollection.document("dashboard_hub")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) return@addSnapshotListener
+                val hub = snapshot?.toObject(DashboardHub::class.java) ?: DashboardHub()
+                cachedDashboardHub = hub
+                trySend(hub)
+            }
+        awaitClose { listener.remove() }
+    }
+
+    suspend fun getDashboardHubOnce(): DashboardHub {
+        return try {
+            val snap = summariesCollection.document("dashboard_hub").get().await()
+            val hub = snap.toObject(DashboardHub::class.java) ?: DashboardHub()
+            cachedDashboardHub = hub
+            hub
+        } catch (e: Exception) {
+            DashboardHub()
+        }
+    }
+
+    fun getSyncRegistryFlow(): Flow<SyncRegistry> = callbackFlow {
+        val listener = summariesCollection.document("sync_registry")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) return@addSnapshotListener
+                val registry = snapshot?.toObject(SyncRegistry::class.java) ?: SyncRegistry()
+                cachedSyncRegistry = registry
+                trySend(registry)
+            }
+        awaitClose { listener.remove() }
+    }
 
     /**
      * NUCLEAR STRATEGY: Transaction-safe summary updates.
@@ -462,22 +499,32 @@ class SummaryRepository @Inject constructor(
         }
         
         val docId = if (warehouseId != null) "inventory_wh_$warehouseId" else "inventory_global"
-        val snap = summariesCollection.document(docId).get().await()
-        val summary = snap.toObject(InventorySummary::class.java)
-        
-        if (summary != null) {
+        return try {
+            val source = if (!forceRefresh) com.google.firebase.firestore.Source.CACHE else com.google.firebase.firestore.Source.SERVER
+            val snap = summariesCollection.document(docId).get(source).await()
+            val summary = snap.toObject(InventorySummary::class.java) ?: InventorySummary(id = docId, warehouseId = warehouseId)
             val newCache = cachedInventorySummary.toMutableMap()
             newCache[key] = summary
             cachedInventorySummary = newCache
+            summary
+        } catch (e: Exception) {
+            val emptySummary = InventorySummary(id = docId, warehouseId = warehouseId)
+            val newCache = cachedInventorySummary.toMutableMap()
+            newCache[key] = emptySummary
+            cachedInventorySummary = newCache
+            emptySummary
         }
-        return summary
     }
 
     fun getInventorySummaryFlow(warehouseId: String?): Flow<InventorySummary> = callbackFlow {
         val docId = if (warehouseId != null) "inventory_wh_$warehouseId" else "inventory_global"
         val listener = summariesCollection.document(docId)
             .addSnapshotListener { snapshot, error ->
-                if (error != null) return@addSnapshotListener
+                if (error != null) {
+                    val fallback = InventorySummary(id = docId, warehouseId = warehouseId)
+                    trySend(fallback)
+                    return@addSnapshotListener
+                }
                 val summary = snapshot?.toObject(InventorySummary::class.java) ?: InventorySummary(id = docId, warehouseId = warehouseId)
                 
                 val key = warehouseId ?: "global"
@@ -560,6 +607,7 @@ class SummaryRepository @Inject constructor(
         cachedSyncRegistry = null
         cachedSuppliersOverview = null
         cachedFinancialStatus = null
+        cachedDashboardHub = null
     }
 
     fun incrementSyncVersion(transaction: Transaction, type: String) {
@@ -582,4 +630,3 @@ class SummaryRepository @Inject constructor(
 
     suspend fun getSyncRegistry(): SyncRegistry? = fetchSyncRegistry()
 }
- 

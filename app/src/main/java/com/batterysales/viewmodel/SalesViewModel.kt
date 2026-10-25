@@ -414,7 +414,8 @@ class SalesViewModel @Inject constructor(
                 _uiState.update { it.copy(isLoading = true) }
                 val variant = productVariantRepository.getVariantByBarcode(barcode)
                 if (variant != null) {
-                    val product = productRepository.getProduct(variant.productId)
+                    val product = _uiState.value.products.find { it.id == variant.productId }
+                        ?: productRepository.getProduct(variant.productId)
                     if (product != null) {
                         loadVariantsForProduct(product, targetVariantId = variant.id)
                     } else {

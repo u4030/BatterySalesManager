@@ -105,19 +105,18 @@ class AccountingViewModel @Inject constructor(
         loadInitialData()
         loadData()
         observeFinancialStatus()
-        observeTransactionsRealtime()
+        observeSyncRegistryRealtime()
     }
 
-    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    private fun observeTransactionsRealtime() {
+    private fun observeSyncRegistryRealtime() {
         viewModelScope.launch {
-            _selectedWarehouseId.flatMapLatest { whId ->
-                repository.getTransactionsFlow(whId)
-            }.collect {
-                refreshTrigger.value += 1
-                loadBalancesFromSummary()
-                loadTotals()
-            }
+            summaryRepository.getSyncRegistryFlow()
+                .distinctUntilChangedBy { it.financialVersion }
+                .collect {
+                    refreshTrigger.value += 1
+                    loadBalancesFromSummary()
+                    loadTotals()
+                }
         }
     }
 
@@ -368,4 +367,3 @@ class AccountingViewModel @Inject constructor(
         }
     }
 }
- 

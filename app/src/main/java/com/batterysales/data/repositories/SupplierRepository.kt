@@ -64,17 +64,25 @@ class SupplierRepository @Inject constructor(
     }
 
     suspend fun getSupplier(supplierId: String): Supplier? {
-        val snapshot = firestore.collection(Supplier.COLLECTION_NAME)
-            .document(supplierId)
-            .get()
-            .await()
-        return snapshot.toObject(Supplier::class.java)?.copy(id = snapshot.id)
+        if (supplierId.isEmpty()) return null
+        return try {
+            val snapshot = firestore.collection(Supplier.COLLECTION_NAME)
+                .document(supplierId)
+                .get(com.google.firebase.firestore.Source.CACHE)
+                .await()
+            snapshot.toObject(Supplier::class.java)?.copy(id = snapshot.id)
+                ?: getSuppliersOnce().find { it.id == supplierId }
+        } catch (e: Exception) {
+            getSuppliersOnce().find { it.id == supplierId }
+        }
     }
 
-    suspend fun addSupplier(supplier: Supplier) {
-        val docRef = firestore.collection(Supplier.COLLECTION_NAME).document()
+    suspend fun addSupplier(supplier: Supplier): Supplier {
+        val docRef = if (supplier.id.isNotEmpty()) firestore.collection(Supplier.COLLECTION_NAME).document(supplier.id)
+                     else firestore.collection(Supplier.COLLECTION_NAME).document()
         val finalSupplier = supplier.copy(id = docRef.id)
         docRef.set(finalSupplier).await()
+        return finalSupplier
     }
 
     suspend fun updateSupplier(supplier: Supplier) {

@@ -33,32 +33,12 @@ class WarehouseRepository @Inject constructor(
         return snapshot.documents.mapNotNull { it.toObject(Warehouse::class.java)?.copy(id = it.id) }
     }
 
-    suspend fun addWarehouse(warehouse: Warehouse) {
-        firestore.runTransaction { transaction ->
-            val docRef = firestore.collection(Warehouse.COLLECTION_NAME).document()
-            val finalWhId = docRef.id
-            val finalWarehouse = warehouse.copy(id = finalWhId)
-
-            // 1. All Reads First (Strict Read-Before-Write)
-            val financialRef = firestore.collection("summaries").document("financial_status")
-            val financialSnap = transaction.get(financialRef)
-            val financial = financialSnap.toObject(com.batterysales.data.models.FinancialStatus::class.java) ?: com.batterysales.data.models.FinancialStatus()
-
-            // 2. All Writes Second
-            transaction.set(docRef, finalWarehouse)
-
-            val scrapDocRef = firestore.collection(com.batterysales.data.models.ScrapWarehouse.COLLECTION_NAME).document("scrap_wh_$finalWhId")
-            val scrapWarehouse = com.batterysales.data.models.ScrapWarehouse(
-                id = scrapDocRef.id,
-                name = "سكراب - ${warehouse.name}",
-                parentWarehouseId = finalWhId
-            )
-            transaction.set(scrapDocRef, scrapWarehouse)
-
-            val updatedBalances = financial.warehouseBalances.toMutableMap()
-            updatedBalances[finalWhId] = com.batterysales.data.models.WarehouseBalance(warehouseId = finalWhId)
-            transaction.set(financialRef, financial.copy(warehouseBalances = updatedBalances), com.google.firebase.firestore.SetOptions.merge())
-        }.await()
+    suspend fun addWarehouse(warehouse: Warehouse): Warehouse {
+        val docRef = if (warehouse.id.isNotEmpty()) firestore.collection(Warehouse.COLLECTION_NAME).document(warehouse.id)
+                     else firestore.collection(Warehouse.COLLECTION_NAME).document()
+        val finalWarehouse = warehouse.copy(id = docRef.id)
+        docRef.set(finalWarehouse).await()
+        return finalWarehouse
     }
 
     suspend fun getWarehouse(warehouseId: String): Warehouse? {
@@ -70,22 +50,8 @@ class WarehouseRepository @Inject constructor(
     }
 
     suspend fun updateWarehouse(warehouse: Warehouse) {
-        firestore.runTransaction { transaction ->
-            val warehouseRef = firestore.collection(Warehouse.COLLECTION_NAME).document(warehouse.id)
-            transaction.set(warehouseRef, warehouse)
-
-            // Keep ScrapWarehouse name in sync
-            val scrapQuery = firestore.collection(com.batterysales.data.models.ScrapWarehouse.COLLECTION_NAME)
-                .whereEqualTo("parentWarehouseId", warehouse.id)
-                .limit(1)
-            
-            // Note: Transactions require reads before writes.
-            // But we can't easily perform a query inside a transaction without knowing the ID.
-            // We'll use a separate transaction for the scrap warehouse if needed,
-            // or just update it via query result.
-        }.await()
-
-        // Sync name after transaction
+        val warehouseRef = firestore.collection(Warehouse.COLLECTION_NAME).document(warehouse.id)
+        warehouseRef.set(warehouse).await()
         syncScrapWarehouseName(warehouse.id, warehouse.name)
     }
 
@@ -95,11 +61,13 @@ class WarehouseRepository @Inject constructor(
             .get()
             .await()
         
-        val batch = firestore.batch()
-        snapshot.documents.forEach { doc ->
-            batch.update(doc.reference, "name", "سكراب - $newName")
+        if (!snapshot.isEmpty) {
+            val batch = firestore.batch()
+            snapshot.documents.forEach { doc ->
+                batch.update(doc.reference, "name", "سكراب - $newName")
+            }
+            batch.commit().await()
         }
-        batch.commit().await()
     }
 
     suspend fun deleteWarehouse(warehouseId: String) {
@@ -109,4 +77,3 @@ class WarehouseRepository @Inject constructor(
             .await()
     }
 }
- 
