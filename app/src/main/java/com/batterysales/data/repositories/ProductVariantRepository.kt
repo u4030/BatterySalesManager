@@ -62,64 +62,10 @@ class ProductVariantRepository @Inject constructor(
     }
 
     suspend fun addVariant(variant: ProductVariant, summaryRepository: SummaryRepository? = null) {
-        val docRef = firestore.collection(ProductVariant.COLLECTION_NAME).document()
+        val docRef = if (variant.id.isNotEmpty()) firestore.collection(ProductVariant.COLLECTION_NAME).document(variant.id)
+                     else firestore.collection(ProductVariant.COLLECTION_NAME).document()
         val finalVariant = variant.copy(id = docRef.id)
-
-        if (summaryRepository != null) {
-            val warehousesSnap = firestore.collection("warehouses").get().await()
-            val warehouseDocs = warehousesSnap.documents
-            val warehouseIds = warehouseDocs.map { it.id }
-            val warehouseNames = warehouseDocs.associate { it.id to (it.getString("name") ?: "مخزن") }
-
-            val productDoc = firestore.collection("products").document(variant.productId).get().await()
-            val pName = if (!finalVariant.productName.isNullOrBlank()) finalVariant.productName!! else (productDoc.getString("name") ?: "منتج")
-
-            firestore.runTransaction { transaction ->
-                // 1. Reads
-                val snapshots = summaryRepository.getSummarySnapshots(transaction, warehouseIds)
-
-                // 2. Writes
-                transaction.set(docRef, finalVariant)
-
-                // Initialize in all warehouse summaries
-                warehouseIds.forEach { whId ->
-                    summaryRepository.applyInventoryUpdate(
-                        transaction = transaction,
-                        snapshots = snapshots,
-                        warehouseId = whId,
-                        variantId = finalVariant.id,
-                        variant = finalVariant,
-                        qtyChange = 0
-                    )
-
-                    // Generate initial low-stock alerts for empty warehouses if threshold > 0
-                    val threshold = finalVariant.minQuantities[whId] ?: finalVariant.minQuantity
-                    val alertRef = firestore.collection("system_alerts").document("low_stock_${finalVariant.id}_$whId")
-                    if (!finalVariant.isDiscontinued && !finalVariant.archived && threshold > 0) {
-                        val whName = warehouseNames[whId] ?: "مخزن"
-                        val specSuffix = if (finalVariant.specification.isNotBlank()) " | ${finalVariant.specification}" else ""
-                        transaction.set(alertRef, com.batterysales.data.models.SystemAlert(
-                            id = alertRef.id,
-                            type = com.batterysales.data.models.SystemAlert.TYPE_LOW_STOCK,
-                            title = "مخزون منخفض: $pName",
-                            message = "${finalVariant.capacity}A$specSuffix في $whName | الكمية المتاحة: 0 (الحد: $threshold)",
-                            relatedId = finalVariant.id,
-                            warehouseId = whId,
-                            warehouseName = whName,
-                            timestamp = java.util.Date(),
-                            data = mapOf(
-                                "capacity" to finalVariant.capacity,
-                                "specification" to finalVariant.specification,
-                                "currentStock" to 0,
-                                "threshold" to threshold
-                            )
-                        ))
-                    }
-                }
-            }.await()
-        } else {
-            docRef.set(finalVariant).await()
-        }
+        docRef.set(finalVariant).await()
     }
 
     suspend fun updateVariant(variant: ProductVariant, summaryRepository: SummaryRepository? = null) {
