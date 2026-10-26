@@ -380,7 +380,7 @@ class StockEntryViewModel @Inject constructor(
 
                         if (state.isAdmin) {
                             val updatedVariant = state.selectedVariant!!.copy(minQuantity = updatedItem.minQuantity)
-                            productVariantRepository.updateVariant(updatedVariant, summaryRepository)
+                            productVariantRepository.updateVariantSimple(updatedVariant)
                         }
                     } else {
                         val grandTotalAmperes = state.stockItems.sumOf { it.totalAmperes }
@@ -436,7 +436,7 @@ class StockEntryViewModel @Inject constructor(
                         if (state.isAdmin) {
                             state.stockItems.forEach { item ->
                                 val updatedVariant = item.productVariant.copy(minQuantity = item.minQuantity)
-                                productVariantRepository.updateVariant(updatedVariant, summaryRepository)
+                                productVariantRepository.updateVariantSimple(updatedVariant)
                             }
                         }
                     }
