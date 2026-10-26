@@ -374,10 +374,6 @@ class StockEntryViewModel @Inject constructor(
                             stockEntryRepository.approveEntry(updatedEntry.id)
                         }
 
-                        if (updatedEntry.supplierId.isNotEmpty()) {
-                            billRepository.autoLinkBillsForSupplier(updatedEntry.supplierId)
-                        }
-
                         if (state.isAdmin) {
                             val updatedVariant = state.selectedVariant!!.copy(minQuantity = updatedItem.minQuantity)
                             productVariantRepository.updateVariantSimple(updatedVariant)
@@ -429,8 +425,6 @@ class StockEntryViewModel @Inject constructor(
                                 referenceNumber = state.invoiceNumber
                             )
                             billRepository.addBill(bill)
-                        } else if (!supplierId.isNullOrEmpty()) {
-                            billRepository.autoLinkBillsForSupplier(supplierId)
                         }
 
                         if (state.isAdmin) {

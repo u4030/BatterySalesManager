@@ -101,10 +101,6 @@ class StockEntryRepository @Inject constructor(
         }
 
         batch.commit().await()
-
-        val suppliersToLink = stockEntries.filter { it.status == "approved" && it.supplierId.isNotEmpty() }
-            .map { it.supplierId }.distinct()
-        suppliersToLink.forEach { billRepository.get().autoLinkBillsForSupplier(it) }
     }
 
     fun getAllStockEntriesFlow(limit: Long = 5000): Flow<List<StockEntry>> = callbackFlow {
@@ -327,22 +323,11 @@ class StockEntryRepository @Inject constructor(
             isSettled = cost <= 0
         )
         docRef.set(finalEntry).await()
-
-        if (entry.status == "approved" && entry.supplierId.isNotEmpty()) {
-            billRepository.get().autoLinkBillsForSupplier(entry.supplierId)
-        }
     }
 
     suspend fun deleteStockEntry(entryId: String) {
         val entryRef = firestore.collection(StockEntry.COLLECTION_NAME).document(entryId)
-        val oldEntrySnap = entryRef.get().await()
-        val oldEntry = oldEntrySnap.toObject(StockEntry::class.java)?.copy(id = entryId)
-        
         entryRef.delete().await()
-
-        if (oldEntry != null && oldEntry.supplierId.isNotEmpty()) {
-            billRepository.get().autoLinkBillsForSupplier(oldEntry.supplierId)
-        }
     }
 
     suspend fun getPendingCount(): Int {
@@ -373,11 +358,6 @@ class StockEntryRepository @Inject constructor(
     suspend fun approveEntry(entryId: String) {
         val docRef = firestore.collection(StockEntry.COLLECTION_NAME).document(entryId)
         docRef.update("status", "approved").await()
-
-        val approvedEntry = getStockEntryById(entryId)
-        if (approvedEntry != null && approvedEntry.supplierId.isNotEmpty()) {
-            billRepository.get().autoLinkBillsForSupplier(approvedEntry.supplierId)
-        }
     }
 
     suspend fun getEntriesBySuppliers(supplierIds: List<String>, supplierNames: List<String> = emptyList()): List<StockEntry> {
@@ -420,10 +400,6 @@ class StockEntryRepository @Inject constructor(
             "returnedQuantity" to newReturnedQty,
             "returnDate" to Date()
         )).await()
-
-        if (mode == "supplier_balance" && entry.supplierId.isNotEmpty()) {
-            billRepository.get().autoLinkBillsForSupplier(entry.supplierId)
-        }
     }
 
     suspend fun getRecentApprovedPurchases(limit: Long = 100): List<StockEntry> {
