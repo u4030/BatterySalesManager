@@ -33,17 +33,23 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.onVariantDeleted = exports.onVariantUpdated = exports.onVariantCreated = void 0;
+exports.onVariantWritten = void 0;
 const firestore_1 = require("firebase-functions/v2/firestore");
 const admin = __importStar(require("firebase-admin"));
 const firestore_2 = require("firebase-admin/firestore");
 const dashboardHub_1 = require("../aggregators/dashboardHub");
-exports.onVariantCreated = (0, firestore_1.onDocumentCreated)("product_variants/{variantId}", async (event) => {
+exports.onVariantWritten = (0, firestore_1.onDocumentWritten)("product_variants/{variantId}", async (event) => {
     if (!event.data)
         return;
     const db = admin.firestore();
     const variantId = event.params.variantId;
-    const variant = event.data.data();
+    const afterSnap = event.data.after;
+    if (!afterSnap.exists) {
+        // Document deleted
+        await (0, dashboardHub_1.applyDashboardHubDelta)({ updatedDomains: ["inventory"] });
+        return;
+    }
+    const variant = afterSnap.data();
     if (!variant || variant.archived || variant.isDiscontinued) {
         await (0, dashboardHub_1.applyDashboardHubDelta)({ updatedDomains: ["inventory"] });
         return;
@@ -89,34 +95,30 @@ exports.onVariantCreated = (0, firestore_1.onDocumentCreated)("product_variants/
                         currentStock: currentQty,
                         threshold: threshold,
                     },
-                });
+                }, { merge: true });
                 createdAlertsCount += 1;
             }
         });
         if (createdAlertsCount > 0) {
+            // Also update sync_registry last_alert_update
+            const now = firestore_2.FieldValue.serverTimestamp();
+            batch.set(db.doc("summaries/sync_registry"), {
+                last_alert_update: now,
+                lastModified: now,
+            }, { merge: true });
+            batch.set(db.doc("summaries/dashboard_hub"), {
+                "syncRegistry.last_alert_update": now,
+                lastUpdated: now,
+            }, { merge: true });
             await batch.commit();
         }
     }
     catch (error) {
-        console.error("Error creating low_stock alerts in onVariantCreated:", error);
+        console.error("Error updating low_stock alerts in onVariantWritten:", error);
     }
+    // Active alert count is accurately updated by alerts.ts trigger when system_alerts are created
     await (0, dashboardHub_1.applyDashboardHubDelta)({
-        activeAlertsDelta: createdAlertsCount,
         updatedDomains: ["inventory", "alerts"],
-    });
-});
-exports.onVariantUpdated = (0, firestore_1.onDocumentUpdated)("product_variants/{variantId}", async (event) => {
-    if (!event.data)
-        return;
-    await (0, dashboardHub_1.applyDashboardHubDelta)({
-        updatedDomains: ["inventory"],
-    });
-});
-exports.onVariantDeleted = (0, firestore_1.onDocumentDeleted)("product_variants/{variantId}", async (event) => {
-    if (!event.data)
-        return;
-    await (0, dashboardHub_1.applyDashboardHubDelta)({
-        updatedDomains: ["inventory"],
     });
 });
 //# sourceMappingURL=variants.js.map

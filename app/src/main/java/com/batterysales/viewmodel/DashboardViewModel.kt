@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.batterysales.data.models.*
 import com.batterysales.data.repositories.*
+import com.google.firebase.firestore.Source
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.*
@@ -68,6 +69,7 @@ class DashboardViewModel @Inject constructor(
 
     private val _warehouses = MutableStateFlow<List<Warehouse>>(emptyList())
     private val _alerts = MutableStateFlow<List<SystemAlert>>(emptyList())
+    private var lastAlertUpdateTimestamp: Long = 0L
 
     private val upcomingBillsFlow: Flow<List<Bill>> = callbackFlow {
         val listener = firestore.collection(Bill.COLLECTION_NAME)
@@ -182,6 +184,22 @@ class DashboardViewModel @Inject constructor(
     init {
         loadWarehouses()
         loadAlerts(forceRefresh = false)
+        observeSyncRegistryAlerts()
+    }
+
+    private fun observeSyncRegistryAlerts() {
+        viewModelScope.launch {
+            summaryRepository.getSyncRegistryFlow()
+                .collect { registry ->
+                    val alertTime = registry.lastAlertUpdate?.time ?: 0L
+                    if (lastAlertUpdateTimestamp != 0L && alertTime > lastAlertUpdateTimestamp) {
+                        loadAlerts(forceRefresh = true)
+                    }
+                    if (alertTime != 0L) {
+                        lastAlertUpdateTimestamp = alertTime
+                    }
+                }
+        }
     }
 
     private fun loadWarehouses() {
@@ -199,7 +217,8 @@ class DashboardViewModel @Inject constructor(
             try {
                 val (alertsList, _) = systemAlertRepository.getAlertsPaginated(
                     limit = 20,
-                    forceRefresh = forceRefresh
+                    forceRefresh = forceRefresh,
+                    source = if (forceRefresh) Source.SERVER else Source.CACHE
                 )
                 _alerts.value = alertsList
             } catch (e: Exception) {

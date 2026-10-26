@@ -1,19 +1,25 @@
 import {
-  onDocumentCreated,
-  onDocumentUpdated,
-  onDocumentDeleted,
+  onDocumentWritten,
 } from "firebase-functions/v2/firestore";
 import * as admin from "firebase-admin";
 import { FieldValue } from "firebase-admin/firestore";
 import { applyDashboardHubDelta } from "../aggregators/dashboardHub";
 
-export const onVariantCreated = onDocumentCreated(
+export const onVariantWritten = onDocumentWritten(
   "product_variants/{variantId}",
   async (event) => {
     if (!event.data) return;
     const db = admin.firestore();
     const variantId = event.params.variantId;
-    const variant = event.data.data();
+    const afterSnap = event.data.after;
+
+    if (!afterSnap.exists) {
+      // Document deleted
+      await applyDashboardHubDelta({ updatedDomains: ["inventory"] });
+      return;
+    }
+
+    const variant = afterSnap.data();
 
     if (!variant || variant.archived || variant.isDiscontinued) {
       await applyDashboardHubDelta({ updatedDomains: ["inventory"] });
@@ -65,41 +71,33 @@ export const onVariantCreated = onDocumentCreated(
               currentStock: currentQty,
               threshold: threshold,
             },
-          });
+          }, { merge: true });
           createdAlertsCount += 1;
         }
       });
 
       if (createdAlertsCount > 0) {
+        // Also update sync_registry last_alert_update
+        const now = FieldValue.serverTimestamp();
+        batch.set(db.doc("summaries/sync_registry"), {
+          last_alert_update: now,
+          lastModified: now,
+        }, { merge: true });
+
+        batch.set(db.doc("summaries/dashboard_hub"), {
+          "syncRegistry.last_alert_update": now,
+          lastUpdated: now,
+        }, { merge: true });
+
         await batch.commit();
       }
     } catch (error) {
-      console.error("Error creating low_stock alerts in onVariantCreated:", error);
+      console.error("Error updating low_stock alerts in onVariantWritten:", error);
     }
 
+    // Active alert count is accurately updated by alerts.ts trigger when system_alerts are created
     await applyDashboardHubDelta({
-      activeAlertsDelta: createdAlertsCount,
       updatedDomains: ["inventory", "alerts"],
-    });
-  }
-);
-
-export const onVariantUpdated = onDocumentUpdated(
-  "product_variants/{variantId}",
-  async (event) => {
-    if (!event.data) return;
-    await applyDashboardHubDelta({
-      updatedDomains: ["inventory"],
-    });
-  }
-);
-
-export const onVariantDeleted = onDocumentDeleted(
-  "product_variants/{variantId}",
-  async (event) => {
-    if (!event.data) return;
-    await applyDashboardHubDelta({
-      updatedDomains: ["inventory"],
     });
   }
 );

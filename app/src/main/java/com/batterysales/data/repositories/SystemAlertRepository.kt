@@ -19,7 +19,8 @@ class SystemAlertRepository @Inject constructor(
         type: String? = null,
         lastDocument: DocumentSnapshot? = null,
         limit: Long = 20,
-        forceRefresh: Boolean = false
+        forceRefresh: Boolean = false,
+        source: Source? = null
     ): Pair<List<SystemAlert>, DocumentSnapshot?> {
         var query: Query = firestore.collection(SystemAlert.COLLECTION_NAME)
             .whereEqualTo("resolved", false)
@@ -40,12 +41,12 @@ class SystemAlertRepository @Inject constructor(
 
         query = query.limit(limit)
 
-        val source = if (!forceRefresh && lastDocument == null) Source.CACHE else Source.SERVER
+        val targetSource = source ?: if (!forceRefresh && lastDocument == null) Source.CACHE else Source.SERVER
 
         val snapshot = try {
-            query.get(source).await()
+            query.get(targetSource).await()
         } catch (e: Exception) {
-            if (source == Source.CACHE) {
+            if (targetSource == Source.CACHE) {
                 query.get(Source.SERVER).await()
             } else throw e
         }

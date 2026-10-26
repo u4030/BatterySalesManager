@@ -1,5 +1,6 @@
 package com.batterysales.data.models
 
+import com.google.firebase.firestore.PropertyName
 import java.util.Date
 
 /**
@@ -12,5 +13,8 @@ data class SyncRegistry(
     val suppliersVersion: Long = 0,
     val financialVersion: Long = 0,
     val alertsVersion: Long = 0,
-    val lastModified: Date = Date()
+    val lastModified: Date = Date(),
+    @get:PropertyName("last_alert_update")
+    @set:PropertyName("last_alert_update")
+    var lastAlertUpdate: Date? = null
 )
