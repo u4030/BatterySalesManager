@@ -62,22 +62,12 @@ class DashboardViewModel @Inject constructor(
     private val warehouseRepository: WarehouseRepository,
     private val stockEntryRepository: StockEntryRepository,
     private val approvalRepository: ApprovalRepository,
+    private val systemAlertRepository: SystemAlertRepository,
     private val firestore: com.google.firebase.firestore.FirebaseFirestore
 ) : ViewModel() {
 
     private val _warehouses = MutableStateFlow<List<Warehouse>>(emptyList())
-
-    // Bounded queries for real-time notifications
-    private val alertsFlow: Flow<List<SystemAlert>> = callbackFlow {
-        val listener = firestore.collection(SystemAlert.COLLECTION_NAME)
-            .whereEqualTo("resolved", false)
-            .addSnapshotListener { snap, e ->
-                if (e != null) return@addSnapshotListener
-                val alerts = snap?.documents?.mapNotNull { it.toObject(SystemAlert::class.java) } ?: emptyList()
-                trySend(alerts)
-            }
-        awaitClose { listener.remove() }
-    }
+    private val _alerts = MutableStateFlow<List<SystemAlert>>(emptyList())
 
     private val upcomingBillsFlow: Flow<List<Bill>> = callbackFlow {
         val listener = firestore.collection(Bill.COLLECTION_NAME)
@@ -108,7 +98,7 @@ class DashboardViewModel @Inject constructor(
         userRepository.getCurrentUserFlow(),
         summaryRepository.getDashboardHubFlow(),
         _warehouses,
-        alertsFlow,
+        _alerts,
         upcomingBillsFlow,
         pendingCountFlow
     ) { args: Array<Any?> ->
@@ -191,6 +181,7 @@ class DashboardViewModel @Inject constructor(
 
     init {
         loadWarehouses()
+        loadAlerts(forceRefresh = false)
     }
 
     private fun loadWarehouses() {
@@ -203,8 +194,23 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
+    fun loadAlerts(forceRefresh: Boolean = false) {
+        viewModelScope.launch {
+            try {
+                val (alertsList, _) = systemAlertRepository.getAlertsPaginated(
+                    limit = 20,
+                    forceRefresh = forceRefresh
+                )
+                _alerts.value = alertsList
+            } catch (e: Exception) {
+                Log.e("DashboardViewModel", "Error loading system alerts", e)
+            }
+        }
+    }
+
     fun refresh() {
         loadWarehouses()
+        loadAlerts(forceRefresh = true)
     }
 
     private fun constructNotifications(
