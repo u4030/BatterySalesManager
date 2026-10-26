@@ -7,8 +7,10 @@ import com.batterysales.data.models.*
 import com.batterysales.data.repositories.*
 import android.util.Log
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Date
 import java.util.UUID
 import javax.inject.Inject
@@ -228,15 +230,11 @@ class StockEntryViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Returns a list of products filtered by the selected supplier.
-     */
     fun getFilteredProducts(): List<Product> {
         val supplierId = uiState.value.selectedSupplier?.id
         return if (supplierId.isNullOrEmpty()) {
             uiState.value.products
         } else {
-            // Include products with matching supplierId OR empty supplierId (legacy support)
             uiState.value.products.filter { it.supplierId == supplierId || it.supplierId.isEmpty() }
         }
     }
@@ -324,6 +322,8 @@ class StockEntryViewModel @Inject constructor(
 
         viewModelScope.launch {
             _uiState.update { it.copy(isSubmitting = true) }
+            val saveStartTime = System.currentTimeMillis()
+            Log.d("PERF_CHECK", "[StockEntrySave] Started stock entry save flow at timestamp $saveStartTime")
 
             try {
                 if (state.selectedWarehouse?.isActive == false) {
@@ -336,113 +336,127 @@ class StockEntryViewModel @Inject constructor(
                     return@launch
                 }
 
-                if (state.isEditMode) {
-                    val originalEntry = stockEntryRepository.getStockEntryById(editingEntryId!!)!!
-                    val updatedItem = calculateItemFromState(state, state.selectedVariant!!)
+                val repoStartTime = System.currentTimeMillis()
 
-                    if (state.isAdmin && updatedItem.costPrice <= 0) {
-                        _uiState.update { it.copy(errorMessage = "الرجاء إدخال سعر الأمبير أو تكلفة القطعة") }
-                        return@launch
-                    }
+                val success = withContext(Dispatchers.IO) {
+                    if (state.isEditMode) {
+                        val originalEntry = stockEntryRepository.getStockEntryById(editingEntryId!!)!!
+                        val updatedItem = calculateItemFromState(state, state.selectedVariant!!)
 
-                    val returnedQty = state.returnedQuantity.toIntOrNull() ?: 0
+                        if (state.isAdmin && updatedItem.costPrice <= 0) {
+                            withContext(Dispatchers.Main) {
+                                _uiState.update { it.copy(errorMessage = "الرجاء إدخال سعر الأمبير أو تكلفة القطعة", isSubmitting = false) }
+                            }
+                            return@withContext false
+                        }
 
-                    val updatedEntry = originalEntry.copy(
-                        quantity = updatedItem.quantity,
-                        productName = updatedItem.productName,
-                        capacity = state.selectedVariant!!.capacity,
-                        returnedQuantity = returnedQty,
-                        returnDate = if (returnedQty > 0) (originalEntry.returnDate ?: Date()) else null,
-                        costPrice = updatedItem.costPrice,
-                        costPerAmpere = updatedItem.costPerAmpere,
-                        totalAmperes = updatedItem.totalAmperes,
-                        totalCost = updatedItem.totalCost,
-                        timestamp = originalEntry.timestamp,
-                        invoiceDate = state.invoiceDate,
-                        supplier = state.supplierName,
-                        supplierId = state.selectedSupplier?.id ?: "",
-                        invoiceNumber = state.invoiceNumber
-                    )
-                    stockEntryRepository.updateStockEntry(updatedEntry)
-                    
-                    if (approveOnSave) {
-                        stockEntryRepository.approveEntry(updatedEntry.id)
-                    }
+                        val returnedQty = state.returnedQuantity.toIntOrNull() ?: 0
 
-                    // تحديث الروابط التلقائية للمورد
-                    if (updatedEntry.supplierId.isNotEmpty()) {
-                        billRepository.autoLinkBillsForSupplier(updatedEntry.supplierId)
-                    }
-
-                    // Update variant minQuantity if Admin
-                    if (state.isAdmin) {
-                        val updatedVariant = state.selectedVariant!!.copy(minQuantity = updatedItem.minQuantity)
-                        productVariantRepository.updateVariant(updatedVariant, summaryRepository)
-                    }
-                } else {
-                    val grandTotalAmperes = state.stockItems.sumOf { it.totalAmperes }
-                    val grandTotalCost = state.stockItems.sumOf { it.totalCost }
-                    val orderId = UUID.randomUUID().toString()
-                    val now = Date()
-                    val entries = state.stockItems.map { item ->
-                        StockEntry(
-                            productVariantId = item.productVariant.id,
-                            productName = item.productName,
-                            capacity = item.productVariant.capacity,
-                            warehouseId = state.selectedWarehouse.id,
-                            quantity = item.quantity,
-                            costPrice = item.costPrice,
-                            costPerAmpere = item.costPerAmpere,
-                            totalAmperes = item.totalAmperes,
-                            totalCost = item.totalCost,
-                            grandTotalAmperes = grandTotalAmperes,
-                            grandTotalCost = grandTotalCost,
-                            timestamp = now,
+                        val updatedEntry = originalEntry.copy(
+                            quantity = updatedItem.quantity,
+                            productName = updatedItem.productName,
+                            capacity = state.selectedVariant!!.capacity,
+                            returnedQuantity = returnedQty,
+                            returnDate = if (returnedQty > 0) (originalEntry.returnDate ?: Date()) else null,
+                            costPrice = updatedItem.costPrice,
+                            costPerAmpere = updatedItem.costPerAmpere,
+                            totalAmperes = updatedItem.totalAmperes,
+                            totalCost = updatedItem.totalCost,
+                            timestamp = originalEntry.timestamp,
                             invoiceDate = state.invoiceDate,
                             supplier = state.supplierName,
                             supplierId = state.selectedSupplier?.id ?: "",
-                            invoiceNumber = state.invoiceNumber,
-                            orderId = orderId,
-                            status = if (currentUser?.role == "seller") "pending" else "approved",
-                            createdBy = currentUser?.id ?: "",
-                            createdByUserName = currentUser?.displayName ?: ""
+                            invoiceNumber = state.invoiceNumber
                         )
-                    }
-                    stockEntryRepository.addStockEntries(entries)
-                    
-                    // Handle immediate payment if specified (Admin only or based on UI)
-                    val payAmount = state.paymentAmount.toDoubleOrNull() ?: 0.0
-                    val supplierId = entries.firstOrNull()?.supplierId
-                    if (payAmount > 0.001 && !supplierId.isNullOrEmpty()) {
-                        val bill = Bill(
-                            description = "دفعة نقدية مع الطلبية: ${state.invoiceNumber}",
-                            amount = payAmount,
-                            dueDate = state.invoiceDate ?: now,
-                            billType = if (state.paymentMethod == "transfer") BillType.TRANSFER else BillType.CASH,
-                            supplierId = supplierId,
-                            warehouseId = state.selectedWarehouse.id,
-                            status = BillStatus.PAID,
-                            paidAmount = payAmount,
-                            paidDate = now,
-                            referenceNumber = state.invoiceNumber
-                        )
-                        billRepository.addBill(bill)
-                    } else if (!supplierId.isNullOrEmpty()) {
-                        // Trigger FIFO anyway to use existing credits
-                        billRepository.autoLinkBillsForSupplier(supplierId)
-                    }
+                        stockEntryRepository.updateStockEntry(updatedEntry)
 
-                    // Update minQuantity for all added variants if Admin
-                    if (state.isAdmin) {
-                        state.stockItems.forEach { item ->
-                            val updatedVariant = item.productVariant.copy(minQuantity = item.minQuantity)
+                        if (approveOnSave) {
+                            stockEntryRepository.approveEntry(updatedEntry.id)
+                        }
+
+                        if (updatedEntry.supplierId.isNotEmpty()) {
+                            billRepository.autoLinkBillsForSupplier(updatedEntry.supplierId)
+                        }
+
+                        if (state.isAdmin) {
+                            val updatedVariant = state.selectedVariant!!.copy(minQuantity = updatedItem.minQuantity)
                             productVariantRepository.updateVariant(updatedVariant, summaryRepository)
                         }
+                    } else {
+                        val grandTotalAmperes = state.stockItems.sumOf { it.totalAmperes }
+                        val grandTotalCost = state.stockItems.sumOf { it.totalCost }
+                        val orderId = UUID.randomUUID().toString()
+                        val now = Date()
+                        val entries = state.stockItems.map { item ->
+                            StockEntry(
+                                productVariantId = item.productVariant.id,
+                                productName = item.productName,
+                                capacity = item.productVariant.capacity,
+                                warehouseId = state.selectedWarehouse.id,
+                                quantity = item.quantity,
+                                costPrice = item.costPrice,
+                                costPerAmpere = item.costPerAmpere,
+                                totalAmperes = item.totalAmperes,
+                                totalCost = item.totalCost,
+                                grandTotalAmperes = grandTotalAmperes,
+                                grandTotalCost = grandTotalCost,
+                                timestamp = now,
+                                invoiceDate = state.invoiceDate,
+                                supplier = state.supplierName,
+                                supplierId = state.selectedSupplier?.id ?: "",
+                                invoiceNumber = state.invoiceNumber,
+                                orderId = orderId,
+                                status = if (currentUser?.role == "seller") "pending" else "approved",
+                                createdBy = currentUser?.id ?: "",
+                                createdByUserName = currentUser?.displayName ?: ""
+                            )
+                        }
+                        stockEntryRepository.addStockEntries(entries)
+
+                        val payAmount = state.paymentAmount.toDoubleOrNull() ?: 0.0
+                        val supplierId = entries.firstOrNull()?.supplierId
+                        if (payAmount > 0.001 && !supplierId.isNullOrEmpty()) {
+                            val bill = Bill(
+                                description = "دفعة نقدية مع الطلبية: ${state.invoiceNumber}",
+                                amount = payAmount,
+                                dueDate = state.invoiceDate ?: now,
+                                billType = if (state.paymentMethod == "transfer") BillType.TRANSFER else BillType.CASH,
+                                supplierId = supplierId,
+                                warehouseId = state.selectedWarehouse.id,
+                                status = BillStatus.PAID,
+                                paidAmount = payAmount,
+                                paidDate = now,
+                                referenceNumber = state.invoiceNumber
+                            )
+                            billRepository.addBill(bill)
+                        } else if (!supplierId.isNullOrEmpty()) {
+                            billRepository.autoLinkBillsForSupplier(supplierId)
+                        }
+
+                        if (state.isAdmin) {
+                            state.stockItems.forEach { item ->
+                                val updatedVariant = item.productVariant.copy(minQuantity = item.minQuantity)
+                                productVariantRepository.updateVariant(updatedVariant, summaryRepository)
+                            }
+                        }
                     }
+                    true
                 }
+
+                if (!success) return@launch
+
+                val repoEndTime = System.currentTimeMillis()
+                Log.d("PERF_CHECK", "[StockEntrySave] Network & Repository IO Execution Time: ${repoEndTime - repoStartTime} ms")
+
+                val uiStartTime = System.currentTimeMillis()
                 _uiState.update { it.copy(isFinished = true, isSubmitting = false) }
+                val uiEndTime = System.currentTimeMillis()
+
+                Log.d("PERF_CHECK", "[StockEntrySave] UI & Local State Update Execution Time: ${uiEndTime - uiStartTime} ms")
+                Log.d("PERF_CHECK", "[StockEntrySave] Total Save Operation Duration: ${uiEndTime - saveStartTime} ms")
+
             } catch (e: Exception) {
-                Log.e("StockEntryViewModel", "Error saving stock data", e)
+                Log.e("PERF_CHECK", "[StockEntrySave] Error saving stock data", e)
                 _uiState.update { it.copy(errorMessage = "فشل حفظ البيانات: ${e.message}", isSubmitting = false) }
             }
         }
@@ -451,7 +465,6 @@ class StockEntryViewModel @Inject constructor(
     private fun calculateItemFromState(state: StockEntryUiState, variant: ProductVariant): StockEntryItem {
         val originalQuantity = state.quantity.toIntOrNull() ?: 0
         val returnedQty = state.returnedQuantity.toIntOrNull() ?: 0
-        val netQuantity = originalQuantity - returnedQty
 
         val minQuantity = state.minQuantity.toIntOrNull() ?: 0
         val cost = parseCurrency(state.costValue)
@@ -459,8 +472,6 @@ class StockEntryViewModel @Inject constructor(
         val costPerItem = if (state.costInputMode == CostInputMode.BY_ITEM) cost else if (variant.capacity > 0) cost * variant.capacity else 0.0
         val costPerAmpere = if (state.costInputMode == CostInputMode.BY_AMPERE) cost else if (variant.capacity > 0) cost / variant.capacity else 0.0
         
-        // totalCost should represent the GROSS value of the purchase for accounting purposes
-        // Inventory levels are handled separately via quantity and returnedQuantity
         val totalAmperes = originalQuantity * variant.capacity
         val totalCost = originalQuantity * costPerItem
 
@@ -499,4 +510,3 @@ class StockEntryViewModel @Inject constructor(
         }
     }
 }
- 
