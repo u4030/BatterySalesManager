@@ -4,6 +4,7 @@ import {
   onDocumentDeleted,
 } from "firebase-functions/v2/firestore";
 import * as admin from "firebase-admin";
+import { FieldValue } from "firebase-admin/firestore";
 import { applyDashboardHubDelta } from "../aggregators/dashboardHub";
 
 export const onVariantCreated = onDocumentCreated(
@@ -57,7 +58,7 @@ export const onVariantCreated = onDocumentCreated(
             warehouseId: whId,
             warehouseName: whName,
             resolved: false,
-            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            timestamp: FieldValue.serverTimestamp(),
             data: {
               capacity: variant.capacity || 0,
               specification: variant.specification || "",

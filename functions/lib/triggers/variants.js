@@ -36,6 +36,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.onVariantDeleted = exports.onVariantUpdated = exports.onVariantCreated = void 0;
 const firestore_1 = require("firebase-functions/v2/firestore");
 const admin = __importStar(require("firebase-admin"));
+const firestore_2 = require("firebase-admin/firestore");
 const dashboardHub_1 = require("../aggregators/dashboardHub");
 exports.onVariantCreated = (0, firestore_1.onDocumentCreated)("product_variants/{variantId}", async (event) => {
     if (!event.data)
@@ -81,7 +82,7 @@ exports.onVariantCreated = (0, firestore_1.onDocumentCreated)("product_variants/
                     warehouseId: whId,
                     warehouseName: whName,
                     resolved: false,
-                    timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                    timestamp: firestore_2.FieldValue.serverTimestamp(),
                     data: {
                         capacity: variant.capacity || 0,
                         specification: variant.specification || "",
