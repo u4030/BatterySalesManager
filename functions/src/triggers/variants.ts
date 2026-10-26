@@ -3,44 +3,73 @@ import {
 } from "firebase-functions/v2/firestore";
 import * as admin from "firebase-admin";
 import { FieldValue } from "firebase-admin/firestore";
-import { applyDashboardHubDelta } from "../aggregators/dashboardHub";
 
 export const onVariantWritten = onDocumentWritten(
   "product_variants/{variantId}",
   async (event) => {
     if (!event.data) return;
+    console.time("onVariantWritten_totalTime");
     const db = admin.firestore();
     const variantId = event.params.variantId;
     const afterSnap = event.data.after;
 
+    const batch = db.batch();
+    const now = FieldValue.serverTimestamp();
+
     if (!afterSnap.exists) {
-      // Document deleted
-      await applyDashboardHubDelta({ updatedDomains: ["inventory"] });
+      // Document deleted - update inventory version in sync_registry and dashboard_hub in 1 write batch
+      batch.set(db.doc("summaries/sync_registry"), {
+        inventoryVersion: FieldValue.increment(1),
+        lastModified: now,
+      }, { merge: true });
+
+      batch.set(db.doc("summaries/dashboard_hub"), {
+        "syncRegistry.inventoryVersion": FieldValue.increment(1),
+        "syncRegistry.lastModified": now,
+        lastUpdated: now,
+      }, { merge: true });
+
+      await batch.commit();
+      console.timeEnd("onVariantWritten_totalTime");
       return;
     }
 
     const variant = afterSnap.data();
 
     if (!variant || variant.archived || variant.isDiscontinued) {
-      await applyDashboardHubDelta({ updatedDomains: ["inventory"] });
+      batch.set(db.doc("summaries/sync_registry"), {
+        inventoryVersion: FieldValue.increment(1),
+        lastModified: now,
+      }, { merge: true });
+
+      batch.set(db.doc("summaries/dashboard_hub"), {
+        "syncRegistry.inventoryVersion": FieldValue.increment(1),
+        "syncRegistry.lastModified": now,
+        lastUpdated: now,
+      }, { merge: true });
+
+      await batch.commit();
+      console.timeEnd("onVariantWritten_totalTime");
       return;
     }
 
     let createdAlertsCount = 0;
     try {
-      const warehousesSnap = await db.collection("warehouses").get();
+      console.time("fetchWarehousesAndProduct_parallel");
+      const [warehousesSnap, productSnap] = await Promise.all([
+        db.collection("warehouses").get(),
+        variant.productId ? db.collection("products").doc(variant.productId).get() : Promise.resolve(null),
+      ]);
+      console.timeEnd("fetchWarehousesAndProduct_parallel");
+
       const warehouseDocs = warehousesSnap.docs;
 
       let pName = variant.productName || "";
-      if (!pName && variant.productId) {
-        const productSnap = await db.collection("products").doc(variant.productId).get();
-        if (productSnap.exists) {
-          pName = productSnap.data()?.name || "منتج";
-        }
+      if (!pName && productSnap && productSnap.exists) {
+        pName = productSnap.data()?.name || "منتج";
       }
       if (!pName) pName = "منتج";
 
-      const batch = db.batch();
       const currentStockMap = (variant.currentStock || {}) as Record<string, number>;
       const minQuantitiesMap = (variant.minQuantities || {}) as Record<string, number>;
       const defaultMinQty = Number(variant.minQuantity || 0);
@@ -64,7 +93,7 @@ export const onVariantWritten = onDocumentWritten(
             warehouseId: whId,
             warehouseName: whName,
             resolved: false,
-            timestamp: FieldValue.serverTimestamp(),
+            timestamp: now,
             data: {
               capacity: variant.capacity || 0,
               specification: variant.specification || "",
@@ -76,28 +105,29 @@ export const onVariantWritten = onDocumentWritten(
         }
       });
 
-      if (createdAlertsCount > 0) {
-        // Also update sync_registry last_alert_update
-        const now = FieldValue.serverTimestamp();
-        batch.set(db.doc("summaries/sync_registry"), {
-          last_alert_update: now,
-          lastModified: now,
-        }, { merge: true });
+      // Consolidated Write Batch: Commit low stock alerts, sync_registry, and dashboard_hub atomically
+      console.time("consolidatedWriteBatch_commit");
+      batch.set(db.doc("summaries/sync_registry"), {
+        inventoryVersion: FieldValue.increment(1),
+        alertsVersion: createdAlertsCount > 0 ? FieldValue.increment(1) : FieldValue.increment(0),
+        last_alert_update: createdAlertsCount > 0 ? now : FieldValue.delete(),
+        lastModified: now,
+      }, { merge: true });
 
-        batch.set(db.doc("summaries/dashboard_hub"), {
-          "syncRegistry.last_alert_update": now,
-          lastUpdated: now,
-        }, { merge: true });
+      batch.set(db.doc("summaries/dashboard_hub"), {
+        "syncRegistry.inventoryVersion": FieldValue.increment(1),
+        "syncRegistry.alertsVersion": createdAlertsCount > 0 ? FieldValue.increment(1) : FieldValue.increment(0),
+        "syncRegistry.last_alert_update": createdAlertsCount > 0 ? now : FieldValue.delete(),
+        "syncRegistry.lastModified": now,
+        lastUpdated: now,
+      }, { merge: true });
 
-        await batch.commit();
-      }
+      await batch.commit();
+      console.timeEnd("consolidatedWriteBatch_commit");
     } catch (error) {
-      console.error("Error updating low_stock alerts in onVariantWritten:", error);
+      console.error("Error in onVariantWritten consolidated batch commit:", error);
     }
 
-    // Active alert count is accurately updated by alerts.ts trigger when system_alerts are created
-    await applyDashboardHubDelta({
-      updatedDomains: ["inventory", "alerts"],
-    });
+    console.timeEnd("onVariantWritten_totalTime");
   }
 );
