@@ -17,6 +17,17 @@ exports.onStockEntryCreated = (0, firestore_1.onDocumentCreated)("stock_entries/
 exports.onStockEntryUpdated = (0, firestore_1.onDocumentUpdated)("stock_entries/{entryId}", async (event) => {
     if (!event.data)
         return;
+    const b = event.data.before.data() || {};
+    const a = event.data.after.data() || {};
+    if (b.quantity === a.quantity &&
+        b.returnedQuantity === a.returnedQuantity &&
+        b.costPrice === a.costPrice &&
+        b.totalCost === a.totalCost &&
+        b.status === a.status &&
+        b.remainingBalance === a.remainingBalance) {
+        console.log(`[IdempotencyGuard] StockEntry ${event.params.entryId} update had no domain changes. Skipping execution.`);
+        return;
+    }
     console.time("onStockEntryUpdated_executionTime");
     await (0, dashboardHub_1.applyDashboardHubDelta)({
         updatedDomains: ["inventory", "suppliers", "financial"],

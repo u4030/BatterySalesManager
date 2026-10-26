@@ -40,14 +40,28 @@ const firestore_2 = require("firebase-admin/firestore");
 exports.onVariantWritten = (0, firestore_1.onDocumentWritten)("product_variants/{variantId}", async (event) => {
     if (!event.data)
         return;
+    const beforeSnap = event.data.before;
+    const afterSnap = event.data.after;
+    // Strict Idempotency Guardrail: If updating and no core domain fields changed, exit immediately!
+    if (beforeSnap.exists && afterSnap.exists) {
+        const b = beforeSnap.data() || {};
+        const a = afterSnap.data() || {};
+        const stockUnchanged = JSON.stringify(b.currentStock || {}) === JSON.stringify(a.currentStock || {});
+        const minQtyUnchanged = JSON.stringify(b.minQuantities || {}) === JSON.stringify(a.minQuantities || {}) && b.minQuantity === a.minQuantity;
+        const statusUnchanged = b.archived === a.archived && b.isDiscontinued === a.isDiscontinued;
+        const priceUnchanged = b.sellingPrice === a.sellingPrice && b.weightedAverageCost === a.weightedAverageCost;
+        if (stockUnchanged && minQtyUnchanged && statusUnchanged && priceUnchanged) {
+            console.log(`[IdempotencyGuard] Variant ${event.params.variantId} update had no domain changes. Skipping execution.`);
+            return;
+        }
+    }
     console.time("onVariantWritten_totalTime");
     const db = admin.firestore();
     const variantId = event.params.variantId;
-    const afterSnap = event.data.after;
     const batch = db.batch();
     const now = firestore_2.FieldValue.serverTimestamp();
     if (!afterSnap.exists) {
-        // Document deleted - update inventory version in sync_registry and dashboard_hub in 1 write batch
+        // Document deleted
         batch.set(db.doc("summaries/sync_registry"), {
             inventoryVersion: firestore_2.FieldValue.increment(1),
             lastModified: now,
@@ -122,7 +136,6 @@ exports.onVariantWritten = (0, firestore_1.onDocumentWritten)("product_variants/
                 createdAlertsCount += 1;
             }
         });
-        // Consolidated Write Batch: Commit low stock alerts, sync_registry, and dashboard_hub atomically
         console.time("consolidatedWriteBatch_commit");
         batch.set(db.doc("summaries/sync_registry"), {
             inventoryVersion: firestore_2.FieldValue.increment(1),

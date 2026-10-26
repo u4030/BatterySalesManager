@@ -44,6 +44,14 @@ export const onWarehouseUpdated = onDocumentUpdated(
   "warehouses/{warehouseId}",
   async (event) => {
     if (!event.data) return;
+    const b = event.data.before.data() || {};
+    const a = event.data.after.data() || {};
+
+    if (b.name === a.name && b.isActive === a.isActive && b.location === a.location) {
+      console.log(`[IdempotencyGuard] Warehouse ${event.params.warehouseId} update had no domain changes. Skipping execution.`);
+      return;
+    }
+
     await applyDashboardHubDelta({
       updatedDomains: ["inventory", "financial"],
     });
