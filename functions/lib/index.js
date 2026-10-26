@@ -46,4 +46,6 @@ __exportStar(require("./triggers/bills"), exports);
 __exportStar(require("./triggers/variants"), exports);
 __exportStar(require("./triggers/alerts"), exports);
 __exportStar(require("./triggers/oldBatteries"), exports);
+__exportStar(require("./triggers/warehouses"), exports);
+__exportStar(require("./triggers/suppliers"), exports);
 //# sourceMappingURL=index.js.map

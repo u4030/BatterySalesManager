@@ -10,3 +10,5 @@ export * from "./triggers/bills";
 export * from "./triggers/variants";
 export * from "./triggers/alerts";
 export * from "./triggers/oldBatteries";
+export * from "./triggers/warehouses";
+export * from "./triggers/suppliers";
