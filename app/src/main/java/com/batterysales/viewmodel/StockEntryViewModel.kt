@@ -8,6 +8,9 @@ import com.batterysales.data.repositories.*
 import android.util.Log
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -427,10 +430,14 @@ class StockEntryViewModel @Inject constructor(
                             billRepository.addBill(bill)
                         }
 
-                        if (state.isAdmin) {
-                            state.stockItems.forEach { item ->
-                                val updatedVariant = item.productVariant.copy(minQuantity = item.minQuantity)
-                                productVariantRepository.updateVariantSimple(updatedVariant)
+                        if (state.isAdmin && state.stockItems.isNotEmpty()) {
+                            coroutineScope {
+                                state.stockItems.map { item ->
+                                    async {
+                                        val updatedVariant = item.productVariant.copy(minQuantity = item.minQuantity)
+                                        productVariantRepository.updateVariantSimple(updatedVariant)
+                                    }
+                                }.awaitAll()
                             }
                         }
                     }
