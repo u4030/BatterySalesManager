@@ -73,19 +73,14 @@ export const onVariantWritten = onDocumentWritten(
 
     let createdAlertsCount = 0;
     try {
-      console.time("fetchWarehousesAndSummaries_parallel");
-      const [warehousesSnap, productSnap, globalSummarySnap] = await Promise.all([
+      console.time("fetchWarehousesAndProduct_parallel");
+      const [warehousesSnap, productSnap] = await Promise.all([
         db.collection("warehouses").get(),
         variant.productId ? db.collection("products").doc(variant.productId).get() : Promise.resolve(null),
-        db.doc("summaries/inventory_global").get(),
       ]);
+      console.timeEnd("fetchWarehousesAndProduct_parallel");
 
       const warehouseDocs = warehousesSnap.docs;
-
-      const whSummarySnaps = await Promise.all(
-        warehouseDocs.map((whDoc) => db.doc(`summaries/inventory_wh_${whDoc.id}`).get())
-      );
-      console.timeEnd("fetchWarehousesAndSummaries_parallel");
 
       let pName = variant.productName || "";
       if (!pName && productSnap && productSnap.exists) {
@@ -96,11 +91,9 @@ export const onVariantWritten = onDocumentWritten(
       const currentStockMap = (variant.currentStock || {}) as Record<string, any>;
       const minQuantitiesMap = (variant.minQuantities || {}) as Record<string, any>;
       const defaultMinQty = Number(variant.minQuantity || 0);
-      const cost = Number(variant.weightedAverageCost || 0);
-      const sellingPrice = Number(variant.sellingPrice || 0);
       const capacity = Number(variant.capacity || 0);
 
-      // --- 1. Cook Warehouse Summaries (summaries/inventory_wh_[id]) ---
+      // Low Stock Alerts Check
       warehouseDocs.forEach((whDoc) => {
         const whId = whDoc.id;
         const whName = whDoc.data()?.name || "مخزن";
@@ -109,48 +102,6 @@ export const onVariantWritten = onDocumentWritten(
         const rawMin = minQuantitiesMap[whId];
         const threshold = typeof rawMin === "number" ? rawMin : (rawMin ? Number(rawMin) : defaultMinQty);
 
-        const whSummarySnap = whSummarySnaps.find((s) => s.id === `inventory_wh_${whId}`);
-        const items = whSummarySnap && whSummarySnap.exists ? (whSummarySnap.data()?.items || {}) : {};
-
-        items[variantId] = {
-          variantId: variantId,
-          productId: variant.productId || "",
-          productName: pName,
-          capacity: capacity,
-          specification: variant.specification || "",
-          barcode: variant.barcode || "",
-          currentStock: currentQty,
-          minQuantity: threshold,
-          weightedAverageCost: cost,
-          sellingPrice: sellingPrice,
-          updatedAt: now,
-          isDiscontinued: Boolean(variant.isDiscontinued),
-        };
-
-        const totalValue = Object.values(items).reduce(
-          (acc: number, item: any) => acc + (Number(item?.currentStock || 0) * Number(item?.weightedAverageCost || 0)),
-          0
-        );
-        const totalItemsCount = Object.values(items).reduce(
-          (acc: number, item: any) => acc + Number(item?.currentStock || 0),
-          0
-        );
-
-        batch.set(
-          db.doc(`summaries/inventory_wh_${whId}`),
-          {
-            id: `inventory_wh_${whId}`,
-            warehouseId: whId,
-            items: items,
-            totalValue: Math.max(0, totalValue),
-            totalItemsCount: Math.max(0, totalItemsCount),
-            lastUpdated: now,
-            version: FieldValue.increment(1),
-          },
-          { merge: true }
-        );
-
-        // Low stock alert check
         if (threshold > 0 && currentQty <= threshold) {
           const alertRef = db.collection("system_alerts").doc(`low_stock_${variantId}_${whId}`);
           const specSuffix = variant.specification ? ` | ${variant.specification}` : "";
@@ -180,57 +131,11 @@ export const onVariantWritten = onDocumentWritten(
         }
       });
 
-      // --- 2. Cook Global Inventory Summary (summaries/inventory_global) ---
-      const globalItems = globalSummarySnap.exists ? (globalSummarySnap.data()?.items || {}) : {};
-      const totalGlobalStock = Object.values(currentStockMap).reduce((acc: number, qty: any) => {
-        const num = typeof qty === "number" ? qty : Number(qty || 0);
-        return acc + (isNaN(num) ? 0 : num);
-      }, 0);
-
-      globalItems[variantId] = {
-        variantId: variantId,
-        productId: variant.productId || "",
-        productName: pName,
-        capacity: capacity,
-        specification: variant.specification || "",
-        barcode: variant.barcode || "",
-        currentStock: totalGlobalStock,
-        minQuantity: defaultMinQty,
-        weightedAverageCost: cost,
-        sellingPrice: sellingPrice,
-        updatedAt: now,
-        isDiscontinued: Boolean(variant.isDiscontinued),
-      };
-
-      const globalTotalValue = Object.values(globalItems).reduce(
-        (acc: number, item: any) => acc + (Number(item?.currentStock || 0) * Number(item?.weightedAverageCost || 0)),
-        0
-      );
-      const globalTotalItemsCount = Object.values(globalItems).reduce(
-        (acc: number, item: any) => acc + Number(item?.currentStock || 0),
-        0
-      );
-
-      batch.set(
-        db.doc("summaries/inventory_global"),
-        {
-          id: "inventory_global",
-          warehouseId: null,
-          items: globalItems,
-          totalValue: Math.max(0, globalTotalValue),
-          totalItemsCount: Math.max(0, globalTotalItemsCount),
-          lastUpdated: now,
-          version: FieldValue.increment(1),
-        },
-        { merge: true }
-      );
-
-      // --- 3. Update Sync Registry & Dashboard Hub ---
+      // Update Sync Registry & Dashboard Hub Alerts
       console.time("consolidatedWriteBatch_commit");
       batch.set(
         db.doc("summaries/sync_registry"),
         {
-          inventoryVersion: FieldValue.increment(1),
           alertsVersion: createdAlertsCount > 0 ? FieldValue.increment(1) : FieldValue.increment(0),
           last_alert_update: createdAlertsCount > 0 ? now : FieldValue.delete(),
           lastModified: now,
@@ -241,9 +146,6 @@ export const onVariantWritten = onDocumentWritten(
       batch.set(
         db.doc("summaries/dashboard_hub"),
         {
-          "inventorySummary.totalValue": Math.max(0, globalTotalValue),
-          "inventorySummary.totalItemsCount": Math.max(0, globalTotalItemsCount),
-          "syncRegistry.inventoryVersion": FieldValue.increment(1),
           "syncRegistry.alertsVersion": createdAlertsCount > 0 ? FieldValue.increment(1) : FieldValue.increment(0),
           "syncRegistry.last_alert_update": createdAlertsCount > 0 ? now : FieldValue.delete(),
           "syncRegistry.lastModified": now,
