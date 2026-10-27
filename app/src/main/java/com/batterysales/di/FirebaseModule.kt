@@ -1,5 +1,6 @@
 package com.batterysales.di
 
+import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreSettings
@@ -8,7 +9,10 @@ import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
+import java.net.InetSocketAddress
+import java.net.Socket
 import javax.inject.Singleton
+import kotlin.concurrent.thread
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -23,6 +27,22 @@ object FirebaseModule {
     const val EMULATOR_HOST_IP = "172.29.52.107" // <-- Place your computer's local Wi-Fi IP address here
 
     private const val USE_EMULATOR = true
+
+    private fun runEmulatorConnectivityCheck(host: String, port: Int = 8080) {
+        thread {
+            try {
+                Socket().use { socket ->
+                    socket.connect(InetSocketAddress(host, port), 2500)
+                    Log.d("PERF_CHECK", "🚀 [Emulator] Successfully connected to Local Emulator Suite at $host:$port!")
+                }
+            } catch (e: Exception) {
+                Log.e(
+                    "PERF_CHECK",
+                    "❌ [Emulator] Failed to connect to Local Emulator Suite at $host:$port. Reason: ${e.message}. Ensure Firebase Emulator is running, PC Firewall allows port $port, and both PC & phone are on the same Wi-Fi network."
+                )
+            }
+        }
+    }
 
     @Provides
     @Singleton
@@ -50,6 +70,7 @@ object FirebaseModule {
         firestore.firestoreSettings = settings
 
         if (USE_EMULATOR && EMULATOR_HOST_IP.isNotBlank()) {
+            runEmulatorConnectivityCheck(EMULATOR_HOST_IP, 8080)
             try {
                 firestore.useEmulator(EMULATOR_HOST_IP, 8080)
             } catch (e: Exception) {
