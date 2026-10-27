@@ -330,7 +330,7 @@ class ReportsViewModel @Inject constructor(
                 // 1. Prioritize Cache for speed and lower quota usage
                 if (start == null && end == null) {
                     val cachedReport = summaryRepository.getSupplierReportCache(supplierId)
-                    val supplier = supplierRepository.getSupplier(supplierId)
+                    val supplier = supplierRepository.getSuppliersOnce().find { it.id == supplierId }
                     if (cachedReport != null && supplier != null) {
                         val cacheMatches = Math.abs(cachedReport.totalDebit - supplier.totalDebit) < 0.01 &&
                                            Math.abs(cachedReport.totalCredit - supplier.totalCredit) < 0.01
@@ -357,7 +357,7 @@ class ReportsViewModel @Inject constructor(
                     }
                 }
 
-                val supplier = supplierRepository.getSupplier(supplierId) ?: return@launch
+                val supplier = supplierRepository.getSuppliersOnce().find { it.id == supplierId } ?: return@launch
                 val adjustedStart = start?.let { com.batterysales.utils.DateUtils.getStartOfDay(it) }
                 val adjustedEnd = end?.let { com.batterysales.utils.DateUtils.getEndOfDay(it) }
 

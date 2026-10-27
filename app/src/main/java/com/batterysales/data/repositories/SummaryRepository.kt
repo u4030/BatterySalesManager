@@ -499,22 +499,31 @@ class SummaryRepository @Inject constructor(
         }
         
         val docId = if (warehouseId != null) "inventory_wh_$warehouseId" else "inventory_global"
-        val snap = summariesCollection.document(docId).get().await()
-        val summary = snap.toObject(InventorySummary::class.java)
-        
-        if (summary != null) {
+        return try {
+            val snap = summariesCollection.document(docId).get().await()
+            val summary = snap.toObject(InventorySummary::class.java) ?: InventorySummary(id = docId, warehouseId = warehouseId)
             val newCache = cachedInventorySummary.toMutableMap()
             newCache[key] = summary
             cachedInventorySummary = newCache
+            summary
+        } catch (e: Exception) {
+            val emptySummary = InventorySummary(id = docId, warehouseId = warehouseId)
+            val newCache = cachedInventorySummary.toMutableMap()
+            newCache[key] = emptySummary
+            cachedInventorySummary = newCache
+            emptySummary
         }
-        return summary
     }
 
     fun getInventorySummaryFlow(warehouseId: String?): Flow<InventorySummary> = callbackFlow {
         val docId = if (warehouseId != null) "inventory_wh_$warehouseId" else "inventory_global"
         val listener = summariesCollection.document(docId)
             .addSnapshotListener { snapshot, error ->
-                if (error != null) return@addSnapshotListener
+                if (error != null) {
+                    val fallback = InventorySummary(id = docId, warehouseId = warehouseId)
+                    trySend(fallback)
+                    return@addSnapshotListener
+                }
                 val summary = snapshot?.toObject(InventorySummary::class.java) ?: InventorySummary(id = docId, warehouseId = warehouseId)
                 
                 val key = warehouseId ?: "global"

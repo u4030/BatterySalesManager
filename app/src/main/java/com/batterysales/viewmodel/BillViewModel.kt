@@ -150,10 +150,8 @@ class BillViewModel @Inject constructor(
         _selectedSupplierId.value = supplierId
         _isDataLoaded.value = true
         if (supplierId != null) {
-            viewModelScope.launch {
-                val supplier = supplierRepository.getSupplier(supplierId)
-                _selectedSupplierBalance.value = supplier?.currentBalance
-            }
+            val supplier = _suppliers.value.find { it.id == supplierId }
+            _selectedSupplierBalance.value = supplier?.currentBalance
         } else {
             _selectedSupplierBalance.value = null
         }
