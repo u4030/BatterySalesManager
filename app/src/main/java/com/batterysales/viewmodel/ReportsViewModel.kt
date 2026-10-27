@@ -293,13 +293,17 @@ class ReportsViewModel @Inject constructor(
     private fun observeSelectedSupplierRealtime(supplierId: String) {
         selectedSupplierObserverJob?.cancel()
         selectedSupplierObserverJob = viewModelScope.launch {
-            supplierRepository.getSupplierFlow(supplierId).collect { freshSupplier ->
-                if (freshSupplier != null) {
+            summaryRepository.getSuppliersOverviewFlow().collect { overview ->
+                val supplierSummary = overview.suppliers[supplierId]
+                if (supplierSummary != null) {
                     val current = _selectedSupplierReport.value
                     if (current != null) {
-                        _selectedSupplierReport.value = current.copy(
-                            supplier = freshSupplier
+                        val freshSupplier = current.supplier.copy(
+                            totalDebit = supplierSummary.totalDebit,
+                            totalCredit = supplierSummary.totalCredit,
+                            currentBalance = supplierSummary.currentBalance
                         )
+                        _selectedSupplierReport.value = current.copy(supplier = freshSupplier)
                     }
                 }
             }
