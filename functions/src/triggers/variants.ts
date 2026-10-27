@@ -35,7 +35,7 @@ export const onVariantWritten = onDocumentWritten(
     const now = FieldValue.serverTimestamp();
 
     if (!afterSnap.exists) {
-      // Document deleted
+      // Document deleted - increment inventory version and sync
       batch.set(db.doc("summaries/sync_registry"), {
         inventoryVersion: FieldValue.increment(1),
         lastModified: now,
@@ -93,7 +93,7 @@ export const onVariantWritten = onDocumentWritten(
       const defaultMinQty = Number(variant.minQuantity || 0);
       const capacity = Number(variant.capacity || 0);
 
-      // Low Stock Alerts Check
+      // Low Stock Alerts Evaluation Loop
       warehouseDocs.forEach((whDoc) => {
         const whId = whDoc.id;
         const whName = whDoc.data()?.name || "مخزن";
@@ -102,8 +102,9 @@ export const onVariantWritten = onDocumentWritten(
         const rawMin = minQuantitiesMap[whId];
         const threshold = typeof rawMin === "number" ? rawMin : (rawMin ? Number(rawMin) : defaultMinQty);
 
+        const alertRef = db.collection("system_alerts").doc(`low_stock_${variantId}_${whId}`);
+
         if (threshold > 0 && currentQty <= threshold) {
-          const alertRef = db.collection("system_alerts").doc(`low_stock_${variantId}_${whId}`);
           const specSuffix = variant.specification ? ` | ${variant.specification}` : "";
 
           batch.set(
@@ -128,16 +129,19 @@ export const onVariantWritten = onDocumentWritten(
             { merge: true }
           );
           createdAlertsCount += 1;
+        } else {
+          // Stock is above threshold - wipe stale alert document so it disappears from Dashboard
+          batch.delete(alertRef);
         }
       });
 
-      // Update Sync Registry & Dashboard Hub Alerts
+      // Update Sync Registry & Dashboard Hub
       console.time("consolidatedWriteBatch_commit");
       batch.set(
         db.doc("summaries/sync_registry"),
         {
-          alertsVersion: createdAlertsCount > 0 ? FieldValue.increment(1) : FieldValue.increment(0),
-          last_alert_update: createdAlertsCount > 0 ? now : FieldValue.delete(),
+          alertsVersion: FieldValue.increment(1),
+          last_alert_update: now,
           lastModified: now,
         },
         { merge: true }
@@ -146,8 +150,8 @@ export const onVariantWritten = onDocumentWritten(
       batch.set(
         db.doc("summaries/dashboard_hub"),
         {
-          "syncRegistry.alertsVersion": createdAlertsCount > 0 ? FieldValue.increment(1) : FieldValue.increment(0),
-          "syncRegistry.last_alert_update": createdAlertsCount > 0 ? now : FieldValue.delete(),
+          "syncRegistry.alertsVersion": FieldValue.increment(1),
+          "syncRegistry.last_alert_update": now,
           "syncRegistry.lastModified": now,
           lastUpdated: now,
         },
