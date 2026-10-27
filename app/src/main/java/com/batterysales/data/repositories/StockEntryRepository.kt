@@ -27,7 +27,15 @@ class StockEntryRepository @Inject constructor(
     }
 
     suspend fun addStockEntries(stockEntries: List<StockEntry>) {
-        if (stockEntries.isEmpty()) return
+        saveStockOrderBatch(entries = stockEntries)
+    }
+
+    suspend fun saveStockOrderBatch(
+        entries: List<StockEntry>,
+        variantsToUpdate: List<ProductVariant> = emptyList(),
+        bill: Bill? = null
+    ) {
+        if (entries.isEmpty() && variantsToUpdate.isEmpty() && bill == null) return
 
         val batch = firestore.batch()
         val now = Date()
@@ -38,7 +46,7 @@ class StockEntryRepository @Inject constructor(
         val supplierDebitChanges = mutableMapOf<String, Double>()
         val supplierCreditChanges = mutableMapOf<String, Double>()
 
-        stockEntries.forEach { entry ->
+        entries.forEach { entry ->
             val docRef = if (entry.id.isNotEmpty()) firestore.collection(StockEntry.COLLECTION_NAME).document(entry.id)
                          else firestore.collection(StockEntry.COLLECTION_NAME).document()
 
@@ -69,7 +77,27 @@ class StockEntryRepository @Inject constructor(
             }
         }
 
-        // Apply Supplier updates in batch
+        variantsToUpdate.forEach { variant ->
+            val vRef = firestore.collection(ProductVariant.COLLECTION_NAME).document(variant.id)
+            batch.set(vRef, variant, SetOptions.merge())
+        }
+
+        if (bill != null) {
+            val billRef = if (bill.id.isNotEmpty()) firestore.collection(Bill.COLLECTION_NAME).document(bill.id)
+                          else firestore.collection(Bill.COLLECTION_NAME).document()
+            val finalBill = bill.copy(id = billRef.id, createdAt = now, updatedAt = now)
+            batch.set(billRef, finalBill)
+
+            if (finalBill.supplierId.isNotEmpty() && finalBill.paidAmount > 0) {
+                val supRef = firestore.collection("suppliers").document(finalBill.supplierId)
+                batch.update(supRef, mapOf(
+                    "totalCredit" to FieldValue.increment(finalBill.paidAmount),
+                    "currentBalance" to FieldValue.increment(-finalBill.paidAmount)
+                ))
+            }
+        }
+
+        // Apply Supplier Debit updates in batch
         val allSupplierIds = (supplierDebitChanges.keys + supplierCreditChanges.keys).distinct()
         allSupplierIds.forEach { sid ->
             val ref = firestore.collection("suppliers").document(sid)

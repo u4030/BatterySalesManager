@@ -410,12 +410,17 @@ class StockEntryViewModel @Inject constructor(
                                 createdByUserName = currentUser?.displayName ?: ""
                             )
                         }
-                        stockEntryRepository.addStockEntries(entries)
+
+                        val variantsToUpdate = if (state.isAdmin) {
+                            state.stockItems.map { item ->
+                                item.productVariant.copy(minQuantity = item.minQuantity)
+                            }
+                        } else emptyList()
 
                         val payAmount = state.paymentAmount.toDoubleOrNull() ?: 0.0
                         val supplierId = entries.firstOrNull()?.supplierId
-                        if (payAmount > 0.001 && !supplierId.isNullOrEmpty()) {
-                            val bill = Bill(
+                        val billToCreate = if (payAmount > 0.001 && !supplierId.isNullOrEmpty()) {
+                            Bill(
                                 description = "دفعة نقدية مع الطلبية: ${state.invoiceNumber}",
                                 amount = payAmount,
                                 dueDate = state.invoiceDate ?: now,
@@ -427,19 +432,13 @@ class StockEntryViewModel @Inject constructor(
                                 paidDate = now,
                                 referenceNumber = state.invoiceNumber
                             )
-                            billRepository.addBill(bill)
-                        }
+                        } else null
 
-                        if (state.isAdmin && state.stockItems.isNotEmpty()) {
-                            coroutineScope {
-                                state.stockItems.map { item ->
-                                    async {
-                                        val updatedVariant = item.productVariant.copy(minQuantity = item.minQuantity)
-                                        productVariantRepository.updateVariantSimple(updatedVariant)
-                                    }
-                                }.awaitAll()
-                            }
-                        }
+                        stockEntryRepository.saveStockOrderBatch(
+                            entries = entries,
+                            variantsToUpdate = variantsToUpdate,
+                            bill = billToCreate
+                        )
                     }
                     true
                 }
