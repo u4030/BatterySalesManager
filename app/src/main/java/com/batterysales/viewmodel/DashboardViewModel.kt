@@ -1,17 +1,16 @@
 package com.batterysales.viewmodel
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.batterysales.data.models.*
 import com.batterysales.data.repositories.*
-import com.google.firebase.firestore.Source
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.*
-import android.util.Log
+import kotlinx.coroutines.launch
 import java.util.*
 import javax.inject.Inject
-import kotlinx.coroutines.launch
 
 data class WarehouseStats(
     val warehouseId: String,
@@ -68,8 +67,18 @@ class DashboardViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val _warehouses = MutableStateFlow<List<Warehouse>>(emptyList())
-    private val _alerts = MutableStateFlow<List<SystemAlert>>(emptyList())
-    private var lastAlertUpdateTimestamp: Long = 0L
+
+    private val activeAlertsFlow: Flow<List<SystemAlert>> = callbackFlow {
+        val listener = firestore.collection(SystemAlert.COLLECTION_NAME)
+            .whereEqualTo("resolved", false)
+            .limit(20)
+            .addSnapshotListener { snap, e ->
+                if (e != null) return@addSnapshotListener
+                val alerts = snap?.documents?.mapNotNull { it.toObject(SystemAlert::class.java)?.copy(id = it.id) } ?: emptyList()
+                trySend(alerts)
+            }
+        awaitClose { listener.remove() }
+    }
 
     private val upcomingBillsFlow: Flow<List<Bill>> = callbackFlow {
         val listener = firestore.collection(Bill.COLLECTION_NAME)
@@ -82,7 +91,7 @@ class DashboardViewModel @Inject constructor(
                     set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59)
                 }
                 val bills = snap?.documents?.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) }
-                    ?.filter { it.dueDate != null && !it.dueDate.after(nextWeek.time) }
+                    ?.filter { b -> b.dueDate?.after(nextWeek.time) == false }
                     ?.sortedBy { it.dueDate } ?: emptyList()
                 trySend(bills)
             }
@@ -100,7 +109,7 @@ class DashboardViewModel @Inject constructor(
         userRepository.getCurrentUserFlow(),
         summaryRepository.getDashboardHubFlow(),
         _warehouses,
-        _alerts,
+        activeAlertsFlow,
         upcomingBillsFlow,
         pendingCountFlow
     ) { args: Array<Any?> ->
@@ -183,23 +192,6 @@ class DashboardViewModel @Inject constructor(
 
     init {
         loadWarehouses()
-        loadAlerts(forceRefresh = false)
-        observeSyncRegistryAlerts()
-    }
-
-    private fun observeSyncRegistryAlerts() {
-        viewModelScope.launch {
-            summaryRepository.getSyncRegistryFlow()
-                .collect { registry ->
-                    val alertTime = registry.lastAlertUpdate?.time ?: 0L
-                    if (lastAlertUpdateTimestamp != 0L && alertTime > lastAlertUpdateTimestamp) {
-                        loadAlerts(forceRefresh = true)
-                    }
-                    if (alertTime != 0L) {
-                        lastAlertUpdateTimestamp = alertTime
-                    }
-                }
-        }
     }
 
     private fun loadWarehouses() {
@@ -212,24 +204,15 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
-    fun loadAlerts(forceRefresh: Boolean = false) {
+    fun refresh() {
         viewModelScope.launch {
             try {
-                val (alertsList, _) = systemAlertRepository.getAlertsPaginated(
-                    limit = 20,
-                    forceRefresh = forceRefresh,
-                    source = if (forceRefresh) Source.SERVER else Source.CACHE
-                )
-                _alerts.value = alertsList
+                _warehouses.value = warehouseRepository.getWarehousesOnce()
+                summaryRepository.getDashboardHubOnce()
             } catch (e: Exception) {
-                Log.e("DashboardViewModel", "Error loading system alerts", e)
+                Log.e("DashboardViewModel", "Error in refresh", e)
             }
         }
-    }
-
-    fun refresh() {
-        loadWarehouses()
-        loadAlerts(forceRefresh = true)
     }
 
     private fun constructNotifications(
