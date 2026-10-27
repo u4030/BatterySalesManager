@@ -273,10 +273,16 @@ class StockEntryViewModel @Inject constructor(
         viewModelScope.launch {
             val variant = productVariantRepository.getVariantByBarcode(barcode)
             if (variant != null) {
-                val product = productRepository.getProduct(variant.productId)
+                val product = uiState.value.products.find { it.id == variant.productId }
                 if (product != null) {
                     onProductSelected(product)
                     onVariantSelected(variant)
+                } else {
+                    val loadedProduct = productRepository.getProduct(variant.productId)
+                    if (loadedProduct != null) {
+                        onProductSelected(loadedProduct)
+                        onVariantSelected(variant)
+                    }
                 }
             } else {
                 _uiState.update { it.copy(errorMessage = "لم يتم العثور على منتج بهذا الباركود") }
