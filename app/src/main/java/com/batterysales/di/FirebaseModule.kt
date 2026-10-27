@@ -14,10 +14,28 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object FirebaseModule {
 
+    // =========================================================================
+    // CHANGE THIS IP TO YOUR COMPUTER'S LOCAL WI-FI IP ADDRESS
+    // For Android Emulator: use "10.0.2.2"
+    // For Physical Phone via Wi-Fi: use your local IP, e.g. "172.29.52.107"
+    // Set to null or empty "" to disable emulator and connect to Production Firebase
+    // =========================================================================
+    const val EMULATOR_HOST_IP = "172.29.52.107" // <-- Place your computer's local Wi-Fi IP address here
+
+    private const val USE_EMULATOR = true
+
     @Provides
     @Singleton
     fun provideFirebaseAuth(): FirebaseAuth {
-        return FirebaseAuth.getInstance()
+        val auth = FirebaseAuth.getInstance()
+        if (USE_EMULATOR && EMULATOR_HOST_IP.isNotBlank()) {
+            try {
+                auth.useEmulator(EMULATOR_HOST_IP, 9099)
+            } catch (e: Exception) {
+                // Ignore if emulator already set
+            }
+        }
+        return auth
     }
 
     @Provides
@@ -31,8 +49,13 @@ object FirebaseModule {
             .build()
         firestore.firestoreSettings = settings
 
-        // Force connection to local Firestore emulator
-        firestore.useEmulator("10.0.2.2", 8080)
+        if (USE_EMULATOR && EMULATOR_HOST_IP.isNotBlank()) {
+            try {
+                firestore.useEmulator(EMULATOR_HOST_IP, 8080)
+            } catch (e: Exception) {
+                // Ignore if emulator already set
+            }
+        }
         
         return firestore
     }
