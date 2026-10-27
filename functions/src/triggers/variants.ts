@@ -93,8 +93,8 @@ export const onVariantWritten = onDocumentWritten(
       }
       if (!pName) pName = "منتج";
 
-      const currentStockMap = (variant.currentStock || {}) as Record<string, number>;
-      const minQuantitiesMap = (variant.minQuantities || {}) as Record<string, number>;
+      const currentStockMap = (variant.currentStock || {}) as Record<string, any>;
+      const minQuantitiesMap = (variant.minQuantities || {}) as Record<string, any>;
       const defaultMinQty = Number(variant.minQuantity || 0);
       const cost = Number(variant.weightedAverageCost || 0);
       const sellingPrice = Number(variant.sellingPrice || 0);
@@ -104,8 +104,10 @@ export const onVariantWritten = onDocumentWritten(
       warehouseDocs.forEach((whDoc) => {
         const whId = whDoc.id;
         const whName = whDoc.data()?.name || "مخزن";
-        const currentQty = currentStockMap[whId] ?? 0;
-        const threshold = minQuantitiesMap[whId] ?? defaultMinQty;
+        const rawStock = currentStockMap[whId];
+        const currentQty = typeof rawStock === "number" ? rawStock : Number(rawStock || 0);
+        const rawMin = minQuantitiesMap[whId];
+        const threshold = typeof rawMin === "number" ? rawMin : (rawMin ? Number(rawMin) : defaultMinQty);
 
         const whSummarySnap = whSummarySnaps.find((s) => s.id === `inventory_wh_${whId}`);
         const items = whSummarySnap && whSummarySnap.exists ? (whSummarySnap.data()?.items || {}) : {};
@@ -180,7 +182,10 @@ export const onVariantWritten = onDocumentWritten(
 
       // --- 2. Cook Global Inventory Summary (summaries/inventory_global) ---
       const globalItems = globalSummarySnap.exists ? (globalSummarySnap.data()?.items || {}) : {};
-      const totalGlobalStock = Object.values(currentStockMap).reduce((acc, qty) => acc + Number(qty || 0), 0);
+      const totalGlobalStock = Object.values(currentStockMap).reduce((acc: number, qty: any) => {
+        const num = typeof qty === "number" ? qty : Number(qty || 0);
+        return acc + (isNaN(num) ? 0 : num);
+      }, 0);
 
       globalItems[variantId] = {
         variantId: variantId,

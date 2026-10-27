@@ -117,8 +117,10 @@ exports.onVariantWritten = (0, firestore_1.onDocumentWritten)("product_variants/
         warehouseDocs.forEach((whDoc) => {
             const whId = whDoc.id;
             const whName = whDoc.data()?.name || "مخزن";
-            const currentQty = currentStockMap[whId] ?? 0;
-            const threshold = minQuantitiesMap[whId] ?? defaultMinQty;
+            const rawStock = currentStockMap[whId];
+            const currentQty = typeof rawStock === "number" ? rawStock : Number(rawStock || 0);
+            const rawMin = minQuantitiesMap[whId];
+            const threshold = typeof rawMin === "number" ? rawMin : (rawMin ? Number(rawMin) : defaultMinQty);
             const whSummarySnap = whSummarySnaps.find((s) => s.id === `inventory_wh_${whId}`);
             const items = whSummarySnap && whSummarySnap.exists ? (whSummarySnap.data()?.items || {}) : {};
             items[variantId] = {
@@ -172,7 +174,10 @@ exports.onVariantWritten = (0, firestore_1.onDocumentWritten)("product_variants/
         });
         // --- 2. Cook Global Inventory Summary (summaries/inventory_global) ---
         const globalItems = globalSummarySnap.exists ? (globalSummarySnap.data()?.items || {}) : {};
-        const totalGlobalStock = Object.values(currentStockMap).reduce((acc, qty) => acc + Number(qty || 0), 0);
+        const totalGlobalStock = Object.values(currentStockMap).reduce((acc, qty) => {
+            const num = typeof qty === "number" ? qty : Number(qty || 0);
+            return acc + (isNaN(num) ? 0 : num);
+        }, 0);
         globalItems[variantId] = {
             variantId: variantId,
             productId: variant.productId || "",
