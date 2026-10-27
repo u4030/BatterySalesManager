@@ -71,10 +71,12 @@ class SupplierRepository @Inject constructor(
         return snapshot.toObject(Supplier::class.java)?.copy(id = snapshot.id)
     }
 
-    suspend fun addSupplier(supplier: Supplier) {
-        val docRef = firestore.collection(Supplier.COLLECTION_NAME).document()
+    suspend fun addSupplier(supplier: Supplier): Supplier {
+        val docRef = if (supplier.id.isNotEmpty()) firestore.collection(Supplier.COLLECTION_NAME).document(supplier.id)
+                     else firestore.collection(Supplier.COLLECTION_NAME).document()
         val finalSupplier = supplier.copy(id = docRef.id)
         docRef.set(finalSupplier).await()
+        return finalSupplier
     }
 
     suspend fun updateSupplier(supplier: Supplier) {

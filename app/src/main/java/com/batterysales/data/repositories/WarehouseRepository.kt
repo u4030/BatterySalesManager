@@ -33,11 +33,12 @@ class WarehouseRepository @Inject constructor(
         return snapshot.documents.mapNotNull { it.toObject(Warehouse::class.java)?.copy(id = it.id) }
     }
 
-    suspend fun addWarehouse(warehouse: Warehouse) {
+    suspend fun addWarehouse(warehouse: Warehouse): Warehouse {
         val docRef = if (warehouse.id.isNotEmpty()) firestore.collection(Warehouse.COLLECTION_NAME).document(warehouse.id)
                      else firestore.collection(Warehouse.COLLECTION_NAME).document()
         val finalWarehouse = warehouse.copy(id = docRef.id)
         docRef.set(finalWarehouse).await()
+        return finalWarehouse
     }
 
     suspend fun getWarehouse(warehouseId: String): Warehouse? {

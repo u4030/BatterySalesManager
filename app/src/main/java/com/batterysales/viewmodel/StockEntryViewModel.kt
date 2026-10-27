@@ -491,7 +491,13 @@ class StockEntryViewModel @Inject constructor(
     fun onAddWarehouse(name: String) {
         viewModelScope.launch {
             try {
-                warehouseRepository.addWarehouse(Warehouse(name = name, location = ""))
+                val newWarehouse = warehouseRepository.addWarehouse(Warehouse(name = name, location = ""))
+                _uiState.update {
+                    it.copy(
+                        warehouses = (it.warehouses + newWarehouse).distinctBy { w -> w.id },
+                        selectedWarehouse = newWarehouse
+                    )
+                }
             } catch (e: Exception) {
                 Log.e("StockEntryViewModel", "Error adding warehouse", e)
                 _uiState.update { it.copy(errorMessage = "فشل إضافة المستودع") }
@@ -502,7 +508,14 @@ class StockEntryViewModel @Inject constructor(
     fun onAddSupplier(name: String, target: Double) {
         viewModelScope.launch {
             try {
-                supplierRepository.addSupplier(Supplier(name = name, yearlyTarget = target))
+                val newSupplier = supplierRepository.addSupplier(Supplier(name = name, yearlyTarget = target))
+                _uiState.update {
+                    it.copy(
+                        suppliers = (it.suppliers + newSupplier).distinctBy { s -> s.id },
+                        selectedSupplier = newSupplier,
+                        supplierName = newSupplier.name
+                    )
+                }
             } catch (e: Exception) {
                 Log.e("StockEntryViewModel", "Error adding supplier", e)
                 _uiState.update { it.copy(errorMessage = "فشل إضافة المورد") }
