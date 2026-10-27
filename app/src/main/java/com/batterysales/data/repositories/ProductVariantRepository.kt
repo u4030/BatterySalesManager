@@ -93,19 +93,21 @@ class ProductVariantRepository @Inject constructor(
 
     @Deprecated("Use getVariantsForProductFlow or VariantPagingSource to avoid broad listens")
     fun getAllVariantsFlow(limit: Long = 100): Flow<List<ProductVariant>> = callbackFlow {
-        val listenerRegistration = firestore.collection(ProductVariant.COLLECTION_NAME)
-            .limit(limit)
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    close(error)
-                    return@addSnapshotListener
-                }
-                if (snapshot != null) {
-                    val variants = snapshot.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }
-                    trySend(variants).isSuccess
-                }
-            }
-        awaitClose { listenerRegistration.remove() }
+        val snapshot = try {
+            firestore.collection(ProductVariant.COLLECTION_NAME)
+                .limit(limit)
+                .get(Source.CACHE)
+                .await()
+        } catch (e: Exception) {
+            firestore.collection(ProductVariant.COLLECTION_NAME)
+                .limit(limit)
+                .get(Source.SERVER)
+                .await()
+        }
+        val variants = snapshot.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }
+        trySend(variants).isSuccess
+        close()
+        awaitClose { }
     }
 
     suspend fun addVariant(variant: ProductVariant, summaryRepository: SummaryRepository? = null) {

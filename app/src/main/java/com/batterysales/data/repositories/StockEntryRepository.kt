@@ -103,21 +103,55 @@ class StockEntryRepository @Inject constructor(
         batch.commit().await()
     }
 
-    fun getAllStockEntriesFlow(limit: Long = 5000): Flow<List<StockEntry>> = callbackFlow {
-        val listenerRegistration = firestore.collection(StockEntry.COLLECTION_NAME)
+    suspend fun getStockEntriesPaginated(
+        lastDocument: DocumentSnapshot? = null,
+        limit: Long = 20,
+        forceRefresh: Boolean = false
+    ): Pair<List<StockEntry>, DocumentSnapshot?> {
+        var query: Query = firestore.collection(StockEntry.COLLECTION_NAME)
             .orderBy("timestamp", Query.Direction.DESCENDING)
-            .limit(limit)
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    close(error)
-                    return@addSnapshotListener
-                }
-                if (snapshot != null) {
-                    val entries = snapshot.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
-                    trySend(entries).isSuccess
-                }
-            }
-        awaitClose { listenerRegistration.remove() }
+
+        if (lastDocument != null) {
+            query = query.startAfter(lastDocument)
+        }
+
+        query = query.limit(limit)
+
+        val source = if (!forceRefresh && lastDocument == null) com.google.firebase.firestore.Source.CACHE else com.google.firebase.firestore.Source.SERVER
+
+        val snapshot = try {
+            query.get(source).await()
+        } catch (e: Exception) {
+            if (source == com.google.firebase.firestore.Source.CACHE) {
+                query.get(com.google.firebase.firestore.Source.SERVER).await()
+            } else throw e
+        }
+
+        val entries = snapshot.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
+        val lastDoc = snapshot.documents.lastOrNull()
+
+        return Pair(entries, lastDoc)
+    }
+
+    @Deprecated("Use getStockEntriesPaginated to avoid continuous snapshot listeners")
+    fun getAllStockEntriesFlow(limit: Long = 50): Flow<List<StockEntry>> = callbackFlow {
+        val snapshot = try {
+            firestore.collection(StockEntry.COLLECTION_NAME)
+                .orderBy("timestamp", Query.Direction.DESCENDING)
+                .limit(limit)
+                .get(com.google.firebase.firestore.Source.CACHE)
+                .await()
+        } catch (e: Exception) {
+            firestore.collection(StockEntry.COLLECTION_NAME)
+                .orderBy("timestamp", Query.Direction.DESCENDING)
+                .limit(limit)
+                .get(com.google.firebase.firestore.Source.SERVER)
+                .await()
+        }
+        val entries = snapshot.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
+        trySend(entries).isSuccess
+        close()
+        awaitClose { }
     }
 
     suspend fun getAllStockEntries(limit: Long = 10000): List<StockEntry> {
