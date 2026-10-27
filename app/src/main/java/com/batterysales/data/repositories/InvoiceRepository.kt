@@ -401,138 +401,34 @@ class InvoiceRepository @Inject constructor(
         treasuryTransaction: com.batterysales.data.models.Transaction?,
         oldBatteryTransaction: com.batterysales.data.models.OldBatteryTransaction?
     ): String {
+        val batch = firestore.batch()
         val invoiceRef = firestore.collection(Invoice.COLLECTION_NAME).document()
         val finalInvoice = invoice.copy(id = invoiceRef.id, createdAt = Date(), updatedAt = Date())
 
-        firestore.runTransaction { transaction ->
-            // --- READ PHASE ---
-            val variantRef = firestore.collection(com.batterysales.data.models.ProductVariant.COLLECTION_NAME).document(stockEntry.productVariantId)
-            val vSnap = transaction.get(variantRef)
-            val variant = vSnap.toObject(com.batterysales.data.models.ProductVariant::class.java)?.copy(id = vSnap.id)
-            
-            val whSnap = transaction.get(firestore.collection("warehouses").document(stockEntry.warehouseId))
-            val warehouseName = whSnap.getString("name") ?: "مخزن"
+        batch.set(invoiceRef, finalInvoice)
 
-            val summarySnapshots = summaryRepository.getSummarySnapshots(
-                transaction = transaction, 
-                warehouseIds = listOf(stockEntry.warehouseId),
-                includeScrap = oldBatteryTransaction != null
-            )
+        val stockRef = firestore.collection(com.batterysales.data.models.StockEntry.COLLECTION_NAME).document()
+        val finalStockEntry = stockEntry.copy(id = stockRef.id, invoiceId = finalInvoice.id)
+        batch.set(stockRef, finalStockEntry)
 
-            // --- WRITE PHASE ---
-            transaction.set(invoiceRef, finalInvoice)
+        if (payment != null && payment.amount > 0.001) {
+            val paymentRef = firestore.collection(Payment.COLLECTION_NAME).document()
+            val finalPayment = payment.copy(id = paymentRef.id, invoiceId = finalInvoice.id, warehouseId = stockEntry.warehouseId)
+            batch.set(paymentRef, finalPayment)
 
-            val stockRef = firestore.collection(com.batterysales.data.models.StockEntry.COLLECTION_NAME).document()
-            val finalStockEntry = stockEntry.copy(id = stockRef.id, invoiceId = finalInvoice.id)
-            transaction.set(stockRef, finalStockEntry)
-
-            if (variant != null) {
-                val rawStock = vSnap.get("currentStock") as? Map<String, Any> ?: emptyMap()
-                val currentStockMap = rawStock.mapValues { (it.value as? Number)?.toInt() ?: 0 }.toMutableMap()
-                val netQtyChange = finalStockEntry.quantity - finalStockEntry.returnedQuantity
-                currentStockMap[finalStockEntry.warehouseId] = (currentStockMap[finalStockEntry.warehouseId] ?: 0) + netQtyChange
-                transaction.update(variantRef, "currentStock", currentStockMap)
-
-                summaryRepository.applyInventoryUpdate(
-                    transaction = transaction,
-                    snapshots = summarySnapshots,
-                    warehouseId = finalStockEntry.warehouseId,
-                    variantId = finalStockEntry.productVariantId,
-                    variant = variant,
-                    qtyChange = netQtyChange
-                )
-
-                // Low Stock Check
-                val threshold = variant.minQuantities[finalStockEntry.warehouseId] ?: variant.minQuantity
-                val newQty = currentStockMap[finalStockEntry.warehouseId] ?: 0
-                val alertRef = firestore.collection(com.batterysales.data.models.SystemAlert.COLLECTION_NAME).document("low_stock_${variant.id}_${finalStockEntry.warehouseId}")
-                val pName = if (!variant.productName.isNullOrBlank()) variant.productName!! else "منتج"
-                val specSuffix = if (variant.specification.isNotBlank()) " | ${variant.specification}" else ""
-
-                if (!variant.isDiscontinued && !variant.archived && threshold > 0 && newQty <= threshold) {
-                    transaction.set(alertRef, com.batterysales.data.models.SystemAlert(
-                        id = alertRef.id,
-                        type = com.batterysales.data.models.SystemAlert.TYPE_LOW_STOCK,
-                        title = "مخزون منخفض: $pName",
-                        message = "${variant.capacity}A$specSuffix في $warehouseName | الكمية المتاحة: $newQty (الحد: $threshold)",
-                        relatedId = variant.id,
-                        warehouseId = finalStockEntry.warehouseId,
-                        warehouseName = warehouseName,
-                        timestamp = Date(),
-                        data = mapOf(
-                            "capacity" to variant.capacity, 
-                            "specification" to variant.specification,
-                            "currentStock" to newQty, 
-                            "threshold" to threshold
-                        )
-                    ))
-                } else {
-                    transaction.delete(alertRef)
-                }
+            if (treasuryTransaction != null) {
+                val treasuryRef = firestore.collection(com.batterysales.data.models.Transaction.COLLECTION_NAME).document()
+                batch.set(treasuryRef, treasuryTransaction.copy(id = treasuryRef.id, relatedId = finalPayment.id, warehouseId = stockEntry.warehouseId))
             }
+        }
 
-            val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
-            val netQty = stockEntry.quantity - stockEntry.returnedQuantity
-            val valueChange = netQty * (variant?.weightedAverageCost ?: 0.0)
-            
-            val statsUpdates = mutableMapOf<String, Any>(
-                "totalInventoryQuantity" to com.google.firebase.firestore.FieldValue.increment(netQty.toLong()),
-                "totalInventoryValue" to com.google.firebase.firestore.FieldValue.increment(valueChange),
-                "totalCustomerDebt" to com.google.firebase.firestore.FieldValue.increment(finalInvoice.remainingAmount),
-                "updatedAt" to Date()
-            )
+        if (oldBatteryTransaction != null && oldBatteryTransaction.quantity > 0) {
+            val scrapRef = firestore.collection(com.batterysales.data.models.OldBatteryTransaction.COLLECTION_NAME).document()
+            val finalScrapTrans = oldBatteryTransaction.copy(id = scrapRef.id, invoiceId = finalInvoice.id, warehouseId = stockEntry.warehouseId)
+            batch.set(scrapRef, finalScrapTrans)
+        }
 
-            if (payment != null && payment.amount > 0.001) {
-                val finalPayment = payment.copy(id = firestore.collection(Payment.COLLECTION_NAME).document().id, invoiceId = finalInvoice.id, warehouseId = stockEntry.warehouseId)
-                transaction.set(firestore.collection(Payment.COLLECTION_NAME).document(finalPayment.id), finalPayment)
-
-                if (finalPayment.paymentMethod == "bank") {
-                    statsUpdates["totalBankBalance"] = com.google.firebase.firestore.FieldValue.increment(finalPayment.amount)
-                } else {
-                    statsUpdates["totalCashBalance"] = com.google.firebase.firestore.FieldValue.increment(finalPayment.amount)
-                }
-
-                summaryRepository.applyFinancialUpdate(
-                    transaction = transaction,
-                    snapshots = summarySnapshots,
-                    warehouseId = stockEntry.warehouseId,
-                    cashChange = if (finalPayment.paymentMethod != "bank") finalPayment.amount else 0.0,
-                    bankChange = if (finalPayment.paymentMethod == "bank") finalPayment.amount else 0.0,
-                    pendingCollectionChange = finalInvoice.remainingAmount,
-                    todayCollectionChange = finalPayment.amount,
-                    todayCollectionCountChange = 1
-                )
-
-                if (treasuryTransaction != null) {
-                    val treasuryRef = firestore.collection(com.batterysales.data.models.Transaction.COLLECTION_NAME).document()
-                    transaction.set(treasuryRef, treasuryTransaction.copy(id = treasuryRef.id, relatedId = finalPayment.id, warehouseId = stockEntry.warehouseId))
-                }
-            } else {
-                summaryRepository.applyFinancialUpdate(
-                    transaction = transaction,
-                    snapshots = summarySnapshots,
-                    warehouseId = stockEntry.warehouseId,
-                    pendingCollectionChange = finalInvoice.remainingAmount
-                )
-            }
-
-            transaction.set(statsRef, statsUpdates, com.google.firebase.firestore.SetOptions.merge())
-
-            if (oldBatteryTransaction != null) {
-                val scrapRef = firestore.collection(com.batterysales.data.models.OldBatteryTransaction.COLLECTION_NAME).document()
-                val finalScrapTrans = oldBatteryTransaction.copy(id = scrapRef.id, invoiceId = finalInvoice.id, warehouseId = stockEntry.warehouseId)
-                transaction.set(scrapRef, finalScrapTrans)
-                
-                summaryRepository.applyScrapUpdate(
-                    transaction = transaction,
-                    snapshots = summarySnapshots,
-                    warehouseId = stockEntry.warehouseId,
-                    qtyChange = finalScrapTrans.quantity,
-                    ampereChange = finalScrapTrans.totalAmperes
-                )
-            }
-        }.await()
-
+        batch.commit().await()
         return finalInvoice.id
     }
 

@@ -42,11 +42,17 @@ class ProductRepository @Inject constructor(
     }
 
     suspend fun getProduct(productId: String): Product? {
-        val snapshot = firestore.collection(Product.COLLECTION_NAME)
-            .document(productId)
-            .get()
-            .await()
-        return snapshot.toObject(Product::class.java)?.copy(id = snapshot.id)
+        if (productId.isEmpty()) return null
+        return try {
+            val snapshot = firestore.collection(Product.COLLECTION_NAME)
+                .document(productId)
+                .get(com.google.firebase.firestore.Source.CACHE)
+                .await()
+            snapshot.toObject(Product::class.java)?.copy(id = snapshot.id)
+                ?: getProductsOnce().find { it.id == productId }
+        } catch (e: Exception) {
+            getProductsOnce().find { it.id == productId }
+        }
     }
 
     suspend fun addProduct(product: Product) {
