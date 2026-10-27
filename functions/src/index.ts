@@ -1,6 +1,10 @@
 import * as admin from "firebase-admin";
 
-admin.initializeApp();
+if (!admin.apps.length) {
+  admin.initializeApp({
+    projectId: process.env.GCLOUD_PROJECT || process.env.FIREBASE_CONFIG ? JSON.parse(process.env.FIREBASE_CONFIG!).projectId : "demo-battery-sales",
+  });
+}
 
 export * from "./triggers/invoices";
 export * from "./triggers/stockEntries";

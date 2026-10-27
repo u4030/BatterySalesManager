@@ -37,7 +37,11 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const admin = __importStar(require("firebase-admin"));
-admin.initializeApp();
+if (!admin.apps.length) {
+    admin.initializeApp({
+        projectId: process.env.GCLOUD_PROJECT || process.env.FIREBASE_CONFIG ? JSON.parse(process.env.FIREBASE_CONFIG).projectId : "demo-battery-sales",
+    });
+}
 __exportStar(require("./triggers/invoices"), exports);
 __exportStar(require("./triggers/stockEntries"), exports);
 __exportStar(require("./triggers/transactions"), exports);
