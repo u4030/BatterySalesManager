@@ -246,10 +246,6 @@ class StockEntryRepository @Inject constructor(
                 transaction.get(firestore.collection(ProductVariant.COLLECTION_NAME).document(vid))
             }
 
-            val warehouseSnapshots = warehouseIds.associateWith { whId ->
-                transaction.get(firestore.collection("warehouses").document(whId))
-            }
-
             val summarySnapshots = summaryRepository.getSummarySnapshots(transaction, warehouseIds)
 
             // --- WRITE PHASE (ATOMIC BATCH WRITE) ---
@@ -326,8 +322,7 @@ class StockEntryRepository @Inject constructor(
 
                         val newQty = currentQty + delta
                         if (newQty < 0) {
-                            val whName = warehouseSnapshots[whId]?.getString("name") ?: whId
-                            throw Exception("الكمية المتاحة في $whName غير كافية للترحيل.")
+                            throw Exception("الكمية المتاحة في المستودع غير كافية للترحيل.")
                         }
 
                         currentStockMap[whId] = newQty
@@ -338,7 +333,6 @@ class StockEntryRepository @Inject constructor(
                         val alertRef = firestore.collection(SystemAlert.COLLECTION_NAME).document("low_stock_${vid}_$whId")
 
                         if (!variant.isDiscontinued && !variant.archived && threshold > 0 && newQty <= threshold) {
-                            val whName = warehouseSnapshots[whId]?.getString("name") ?: "مخزن"
                             val pName = if (!variant.productName.isNullOrBlank()) variant.productName!! else "منتج"
                             val specSuffix = if (variant.specification.isNotBlank()) " | ${variant.specification}" else ""
                             transaction.set(
@@ -347,10 +341,10 @@ class StockEntryRepository @Inject constructor(
                                     id = alertRef.id,
                                     type = SystemAlert.TYPE_LOW_STOCK,
                                     title = "مخزون منخفض: $pName",
-                                    message = "${variant.capacity}A$specSuffix في $whName | الكمية المتاحة: $newQty (الحد: $threshold)",
+                                    message = "${variant.capacity}A$specSuffix | الكمية المتاحة: $newQty (الحد: $threshold)",
                                     relatedId = variant.id,
                                     warehouseId = whId,
-                                    warehouseName = whName,
+                                    warehouseName = whId,
                                     timestamp = Date(),
                                     data = mapOf(
                                         "capacity" to variant.capacity,
