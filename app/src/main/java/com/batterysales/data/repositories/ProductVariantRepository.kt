@@ -122,10 +122,14 @@ class ProductVariantRepository @Inject constructor(
     }
 
     suspend fun getAllVariants(): List<ProductVariant> {
-        val snapshot = firestore.collection(ProductVariant.COLLECTION_NAME)
-            .get()
-            .await()
-        return snapshot.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }
+        return try {
+            val snapshot = firestore.collection(ProductVariant.COLLECTION_NAME)
+                .get(Source.CACHE)
+                .await()
+            snapshot.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }
+        } catch (e: Exception) {
+            emptyList()
+        }
     }
 
     suspend fun getVariantByBarcode(barcode: String): ProductVariant? {
