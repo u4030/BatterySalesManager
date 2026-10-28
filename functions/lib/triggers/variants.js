@@ -90,7 +90,6 @@ exports.onVariantWritten = (0, firestore_1.onDocumentWritten)("product_variants/
         console.timeEnd("onVariantWritten_totalTime");
         return;
     }
-    let createdAlertsCount = 0;
     try {
         console.time("fetchWarehousesAndProduct_parallel");
         const [warehousesSnap, productSnap] = await Promise.all([
@@ -109,7 +108,8 @@ exports.onVariantWritten = (0, firestore_1.onDocumentWritten)("product_variants/
         const minQuantitiesMap = (variant.minQuantities || {});
         const defaultMinQty = Number(variant.minQuantity || 0);
         const capacity = Number(variant.capacity || 0);
-        // Low Stock Alerts Evaluation Loop
+        const warehousesDetailsMap = {};
+        const lowStockDetailsList = [];
         warehouseDocs.forEach((whDoc) => {
             const whId = whDoc.id;
             const whName = whDoc.data()?.name || "مخزن";
@@ -117,33 +117,44 @@ exports.onVariantWritten = (0, firestore_1.onDocumentWritten)("product_variants/
             const currentQty = typeof rawStock === "number" ? rawStock : Number(rawStock || 0);
             const rawMin = minQuantitiesMap[whId];
             const threshold = typeof rawMin === "number" ? rawMin : (rawMin ? Number(rawMin) : defaultMinQty);
-            const alertRef = db.collection("system_alerts").doc(`low_stock_${variantId}_${whId}`);
             if (threshold > 0 && currentQty <= threshold) {
-                const specSuffix = variant.specification ? ` | ${variant.specification}` : "";
-                batch.set(alertRef, {
-                    id: alertRef.id,
-                    type: "low_stock",
-                    title: `مخزون منخفض: ${pName}`,
-                    message: `${capacity}A${specSuffix} في ${whName} | الكمية: ${currentQty} (الحد: ${threshold})`,
-                    relatedId: variantId,
-                    warehouseId: whId,
+                warehousesDetailsMap[whId] = {
+                    currentStock: currentQty,
+                    threshold: threshold,
                     warehouseName: whName,
-                    resolved: false,
-                    timestamp: now,
-                    data: {
-                        capacity: capacity,
-                        specification: variant.specification || "",
-                        currentStock: currentQty,
-                        threshold: threshold,
-                    },
-                }, { merge: true });
-                createdAlertsCount += 1;
-            }
-            else {
-                // Stock is above threshold - wipe stale alert document so it disappears from Dashboard
-                batch.delete(alertRef);
+                };
+                lowStockDetailsList.push(`${whName}: الحالي ${currentQty} من ${threshold}`);
             }
         });
+        const unifiedAlertRef = db.collection("system_alerts").doc(`low_stock_${variantId}`);
+        if (lowStockDetailsList.length > 0) {
+            const specSuffix = variant.specification ? ` | ${variant.specification}` : "";
+            batch.set(unifiedAlertRef, {
+                id: unifiedAlertRef.id,
+                type: "low_stock",
+                title: `مخزون منخفض: ${pName}`,
+                message: `${capacity}A${specSuffix} - ${lowStockDetailsList.join(" | ")}`,
+                relatedId: variantId,
+                resolved: false,
+                timestamp: now,
+                data: {
+                    capacity: capacity,
+                    specification: variant.specification || "",
+                    warehousesDetails: warehousesDetailsMap,
+                },
+            }, { merge: true });
+            // Clean up old individual warehouse alert documents
+            warehouseDocs.forEach((whDoc) => {
+                batch.delete(db.collection("system_alerts").doc(`low_stock_${variantId}_${whDoc.id}`));
+            });
+        }
+        else {
+            // All warehouses safe - delete unified alert and individual alerts
+            batch.delete(unifiedAlertRef);
+            warehouseDocs.forEach((whDoc) => {
+                batch.delete(db.collection("system_alerts").doc(`low_stock_${variantId}_${whDoc.id}`));
+            });
+        }
         // Update Sync Registry & Dashboard Hub
         console.time("consolidatedWriteBatch_commit");
         batch.set(db.doc("summaries/sync_registry"), {

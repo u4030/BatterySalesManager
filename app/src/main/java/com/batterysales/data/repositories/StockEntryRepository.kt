@@ -305,68 +305,7 @@ class StockEntryRepository @Inject constructor(
                 }
             }
 
-            // Apply ProductVariant stock map updates & low-stock alerts via atomic field paths (dot notation)
-            variantSnapshots.forEach { (vid, vSnap) ->
-                val variant = variantsMap[vid] ?: return@forEach
-                val variantUpdates = mutableMapOf<String, Any>()
-
-                warehouseIds.forEach { whId ->
-                    val delta = inventoryUpdates[whId]?.get(vid) ?: 0
-                    if (delta != 0) {
-                        val currentQty = summarySnapshots.warehouseSummaries[whId]?.items?.get(vid)?.currentStock ?: 0
-                        val newQty = currentQty + delta
-                        if (newQty < 0) {
-                            throw Exception("الكمية المتاحة في المستودع غير كافية للترحيل.")
-                        }
-
-                        variantUpdates["currentStock.$whId"] = newQty
-
-                        // Check low stock thresholds
-                        val threshold = variant.minQuantities[whId] ?: variant.minQuantity
-                        val alertRef = firestore.collection(SystemAlert.COLLECTION_NAME).document("low_stock_${vid}_$whId")
-
-                        if (!variant.isDiscontinued && !variant.archived && threshold > 0 && newQty <= threshold) {
-                            val pName = if (!variant.productName.isNullOrBlank()) variant.productName!! else "منتج"
-                            val specSuffix = if (variant.specification.isNotBlank()) " | ${variant.specification}" else ""
-                            transaction.set(
-                                alertRef,
-                                SystemAlert(
-                                    id = alertRef.id,
-                                    type = SystemAlert.TYPE_LOW_STOCK,
-                                    title = "مخزون منخفض: $pName",
-                                    message = "${variant.capacity}A$specSuffix | الكمية المتاحة: $newQty (الحد: $threshold)",
-                                    relatedId = variant.id,
-                                    warehouseId = whId,
-                                    warehouseName = whId,
-                                    timestamp = Date(),
-                                    data = mapOf(
-                                        "capacity" to variant.capacity,
-                                        "specification" to variant.specification,
-                                        "currentStock" to newQty,
-                                        "threshold" to threshold
-                                    )
-                                )
-                            )
-                        } else {
-                            transaction.delete(alertRef)
-                        }
-                    }
-                }
-
-                if (variantUpdates.isNotEmpty()) {
-                    transaction.update(vSnap.reference, variantUpdates)
-                }
-            }
-
-            // Apply consolidated inventory summary updates across affected warehouses
-            if (inventoryUpdates.isNotEmpty()) {
-                summaryRepository.applyInventoryUpdates(
-                    transaction = transaction,
-                    snapshots = summarySnapshots,
-                    updates = inventoryUpdates,
-                    variantsMap = variantsMap
-                )
-            }
+            // Stock entries created inside transaction will trigger onStockEntryCreated Cloud Function to adjust variant stock and summaries atomically
         }.await()
     }
 
