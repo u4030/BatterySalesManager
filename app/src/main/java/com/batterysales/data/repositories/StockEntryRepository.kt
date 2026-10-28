@@ -305,25 +305,21 @@ class StockEntryRepository @Inject constructor(
                 }
             }
 
-            // Apply ProductVariant stock map updates & low-stock alerts
+            // Apply ProductVariant stock map updates & low-stock alerts via atomic field paths (dot notation)
             variantSnapshots.forEach { (vid, vSnap) ->
                 val variant = variantsMap[vid] ?: return@forEach
-                val currentStockMap = (variant.currentStock ?: emptyMap()).toMutableMap()
-                var stockChanged = false
+                val variantUpdates = mutableMapOf<String, Any>()
 
                 warehouseIds.forEach { whId ->
                     val delta = inventoryUpdates[whId]?.get(vid) ?: 0
                     if (delta != 0) {
-                        val currentQty = summarySnapshots.warehouseSummaries[whId]?.items?.get(vid)?.currentStock
-                            ?: ((currentStockMap[whId] as? Number)?.toInt() ?: 0)
-
+                        val currentQty = summarySnapshots.warehouseSummaries[whId]?.items?.get(vid)?.currentStock ?: 0
                         val newQty = currentQty + delta
                         if (newQty < 0) {
                             throw Exception("الكمية المتاحة في المستودع غير كافية للترحيل.")
                         }
 
-                        currentStockMap[whId] = newQty
-                        stockChanged = true
+                        variantUpdates["currentStock.$whId"] = newQty
 
                         // Check low stock thresholds
                         val threshold = variant.minQuantities[whId] ?: variant.minQuantity
@@ -357,8 +353,8 @@ class StockEntryRepository @Inject constructor(
                     }
                 }
 
-                if (stockChanged) {
-                    transaction.update(vSnap.reference, "currentStock", currentStockMap)
+                if (variantUpdates.isNotEmpty()) {
+                    transaction.update(vSnap.reference, variantUpdates)
                 }
             }
 
