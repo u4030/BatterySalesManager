@@ -90,16 +90,17 @@ class SummaryRepository @Inject constructor(
         }
 
         val globalRef = summariesCollection.document("inventory_global")
-        val supplierRef = summariesCollection.document("suppliers_overview")
-        val financialRef = summariesCollection.document("financial_status")
-        val registryRef = summariesCollection.document("sync_registry")
+        // Untargeted summaries for physical inventory transfers commented out to minimize transaction reads
+        // val supplierRef = summariesCollection.document("suppliers_overview")
+        // val financialRef = summariesCollection.document("financial_status")
+        // val registryRef = summariesCollection.document("sync_registry")
 
         return SummarySnapshots(
             warehouseSummaries = whSummaries,
             inventoryGlobal = transaction.get(globalRef).toObject(InventorySummary::class.java) ?: InventorySummary(id = "inventory_global"),
-            suppliersOverview = transaction.get(supplierRef).toObject(SuppliersOverview::class.java) ?: SuppliersOverview(),
-            financialStatus = transaction.get(financialRef).toObject(FinancialStatus::class.java) ?: FinancialStatus(),
-            syncRegistry = transaction.get(registryRef).toObject(SyncRegistry::class.java) ?: SyncRegistry(),
+            suppliersOverview = cachedSuppliersOverview ?: SuppliersOverview(),
+            financialStatus = cachedFinancialStatus ?: FinancialStatus(),
+            syncRegistry = cachedSyncRegistry ?: SyncRegistry(),
             scrapSnapshots = scrapMap
         )
     }
