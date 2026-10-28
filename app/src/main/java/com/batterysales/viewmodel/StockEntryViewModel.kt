@@ -273,12 +273,6 @@ class StockEntryViewModel @Inject constructor(
                 if (product != null) {
                     onProductSelected(product)
                     onVariantSelected(variant)
-                } else {
-                    val loadedProduct = productRepository.getProduct(variant.productId)
-                    if (loadedProduct != null) {
-                        onProductSelected(loadedProduct)
-                        onVariantSelected(variant)
-                    }
                 }
             } else {
                 _uiState.update { it.copy(errorMessage = "لم يتم العثور على منتج بهذا الباركود") }
