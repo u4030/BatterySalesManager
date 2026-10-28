@@ -104,7 +104,7 @@ class StockEntryViewModel @Inject constructor(
             val products = productRepository.getProductsOnce()
             val warehouses = warehouseRepository.getWarehousesOnce()
             val suppliers = supplierRepository.getSuppliersOnce()
-            allVariants = productVariantRepository.getAllVariantsOnce()
+            allVariants = productVariantRepository.getAllVariants()
 
             val activeProducts = products.filter { !it.archived }.sortedBy { it.name }
             val selectedWH = warehouses.find { it.id == user?.warehouseId }
