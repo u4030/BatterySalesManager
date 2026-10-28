@@ -207,6 +207,12 @@ class StockTransferViewModel @Inject constructor(
                         )
                     )
                 )
+
+                val currentSourceWhId = state.sourceWarehouse?.id
+                if (currentSourceWhId != null) {
+                    cachedInventorySummary = summaryRepository.getInventorySummary(currentSourceWhId, forceRefresh = true)
+                }
+
                 // Clear fields and reset state for next operation instead of closing screen
                 _uiState.update {
                     it.copy(
