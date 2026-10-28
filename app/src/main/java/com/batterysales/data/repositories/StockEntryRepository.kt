@@ -194,6 +194,18 @@ class StockEntryRepository @Inject constructor(
         return snapshot.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
     }
 
+    data class TransferItem(
+        val productVariantId: String,
+        val productName: String,
+        val capacity: Int,
+        val sourceWarehouseId: String,
+        val destinationWarehouseId: String,
+        val quantity: Int,
+        val status: String = "approved",
+        val createdBy: String = "",
+        val createdByUserName: String = ""
+    )
+
     suspend fun transferStock(
         productVariantId: String,
         productName: String,
@@ -205,143 +217,168 @@ class StockEntryRepository @Inject constructor(
         createdBy: String = "",
         createdByUserName: String = ""
     ) {
+        transferStockBulk(
+            listOf(
+                TransferItem(
+                    productVariantId = productVariantId,
+                    productName = productName,
+                    capacity = capacity,
+                    sourceWarehouseId = sourceWarehouseId,
+                    destinationWarehouseId = destinationWarehouseId,
+                    quantity = quantity,
+                    status = status,
+                    createdBy = createdBy,
+                    createdByUserName = createdByUserName
+                )
+            )
+        )
+    }
+
+    suspend fun transferStockBulk(items: List<TransferItem>) {
+        if (items.isEmpty()) return
+
         firestore.runTransaction { transaction ->
-            // --- READ PHASE ---
-            val variantRef = firestore.collection(ProductVariant.COLLECTION_NAME).document(productVariantId)
-            val variant = transaction.get(variantRef).toObject(ProductVariant::class.java)
+            // --- READ PHASE (CONSOLIDATED BULK READ) ---
+            val variantIds = items.map { it.productVariantId }.distinct()
+            val warehouseIds = items.flatMap { listOf(it.sourceWarehouseId, it.destinationWarehouseId) }.distinct()
 
-            val sourceWhSnap = transaction.get(firestore.collection("warehouses").document(sourceWarehouseId))
-            val sourceWhName = sourceWhSnap.getString("name") ?: "مخزن غير معروف"
-            
-            val snapshots = summaryRepository.getSummarySnapshots(transaction, listOf(sourceWarehouseId, destinationWarehouseId))
+            val variantSnapshots = variantIds.associateWith { vid ->
+                transaction.get(firestore.collection(ProductVariant.COLLECTION_NAME).document(vid))
+            }
 
-            // --- WRITE PHASE ---
+            val warehouseSnapshots = warehouseIds.associateWith { whId ->
+                transaction.get(firestore.collection("warehouses").document(whId))
+            }
+
+            val summarySnapshots = summaryRepository.getSummarySnapshots(transaction, warehouseIds)
+
+            // --- WRITE PHASE (ATOMIC BATCH WRITE) ---
             val transferBatchId = "transfer_${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(6)}"
-            val sourceDocRef = firestore.collection(StockEntry.COLLECTION_NAME).document()
-            val sourceStockEntry = StockEntry(
-                id = sourceDocRef.id,
-                orderId = transferBatchId,
-                productVariantId = productVariantId,
-                productName = productName,
-                capacity = capacity,
-                specification = variant?.specification ?: "",
-                warehouseId = sourceWarehouseId,
-                quantity = -quantity,
-                costPrice = 0.0,
-                status = status,
-                createdBy = createdBy,
-                createdByUserName = createdByUserName
-            )
-            transaction.set(sourceDocRef, sourceStockEntry)
+            val inventoryUpdates = mutableMapOf<String, MutableMap<String, Int>>() // whId -> { vid -> qtyDelta }
+            val variantsMap = mutableMapOf<String, ProductVariant?>()
 
-            val destinationDocRef = firestore.collection(StockEntry.COLLECTION_NAME).document()
-            val destinationStockEntry = StockEntry(
-                id = destinationDocRef.id,
-                orderId = transferBatchId,
-                productVariantId = productVariantId,
-                productName = productName,
-                capacity = capacity,
-                specification = variant?.specification ?: "",
-                warehouseId = destinationWarehouseId,
-                quantity = quantity,
-                costPrice = 0.0,
-                status = status,
-                createdBy = createdBy,
-                createdByUserName = createdByUserName
-            )
-            transaction.set(destinationDocRef, destinationStockEntry)
+            items.forEach { item ->
+                val vSnap = variantSnapshots[item.productVariantId]
+                val variant = vSnap?.toObject(ProductVariant::class.java)
+                variantsMap[item.productVariantId] = variant
 
-            if (status == "approved" && variant != null) {
-                val currentStockMap = variant.currentStock ?: emptyMap()
-                val newStockMap = currentStockMap.toMutableMap()
-                var sourceOldQty = (newStockMap[sourceWarehouseId] as? Number)?.toInt() ?: 0
-                var destOldQty = (newStockMap[destinationWarehouseId] as? Number)?.toInt() ?: 0
-
-                if (sourceOldQty == 0) {
-                    val whSummaryQty = snapshots.warehouseSummaries[sourceWarehouseId]?.items?.get(productVariantId)?.currentStock ?: 0
-                    if (whSummaryQty > 0) {
-                        sourceOldQty = whSummaryQty
-                    }
-                }
-                if (destOldQty == 0) {
-                    val whSummaryQty = snapshots.warehouseSummaries[destinationWarehouseId]?.items?.get(productVariantId)?.currentStock ?: 0
-                    if (whSummaryQty > 0) {
-                        destOldQty = whSummaryQty
-                    }
-                }
-
-                if (sourceOldQty < quantity) {
-                    throw Exception("الكمية المتاحة في $sourceWhName ($sourceOldQty) غير كافية لنقل $quantity قطعة.")
-                }
-
-                val sourceNewQty = sourceOldQty - quantity
-                val destNewQty = destOldQty + quantity
-                newStockMap[sourceWarehouseId] = sourceNewQty
-                newStockMap[destinationWarehouseId] = destNewQty
-                transaction.update(variantRef, "currentStock", newStockMap)
-
-                summaryRepository.applyInventoryUpdates(
-                    transaction = transaction,
-                    snapshots = snapshots,
-                    updates = mapOf(
-                        sourceWarehouseId to mapOf(productVariantId to -quantity),
-                        destinationWarehouseId to mapOf(productVariantId to quantity)
-                    ),
-                    variantsMap = mapOf(productVariantId to variant)
+                val sourceDocRef = firestore.collection(StockEntry.COLLECTION_NAME).document()
+                transaction.set(
+                    sourceDocRef,
+                    StockEntry(
+                        id = sourceDocRef.id,
+                        orderId = transferBatchId,
+                        productVariantId = item.productVariantId,
+                        productName = item.productName,
+                        capacity = item.capacity,
+                        specification = variant?.specification ?: "",
+                        warehouseId = item.sourceWarehouseId,
+                        quantity = -item.quantity,
+                        costPrice = 0.0,
+                        status = item.status,
+                        createdBy = item.createdBy,
+                        createdByUserName = item.createdByUserName
+                    )
                 )
 
-                val pName = if (!variant.productName.isNullOrBlank()) variant.productName!! else productName
+                val destDocRef = firestore.collection(StockEntry.COLLECTION_NAME).document()
+                transaction.set(
+                    destDocRef,
+                    StockEntry(
+                        id = destDocRef.id,
+                        orderId = transferBatchId,
+                        productVariantId = item.productVariantId,
+                        productName = item.productName,
+                        capacity = item.capacity,
+                        specification = variant?.specification ?: "",
+                        warehouseId = item.destinationWarehouseId,
+                        quantity = item.quantity,
+                        costPrice = 0.0,
+                        status = item.status,
+                        createdBy = item.createdBy,
+                        createdByUserName = item.createdByUserName
+                    )
+                )
 
-                val threshold = variant.minQuantities[sourceWarehouseId] ?: variant.minQuantity
-                val alertRef = firestore.collection(SystemAlert.COLLECTION_NAME).document("low_stock_${variant.id}_$sourceWarehouseId")
-                
-                if (!variant.isDiscontinued && !variant.archived && threshold > 0 && sourceNewQty <= threshold) {
-                    val specSuffix = if (variant.specification.isNotBlank()) " | ${variant.specification}" else ""
-                    transaction.set(alertRef, SystemAlert(
-                        id = alertRef.id,
-                        type = SystemAlert.TYPE_LOW_STOCK,
-                        title = "مخزون منخفض: $pName",
-                        message = "${variant.capacity}A$specSuffix في $sourceWhName | الكمية المتاحة: $sourceNewQty (الحد: $threshold)",
-                        relatedId = variant.id,
-                        warehouseId = sourceWarehouseId,
-                        warehouseName = sourceWhName,
-                        timestamp = Date(),
-                        data = mapOf(
-                            "capacity" to variant.capacity,
-                            "specification" to variant.specification,
-                            "currentStock" to sourceNewQty,
-                            "threshold" to threshold
-                        )
-                    ))
-                } else {
-                    transaction.delete(alertRef)
+                if (item.status == "approved" && variant != null) {
+                    val srcDeltas = inventoryUpdates.getOrPut(item.sourceWarehouseId) { mutableMapOf() }
+                    srcDeltas[item.productVariantId] = (srcDeltas[item.productVariantId] ?: 0) - item.quantity
+
+                    val destDeltas = inventoryUpdates.getOrPut(item.destinationWarehouseId) { mutableMapOf() }
+                    destDeltas[item.productVariantId] = (destDeltas[item.productVariantId] ?: 0) + item.quantity
+                }
+            }
+
+            // Apply ProductVariant stock map updates & low-stock alerts
+            variantSnapshots.forEach { (vid, vSnap) ->
+                val variant = variantsMap[vid] ?: return@forEach
+                val currentStockMap = (variant.currentStock ?: emptyMap()).toMutableMap()
+                var stockChanged = false
+
+                warehouseIds.forEach { whId ->
+                    val delta = inventoryUpdates[whId]?.get(vid) ?: 0
+                    if (delta != 0) {
+                        var currentQty = (currentStockMap[whId] as? Number)?.toInt() ?: 0
+                        if (currentQty == 0) {
+                            val whSummaryQty = summarySnapshots.warehouseSummaries[whId]?.items?.get(vid)?.currentStock ?: 0
+                            if (whSummaryQty > 0) currentQty = whSummaryQty
+                        }
+
+                        val newQty = currentQty + delta
+                        if (newQty < 0) {
+                            val whName = warehouseSnapshots[whId]?.getString("name") ?: whId
+                            throw Exception("الكمية المتاحة في $whName غير كافية للترحيل.")
+                        }
+
+                        currentStockMap[whId] = newQty
+                        stockChanged = true
+
+                        // Check low stock thresholds
+                        val threshold = variant.minQuantities[whId] ?: variant.minQuantity
+                        val alertRef = firestore.collection(SystemAlert.COLLECTION_NAME).document("low_stock_${vid}_$whId")
+
+                        if (!variant.isDiscontinued && !variant.archived && threshold > 0 && newQty <= threshold) {
+                            val whName = warehouseSnapshots[whId]?.getString("name") ?: "مخزن"
+                            val pName = if (!variant.productName.isNullOrBlank()) variant.productName!! else "منتج"
+                            val specSuffix = if (variant.specification.isNotBlank()) " | ${variant.specification}" else ""
+                            transaction.set(
+                                alertRef,
+                                SystemAlert(
+                                    id = alertRef.id,
+                                    type = SystemAlert.TYPE_LOW_STOCK,
+                                    title = "مخزون منخفض: $pName",
+                                    message = "${variant.capacity}A$specSuffix في $whName | الكمية المتاحة: $newQty (الحد: $threshold)",
+                                    relatedId = variant.id,
+                                    warehouseId = whId,
+                                    warehouseName = whName,
+                                    timestamp = Date(),
+                                    data = mapOf(
+                                        "capacity" to variant.capacity,
+                                        "specification" to variant.specification,
+                                        "currentStock" to newQty,
+                                        "threshold" to threshold
+                                    )
+                                )
+                            )
+                        } else {
+                            transaction.delete(alertRef)
+                        }
+                    }
                 }
 
-                val destThreshold = variant.minQuantities[destinationWarehouseId] ?: variant.minQuantity
-                val destAlertRef = firestore.collection(SystemAlert.COLLECTION_NAME).document("low_stock_${variant.id}_$destinationWarehouseId")
-                if (!variant.isDiscontinued && !variant.archived && destThreshold > 0 && destNewQty <= destThreshold) {
-                    val destWhSnap = transaction.get(firestore.collection("warehouses").document(destinationWarehouseId))
-                    val destWhName = destWhSnap.getString("name") ?: "مخزن غير معروف"
-                    val specSuffix = if (variant.specification.isNotBlank()) " | ${variant.specification}" else ""
-                    transaction.set(destAlertRef, SystemAlert(
-                        id = destAlertRef.id,
-                        type = SystemAlert.TYPE_LOW_STOCK,
-                        title = "مخزون منخفض: $pName",
-                        message = "${variant.capacity}A$specSuffix في $destWhName | الكمية المتاحة: $destNewQty (الحد: $destThreshold)",
-                        relatedId = variant.id,
-                        warehouseId = destinationWarehouseId,
-                        warehouseName = destWhName,
-                        timestamp = Date(),
-                        data = mapOf(
-                            "capacity" to variant.capacity,
-                            "specification" to variant.specification,
-                            "currentStock" to destNewQty,
-                            "threshold" to destThreshold
-                        )
-                    ))
-                } else {
-                    transaction.delete(destAlertRef)
+                if (stockChanged) {
+                    transaction.update(vSnap.reference, "currentStock", currentStockMap)
                 }
+            }
+
+            // Apply consolidated inventory summary updates across affected warehouses
+            if (inventoryUpdates.isNotEmpty()) {
+                summaryRepository.applyInventoryUpdates(
+                    transaction = transaction,
+                    snapshots = summarySnapshots,
+                    updates = inventoryUpdates,
+                    variantsMap = variantsMap
+                )
             }
         }.await()
     }

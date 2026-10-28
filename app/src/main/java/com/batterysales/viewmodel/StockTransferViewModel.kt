@@ -192,12 +192,20 @@ class StockTransferViewModel @Inject constructor(
                     return@launch
                 }
 
-                stockEntryRepository.transferStock(
-                    productVariantId = variant.id, productName = state.selectedProduct?.name ?: "",
-                    capacity = variant.capacity, sourceWarehouseId = source.id,
-                    destinationWarehouseId = dest.id, quantity = qty,
-                    status = if (currentUser?.role == "seller") "pending" else "approved",
-                    createdBy = currentUser?.id ?: "", createdByUserName = currentUser?.displayName ?: ""
+                stockEntryRepository.transferStockBulk(
+                    listOf(
+                        StockEntryRepository.TransferItem(
+                            productVariantId = variant.id,
+                            productName = state.selectedProduct?.name ?: "",
+                            capacity = variant.capacity,
+                            sourceWarehouseId = source.id,
+                            destinationWarehouseId = dest.id,
+                            quantity = qty,
+                            status = if (currentUser?.role == "seller") "pending" else "approved",
+                            createdBy = currentUser?.id ?: "",
+                            createdByUserName = currentUser?.displayName ?: ""
+                        )
+                    )
                 )
                 // Clear fields and reset state for next operation instead of closing screen
                 _uiState.update {
