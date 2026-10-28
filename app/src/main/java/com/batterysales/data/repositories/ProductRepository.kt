@@ -49,9 +49,8 @@ class ProductRepository @Inject constructor(
                 .get(com.google.firebase.firestore.Source.CACHE)
                 .await()
             snapshot.toObject(Product::class.java)?.copy(id = snapshot.id)
-                ?: getProductsOnce().find { it.id == productId }
         } catch (e: Exception) {
-            getProductsOnce().find { it.id == productId }
+            null
         }
     }
 

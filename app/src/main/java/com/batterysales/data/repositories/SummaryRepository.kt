@@ -499,16 +499,21 @@ class SummaryRepository @Inject constructor(
         }
         
         val docId = if (warehouseId != null) "inventory_wh_$warehouseId" else "inventory_global"
+        val emptySummary = InventorySummary(id = docId, warehouseId = warehouseId)
+
         return try {
             val source = if (!forceRefresh) com.google.firebase.firestore.Source.CACHE else com.google.firebase.firestore.Source.SERVER
             val snap = summariesCollection.document(docId).get(source).await()
-            val summary = snap.toObject(InventorySummary::class.java) ?: InventorySummary(id = docId, warehouseId = warehouseId)
+            val summary = if (snap.exists()) {
+                snap.toObject(InventorySummary::class.java) ?: emptySummary
+            } else {
+                emptySummary
+            }
             val newCache = cachedInventorySummary.toMutableMap()
             newCache[key] = summary
             cachedInventorySummary = newCache
             summary
         } catch (e: Exception) {
-            val emptySummary = InventorySummary(id = docId, warehouseId = warehouseId)
             val newCache = cachedInventorySummary.toMutableMap()
             newCache[key] = emptySummary
             cachedInventorySummary = newCache
