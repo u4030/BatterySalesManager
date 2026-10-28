@@ -314,11 +314,8 @@ class StockEntryRepository @Inject constructor(
                 warehouseIds.forEach { whId ->
                     val delta = inventoryUpdates[whId]?.get(vid) ?: 0
                     if (delta != 0) {
-                        var currentQty = (currentStockMap[whId] as? Number)?.toInt() ?: 0
-                        if (currentQty == 0) {
-                            val whSummaryQty = summarySnapshots.warehouseSummaries[whId]?.items?.get(vid)?.currentStock ?: 0
-                            if (whSummaryQty > 0) currentQty = whSummaryQty
-                        }
+                        val currentQty = summarySnapshots.warehouseSummaries[whId]?.items?.get(vid)?.currentStock
+                            ?: ((currentStockMap[whId] as? Number)?.toInt() ?: 0)
 
                         val newQty = currentQty + delta
                         if (newQty < 0) {
