@@ -90,16 +90,17 @@ class SummaryRepository @Inject constructor(
         }
 
         val globalRef = summariesCollection.document("inventory_global")
-        val supplierRef = summariesCollection.document("suppliers_overview")
-        val financialRef = summariesCollection.document("financial_status")
-        val registryRef = summariesCollection.document("sync_registry")
+        // Untargeted summaries for physical inventory transfers commented out to minimize transaction reads
+        // val supplierRef = summariesCollection.document("suppliers_overview")
+        // val financialRef = summariesCollection.document("financial_status")
+        // val registryRef = summariesCollection.document("sync_registry")
 
         return SummarySnapshots(
             warehouseSummaries = whSummaries,
             inventoryGlobal = transaction.get(globalRef).toObject(InventorySummary::class.java) ?: InventorySummary(id = "inventory_global"),
-            suppliersOverview = transaction.get(supplierRef).toObject(SuppliersOverview::class.java) ?: SuppliersOverview(),
-            financialStatus = transaction.get(financialRef).toObject(FinancialStatus::class.java) ?: FinancialStatus(),
-            syncRegistry = transaction.get(registryRef).toObject(SyncRegistry::class.java) ?: SyncRegistry(),
+            suppliersOverview = cachedSuppliersOverview ?: SuppliersOverview(),
+            financialStatus = cachedFinancialStatus ?: FinancialStatus(),
+            syncRegistry = cachedSyncRegistry ?: SyncRegistry(),
             scrapSnapshots = scrapMap
         )
     }
@@ -499,16 +500,21 @@ class SummaryRepository @Inject constructor(
         }
         
         val docId = if (warehouseId != null) "inventory_wh_$warehouseId" else "inventory_global"
+        val emptySummary = InventorySummary(id = docId, warehouseId = warehouseId)
+
         return try {
             val source = if (!forceRefresh) com.google.firebase.firestore.Source.CACHE else com.google.firebase.firestore.Source.SERVER
             val snap = summariesCollection.document(docId).get(source).await()
-            val summary = snap.toObject(InventorySummary::class.java) ?: InventorySummary(id = docId, warehouseId = warehouseId)
+            val summary = if (snap.exists()) {
+                snap.toObject(InventorySummary::class.java) ?: emptySummary
+            } else {
+                emptySummary
+            }
             val newCache = cachedInventorySummary.toMutableMap()
             newCache[key] = summary
             cachedInventorySummary = newCache
             summary
         } catch (e: Exception) {
-            val emptySummary = InventorySummary(id = docId, warehouseId = warehouseId)
             val newCache = cachedInventorySummary.toMutableMap()
             newCache[key] = emptySummary
             cachedInventorySummary = newCache

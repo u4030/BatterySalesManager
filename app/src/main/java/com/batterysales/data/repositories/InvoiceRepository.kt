@@ -36,20 +36,20 @@ class InvoiceRepository @Inject constructor(
     }
 
     /**
-     * Warning: Dangerous broad listener. Use getInvoicesPaginated instead.
+     * Deprecated broad listener replaced with CACHE-first paginated fetch flow.
      */
-    fun getAllInvoices(limit: Long = 1000): Flow<List<Invoice>> = callbackFlow {
+    fun getAllInvoices(limit: Long = 20): Flow<List<Invoice>> = callbackFlow {
         val listenerRegistration = firestore.collection(Invoice.COLLECTION_NAME)
             .orderBy("createdAt", Query.Direction.DESCENDING)
             .limit(limit)
-            .addSnapshotListener { snapshot, error ->
+            .addSnapshotListener(com.google.firebase.firestore.MetadataChanges.INCLUDE) { snapshot, error ->
                 if (error != null) {
-                    close(error)
+                    trySend(emptyList())
                     return@addSnapshotListener
                 }
                 if (snapshot != null) {
                     val invoices = snapshot.documents.mapNotNull { it.toObject(Invoice::class.java)?.copy(id = it.id) }
-                    trySend(invoices).isSuccess
+                    trySend(invoices)
                 }
             }
         awaitClose { listenerRegistration.remove() }
@@ -135,263 +135,25 @@ class InvoiceRepository @Inject constructor(
         return Pair(invoices, lastDoc)
     }
 
+    /**
+     * Zero Client-Side Impact Command: Writes a delete request / status command directly to Firestore.
+     * The server-side Cloud Function executes background reversals atomically.
+     */
     suspend fun deleteInvoice(invoiceId: String) {
-        val payments = firestore.collection(Payment.COLLECTION_NAME)
-            .whereEqualTo("invoiceId", invoiceId).get().await()
-
-        val stockEntries = firestore.collection(com.batterysales.data.models.StockEntry.COLLECTION_NAME)
-            .whereEqualTo("invoiceId", invoiceId).get().await()
-            
-        val scrapTransactions = firestore.collection(com.batterysales.data.models.OldBatteryTransaction.COLLECTION_NAME)
-            .whereEqualTo("invoiceId", invoiceId).get().await()
-
-        val entries = stockEntries.documents.mapNotNull { it.toObject(com.batterysales.data.models.StockEntry::class.java)?.copy(id = it.id) }
-        val approvedEntries = entries.filter { it.status == "approved" }
-        val variantIds = approvedEntries.map { it.productVariantId }.distinct()
-        
-        // Find main invoice to determine its warehouse
-        val invoiceDoc = firestore.collection(Invoice.COLLECTION_NAME).document(invoiceId).get().await()
-        val mainInvoiceWh = invoiceDoc.getString("warehouseId") ?: ""
-
-        val warehouseIds = (approvedEntries.map { it.warehouseId } + 
-                           payments.documents.mapNotNull { it.getString("warehouseId") } + 
-                           scrapTransactions.documents.mapNotNull { it.getString("warehouseId") } +
-                           listOf(mainInvoiceWh))
-                           .filter { it.isNotBlank() }.distinct()
-
-        // Find ledger entries to delete (Handling Firestore 30-item limit for whereIn)
-        val paymentIds = payments.documents.map { it.id }
-        val treasuryTransactions = mutableListOf<com.google.firebase.firestore.DocumentSnapshot>()
-        val bankTransactions = mutableListOf<com.google.firebase.firestore.DocumentSnapshot>()
-
-        if (paymentIds.isNotEmpty()) {
-            paymentIds.chunked(30).forEach { chunk ->
-                treasuryTransactions.addAll(
-                    firestore.collection(com.batterysales.data.models.Transaction.COLLECTION_NAME)
-                        .whereIn("relatedId", chunk).get().await().documents
-                )
-                bankTransactions.addAll(
-                    firestore.collection(com.batterysales.data.models.BankTransaction.COLLECTION_NAME)
-                        .whereIn("billId", chunk).get().await().documents
-                )
-            }
-        }
-        
-        // Also find ledger entries linked directly to the invoice ID
-        treasuryTransactions.addAll(
-            firestore.collection(com.batterysales.data.models.Transaction.COLLECTION_NAME)
-                .whereEqualTo("relatedId", invoiceId).get().await().documents
+        val invoiceRef = firestore.collection(Invoice.COLLECTION_NAME).document(invoiceId)
+        val deleteCommand = mapOf(
+            "status" to "PENDING_DELETE",
+            "deleteRequestedAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
         )
-        bankTransactions.addAll(
-            firestore.collection(com.batterysales.data.models.BankTransaction.COLLECTION_NAME)
-                .whereEqualTo("billId", invoiceId).get().await().documents
-        )
+        invoiceRef.set(deleteCommand, com.google.firebase.firestore.SetOptions.merge()).await()
 
-        // Deduplicate references to avoid transaction errors
-        val uniqueTreasuryRefs = treasuryTransactions.distinctBy { it.id }
-        val uniqueBankRefs = bankTransactions.distinctBy { it.id }
-
-        android.util.Log.d("InvoiceRepo", "Deleting Invoice: $invoiceId, Payments: ${payments.size()}, StockEntries: ${stockEntries.size()}, Scrap: ${scrapTransactions.size()}")
-
-        firestore.runTransaction { transaction ->
-            // --- READ PHASE ---
-            val variantSnapshots = variantIds.associateWith { vid ->
-                transaction.get(firestore.collection(com.batterysales.data.models.ProductVariant.COLLECTION_NAME).document(vid))
-            }
-            
-            val summarySnapshots = summaryRepository.getSummarySnapshots(
-                transaction = transaction, 
-                warehouseIds = warehouseIds,
-                includeScrap = !scrapTransactions.isEmpty
-            )
-            
-            val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
-            val invoiceRef = firestore.collection(Invoice.COLLECTION_NAME).document(invoiceId)
-            val invoiceSnap = transaction.get(invoiceRef)
-            
-            if (!invoiceSnap.exists()) {
-                android.util.Log.e("InvoiceRepo", "Transaction aborted: Invoice $invoiceId not found")
-                return@runTransaction
-            }
-            val invoice = invoiceSnap.toObject(Invoice::class.java) ?: return@runTransaction
-
-            android.util.Log.d("InvoiceRepo", "Transaction Read Phase OK. Starting writes...")
-
-            // --- WRITE PHASE ---
-            var totalValueToReverse = 0.0
-            var totalQtyToReverse = 0
-            
-            // 1. Aggregate Inventory changes
-            val warehouseVariantDeltas = mutableMapOf<String, MutableMap<String, Int>>() // whId -> { vid -> delta }
-            val variantsMap = mutableMapOf<String, com.batterysales.data.models.ProductVariant>()
-            
-            approvedEntries.forEach { entry ->
-                val vid = entry.productVariantId
-                val whId = entry.warehouseId
-                val vSnap = variantSnapshots[vid]
-                val variant = vSnap?.toObject(com.batterysales.data.models.ProductVariant::class.java)
-                
-                if (variant != null) {
-                    variantsMap[vid] = variant
-                    val vMap = warehouseVariantDeltas.getOrPut(whId) { mutableMapOf() }
-                    vMap[vid] = (vMap[vid] ?: 0) - entry.quantity
-                    
-                    totalValueToReverse += (entry.quantity * variant.weightedAverageCost)
-                    totalQtyToReverse += entry.quantity
-                }
-            }
-            
-            // Apply Variant Document Updates
-            variantSnapshots.forEach { (vid, vSnap) ->
-                val variant = variantsMap[vid] ?: return@forEach
-                val rawStock = vSnap.get("currentStock") as? Map<String, *>
-                val currentStockMap = rawStock?.mapValues { (_, v) -> (v as? Number)?.toInt() ?: 0 }?.toMutableMap() ?: mutableMapOf()
-                
-                var variantChanged = false
-                warehouseVariantDeltas.forEach { (whId, vDeltas) ->
-                    val delta = vDeltas[vid] ?: 0
-                    if (delta != 0) {
-                        currentStockMap[whId] = (currentStockMap[whId] ?: 0) + delta
-                        variantChanged = true
-                    }
-                }
-                
-                if (variantChanged) {
-                    transaction.update(vSnap.reference, "currentStock", currentStockMap)
-
-                    // Clear low stock alert if restored stock goes above threshold
-                    warehouseVariantDeltas.forEach { (whId, vDeltas) ->
-                        val delta = vDeltas[vid] ?: 0
-                        if (delta != 0) {
-                            val newQty = currentStockMap[whId] ?: 0
-                            val threshold = variant.minQuantities[whId] ?: variant.minQuantity
-                            val alertRef = firestore.collection("system_alerts").document("low_stock_${vid}_$whId")
-                            if (!variant.isDiscontinued && !variant.archived && threshold > 0 && newQty <= threshold) {
-                                val whSnap = summarySnapshots.warehouseSummaries[whId]
-                                val whName = whSnap?.id?.removePrefix("inventory_wh_") ?: "مخزن"
-                                val pName = if (!variant.productName.isNullOrBlank()) variant.productName!! else "منتج"
-                                val specSuffix = if (variant.specification.isNotBlank()) " | ${variant.specification}" else ""
-                                transaction.set(alertRef, com.batterysales.data.models.SystemAlert(
-                                    id = alertRef.id,
-                                    type = com.batterysales.data.models.SystemAlert.TYPE_LOW_STOCK,
-                                    title = "مخزون منخفض: $pName",
-                                    message = "${variant.capacity}A$specSuffix في $whName | الكمية المتاحة: $newQty (الحد: $threshold)",
-                                    relatedId = variant.id,
-                                    warehouseId = whId,
-                                    warehouseName = whName,
-                                    timestamp = java.util.Date(),
-                                    data = mapOf(
-                                        "capacity" to variant.capacity,
-                                        "specification" to variant.specification,
-                                        "currentStock" to newQty,
-                                        "threshold" to threshold
-                                    )
-                                ))
-                            } else {
-                                transaction.delete(alertRef)
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Apply Summary Updates (Optimized Plural)
-            summaryRepository.applyInventoryUpdates(transaction, summarySnapshots, warehouseVariantDeltas, variantsMap)
-
-            // Aggregate Stats for SystemStats
-            var totalCashToReverse = 0.0
-            var totalBankToReverse = 0.0
-            payments.documents.forEach { doc ->
-                val amt = doc.getDouble("amount") ?: 0.0
-                val method = doc.getString("paymentMethod") ?: "cash"
-                if (method == "bank") totalBankToReverse += amt else totalCashToReverse += amt
-            }
-
-            transaction.set(statsRef, mapOf(
-                "totalInventoryQuantity" to com.google.firebase.firestore.FieldValue.increment(-(totalQtyToReverse.toLong())),
-                "totalInventoryValue" to com.google.firebase.firestore.FieldValue.increment(-totalValueToReverse),
-                "totalCustomerDebt" to com.google.firebase.firestore.FieldValue.increment(-invoice.remainingAmount),
-                "totalCashBalance" to com.google.firebase.firestore.FieldValue.increment(-totalCashToReverse),
-                "totalBankBalance" to com.google.firebase.firestore.FieldValue.increment(-totalBankToReverse),
-                "updatedAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
-            ), com.google.firebase.firestore.SetOptions.merge())
-            
-            // Aggregate and Reverse Payment impact on Financial Summary
-            val now = Date()
-            val financialDeltas = mutableMapOf<String, com.batterysales.data.repositories.SummaryRepository.FinancialDelta>()
-            
-            // Group payments by warehouse
-            val whPaymentGroups = payments.documents.groupBy { it.getString("warehouseId") ?: invoice.warehouseId }
-            
-            whPaymentGroups.forEach { (whId, whPayments) ->
-                var todayAmt = 0.0
-                var hasTodayPayment = false
-                
-                whPayments.forEach { doc ->
-                    val amt = doc.getDouble("amount") ?: 0.0
-                    val pDate = doc.getDate("paymentDate") ?: doc.getDate("timestamp") ?: Date(0)
-                    if (com.batterysales.utils.DateUtils.isSameDay(pDate, now)) {
-                        todayAmt += amt
-                        hasTodayPayment = true
-                    }
-                }
-
-                val todayCountDelta = if (hasTodayPayment) -1 else 0
-
-                financialDeltas[whId] = com.batterysales.data.repositories.SummaryRepository.FinancialDelta(
-                    pendingCollectionChange = if (whId == invoice.warehouseId) -invoice.remainingAmount else 0.0,
-                    todayCollectionChange = -todayAmt,
-                    todayCollectionCountChange = todayCountDelta,
-                    cashChange = -whPayments.filter { it.getString("paymentMethod") != "bank" }.sumOf { it.getDouble("amount") ?: 0.0 },
-                    bankChange = -whPayments.filter { it.getString("paymentMethod") == "bank" }.sumOf { it.getDouble("amount") ?: 0.0 }
-                )
-            }
-            
-            // Handle case where invoice had debt but no payments (still need to reverse pendingCollection)
-            if (!financialDeltas.containsKey(invoice.warehouseId) && invoice.remainingAmount > 0.001) {
-                financialDeltas[invoice.warehouseId] = com.batterysales.data.repositories.SummaryRepository.FinancialDelta(
-                    pendingCollectionChange = -invoice.remainingAmount
-                )
-            }
-
-            summaryRepository.applyFinancialUpdates(transaction, summarySnapshots, financialDeltas)
-
-            // Cleanup
-            payments.documents.forEach { transaction.delete(it.reference) }
-            stockEntries.documents.forEach { doc ->
-                val entry = doc.toObject(com.batterysales.data.models.StockEntry::class.java)
-                if (entry != null && entry.supplier == "Sale" && entry.quantity < 0) {
-                    transaction.update(doc.reference, mapOf(
-                        "quantity" to -entry.quantity,
-                        "invoiceId" to com.google.firebase.firestore.FieldValue.delete(),
-                        "invoiceNumber" to if (invoice.invoiceNumber.isNotEmpty()) "إلغاء فاتورة #${invoice.invoiceNumber}" else "إلغاء فاتورة",
-                        "timestamp" to Date()
-                    ))
-                } else {
-                    transaction.delete(doc.reference)
-                }
-            }
-            uniqueTreasuryRefs.forEach { transaction.delete(it.reference) }
-            uniqueBankRefs.forEach { transaction.delete(it.reference) }
-            
-            // Reverse scrap impact as a single aggregate
-            val scrapDeltas = scrapTransactions.documents.groupBy { it.getString("warehouseId") ?: "" }
-                .filter { it.key.isNotEmpty() }
-                .mapValues { (_, docs) ->
-                    com.batterysales.data.repositories.SummaryRepository.ScrapDelta(
-                        qtyChange = -docs.sumOf { it.getLong("quantity")?.toInt() ?: 0 },
-                        ampereChange = -docs.sumOf { it.getDouble("totalAmperes") ?: 0.0 }
-                    )
-                }
-            
-            summaryRepository.applyScrapUpdates(transaction, summarySnapshots, scrapDeltas)
-            scrapTransactions.documents.forEach { transaction.delete(it.reference) }
-
-            transaction.delete(invoiceRef)
-            android.util.Log.d("InvoiceRepo", "Transaction logic done. committing...")
-        }.addOnFailureListener { e ->
-            android.util.Log.e("InvoiceRepo", "DELETE TRANSACTION FAILED for $invoiceId", e)
-        }.await()
+        // Also write to invoice_deletion_requests collection for strict command tracking
+        val requestRef = firestore.collection("invoice_deletion_requests").document(invoiceId)
+        requestRef.set(mapOf(
+            "invoiceId" to invoiceId,
+            "requestedAt" to com.google.firebase.firestore.FieldValue.serverTimestamp(),
+            "status" to "PENDING"
+        )).await()
     }
 
     suspend fun createFullSale(
@@ -405,6 +167,7 @@ class InvoiceRepository @Inject constructor(
         val invoiceRef = firestore.collection(Invoice.COLLECTION_NAME).document()
         val finalInvoice = invoice.copy(id = invoiceRef.id, createdAt = Date(), updatedAt = Date())
 
+        // Save Invoice document with items array embedded inside the invoice document itself
         batch.set(invoiceRef, finalInvoice)
 
         val stockRef = firestore.collection(com.batterysales.data.models.StockEntry.COLLECTION_NAME).document()
@@ -428,6 +191,7 @@ class InvoiceRepository @Inject constructor(
             batch.set(scrapRef, finalScrapTrans)
         }
 
+        // Commit WriteBatch without phone-side stock manipulation or read loops
         batch.commit().await()
         return finalInvoice.id
     }

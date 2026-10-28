@@ -11,6 +11,13 @@ import kotlinx.coroutines.launch
 import java.util.Date
 import javax.inject.Inject
 
+sealed class SalesCommandState {
+    object Idle : SalesCommandState()
+    object Loading : SalesCommandState()
+    object Success : SalesCommandState()
+    data class Error(val message: String) : SalesCommandState()
+}
+
 data class SalesUiState(
     val products: List<Product> = emptyList(),
     val variants: List<ProductVariant> = emptyList(),
@@ -30,6 +37,7 @@ data class SalesUiState(
     val userWarehouseId: String = "",
     val isLoading: Boolean = false,
     val isSubmitting: Boolean = false,
+    val commandState: SalesCommandState = SalesCommandState.Idle,
     val errorMessage: String? = null,
     val successMessage: String? = null,
     val isFinished: Boolean = false
@@ -42,54 +50,81 @@ class SalesViewModel @Inject constructor(
     private val warehouseRepository: WarehouseRepository,
     private val summaryRepository: SummaryRepository,
     private val invoiceRepository: InvoiceRepository,
+    private val salesRepository: SalesRepository,
     private val userRepository: UserRepository,
     private val oldBatteryRepository: OldBatteryRepository,
     private val networkHelper: com.batterysales.utils.NetworkHelper
 ) : ViewModel() {
+
+    private val selectedWarehouseState = MutableStateFlow<Warehouse?>(null)
+    private val searchQueryState = MutableStateFlow("")
 
     private val _uiState = MutableStateFlow(SalesUiState(isLoading = true))
     val uiState: StateFlow<SalesUiState> = _uiState.asStateFlow()
 
     private var currentUser: User? = null
     private var cachedInventorySummary: InventorySummary? = null
-    private var summaryJob: kotlinx.coroutines.Job? = null
+
+    @OptIn(kotlinx.coroutines.FlowPreview::class, kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val searchInvoicesResultFlow: StateFlow<List<Invoice>> = searchQueryState
+        .debounce(300)
+        .distinctUntilChanged()
+        .flatMapLatest { query ->
+            flow {
+                val whId = selectedWarehouseState.value?.id ?: currentUser?.warehouseId
+                val (invoices, _) = invoiceRepository.getInvoicesPaginated(
+                    warehouseId = whId,
+                    searchQuery = query.ifBlank { null },
+                    limit = 30
+                )
+                emit(invoices)
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {
         loadInitialData()
+        observeWarehouseSummaryReactive()
     }
 
-    private fun observeInventorySummary(warehouseId: String?) {
-        summaryJob?.cancel()
-        summaryJob = viewModelScope.launch {
-            summaryRepository.getInventorySummaryFlow(warehouseId)
-                .onEach { summary ->
-                    cachedInventorySummary = summary
+    fun onSearchQueryChanged(query: String) {
+        searchQueryState.value = query
+    }
 
-                    val user = currentUser
-                    val isSeller = user?.role == User.ROLE_SELLER
-                    val summaryItems = summary.items.values
-                    val availableProductIds = summaryItems.filter { it.currentStock > 0 }.map { it.productId }.toSet()
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private fun observeWarehouseSummaryReactive() {
+        selectedWarehouseState
+            .flatMapLatest { wh ->
+                val whId = wh?.id ?: currentUser?.warehouseId
+                summaryRepository.getInventorySummaryFlow(whId)
+            }
+            .onEach { summary ->
+                cachedInventorySummary = summary
 
-                    val currentProducts = productRepository.getProductsOnce()
-                    val filteredProducts = if (isSeller && availableProductIds.isNotEmpty()) {
-                        currentProducts.filter { !it.archived && availableProductIds.contains(it.id) }
-                    } else {
-                        currentProducts.filter { !it.archived }
-                    }
+                val user = currentUser
+                val isSeller = user?.role == User.ROLE_SELLER
+                val summaryItems = summary.items.values
+                val availableProductIds = summaryItems.filter { it.currentStock > 0 }.map { it.productId }.toSet()
 
-                    _uiState.update { state ->
-                        state.copy(
-                            products = filteredProducts.sortedBy { p -> p.name }
-                        )
-                    }
-
-                    val selectedProd = _uiState.value.selectedProduct
-                    if (selectedProd != null) {
-                        loadVariantsForProduct(selectedProd, _uiState.value.selectedVariant?.id)
-                    }
+                val currentProducts = productRepository.getProductsOnce()
+                val filteredProducts = if (isSeller && availableProductIds.isNotEmpty()) {
+                    currentProducts.filter { !it.archived && availableProductIds.contains(it.id) }
+                } else {
+                    currentProducts.filter { !it.archived }
                 }
-                .launchIn(viewModelScope)
-        }
+
+                _uiState.update { state ->
+                    state.copy(
+                        products = filteredProducts.sortedBy { p -> p.name }
+                    )
+                }
+
+                val selectedProd = _uiState.value.selectedProduct
+                if (selectedProd != null) {
+                    loadVariantsForProduct(selectedProd, _uiState.value.selectedVariant?.id)
+                }
+            }
+            .launchIn(viewModelScope)
     }
 
     private fun loadInitialData() {
@@ -108,6 +143,8 @@ class SalesViewModel @Inject constructor(
                 val selectedWh = if (isSeller) activeWarehouses.find { w -> w.id == userWarehouseId } else activeWarehouses.firstOrNull()
                 val initialWhId = selectedWh?.id ?: userWarehouseId.ifEmpty { null }
 
+                selectedWarehouseState.value = selectedWh
+
                 _uiState.update {
                     it.copy(
                         products = products.filter { !it.archived }.sortedBy { p -> p.name },
@@ -119,8 +156,6 @@ class SalesViewModel @Inject constructor(
                         isLoading = false
                     )
                 }
-
-                observeInventorySummary(initialWhId)
             } catch (e: Exception) {
                 Log.e("SalesViewModel", "Error loading initial data", e)
                 _uiState.update { it.copy(isLoading = false, errorMessage = "فشل تحميل البيانات") }
@@ -222,8 +257,8 @@ class SalesViewModel @Inject constructor(
 
     fun onWarehouseSelected(warehouse: Warehouse) {
         if (_uiState.value.selectedWarehouse?.id == warehouse.id) return
+        selectedWarehouseState.value = warehouse
         _uiState.update { it.copy(selectedWarehouse = warehouse) }
-        observeInventorySummary(warehouse.id)
     }
 
     fun onQuantityChanged(quantity: String) {
@@ -255,6 +290,35 @@ class SalesViewModel @Inject constructor(
 
     fun onPaymentMethodChanged(method: String) {
         _uiState.update { it.copy(paymentMethod = method) }
+    }
+
+    fun executeSaleCommand(customerId: String, items: List<InvoiceItem>, total: Double) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(commandState = SalesCommandState.Loading) }
+
+            // توليد معرف العملية محلياً لخدمة حارس التكرار في السيرفر
+            val orderId = "INV-${System.currentTimeMillis()}"
+            val invoice = SalesInvoice(
+                orderId = orderId,
+                customerId = customerId,
+                timestamp = java.time.Instant.now().toString(),
+                items = items,
+                totalAmount = total,
+                status = "PENDING_PROCESSING"
+            )
+
+            salesRepository.submitSalesInvoice(invoice)
+                .onSuccess {
+                    _uiState.update { state -> state.copy(commandState = SalesCommandState.Success, isFinished = true) }
+                }
+                .onFailure { error ->
+                    _uiState.update { state -> state.copy(commandState = SalesCommandState.Error(error.message ?: "Unknown Error"), errorMessage = error.message) }
+                }
+        }
+    }
+
+    fun getCustomerSalesSummaryFlow(customerId: String): Flow<CustomerSummary?> {
+        return salesRepository.getCustomerSalesSummaryFlow(customerId)
     }
 
     fun createSale(customerName: String, customerPhone: String, paidAmount: Double) {

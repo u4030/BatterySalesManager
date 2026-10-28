@@ -11,7 +11,8 @@ import javax.inject.Singleton
 
 @Singleton
 class SupplierRepository @Inject constructor(
-    private val firestore: FirebaseFirestore
+    private val firestore: FirebaseFirestore,
+    private val summaryRepository: SummaryRepository
 ) {
     fun getSuppliers(): Flow<List<Supplier>> = callbackFlow {
         val listenerRegistration = firestore.collection(Supplier.COLLECTION_NAME)
@@ -70,10 +71,32 @@ class SupplierRepository @Inject constructor(
                 .document(supplierId)
                 .get(com.google.firebase.firestore.Source.CACHE)
                 .await()
-            snapshot.toObject(Supplier::class.java)?.copy(id = snapshot.id)
-                ?: getSuppliersOnce().find { it.id == supplierId }
+            val supplier = snapshot.toObject(Supplier::class.java)?.copy(id = snapshot.id)
+            if (supplier != null) return supplier
+
+            val overview = summaryRepository.getSuppliersOverview(forceRefresh = false)
+            val summaryItem = overview?.suppliers?.get(supplierId)
+            summaryItem?.let {
+                Supplier(
+                    id = it.supplierId,
+                    name = it.name,
+                    totalDebit = it.totalDebit,
+                    totalCredit = it.totalCredit,
+                    currentBalance = it.currentBalance
+                )
+            }
         } catch (e: Exception) {
-            getSuppliersOnce().find { it.id == supplierId }
+            val overview = summaryRepository.getSuppliersOverview(forceRefresh = false)
+            val summaryItem = overview?.suppliers?.get(supplierId)
+            summaryItem?.let {
+                Supplier(
+                    id = it.supplierId,
+                    name = it.name,
+                    totalDebit = it.totalDebit,
+                    totalCredit = it.totalCredit,
+                    currentBalance = it.currentBalance
+                )
+            }
         }
     }
 

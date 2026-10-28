@@ -230,7 +230,7 @@ class ProductManagementViewModel @Inject constructor(
                 }
 
                 if (currentUser?.role == "seller") {
-                    val oldProduct = productRepository.getProduct(product.id)
+                    val oldProduct = _products.value.find { it.id == product.id }
                     approvalRepository.addRequest(ApprovalRequest(
                         requesterId = currentUser?.id ?: "",
                         requesterName = currentUser?.displayName ?: "",
@@ -269,7 +269,7 @@ class ProductManagementViewModel @Inject constructor(
                 }
 
                 if (currentUser?.role == "seller") {
-                    val oldProduct = productRepository.getProduct(product.id)
+                    val oldProduct = _products.value.find { it.id == product.id }
                     approvalRepository.addRequest(ApprovalRequest(
                         requesterId = currentUser?.id ?: "",
                         requesterName = currentUser?.displayName ?: "",
@@ -300,7 +300,7 @@ class ProductManagementViewModel @Inject constructor(
         viewModelScope.launch {
             _isSubmitting.value = true
             try {
-                val product = productRepository.getProduct(variant.productId)
+                val product = _products.value.find { it.id == variant.productId }
                 val variantWithMeta = variant.copy(productName = product?.name ?: variant.productName)
                 
                 val existing = productVariantRepository.getVariantsForProduct(variant.productId)
@@ -352,7 +352,7 @@ class ProductManagementViewModel @Inject constructor(
             _isSubmitting.value = true
             try {
                 if (currentUser?.role == "seller") {
-                    val product = productRepository.getProduct(variant.productId)
+                    val product = _products.value.find { it.id == variant.productId }
                     val oldVariant = productVariantRepository.getVariant(variant.id)
                     approvalRepository.addRequest(ApprovalRequest(
                         requesterId = currentUser?.id ?: "",

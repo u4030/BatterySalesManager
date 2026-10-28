@@ -62,12 +62,21 @@ class DashboardViewModel @Inject constructor(
     private val warehouseRepository: WarehouseRepository,
     private val stockEntryRepository: StockEntryRepository,
     private val approvalRepository: ApprovalRepository,
-    private val systemAlertRepository: SystemAlertRepository,
     private val firestore: com.google.firebase.firestore.FirebaseFirestore
 ) : ViewModel() {
 
-    private val _warehouses = MutableStateFlow<List<Warehouse>>(emptyList())
+    private var cachedWarehouses: List<Warehouse> = emptyList()
 
+    // 1. Isolated Single Source of Truth for DashboardHub
+    val dashboardHubState: StateFlow<DashboardHub> = summaryRepository.getDashboardHubFlow()
+        .distinctUntilChanged()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = DashboardHub()
+        )
+
+    // 2. Distinct streams for operational data
     private val activeAlertsFlow: Flow<List<SystemAlert>> = callbackFlow {
         val listener = firestore.collection(SystemAlert.COLLECTION_NAME)
             .whereEqualTo("resolved", false)
@@ -78,7 +87,7 @@ class DashboardViewModel @Inject constructor(
                 trySend(alerts)
             }
         awaitClose { listener.remove() }
-    }
+    }.distinctUntilChanged()
 
     private val upcomingBillsFlow: Flow<List<Bill>> = callbackFlow {
         val listener = firestore.collection(Bill.COLLECTION_NAME)
@@ -96,40 +105,31 @@ class DashboardViewModel @Inject constructor(
                 trySend(bills)
             }
         awaitClose { listener.remove() }
-    }
+    }.distinctUntilChanged()
 
     private val pendingCountFlow: Flow<Int> = combine(
         stockEntryRepository.getPendingEntriesFlow().catch { emit(emptyList()) },
         approvalRepository.getPendingRequestsFlow().catch { emit(emptyList()) }
     ) { entries, reqs ->
         entries.size + reqs.size
-    }
+    }.distinctUntilChanged()
 
+    // 3. Isolated State Pipeline without static warehouse combine leaks
     val uiState: StateFlow<DashboardUiState> = combine(
-        userRepository.getCurrentUserFlow(),
-        summaryRepository.getDashboardHubFlow(),
-        _warehouses,
+        userRepository.getCurrentUserFlow().distinctUntilChanged(),
+        dashboardHubState,
         activeAlertsFlow,
         upcomingBillsFlow,
         pendingCountFlow
-    ) { args: Array<Any?> ->
-        val user = args[0] as? User
-        val hub = args[1] as? DashboardHub ?: DashboardHub()
-        @Suppress("UNCHECKED_CAST")
-        val warehouses = args[2] as? List<Warehouse> ?: emptyList()
-        @Suppress("UNCHECKED_CAST")
-        val alerts = args[3] as? List<SystemAlert> ?: emptyList()
-        @Suppress("UNCHECKED_CAST")
-        val bills = args[4] as? List<Bill> ?: emptyList()
-        val pendingCount = args[5] as? Int ?: 0
-
+    ) { user, hub, alerts, bills, pendingCount ->
         if (user == null) return@combine DashboardUiState(isLoading = false)
 
         val isAdmin = user.role == "admin"
         val userWarehouseId = user.warehouseId
+        val warehouses = cachedWarehouses
 
         val systemStats = SystemStats(
-            totalCashBalance = hub.financialStatus.totalCashBalance,
+            totalCashBalance = hub.financialStatus.cashBalance,
             totalBankBalance = hub.bankSummary.globalBankBalance,
             totalSupplierDebt = if (isAdmin) hub.supplierSummary.totalSupplierDebt else 0.0,
             totalCustomerDebt = 0.0,
@@ -142,12 +142,12 @@ class DashboardViewModel @Inject constructor(
 
         val whStats = if (isAdmin) {
             warehouses.map { wh ->
-                val bal = hub.financialStatus.subWarehouseBalances[wh.id] ?: 0.0
+                val bal = hub.financialStatus.getWarehouseCashBalance(wh.id)
                 WarehouseStats(wh.id, wh.name, bal, 0)
             }
         } else {
             val targetWhId = userWarehouseId ?: ""
-            val bal = hub.financialStatus.subWarehouseBalances[targetWhId] ?: 0.0
+            val bal = hub.financialStatus.getWarehouseCashBalance(targetWhId)
             listOf(WarehouseStats(targetWhId, warehouses.find { it.id == targetWhId }?.name ?: "مخزن", bal, 0))
         }
 
@@ -197,7 +197,7 @@ class DashboardViewModel @Inject constructor(
     private fun loadWarehouses() {
         viewModelScope.launch {
             try {
-                _warehouses.value = warehouseRepository.getWarehousesOnce()
+                cachedWarehouses = warehouseRepository.getWarehousesOnce()
             } catch (e: Exception) {
                 Log.e("DashboardViewModel", "Error loading warehouses", e)
             }
@@ -207,8 +207,7 @@ class DashboardViewModel @Inject constructor(
     fun refresh() {
         viewModelScope.launch {
             try {
-                _warehouses.value = warehouseRepository.getWarehousesOnce()
-                summaryRepository.getDashboardHubOnce()
+                cachedWarehouses = warehouseRepository.getWarehousesOnce()
             } catch (e: Exception) {
                 Log.e("DashboardViewModel", "Error in refresh", e)
             }

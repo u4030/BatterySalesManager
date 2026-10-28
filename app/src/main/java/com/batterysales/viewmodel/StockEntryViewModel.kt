@@ -90,6 +90,8 @@ class StockEntryViewModel @Inject constructor(
     private val editingEntryId: String? = savedStateHandle.get<String>("entryId")
     private var currentUser: User? = null
 
+    private var allVariants: List<ProductVariant> = emptyList()
+
     init {
         val isEditMode = editingEntryId != null
         _uiState.update { it.copy(isEditMode = isEditMode) }
@@ -102,6 +104,7 @@ class StockEntryViewModel @Inject constructor(
             val products = productRepository.getProductsOnce()
             val warehouses = warehouseRepository.getWarehousesOnce()
             val suppliers = supplierRepository.getSuppliersOnce()
+            allVariants = productVariantRepository.getAllVariants()
 
             val activeProducts = products.filter { !it.archived }.sortedBy { it.name }
             val selectedWH = warehouses.find { it.id == user?.warehouseId }
@@ -109,6 +112,7 @@ class StockEntryViewModel @Inject constructor(
             _uiState.update {
                 it.copy(
                     products = activeProducts,
+                    variants = allVariants,
                     warehouses = warehouses.filter { w -> w.isActive },
                     suppliers = suppliers,
                     userRole = user?.role ?: "seller",
@@ -179,28 +183,20 @@ class StockEntryViewModel @Inject constructor(
     }
 
     fun onProductSelected(product: Product) {
-        viewModelScope.launch {
-            val productSupplier = _uiState.value.suppliers.find { it.id == product.supplierId }
-            
-            _uiState.update {
-                it.copy(
-                    selectedProduct = product,
-                    selectedVariant = null,
-                    variants = emptyList(),
-                    isLoading = false,
-                    quantity = if (it.isEditMode) it.quantity else "",
-                    costValue = if (it.isEditMode) it.costValue else "",
-                    selectedSupplier = productSupplier ?: it.selectedSupplier,
-                    supplierName = productSupplier?.name ?: it.supplierName
-                )
-            }
-            try {
-                val variants = productVariantRepository.getVariantsForProduct(product.id).filter { !it.archived }.sortedBy { it.capacity }
-                _uiState.update { it.copy(variants = variants) }
-            } catch (e: Exception) {
-                Log.e("StockEntryViewModel", "Error fetching variants", e)
-                _uiState.update { it.copy(errorMessage = "فشل تحميل السعات", isLoading = false) }
-            }
+        val productSupplier = _uiState.value.suppliers.find { it.id == product.supplierId }
+        val productVariants = allVariants.filter { it.productId == product.id && !it.archived }.sortedBy { it.capacity }
+        
+        _uiState.update {
+            it.copy(
+                selectedProduct = product,
+                selectedVariant = null,
+                variants = productVariants,
+                isLoading = false,
+                quantity = if (it.isEditMode) it.quantity else "",
+                costValue = if (it.isEditMode) it.costValue else "",
+                selectedSupplier = productSupplier ?: it.selectedSupplier,
+                supplierName = productSupplier?.name ?: it.supplierName
+            )
         }
     }
 
@@ -277,12 +273,6 @@ class StockEntryViewModel @Inject constructor(
                 if (product != null) {
                     onProductSelected(product)
                     onVariantSelected(variant)
-                } else {
-                    val loadedProduct = productRepository.getProduct(variant.productId)
-                    if (loadedProduct != null) {
-                        onProductSelected(loadedProduct)
-                        onVariantSelected(variant)
-                    }
                 }
             } else {
                 _uiState.update { it.copy(errorMessage = "لم يتم العثور على منتج بهذا الباركود") }
