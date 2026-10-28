@@ -86,6 +86,9 @@ class StockTransferViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(selectedProduct = product, selectedVariant = null, variants = emptyList(), isLoading = true, quantity = "") }
             
+            val warehouseKey = cachedInventorySummary?.warehouseId ?: "global"
+            val targetWhId = _uiState.value.sourceWarehouse?.id ?: currentUser?.warehouseId ?: warehouseKey
+
             // --- ELITE STRATEGY: Get variants from pre-loaded summary ---
             val summaryItems = cachedInventorySummary?.items?.values ?: emptyList()
             var variantsForProduct = summaryItems.filter { it.productId == product.id }
@@ -95,7 +98,7 @@ class StockTransferViewModel @Inject constructor(
                         barcode = item.barcode, weightedAverageCost = item.weightedAverageCost,
                         productName = item.productName, specification = item.specification,
                         isDiscontinued = item.isDiscontinued,
-                        currentStock = mapOf((cachedInventorySummary?.warehouseId ?: "global") to item.currentStock)
+                        currentStock = mapOf(warehouseKey to item.currentStock)
                     )
                 }.sortedBy { it.capacity }
 
@@ -106,9 +109,8 @@ class StockTransferViewModel @Inject constructor(
             }
 
             val newStockMap = _uiState.value.stockLevels.toMutableMap()
-            val targetWhId = _uiState.value.sourceWarehouse?.id ?: currentUser?.warehouseId ?: "global"
             variantsForProduct.forEach { v ->
-                val qty = (v.currentStock?.get(targetWhId) as? Number)?.toInt() ?: 0
+                val qty = (v.currentStock?.get(warehouseKey) as? Number)?.toInt() ?: (v.currentStock?.get(targetWhId) as? Number)?.toInt() ?: 0
                 newStockMap[Pair(v.id, targetWhId)] = qty
             }
 
@@ -192,13 +194,24 @@ class StockTransferViewModel @Inject constructor(
                     return@launch
                 }
 
-                stockEntryRepository.transferStock(
-                    productVariantId = variant.id, productName = state.selectedProduct?.name ?: "",
-                    capacity = variant.capacity, sourceWarehouseId = source.id,
-                    destinationWarehouseId = dest.id, quantity = qty,
-                    status = if (currentUser?.role == "seller") "pending" else "approved",
-                    createdBy = currentUser?.id ?: "", createdByUserName = currentUser?.displayName ?: ""
+                stockEntryRepository.transferStockBulk(
+                    listOf(
+                        StockEntryRepository.TransferItem(
+                            productVariantId = variant.id,
+                            productName = state.selectedProduct?.name ?: "",
+                            capacity = variant.capacity,
+                            sourceWarehouseId = source.id,
+                            destinationWarehouseId = dest.id,
+                            quantity = qty,
+                            status = if (currentUser?.role == "seller") "pending" else "approved",
+                            createdBy = currentUser?.id ?: "",
+                            createdByUserName = currentUser?.displayName ?: ""
+                        )
+                    )
                 )
+
+                loadInitialData()
+
                 // Clear fields and reset state for next operation instead of closing screen
                 _uiState.update {
                     it.copy(

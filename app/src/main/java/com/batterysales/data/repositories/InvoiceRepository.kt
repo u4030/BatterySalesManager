@@ -405,6 +405,7 @@ class InvoiceRepository @Inject constructor(
         val invoiceRef = firestore.collection(Invoice.COLLECTION_NAME).document()
         val finalInvoice = invoice.copy(id = invoiceRef.id, createdAt = Date(), updatedAt = Date())
 
+        // Save Invoice document with items array embedded inside the invoice document itself
         batch.set(invoiceRef, finalInvoice)
 
         val stockRef = firestore.collection(com.batterysales.data.models.StockEntry.COLLECTION_NAME).document()
@@ -428,6 +429,7 @@ class InvoiceRepository @Inject constructor(
             batch.set(scrapRef, finalScrapTrans)
         }
 
+        // Commit WriteBatch without phone-side stock manipulation or read loops
         batch.commit().await()
         return finalInvoice.id
     }
