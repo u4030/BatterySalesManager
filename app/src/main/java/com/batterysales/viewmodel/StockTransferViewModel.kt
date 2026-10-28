@@ -208,22 +208,7 @@ class StockTransferViewModel @Inject constructor(
                     )
                 )
 
-                val currentSourceWhId = state.sourceWarehouse?.id
-                if (currentSourceWhId != null) {
-                    cachedInventorySummary = summaryRepository.getInventorySummary(currentSourceWhId, forceRefresh = true)
-                }
-
-                val summary = cachedInventorySummary
-                if (summary != null && currentSourceWhId != null) {
-                    val newStockMap = _uiState.value.stockLevels.toMutableMap()
-                    val updatedVariants = _uiState.value.variants.map { v ->
-                        val item = summary.items[v.id]
-                        val qty = item?.currentStock ?: 0
-                        newStockMap[Pair(v.id, currentSourceWhId)] = qty
-                        v.copy(currentStock = mapOf(currentSourceWhId to qty))
-                    }
-                    _uiState.update { it.copy(variants = updatedVariants, stockLevels = newStockMap) }
-                }
+                loadInitialData()
 
                 // Clear fields and reset state for next operation instead of closing screen
                 _uiState.update {
