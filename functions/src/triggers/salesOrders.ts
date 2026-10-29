@@ -7,7 +7,7 @@ async function handleSaleDoc(snapshot: admin.firestore.DocumentSnapshot, orderId
 
   const db = admin.firestore();
   const orderData = snapshot.data();
-  if (!orderData || orderData.status === "COMPLETED" || orderData.processed === true) return;
+  if (!orderData || orderData.processed === true || orderData.processedByServer === true) return;
 
   const txRef = db.collection("processed_transactions").doc(orderId);
 
@@ -116,7 +116,13 @@ async function handleSaleDoc(snapshot: admin.firestore.DocumentSnapshot, orderId
         lastUpdated: FieldValue.serverTimestamp()
       }, { merge: true });
 
-      transaction.update(snapshot.ref, { status: "COMPLETED", processed: true });
+      const isInvoiceDoc = snapshot.ref.parent.id === "invoices";
+      if (isInvoiceDoc) {
+        // Do not overwrite invoice payment status ('paid' | 'pending')
+        transaction.update(snapshot.ref, { processed: true, processedByServer: true });
+      } else {
+        transaction.update(snapshot.ref, { status: "COMPLETED", processed: true, processedByServer: true });
+      }
     });
   } catch (error: any) {
     console.error(`Sale transaction failed for ${orderId}:`, error);
