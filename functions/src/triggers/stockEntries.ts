@@ -1,13 +1,13 @@
-import { onDocumentCreated } from "firebase-functions/v2/firestore";
+import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import * as admin from "firebase-admin";
 import { FieldValue } from "firebase-admin/firestore";
 
-export const onStockEntryCreated = onDocumentCreated("stock_entries/{entryId}", async (event) => {
-  const snapshot = event.data;
-  if (!snapshot) return;
+export const onStockEntryWritten = onDocumentWritten("stock_entries/{entryId}", async (event) => {
+  const change = event.data;
+  if (!change || !change.after.exists) return;
 
   const db = admin.firestore();
-  const entryData = snapshot.data();
+  const entryData = change.after.data();
   if (!entryData || entryData.status !== "approved" || entryData.processedByServer === true) return;
 
   const entryId = event.params.entryId;
@@ -82,7 +82,7 @@ export const onStockEntryCreated = onDocumentCreated("stock_entries/{entryId}", 
         }
       }
 
-      transaction.update(snapshot.ref, { processedByServer: true });
+      transaction.update(change.after.ref, { processedByServer: true });
     });
   } catch (error: any) {
     console.error(`Stock entry processing failed for ${entryId}:`, error);

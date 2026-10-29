@@ -34,56 +34,35 @@ class StockEntryRepository @Inject constructor(
         saveStockOrderBatch(entries = stockEntries, bill = bill)
     }
 
+    /**
+     * Purified Write-Only Command Layer for Stock Entries (Architecture Mandate: Zero Client-Side Side-Effects).
+     * Writes purely the stock_entries document(s) and optional bill document.
+     * Zero client-side modifications to product_variants, suppliers, or summaries.
+     * Backend Cloud Function `onStockEntryCreated` processes atomic updates and alerts on the server.
+     */
     suspend fun saveStockOrderBatch(
         entries: List<StockEntry>,
         variantsToUpdate: List<ProductVariant> = emptyList(),
         bill: Bill? = null
     ) {
-        if (entries.isEmpty() && variantsToUpdate.isEmpty() && bill == null) return
+        if (entries.isEmpty() && bill == null) return
 
         val batch = firestore.batch()
         val now = Date()
-        val statsRef = firestore.collection(SystemStats.COLLECTION_NAME).document(SystemStats.DOCUMENT_ID)
-
-        var totalCostChange = 0.0
-        var totalQtyChange = 0L
-        val supplierDebitChanges = mutableMapOf<String, Double>()
-        val supplierCreditChanges = mutableMapOf<String, Double>()
 
         entries.forEach { entry ->
             val docRef = if (entry.id.isNotEmpty()) firestore.collection(StockEntry.COLLECTION_NAME).document(entry.id)
                          else firestore.collection(StockEntry.COLLECTION_NAME).document()
 
             val cost = entry.getNetCost()
-            val qty = entry.quantity - entry.returnedQuantity
-
-            val remainingBalance = if (cost > 0) cost else 0.0
-            val isSettled = cost < 0
 
             val finalEntry = entry.copy(
                 id = docRef.id,
-                remainingBalance = remainingBalance,
-                isSettled = isSettled
+                status = if (entry.status.isBlank()) "pending" else entry.status,
+                remainingBalance = if (cost > 0) cost else 0.0,
+                isSettled = cost <= 0
             )
             batch.set(docRef, finalEntry)
-
-            if (finalEntry.status == "approved") {
-                totalCostChange += cost
-                totalQtyChange += qty.toLong()
-
-                if (finalEntry.supplierId.isNotEmpty()) {
-                    if (cost > 0) {
-                        supplierDebitChanges[finalEntry.supplierId] = (supplierDebitChanges[finalEntry.supplierId] ?: 0.0) + cost
-                    } else if (cost < 0) {
-                        supplierCreditChanges[finalEntry.supplierId] = (supplierCreditChanges[finalEntry.supplierId] ?: 0.0) - cost
-                    }
-                }
-            }
-        }
-
-        variantsToUpdate.forEach { variant ->
-            val vRef = firestore.collection(ProductVariant.COLLECTION_NAME).document(variant.id)
-            batch.set(vRef, variant, SetOptions.merge())
         }
 
         if (bill != null) {
@@ -91,45 +70,6 @@ class StockEntryRepository @Inject constructor(
                           else firestore.collection(Bill.COLLECTION_NAME).document()
             val finalBill = bill.copy(id = billRef.id, createdAt = now, updatedAt = now)
             batch.set(billRef, finalBill)
-
-            if (finalBill.supplierId.isNotEmpty() && finalBill.paidAmount > 0) {
-                val supRef = firestore.collection("suppliers").document(finalBill.supplierId)
-                batch.update(supRef, mapOf(
-                    "totalCredit" to FieldValue.increment(finalBill.paidAmount),
-                    "currentBalance" to FieldValue.increment(-finalBill.paidAmount)
-                ))
-            }
-        }
-
-        // Apply Supplier Debit updates in batch
-        val allSupplierIds = (supplierDebitChanges.keys + supplierCreditChanges.keys).distinct()
-        allSupplierIds.forEach { sid ->
-            val ref = firestore.collection("suppliers").document(sid)
-            val debit = supplierDebitChanges[sid] ?: 0.0
-            val credit = supplierCreditChanges[sid] ?: 0.0
-
-            val updates = mutableMapOf<String, Any>()
-            if (debit != 0.0) {
-                updates["totalDebit"] = FieldValue.increment(debit)
-                updates["currentBalance"] = FieldValue.increment(debit)
-            }
-            if (credit != 0.0) {
-                updates["totalCredit"] = FieldValue.increment(credit)
-                updates["currentBalance"] = FieldValue.increment(-credit)
-                updates["unallocatedCredit"] = FieldValue.increment(credit)
-            }
-            if (updates.isNotEmpty()) {
-                batch.update(ref, updates)
-            }
-        }
-
-        if (totalCostChange != 0.0 || totalQtyChange != 0L) {
-            batch.set(statsRef, mapOf(
-                "totalInventoryQuantity" to FieldValue.increment(totalQtyChange),
-                "totalInventoryValue" to FieldValue.increment(totalCostChange),
-                "totalSupplierDebt" to FieldValue.increment(totalCostChange),
-                "updatedAt" to now
-            ), SetOptions.merge())
         }
 
         batch.commit().await()
