@@ -255,8 +255,11 @@ class StockEntryRepository @Inject constructor(
         lastDocument: DocumentSnapshot? = null,
         limit: Long = 20
     ): Pair<List<StockEntry>, DocumentSnapshot?> {
+
+        // الحل الأضمن والأطهر معمارياً: الاستعلام عن الحقل القديم productVariantId
+        // لأن جميع الوثائق التاريخية والحالية مسجلة به في الهاتف
         var query: Query = firestore.collection(StockEntry.COLLECTION_NAME)
-            .whereIn("variantId", listOf(variantId, ""))
+            .whereEqualTo("productVariantId", variantId)
 
         if (warehouseId != null) {
             query = query.whereEqualTo("warehouseId", warehouseId)
@@ -268,28 +271,12 @@ class StockEntryRepository @Inject constructor(
             query = query.startAfter(lastDocument)
         }
 
-        var snapshot = query.limit(limit).get().await()
+        val snapshot = query.limit(limit).get().await()
 
-        if (snapshot.isEmpty) {
-            var fallbackQuery: Query = firestore.collection(StockEntry.COLLECTION_NAME)
-                .whereEqualTo("productVariantId", variantId)
-
-            if (warehouseId != null) {
-                fallbackQuery = fallbackQuery.whereEqualTo("warehouseId", warehouseId)
-            }
-
-            fallbackQuery = fallbackQuery.orderBy("timestamp", Query.Direction.DESCENDING)
-
-            if (lastDocument != null) {
-                fallbackQuery = fallbackQuery.startAfter(lastDocument)
-            }
-
-            snapshot = fallbackQuery.limit(limit).get().await()
-        }
-
+        // أثناء تحويل الوثائق، نقوم بحشو الحقلين لضمان نجاح الـ Deserialization كلياً
         val entries = snapshot.documents.mapNotNull { doc ->
             val entry = doc.toObject(StockEntry::class.java)
-            val vId = doc.getString("variantId") ?: doc.getString("productVariantId") ?: ""
+            val vId = doc.getString("productVariantId") ?: doc.getString("variantId") ?: ""
             entry?.copy(id = doc.id, variantId = vId, productVariantId = vId)
         }
 
