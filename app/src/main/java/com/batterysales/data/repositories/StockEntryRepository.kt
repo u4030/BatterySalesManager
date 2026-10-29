@@ -250,13 +250,13 @@ class StockEntryRepository @Inject constructor(
     }
 
     suspend fun getEntriesPaginated(
-        productVariantId: String,
+        variantId: String,
         warehouseId: String? = null,
         lastDocument: DocumentSnapshot? = null,
         limit: Long = 20
     ): Pair<List<StockEntry>, DocumentSnapshot?> {
         var query: Query = firestore.collection(StockEntry.COLLECTION_NAME)
-            .whereEqualTo("productVariantId", productVariantId)
+            .whereEqualTo("productVariantId", variantId)
 
         if (warehouseId != null) {
             query = query.whereEqualTo("warehouseId", warehouseId)
