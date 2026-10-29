@@ -57,6 +57,7 @@ class SalesViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val selectedWarehouseState = MutableStateFlow<Warehouse?>(null)
+    private val searchQueryState = MutableStateFlow("")
 
     private val _uiState = MutableStateFlow(SalesUiState(isLoading = true))
     val uiState: StateFlow<SalesUiState> = _uiState.asStateFlow()
@@ -64,9 +65,30 @@ class SalesViewModel @Inject constructor(
     private var currentUser: User? = null
     private var cachedInventorySummary: InventorySummary? = null
 
+    @OptIn(kotlinx.coroutines.FlowPreview::class, kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val searchInvoicesResultFlow: StateFlow<List<Invoice>> = searchQueryState
+        .debounce(300)
+        .distinctUntilChanged()
+        .flatMapLatest { query ->
+            flow {
+                val whId = selectedWarehouseState.value?.id ?: currentUser?.warehouseId
+                val (invoices, _) = invoiceRepository.getInvoicesPaginated(
+                    warehouseId = whId,
+                    searchQuery = query.ifBlank { null },
+                    limit = 30
+                )
+                emit(invoices)
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     init {
         loadInitialData()
         observeWarehouseSummaryReactive()
+    }
+
+    fun onSearchQueryChanged(query: String) {
+        searchQueryState.value = query
     }
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
