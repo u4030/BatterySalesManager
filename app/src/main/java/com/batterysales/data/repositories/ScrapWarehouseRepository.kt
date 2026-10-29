@@ -26,6 +26,30 @@ class ScrapWarehouseRepository @Inject constructor(
         awaitClose { listenerRegistration.remove() }
     }
 
+    /**
+     * Listen directly to a specific warehouse's scrap document (scrap_warehouses/scrap_wh_$parentWarehouseId).
+     * Live snapshot stream with Zero Quota Consumption when connected to cache.
+     */
+    fun getScrapWarehouseFlow(parentWarehouseId: String): Flow<ScrapWarehouse?> = callbackFlow {
+        if (parentWarehouseId.isBlank()) {
+            trySend(null)
+            awaitClose { }
+            return@callbackFlow
+        }
+        val docId = "scrap_wh_$parentWarehouseId"
+        val listenerRegistration = firestore.collection(ScrapWarehouse.COLLECTION_NAME)
+            .document(docId)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    trySend(null)
+                    return@addSnapshotListener
+                }
+                val scrap = snapshot?.toObject(ScrapWarehouse::class.java)?.copy(id = snapshot.id)
+                trySend(scrap)
+            }
+        awaitClose { listenerRegistration.remove() }
+    }
+
     suspend fun getScrapWarehouseByParentId(parentWarehouseId: String): ScrapWarehouse? {
         val snapshot = firestore.collection(ScrapWarehouse.COLLECTION_NAME)
             .whereEqualTo("parentWarehouseId", parentWarehouseId)
