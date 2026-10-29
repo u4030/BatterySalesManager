@@ -257,22 +257,22 @@ class StockEntryRepository @Inject constructor(
     ): Pair<List<StockEntry>, DocumentSnapshot?> {
         if (variantId.isBlank()) return Pair(emptyList(), null)
 
+        // لتجنب فخ الفهارس المركبة في الكاش، نستعلم بالمعرف الرئيسي والترتيب الزمني فقط
         var query: Query = firestore.collection(StockEntry.COLLECTION_NAME)
-        query = query.whereEqualTo("productVariantId", variantId)
+            .whereEqualTo("productVariantId", variantId)
+            .orderBy("timestamp", Query.Direction.DESCENDING)
 
-        if (warehouseId != null) {
-            query = query.whereEqualTo("warehouseId", warehouseId)
-        }
-
-        query = query.orderBy("timestamp", Query.Direction.DESCENDING)
-
+        // إذا كان هناك مستند سابق للـ Paging نتحرك بعده
         if (lastDocument != null) {
             query = query.startAfter(lastDocument)
         }
 
-        val snapshot = query.limit(limit).get().await()
+        // نطلب كمية أكبر قليلاً لتعويض التصفية البرمجية محلياً دون التأثير على الأداء
+        val fetchLimit = if (warehouseId != null) limit * 2 else limit
+        val snapshot = query.limit(fetchLimit).get().await()
 
-        val entries = snapshot.documents.mapNotNull { doc ->
+        // عملية التحويل والتصفية البرمجية الآمنة (In-Memory Filter) لحماية طهارة الكاش
+        val allEntries = snapshot.documents.mapNotNull { doc ->
             try {
                 val entry = doc.toObject(StockEntry::class.java)
                 val databaseVariantId = doc.getString("variantId")
@@ -295,8 +295,28 @@ class StockEntryRepository @Inject constructor(
             }
         }
 
-        val lastDoc = snapshot.documents.lastOrNull()
-        return Pair(entries, lastDoc)
+        // التصفية البرمجية بناءً على المستودع إذا تم تحديده
+        val filteredEntries = if (warehouseId != null) {
+            allEntries.filter { it.warehouseId == warehouseId }
+        } else {
+            allEntries
+        }
+
+        // اقتطاع القائمة بحسب الـ limit المطلوب فعلياً للشاشة
+        val finalEntries = filteredEntries.take(limit.toInt())
+
+        // تحديد المستند الأخير للـ Paging بناءً على آخر مستند تم استهلاكه فعلياً من السناب شوت الأصلي
+        val lastConsumedIndex = finalEntries.lastOrNull()?.let { lastItem ->
+            snapshot.documents.indexOfFirst { it.id == lastItem.id }
+        } ?: -1
+
+        val lastDoc = if (lastConsumedIndex != -1 && lastConsumedIndex < snapshot.documents.size) {
+            snapshot.documents[lastConsumedIndex]
+        } else {
+            snapshot.documents.lastOrNull()
+        }
+
+        return Pair(finalEntries, lastDoc)
     }
 
     suspend fun getStockEntryById(entryId: String): StockEntry? {
