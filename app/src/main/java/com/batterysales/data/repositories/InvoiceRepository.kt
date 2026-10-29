@@ -138,15 +138,9 @@ class InvoiceRepository @Inject constructor(
             val lastDoc = snapshot.documents.lastOrNull()
             Pair(invoices, lastDoc)
         } catch (e: Exception) {
-            // Fallback to SERVER if CACHE failed (e.g., initial fresh setup)
-            if (source == com.google.firebase.firestore.Source.CACHE) {
-                val snapshot = query.limit(limit).get(com.google.firebase.firestore.Source.SERVER).await()
-                val invoices = snapshot.documents.mapNotNull { it.toObject(Invoice::class.java)?.copy(id = it.id) }
-                val lastDoc = snapshot.documents.lastOrNull()
-                Pair(invoices, lastDoc)
-            } else {
-                Pair(emptyList(), null)
-            }
+            // منع الارتداد التلقائي الأعمى للسيرفر حمايةً للكوتا
+            android.util.Log.e("InvoiceRepository", "Cache read failed, zero quota pre-fetch violation blocked", e)
+            Pair(emptyList(), null)
         }
     }
 
@@ -253,50 +247,5 @@ class InvoiceRepository @Inject constructor(
         commandRef.set(command).await()
     }
 
-    suspend fun migrateInvoices() {
-        val snapshot = firestore.collection(Invoice.COLLECTION_NAME).get().await()
-        val allPayments = firestore.collection(Payment.COLLECTION_NAME).get().await()
-            .documents.mapNotNull { it.toObject(Payment::class.java) }
-        
-        val paymentsByInvoice = allPayments.groupBy { it.invoiceId }
-
-        snapshot.documents.chunked(500).forEach { chunk ->
-            val batch = firestore.batch()
-            var count = 0
-            chunk.forEach { doc ->
-                val invoice = doc.toObject(Invoice::class.java) ?: return@forEach
-                val updates = mutableMapOf<String, Any>()
-                
-                // 1. Fix Dates
-                if (!doc.contains("invoiceDate") || doc.getDate("invoiceDate")?.time == 0L) {
-                    updates["invoiceDate"] = doc.getDate("createdAt") ?: Date()
-                }
-
-                // 2. Fix Paid/Remaining Amount
-                val invoicePayments = paymentsByInvoice[doc.id] ?: emptyList()
-                val actualPaid = invoicePayments.sumOf { it.amount }
-                val expectedRemaining = (invoice.totalAmount - actualPaid).coerceAtLeast(0.0)
-
-                if (Math.abs(invoice.paidAmount - actualPaid) > 0.001) {
-                    updates["paidAmount"] = actualPaid
-                }
-                if (Math.abs(invoice.remainingAmount - expectedRemaining) > 0.001) {
-                    updates["remainingAmount"] = expectedRemaining
-                }
-
-                // 3. Fix Status
-                val correctStatus = if (expectedRemaining <= 0.001) "paid" else "pending"
-                if (invoice.status != correctStatus && invoice.status != "cancelled") {
-                    updates["status"] = correctStatus
-                }
-
-                if (updates.isNotEmpty()) {
-                    batch.update(doc.reference, updates)
-                    count++
-                }
-            }
-            if (count > 0) batch.commit().await()
-        }
-    }
 }
  
