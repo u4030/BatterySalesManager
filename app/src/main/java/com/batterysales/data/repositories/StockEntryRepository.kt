@@ -255,11 +255,10 @@ class StockEntryRepository @Inject constructor(
         lastDocument: DocumentSnapshot? = null,
         limit: Long = 20
     ): Pair<List<StockEntry>, DocumentSnapshot?> {
+        if (variantId.isBlank()) return Pair(emptyList(), null)
 
-        // الحل الأضمن والأطهر معمارياً: الاستعلام عن الحقل القديم productVariantId
-        // لأن جميع الوثائق التاريخية والحالية مسجلة به في الهاتف
         var query: Query = firestore.collection(StockEntry.COLLECTION_NAME)
-            .whereEqualTo("productVariantId", variantId)
+        query = query.whereEqualTo("productVariantId", variantId)
 
         if (warehouseId != null) {
             query = query.whereEqualTo("warehouseId", warehouseId)
@@ -273,11 +272,27 @@ class StockEntryRepository @Inject constructor(
 
         val snapshot = query.limit(limit).get().await()
 
-        // أثناء تحويل الوثائق، نقوم بحشو الحقلين لضمان نجاح الـ Deserialization كلياً
         val entries = snapshot.documents.mapNotNull { doc ->
-            val entry = doc.toObject(StockEntry::class.java)
-            val vId = doc.getString("productVariantId") ?: doc.getString("variantId") ?: ""
-            entry?.copy(id = doc.id, variantId = vId, productVariantId = vId)
+            try {
+                val entry = doc.toObject(StockEntry::class.java)
+                val databaseVariantId = doc.getString("variantId")
+                val databaseProductVariantId = doc.getString("productVariantId")
+
+                val finalId = when {
+                    !databaseVariantId.isNullOrBlank() -> databaseVariantId
+                    !databaseProductVariantId.isNullOrBlank() -> databaseProductVariantId
+                    else -> variantId
+                }
+
+                entry?.copy(
+                    id = doc.id,
+                    variantId = finalId,
+                    productVariantId = finalId
+                )
+            } catch (e: Exception) {
+                android.util.Log.e("StockEntryRepository", "Deserialization failed for document: ${doc.id}", e)
+                null
+            }
         }
 
         val lastDoc = snapshot.documents.lastOrNull()
