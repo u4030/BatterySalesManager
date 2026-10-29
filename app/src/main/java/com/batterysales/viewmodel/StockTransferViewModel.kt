@@ -210,9 +210,7 @@ class StockTransferViewModel @Inject constructor(
                     )
                 )
 
-                loadInitialData()
-
-                // Clear fields and reset state for next operation instead of closing screen
+                // Clear fields and reset state for next operation while preserving selected warehouses
                 _uiState.update {
                     it.copy(
                         selectedProduct = null,
@@ -223,6 +221,11 @@ class StockTransferViewModel @Inject constructor(
                         isSubmitting = false,
                         errorMessage = null
                     )
+                }
+
+                val currentSourceWh = _uiState.value.sourceWarehouse
+                if (currentSourceWh != null) {
+                    onSourceWarehouseSelected(currentSourceWh)
                 }
             } catch (e: Exception) {
                 Log.e("StockTransferVM", "Transfer error", e)
