@@ -10,7 +10,7 @@ export const onStockEntryCreated = onDocumentCreated("stock_entries/{entryId}", 
   const entryData = snapshot.data();
 
   const entryId = event.params.entryId;
-  const variantId = entryData?.productVariantId || "";
+  const variantId = entryData?.variantId || entryData?.productVariantId || "";
   const warehouseId = entryData?.warehouseId || "";
   const qty = Number(entryData?.quantity || 0) - Number(entryData?.returnedQuantity || 0);
   if (!variantId || !warehouseId || qty === 0) return;

@@ -255,8 +255,9 @@ class StockEntryRepository @Inject constructor(
         lastDocument: DocumentSnapshot? = null,
         limit: Long = 20
     ): Pair<List<StockEntry>, DocumentSnapshot?> {
+        // توحيد اسم حقل التصفية ليطابق الـ Schema الجديدة للمستندات
         var query: Query = firestore.collection(StockEntry.COLLECTION_NAME)
-            .whereEqualTo("productVariantId", variantId)
+            .whereEqualTo("variantId", variantId)
 
         if (warehouseId != null) {
             query = query.whereEqualTo("warehouseId", warehouseId)
