@@ -2,14 +2,14 @@ import { onDocumentCreated } from "firebase-functions/v2/firestore";
 import * as admin from "firebase-admin";
 import { FieldValue } from "firebase-admin/firestore";
 
-async function handleSaleDoc(snapshot: admin.firestore.DocumentSnapshot, orderId: String) {
+async function handleSaleDoc(snapshot: admin.firestore.DocumentSnapshot, orderId: string) {
   if (!snapshot.exists) return;
 
   const db = admin.firestore();
   const orderData = snapshot.data();
   if (!orderData || orderData.status === "COMPLETED" || orderData.processed === true) return;
 
-  const txRef = db.collection("processed_transactions").doc(orderId.toString());
+  const txRef = db.collection("processed_transactions").doc(orderId);
 
   try {
     await db.runTransaction(async (transaction) => {

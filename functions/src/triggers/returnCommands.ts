@@ -84,7 +84,7 @@ export const processReturnCommand = onDocumentCreated("return_commands/{commandI
         }
 
         // Update Central Dashboard Hub
-        const hubUpdates: Record<String, any> = {
+        const hubUpdates: Record<string, any> = {
           "supplierSummary.totalCustomerDebt": FieldValue.increment(-remainingDebtReduction),
           lastUpdated: FieldValue.serverTimestamp()
         };
