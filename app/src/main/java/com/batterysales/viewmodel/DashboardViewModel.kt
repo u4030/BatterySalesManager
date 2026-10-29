@@ -208,7 +208,6 @@ class DashboardViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 cachedWarehouses = warehouseRepository.getWarehousesOnce()
-                summaryRepository.getDashboardHubOnce()
             } catch (e: Exception) {
                 Log.e("DashboardViewModel", "Error in refresh", e)
             }
