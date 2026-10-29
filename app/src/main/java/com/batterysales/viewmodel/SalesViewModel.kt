@@ -11,6 +11,13 @@ import kotlinx.coroutines.launch
 import java.util.Date
 import javax.inject.Inject
 
+sealed class SalesCommandState {
+    object Idle : SalesCommandState()
+    object Loading : SalesCommandState()
+    object Success : SalesCommandState()
+    data class Error(val message: String) : SalesCommandState()
+}
+
 data class SalesUiState(
     val products: List<Product> = emptyList(),
     val variants: List<ProductVariant> = emptyList(),
@@ -30,6 +37,7 @@ data class SalesUiState(
     val userWarehouseId: String = "",
     val isLoading: Boolean = false,
     val isSubmitting: Boolean = false,
+    val commandState: SalesCommandState = SalesCommandState.Idle,
     val errorMessage: String? = null,
     val successMessage: String? = null,
     val isFinished: Boolean = false
@@ -42,6 +50,7 @@ class SalesViewModel @Inject constructor(
     private val warehouseRepository: WarehouseRepository,
     private val summaryRepository: SummaryRepository,
     private val invoiceRepository: InvoiceRepository,
+    private val salesRepository: SalesRepository,
     private val userRepository: UserRepository,
     private val oldBatteryRepository: OldBatteryRepository,
     private val networkHelper: com.batterysales.utils.NetworkHelper
@@ -255,6 +264,35 @@ class SalesViewModel @Inject constructor(
 
     fun onPaymentMethodChanged(method: String) {
         _uiState.update { it.copy(paymentMethod = method) }
+    }
+
+    fun executeSaleCommand(customerId: String, items: List<InvoiceItem>, total: Double) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(commandState = SalesCommandState.Loading) }
+
+            // توليد معرف العملية محلياً لخدمة حارس التكرار في السيرفر
+            val orderId = "INV-${System.currentTimeMillis()}"
+            val invoice = SalesInvoice(
+                orderId = orderId,
+                customerId = customerId,
+                timestamp = java.time.Instant.now().toString(),
+                items = items,
+                totalAmount = total,
+                status = "PENDING_PROCESSING"
+            )
+
+            salesRepository.submitSalesInvoice(invoice)
+                .onSuccess {
+                    _uiState.update { state -> state.copy(commandState = SalesCommandState.Success, isFinished = true) }
+                }
+                .onFailure { error ->
+                    _uiState.update { state -> state.copy(commandState = SalesCommandState.Error(error.message ?: "Unknown Error"), errorMessage = error.message) }
+                }
+        }
+    }
+
+    fun getCustomerSalesSummaryFlow(customerId: String): Flow<CustomerSummary?> {
+        return salesRepository.getCustomerSalesSummaryFlow(customerId)
     }
 
     fun createSale(customerName: String, customerPhone: String, paidAmount: Double) {

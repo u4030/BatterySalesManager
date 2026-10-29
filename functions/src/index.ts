@@ -7,6 +7,7 @@ if (!admin.apps.length) {
 }
 
 export * from "./triggers/invoices";
+export * from "./triggers/salesOrders";
 export * from "./triggers/stockEntries";
 export * from "./triggers/transactions";
 export * from "./triggers/bankTransactions";

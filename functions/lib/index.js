@@ -43,6 +43,7 @@ if (!admin.apps.length) {
     });
 }
 __exportStar(require("./triggers/invoices"), exports);
+__exportStar(require("./triggers/salesOrders"), exports);
 __exportStar(require("./triggers/stockEntries"), exports);
 __exportStar(require("./triggers/transactions"), exports);
 __exportStar(require("./triggers/bankTransactions"), exports);
