@@ -129,7 +129,7 @@ class DashboardViewModel @Inject constructor(
         val warehouses = cachedWarehouses
 
         val systemStats = SystemStats(
-            totalCashBalance = hub.financialStatus.globalCashBalance,
+            totalCashBalance = hub.financialStatus.cashBalance,
             totalBankBalance = hub.bankSummary.globalBankBalance,
             totalSupplierDebt = if (isAdmin) hub.supplierSummary.totalSupplierDebt else 0.0,
             totalCustomerDebt = 0.0,
@@ -142,12 +142,12 @@ class DashboardViewModel @Inject constructor(
 
         val whStats = if (isAdmin) {
             warehouses.map { wh ->
-                val bal = hub.financialStatus.warehouseBalances[wh.id]?.cashBalance ?: 0.0
+                val bal = hub.financialStatus.getWarehouseCashBalance(wh.id)
                 WarehouseStats(wh.id, wh.name, bal, 0)
             }
         } else {
             val targetWhId = userWarehouseId ?: ""
-            val bal = hub.financialStatus.warehouseBalances[targetWhId]?.cashBalance ?: 0.0
+            val bal = hub.financialStatus.getWarehouseCashBalance(targetWhId)
             listOf(WarehouseStats(targetWhId, warehouses.find { it.id == targetWhId }?.name ?: "مخزن", bal, 0))
         }
 

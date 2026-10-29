@@ -37,6 +37,8 @@ class StockTransferViewModel @Inject constructor(
     private val userRepository: UserRepository
 ) : ViewModel() {
 
+    private val selectedSourceWarehouseState = MutableStateFlow<Warehouse?>(null)
+
     private val _uiState = MutableStateFlow(StockTransferUiState())
     val uiState: StateFlow<StockTransferUiState> = _uiState.asStateFlow()
 
@@ -45,6 +47,38 @@ class StockTransferViewModel @Inject constructor(
 
     init {
         loadInitialData()
+        observeSourceWarehouseSummaryReactive()
+    }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private fun observeSourceWarehouseSummaryReactive() {
+        selectedSourceWarehouseState
+            .flatMapLatest { wh ->
+                val whId = wh?.id ?: currentUser?.warehouseId
+                summaryRepository.getInventorySummaryFlow(whId)
+            }
+            .onEach { summary ->
+                cachedInventorySummary = summary
+                val sourceWhId = summary.warehouseId ?: selectedSourceWarehouseState.value?.id ?: currentUser?.warehouseId ?: ""
+
+                val newStockMap = _uiState.value.stockLevels.toMutableMap()
+                val currentVariants = _uiState.value.variants.map { v ->
+                    val item = summary.items[v.id]
+                    val qty = item?.currentStock ?: 0
+                    if (sourceWhId.isNotBlank()) {
+                        newStockMap[Pair(v.id, sourceWhId)] = qty
+                    }
+                    v
+                }
+
+                _uiState.update { state ->
+                    state.copy(
+                        variants = currentVariants,
+                        stockLevels = newStockMap
+                    )
+                }
+            }
+            .launchIn(viewModelScope)
     }
 
     private fun loadInitialData() {
@@ -54,20 +88,20 @@ class StockTransferViewModel @Inject constructor(
                 val user = userRepository.getCurrentUser()
                 currentUser = user
 
-                // --- ELITE STRATEGY: Load setup data with MINIMAL reads ---
                 val warehouses = warehouseRepository.getWarehousesOnce()
                 val activeWarehouses = warehouses.filter { it.isActive }
                 val products = productRepository.getProductsOnce()
-                cachedInventorySummary = summaryRepository.getInventorySummary(if (user?.role == "seller") user.warehouseId else null)
 
-                val sourceWh = if (user?.role == "seller") activeWarehouses.find { w -> w.id == user.warehouseId } else null
-                val destWh = if (sourceWh != null && activeWarehouses.size == 2) {
+                val sourceWh = if (user?.role == "seller") activeWarehouses.find { w -> w.id == user.warehouseId } else activeWarehouses.firstOrNull()
+                val destWh = if (sourceWh != null && activeWarehouses.size >= 2) {
                     activeWarehouses.firstOrNull { it.id != sourceWh.id }
                 } else null
 
+                selectedSourceWarehouseState.value = sourceWh
+
                 _uiState.update {
                     it.copy(
-                        products = products.filter { !it.archived }.sortedBy { it.name },
+                        products = products.filter { !it.archived }.sortedBy { p -> p.name },
                         warehouses = activeWarehouses,
                         sourceWarehouse = sourceWh,
                         destinationWarehouse = destWh,
@@ -85,33 +119,19 @@ class StockTransferViewModel @Inject constructor(
     fun onProductSelected(product: Product) {
         viewModelScope.launch {
             _uiState.update { it.copy(selectedProduct = product, selectedVariant = null, variants = emptyList(), isLoading = true, quantity = "") }
-            
-            val rawWarehouseId = cachedInventorySummary?.id?.removePrefix("inventory_wh_") ?: "global"
-            val targetWhId = _uiState.value.sourceWarehouse?.id ?: currentUser?.warehouseId ?: rawWarehouseId
 
-            // --- ELITE STRATEGY: Get variants from pre-loaded summary ---
-            val summaryItems = cachedInventorySummary?.items?.values ?: emptyList()
-            var variantsForProduct = summaryItems.filter { it.productId == product.id }
-                .map { item -> 
-                    ProductVariant(
-                        id = item.variantId, productId = item.productId, capacity = item.capacity,
-                        barcode = item.barcode, weightedAverageCost = item.weightedAverageCost,
-                        productName = item.productName, specification = item.specification,
-                        isDiscontinued = item.isDiscontinued,
-                        currentStock = mapOf(rawWarehouseId to item.currentStock)
-                    )
-                }.sortedBy { it.capacity }
+            val targetWhId = _uiState.value.sourceWarehouse?.id ?: currentUser?.warehouseId ?: ""
+            val variantsForProduct = productVariantRepository.getVariantsForProduct(product.id)
+                .filter { !it.archived }.sortedBy { it.capacity }
 
-            // Fallback
-            if (variantsForProduct.isEmpty()) {
-                variantsForProduct = productVariantRepository.getVariantsForProduct(product.id)
-                    .filter { !it.archived }.sortedBy { it.capacity }
-            }
-
+            val summaryItems = cachedInventorySummary?.items ?: emptyMap()
             val newStockMap = _uiState.value.stockLevels.toMutableMap()
+
             variantsForProduct.forEach { v ->
-                val qty = (v.currentStock?.get(rawWarehouseId) as? Number)?.toInt() ?: (v.currentStock?.get(targetWhId) as? Number)?.toInt() ?: 0
-                newStockMap[Pair(v.id, targetWhId)] = qty
+                val qty = summaryItems[v.id]?.currentStock ?: 0
+                if (targetWhId.isNotBlank()) {
+                    newStockMap[Pair(v.id, targetWhId)] = qty
+                }
             }
 
             _uiState.update { it.copy(variants = variantsForProduct, stockLevels = newStockMap, isLoading = false) }
@@ -123,6 +143,8 @@ class StockTransferViewModel @Inject constructor(
     }
 
     fun onSourceWarehouseSelected(warehouse: Warehouse) {
+        if (_uiState.value.sourceWarehouse?.id == warehouse.id) return
+
         val activeWhs = uiState.value.warehouses
         val autoDest = if (activeWhs.size == 2 || uiState.value.destinationWarehouse?.id == warehouse.id) {
             activeWhs.firstOrNull { it.id != warehouse.id }
@@ -130,29 +152,8 @@ class StockTransferViewModel @Inject constructor(
             uiState.value.destinationWarehouse
         }
 
-        _uiState.update { it.copy(sourceWarehouse = warehouse, destinationWarehouse = autoDest, isLoading = true) }
-        
-        viewModelScope.launch {
-            try {
-                // Fetch the summary for the specific source warehouse (ZERO reads preference)
-                val summary = summaryRepository.getInventorySummary(warehouse.id)
-                cachedInventorySummary = summary
-                
-                // Refresh stock levels for the current list of variants based on new summary
-                val newStockMap = _uiState.value.stockLevels.toMutableMap()
-                val updatedVariants = _uiState.value.variants.map { v ->
-                    val item = summary?.items?.get(v.id)
-                    val qty = item?.currentStock ?: 0
-                    newStockMap[Pair(v.id, warehouse.id)] = qty
-                    v.copy(currentStock = mapOf(warehouse.id to qty))
-                }
-
-                _uiState.update { it.copy(variants = updatedVariants, stockLevels = newStockMap, isLoading = false) }
-            } catch (e: Exception) {
-                Log.e("StockTransferVM", "Source selection error", e)
-                _uiState.update { it.copy(isLoading = false) }
-            }
-        }
+        selectedSourceWarehouseState.value = warehouse
+        _uiState.update { it.copy(sourceWarehouse = warehouse, destinationWarehouse = autoDest) }
     }
 
     fun onDestinationWarehouseSelected(warehouse: Warehouse) {
