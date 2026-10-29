@@ -255,9 +255,8 @@ class StockEntryRepository @Inject constructor(
         lastDocument: DocumentSnapshot? = null,
         limit: Long = 20
     ): Pair<List<StockEntry>, DocumentSnapshot?> {
-        // توحيد اسم حقل التصفية ليطابق الـ Schema الجديدة للمستندات
         var query: Query = firestore.collection(StockEntry.COLLECTION_NAME)
-            .whereEqualTo("variantId", variantId)
+            .whereIn("variantId", listOf(variantId, ""))
 
         if (warehouseId != null) {
             query = query.whereEqualTo("warehouseId", warehouseId)
@@ -269,10 +268,32 @@ class StockEntryRepository @Inject constructor(
             query = query.startAfter(lastDocument)
         }
 
-        val snapshot = query.limit(limit).get().await()
-        val entries = snapshot.documents.mapNotNull { it.toObject(StockEntry::class.java)?.copy(id = it.id) }
-        val lastDoc = snapshot.documents.lastOrNull()
+        var snapshot = query.limit(limit).get().await()
 
+        if (snapshot.isEmpty) {
+            var fallbackQuery: Query = firestore.collection(StockEntry.COLLECTION_NAME)
+                .whereEqualTo("productVariantId", variantId)
+
+            if (warehouseId != null) {
+                fallbackQuery = fallbackQuery.whereEqualTo("warehouseId", warehouseId)
+            }
+
+            fallbackQuery = fallbackQuery.orderBy("timestamp", Query.Direction.DESCENDING)
+
+            if (lastDocument != null) {
+                fallbackQuery = fallbackQuery.startAfter(lastDocument)
+            }
+
+            snapshot = fallbackQuery.limit(limit).get().await()
+        }
+
+        val entries = snapshot.documents.mapNotNull { doc ->
+            val entry = doc.toObject(StockEntry::class.java)
+            val vId = doc.getString("variantId") ?: doc.getString("productVariantId") ?: ""
+            entry?.copy(id = doc.id, variantId = vId, productVariantId = vId)
+        }
+
+        val lastDoc = snapshot.documents.lastOrNull()
         return Pair(entries, lastDoc)
     }
 
