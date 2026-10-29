@@ -8,48 +8,48 @@ export const onStockEntryWritten = onDocumentWritten("stock_entries/{entryId}", 
 
   const db = admin.firestore();
   const entryData = change.after.data();
-  // المعالجة تنطلق فوراً لأي حركة مخزن جديدة ولم يتم معالجتها من قبل السيرفر مسبقاً
-  if (!entryData || entryData.processedByServer === true) return;
+  if (!entryData || entryData.status !== "approved" || entryData.processedByServer === true) return;
 
   const entryId = event.params.entryId;
   const variantId = entryData.productVariantId || "";
   const warehouseId = entryData.warehouseId || "";
-
-  // حساب الكمية الصافية المدخلة
   const qty = Number(entryData.quantity || 0) - Number(entryData.returnedQuantity || 0);
   if (!variantId || !warehouseId || qty === 0) return;
 
   try {
     await db.runTransaction(async (transaction) => {
-      // 1. تحديث مستند الصنف الأصلي product_variants
       const variantRef = db.collection("product_variants").doc(variantId);
+      const whSummaryRef = db.collection("summaries").doc(`inventory_wh_${warehouseId}`);
+      const globalSummaryRef = db.collection("summaries").doc("inventory_global");
+
+      // === 1. READ PHASE FIRST (امتثالاً لقانون المعاملات الصارم لمنع الـ Crash) ===
+      const variantSnap = await transaction.get(variantRef);
+
+      // === 2. WRITE PHASE SECOND (تنفيذ المحاسبة وتوزيع الحسابات) ===
+      // تحديث رصيد الصنف الموحد في المخازن
       transaction.set(variantRef, {
         [`currentStock.${warehouseId}`]: FieldValue.increment(qty),
         updatedAt: FieldValue.serverTimestamp()
       }, { merge: true });
 
-      // 2. تحديث ملخص المستودع الفرعي inventory_wh_${warehouseId} الذي ينصت له الهاتف
-      const whSummaryRef = db.collection("summaries").doc(`inventory_wh_${warehouseId}`);
+      // تحديث ملخص المستودع الفرعي الذي ينصت له الهاتف كـ Flow حركي
       transaction.set(whSummaryRef, {
         [`items.${variantId}.currentStock`]: FieldValue.increment(qty),
         version: FieldValue.increment(1),
         lastUpdated: FieldValue.serverTimestamp()
       }, { merge: true });
 
-      // 3. تحديث ملخص المخزن العالمي inventory_global
-      const globalSummaryRef = db.collection("summaries").doc("inventory_global");
+      // تحديث ملخص المخزن العالمي
       transaction.set(globalSummaryRef, {
         [`items.${variantId}.currentStock`]: FieldValue.increment(qty),
         version: FieldValue.increment(1),
         lastUpdated: FieldValue.serverTimestamp()
       }, { merge: true });
 
-      // 4. محرك حساب الحد الأدنى وإطلاق التنبيهات الحية فوراً (Threshold Engine)
-      const variantSnap = await transaction.get(variantRef);
+      // محرك حساب الحد الأدنى للمخزون وإطلاق التنبيهات بناءً على القراءة المستقرة
       if (variantSnap.exists) {
         const vData = variantSnap.data() || {};
         const stockMap = vData.currentStock || {};
-        // احتساب الكمية الجديدة بعد الزيادة الحالية
         const currentStockInWh = (stockMap[warehouseId] || 0) + qty;
         const minQty = Number(vData.minQuantities?.[warehouseId] || vData.minQuantity || 0);
         const alertRef = db.collection("system_alerts").doc(`low_stock_${variantId}`);
@@ -68,23 +68,18 @@ export const onStockEntryWritten = onDocumentWritten("stock_entries/{entryId}", 
             warehouseId,
             timestamp: FieldValue.serverTimestamp(),
             resolved: false,
-            data: {
-              capacity,
-              specification,
-              currentStock: currentStockInWh,
-              threshold: minQty
-            }
+            data: { capacity, specification, currentStock: currentStockInWh, threshold: minQty }
           }, { merge: true });
         } else {
-          // إذا أصبح المخزن آمناً وفوق الحد الأدنى، امسح التنبيه فوراً
+          // إذا زاد المخزن عن الحد الأدنى، احذف مستند التنبيه فوراً لتنظيف لوحة التحكم
           transaction.delete(alertRef);
         }
       }
 
-      // تعميد المستند لكي لا يعاد معالجته تكراراً
+      // تعميد نجاح المعاملة لمنع التكرار ارتدادياً
       transaction.update(change.after.ref, { processedByServer: true });
     });
-    console.log(`[ServerEngine] StockEntry ${entryId} processed successfully. Read-Models updated.`);
+    console.log(`[ServerEngine] Fixed transaction ordering. StockEntry ${entryId} completed successfully.`);
   } catch (error: any) {
     console.error(`Stock entry processing failed for ${entryId}:`, error);
   }

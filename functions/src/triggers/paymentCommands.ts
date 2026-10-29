@@ -13,16 +13,23 @@ export const processPaymentCommand = onDocumentCreated("payment_commands/{comman
   try {
     await db.runTransaction(async (transaction) => {
       const invoiceRef = db.collection("invoices").doc(cmd.invoiceId);
+      const paymentRef = db.collection("payments").doc(cmd.paymentId || cmd.id || event.params.commandId);
+
+      // === 1. READ PHASE FIRST ===
       const invoiceSnap = await transaction.get(invoiceRef);
       if (!invoiceSnap.exists) throw new Error("Invoice not found");
 
+      let paymentSnap: admin.firestore.DocumentSnapshot | null = null;
+      if (cmd.type === "UPDATE" || cmd.type === "DELETE") {
+        paymentSnap = await transaction.get(paymentRef);
+      }
+
+      // === 2. WRITE PHASE SECOND ===
       const invoiceData = invoiceSnap.data() || {};
       const amount = Number(cmd.amount || 0);
       const isBank = cmd.paymentMethod === "bank";
       const warehouseId = cmd.warehouseId || invoiceData.warehouseId;
-
       const hubRef = db.doc("summaries/dashboard_hub");
-      const paymentRef = db.collection("payments").doc(cmd.paymentId || cmd.id || event.params.commandId);
 
       if (cmd.type === "CREATE") {
         // 1. إنشاء السداد الفعلي وعكس الأثر المالي
@@ -49,9 +56,7 @@ export const processPaymentCommand = onDocumentCreated("payment_commands/{comman
         }, { merge: true });
 
       } else if (cmd.type === "UPDATE") {
-        // 2. تعديل دفعة مالية سابقة
-        const paymentSnap = await transaction.get(paymentRef);
-        if (!paymentSnap.exists) throw new Error("Payment document not found for update");
+        if (!paymentSnap || !paymentSnap.exists) throw new Error("Payment document not found for update");
         const oldPaymentData = paymentSnap.data() || {};
         const oldAmount = Number(oldPaymentData.amount || 0);
         const oldIsBank = oldPaymentData.paymentMethod === "bank";
@@ -80,9 +85,7 @@ export const processPaymentCommand = onDocumentCreated("payment_commands/{comman
         }, { merge: true });
 
       } else if (cmd.type === "DELETE") {
-        // 3. إلغاء/حذف دفعة مالية
-        const paymentSnap = await transaction.get(paymentRef);
-        if (paymentSnap.exists) {
+        if (paymentSnap && paymentSnap.exists) {
           const oldPaymentData = paymentSnap.data() || {};
           const oldAmount = Number(oldPaymentData.amount || 0);
           const oldIsBank = oldPaymentData.paymentMethod === "bank";

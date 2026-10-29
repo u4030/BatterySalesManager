@@ -13,13 +13,28 @@ async function handleSaleDoc(snapshot: admin.firestore.DocumentSnapshot, orderId
 
   try {
     await db.runTransaction(async (transaction) => {
+      // === 1. READ PHASE FIRST ===
       const txSnap = await transaction.get(txRef);
       if (txSnap.exists) return; // Idempotency Guardrail
 
+      const items = orderData.items || [];
+      const validItems = items.filter((i: any) => (i.productId || i.productVariantId) && Number(i.quantity || 0) > 0);
+
+      // Pre-fetch all variant snapshots before writing
+      const variantSnapshots = new Map<string, admin.firestore.DocumentSnapshot>();
+      for (const item of validItems) {
+        const variantId = item.productId || item.productVariantId;
+        if (!variantSnapshots.has(variantId)) {
+          const vRef = db.collection("product_variants").doc(variantId);
+          const vSnap = await transaction.get(vRef);
+          variantSnapshots.set(variantId, vSnap);
+        }
+      }
+
+      // === 2. WRITE PHASE SECOND ===
       transaction.set(txRef, { processedAt: FieldValue.serverTimestamp() });
 
       const warehouseId = orderData.warehouseId || "";
-      const items = orderData.items || [];
       const paidAmount = Number(orderData.paidAmount || 0);
       const remainingAmount = Number(orderData.remainingAmount || 0);
       const paymentMethod = orderData.paymentMethod || "cash";
@@ -27,74 +42,71 @@ async function handleSaleDoc(snapshot: admin.firestore.DocumentSnapshot, orderId
       const scrapAmps = Number(orderData.oldBatteriesTotalAmperes || 0);
       const scrapVal = Number(orderData.oldBatteriesValue || 0);
 
-      // 1. Atomically deduct stock from stocks, product_variants, and summaries
-      for (const item of items) {
-        const variantId = item.productId || item.productVariantId || "";
+      for (const item of validItems) {
+        const variantId = item.productId || item.productVariantId;
         const qty = Number(item.quantity || 0);
 
-        if (variantId && qty > 0) {
-          // Update stocks collection
-          const stockRef = db.collection("stocks").doc(`${variantId}_${warehouseId}`);
-          transaction.set(stockRef, { quantity: FieldValue.increment(-qty) }, { merge: true });
+        // Update stocks collection
+        const stockRef = db.collection("stocks").doc(`${variantId}_${warehouseId}`);
+        transaction.set(stockRef, { quantity: FieldValue.increment(-qty) }, { merge: true });
 
-          // Update product_variants document currentStock map
-          const variantRef = db.collection("product_variants").doc(variantId);
-          transaction.set(variantRef, {
-            [`currentStock.${warehouseId}`]: FieldValue.increment(-qty),
-            updatedAt: FieldValue.serverTimestamp()
-          }, { merge: true });
+        // Update product_variants document currentStock map
+        const variantRef = db.collection("product_variants").doc(variantId);
+        transaction.set(variantRef, {
+          [`currentStock.${warehouseId}`]: FieldValue.increment(-qty),
+          updatedAt: FieldValue.serverTimestamp()
+        }, { merge: true });
 
-          // Update Read-Model summaries/inventory_wh_${warehouseId}
-          const whSummaryRef = db.collection("summaries").doc(`inventory_wh_${warehouseId}`);
-          transaction.set(whSummaryRef, {
-            [`items.${variantId}.currentStock`]: FieldValue.increment(-qty),
-            version: FieldValue.increment(1),
-            lastUpdated: FieldValue.serverTimestamp()
-          }, { merge: true });
+        // Update Read-Model summaries/inventory_wh_${warehouseId}
+        const whSummaryRef = db.collection("summaries").doc(`inventory_wh_${warehouseId}`);
+        transaction.set(whSummaryRef, {
+          [`items.${variantId}.currentStock`]: FieldValue.increment(-qty),
+          version: FieldValue.increment(1),
+          lastUpdated: FieldValue.serverTimestamp()
+        }, { merge: true });
 
-          // Update Read-Model summaries/inventory_global
-          const globalSummaryRef = db.collection("summaries").doc("inventory_global");
-          transaction.set(globalSummaryRef, {
-            [`items.${variantId}.currentStock`]: FieldValue.increment(-qty),
-            version: FieldValue.increment(1),
-            lastUpdated: FieldValue.serverTimestamp()
-          }, { merge: true });
+        // Update Read-Model summaries/inventory_global
+        const globalSummaryRef = db.collection("summaries").doc("inventory_global");
+        transaction.set(globalSummaryRef, {
+          [`items.${variantId}.currentStock`]: FieldValue.increment(-qty),
+          version: FieldValue.increment(1),
+          lastUpdated: FieldValue.serverTimestamp()
+        }, { merge: true });
 
-          // Low-Stock Threshold check
-          const variantSnap = await transaction.get(variantRef);
-          if (variantSnap.exists) {
-            const vData = variantSnap.data() || {};
-            const stockMap = vData.currentStock || {};
-            const currentStockInWh = (stockMap[warehouseId] || 0) - qty;
-            const minQty = Number(vData.minQuantities?.[warehouseId] || vData.minQuantity || 0);
-            const productName = vData.productName || item.productName || "منتج";
-            const capacity = Number(vData.capacity || 0);
-            const specification = vData.specification || "";
+        // Evaluate Low-Stock Threshold using pre-fetched snapshot
+        const variantSnap = variantSnapshots.get(variantId);
+        if (variantSnap && variantSnap.exists) {
+          const vData = variantSnap.data() || {};
+          const stockMap = vData.currentStock || {};
+          const currentStockInWh = (stockMap[warehouseId] || 0) - qty;
+          const minQty = Number(vData.minQuantities?.[warehouseId] || vData.minQuantity || 0);
+          const productName = vData.productName || item.productName || "منتج";
+          const capacity = Number(vData.capacity || 0);
+          const specification = vData.specification || "";
 
-            if (minQty > 0 && currentStockInWh <= minQty) {
-              const alertRef = db.collection("system_alerts").doc(`low_stock_${variantId}`);
-              transaction.set(alertRef, {
-                id: `low_stock_${variantId}`,
-                type: "low_stock",
-                title: `مخزون منخفض: ${productName}`,
-                message: `المخزون المتوفر (${currentStockInWh}) أقل من الحد الأدنى (${minQty})`,
-                relatedId: variantId,
-                warehouseId,
-                timestamp: FieldValue.serverTimestamp(),
-                resolved: false,
-                data: {
-                  capacity,
-                  specification,
-                  currentStock: currentStockInWh,
-                  threshold: minQty
-                }
-              }, { merge: true });
-            }
+          if (minQty > 0 && currentStockInWh <= minQty) {
+            const alertRef = db.collection("system_alerts").doc(`low_stock_${variantId}`);
+            transaction.set(alertRef, {
+              id: `low_stock_${variantId}`,
+              type: "low_stock",
+              title: `تنبيه: ${productName}`,
+              message: `المخزون شارف على النفاد (${currentStockInWh}) تحت الحد الأدنى (${minQty})`,
+              relatedId: variantId,
+              warehouseId,
+              timestamp: FieldValue.serverTimestamp(),
+              resolved: false,
+              data: {
+                capacity,
+                specification,
+                currentStock: currentStockInWh,
+                threshold: minQty
+              }
+            }, { merge: true });
           }
         }
       }
 
-      // 2. Adjust Scrap Warehouse
+      // Adjust Scrap Warehouse
       if (scrapQty > 0) {
         const scrapRef = db.collection("scrap_warehouses").doc(`scrap_wh_${warehouseId}`);
         transaction.set(scrapRef, {
@@ -105,7 +117,7 @@ async function handleSaleDoc(snapshot: admin.firestore.DocumentSnapshot, orderId
         }, { merge: true });
       }
 
-      // 3. Update Financial Read-Model in summaries/dashboard_hub
+      // Update Financial Read-Model in summaries/dashboard_hub
       const isBank = paymentMethod === "bank";
       const hubRef = db.doc("summaries/dashboard_hub");
       transaction.set(hubRef, {
@@ -118,7 +130,6 @@ async function handleSaleDoc(snapshot: admin.firestore.DocumentSnapshot, orderId
 
       const isInvoiceDoc = snapshot.ref.parent.id === "invoices";
       if (isInvoiceDoc) {
-        // Do not overwrite invoice payment status ('paid' | 'pending')
         transaction.update(snapshot.ref, { processed: true, processedByServer: true });
       } else {
         transaction.update(snapshot.ref, { status: "COMPLETED", processed: true, processedByServer: true });

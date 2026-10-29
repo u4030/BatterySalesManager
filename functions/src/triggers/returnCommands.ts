@@ -22,16 +22,26 @@ export const processReturnCommand = onDocumentCreated("return_commands/{commandI
 
       const hubRef = db.doc("summaries/dashboard_hub");
 
-      // Update Stock Entry document if specified
+      // === 1. READ PHASE FIRST ===
+      let entrySnap: admin.firestore.DocumentSnapshot | null = null;
       if (cmd.entryId) {
         const entryRef = db.collection("stock_entries").doc(cmd.entryId);
-        const entrySnap = await transaction.get(entryRef);
-        if (entrySnap.exists) {
-          transaction.update(entryRef, {
-            returnedQuantity: FieldValue.increment(returnedQty),
-            returnDate: FieldValue.serverTimestamp()
-          });
-        }
+        entrySnap = await transaction.get(entryRef);
+      }
+
+      let invoiceSnap: admin.firestore.DocumentSnapshot | null = null;
+      if (cmd.type === "SALES_RETURN" && cmd.invoiceId) {
+        const invoiceRef = db.collection("invoices").doc(cmd.invoiceId);
+        invoiceSnap = await transaction.get(invoiceRef);
+      }
+
+      // === 2. WRITE PHASE SECOND ===
+      if (cmd.entryId && entrySnap && entrySnap.exists) {
+        const entryRef = db.collection("stock_entries").doc(cmd.entryId);
+        transaction.update(entryRef, {
+          returnedQuantity: FieldValue.increment(returnedQty),
+          returnDate: FieldValue.serverTimestamp()
+        });
       }
 
       if (cmd.type === "SALES_RETURN") {
@@ -56,29 +66,24 @@ export const processReturnCommand = onDocumentCreated("return_commands/{commandI
         let remainingDebtReduction = refundAmount;
         let cashRefund = 0;
 
-        if (cmd.invoiceId) {
+        if (cmd.invoiceId && invoiceSnap && invoiceSnap.exists) {
           const invoiceRef = db.collection("invoices").doc(cmd.invoiceId);
-          const invoiceSnap = await transaction.get(invoiceRef);
-          if (invoiceSnap.exists) {
-            const invoiceData = invoiceSnap.data() || {};
-            const currentDebt = Number(invoiceData.remainingAmount || 0);
+          const invoiceData = invoiceSnap.data() || {};
+          const currentDebt = Number(invoiceData.remainingAmount || 0);
 
-            if (currentDebt > 0) {
-              remainingDebtReduction = Math.min(refundAmount, currentDebt);
-              cashRefund = refundAmount - remainingDebtReduction;
-            } else {
-              remainingDebtReduction = 0;
-              cashRefund = refundAmount;
-            }
-
-            transaction.update(invoiceRef, {
-              remainingAmount: FieldValue.increment(-remainingDebtReduction),
-              status: (currentDebt - remainingDebtReduction <= 0.001) ? "paid" : "pending",
-              updatedAt: FieldValue.serverTimestamp()
-            });
+          if (currentDebt > 0) {
+            remainingDebtReduction = Math.min(refundAmount, currentDebt);
+            cashRefund = refundAmount - remainingDebtReduction;
           } else {
+            remainingDebtReduction = 0;
             cashRefund = refundAmount;
           }
+
+          transaction.update(invoiceRef, {
+            remainingAmount: FieldValue.increment(-remainingDebtReduction),
+            status: (currentDebt - remainingDebtReduction <= 0.001) ? "paid" : "pending",
+            updatedAt: FieldValue.serverTimestamp()
+          });
         } else {
           cashRefund = refundAmount;
         }
