@@ -86,8 +86,8 @@ class StockTransferViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(selectedProduct = product, selectedVariant = null, variants = emptyList(), isLoading = true, quantity = "") }
             
-            val warehouseKey = cachedInventorySummary?.warehouseId ?: "global"
-            val targetWhId = _uiState.value.sourceWarehouse?.id ?: currentUser?.warehouseId ?: warehouseKey
+            val rawWarehouseId = cachedInventorySummary?.id?.removePrefix("inventory_wh_") ?: "global"
+            val targetWhId = _uiState.value.sourceWarehouse?.id ?: currentUser?.warehouseId ?: rawWarehouseId
 
             // --- ELITE STRATEGY: Get variants from pre-loaded summary ---
             val summaryItems = cachedInventorySummary?.items?.values ?: emptyList()
@@ -98,7 +98,7 @@ class StockTransferViewModel @Inject constructor(
                         barcode = item.barcode, weightedAverageCost = item.weightedAverageCost,
                         productName = item.productName, specification = item.specification,
                         isDiscontinued = item.isDiscontinued,
-                        currentStock = mapOf(warehouseKey to item.currentStock)
+                        currentStock = mapOf(rawWarehouseId to item.currentStock)
                     )
                 }.sortedBy { it.capacity }
 
@@ -110,7 +110,7 @@ class StockTransferViewModel @Inject constructor(
 
             val newStockMap = _uiState.value.stockLevels.toMutableMap()
             variantsForProduct.forEach { v ->
-                val qty = (v.currentStock?.get(warehouseKey) as? Number)?.toInt() ?: (v.currentStock?.get(targetWhId) as? Number)?.toInt() ?: 0
+                val qty = (v.currentStock?.get(rawWarehouseId) as? Number)?.toInt() ?: (v.currentStock?.get(targetWhId) as? Number)?.toInt() ?: 0
                 newStockMap[Pair(v.id, targetWhId)] = qty
             }
 
