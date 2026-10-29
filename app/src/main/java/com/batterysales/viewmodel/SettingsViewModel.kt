@@ -70,14 +70,9 @@ class SettingsViewModel @Inject constructor(
                 _isMigrating.value = true
                 _migrationStatus.value = "جاري ترحيل البيانات وإعادة بناء الملخصات... يرجى عدم إغلاق التطبيق"
                 
-                invoiceRepository.migrateInvoices()
-                stockEntryRepository.migrateStockEntries(billRepository)
-                
                 // --- NEW: Fix Product-Supplier association for legacy data ---
                 _migrationStatus.value = "جاري تحديث روابط الموردين للمنتجات القديمة..."
                 migrateProductSuppliers()
-
-                stockEntryRepository.migrateAllVariants(productRepository, supplierRepository, billRepository)
                 
                 // Rebuild Summaries from scratch
                 rebuildAllSummaries()

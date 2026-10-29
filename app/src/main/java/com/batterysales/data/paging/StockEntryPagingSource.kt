@@ -17,7 +17,7 @@ class StockEntryPagingSource(
     override suspend fun load(params: LoadParams<DocumentSnapshot>): LoadResult<DocumentSnapshot, StockEntry> {
         return try {
             val result = repository.getEntriesPaginated(
-                productVariantId = productVariantId,
+                variantId = productVariantId,
                 warehouseId = warehouseId,
                 lastDocument = params.key,
                 limit = params.loadSize.toLong()

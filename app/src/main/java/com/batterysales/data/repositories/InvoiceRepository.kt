@@ -75,6 +75,9 @@ class InvoiceRepository @Inject constructor(
         return (snapshot.get(AggregateField.sum("remainingAmount")) as? Number)?.toDouble() ?: 0.0
     }
 
+    /**
+     * Cache-First Paginated Invoice Query (Architecture Mandate: Zero Quota Consumption for search & browsing).
+     */
     suspend fun getInvoicesPaginated(
         warehouseId: String?,
         status: String? = null,
@@ -83,7 +86,8 @@ class InvoiceRepository @Inject constructor(
         searchQuery: String? = null,
         lastDocument: DocumentSnapshot? = null,
         limit: Long = 20,
-        useUpdatedAt: Boolean = false
+        useUpdatedAt: Boolean = false,
+        source: com.google.firebase.firestore.Source = com.google.firebase.firestore.Source.CACHE
     ): Pair<List<Invoice>, DocumentSnapshot?> {
         var query: Query = firestore.collection(Invoice.COLLECTION_NAME)
 
@@ -128,11 +132,16 @@ class InvoiceRepository @Inject constructor(
             query = query.startAfter(lastDocument)
         }
 
-        val snapshot = query.limit(limit).get().await()
-        val invoices = snapshot.documents.mapNotNull { it.toObject(Invoice::class.java)?.copy(id = it.id) }
-        val lastDoc = snapshot.documents.lastOrNull()
-
-        return Pair(invoices, lastDoc)
+        return try {
+            val snapshot = query.limit(limit).get(source).await()
+            val invoices = snapshot.documents.mapNotNull { it.toObject(Invoice::class.java)?.copy(id = it.id) }
+            val lastDoc = snapshot.documents.lastOrNull()
+            Pair(invoices, lastDoc)
+        } catch (e: Exception) {
+            // منع الارتداد التلقائي الأعمى للسيرفر حمايةً للكوتا
+            android.util.Log.e("InvoiceRepository", "Cache read failed, zero quota pre-fetch violation blocked", e)
+            Pair(emptyList(), null)
+        }
     }
 
     /**
@@ -156,350 +165,87 @@ class InvoiceRepository @Inject constructor(
         )).await()
     }
 
+    /**
+     * Write-Only Sale Command: Writes purely the central unified Invoice document to invoices/{invoiceId}.
+     * Zero client-side pre-fetch reads or side-effect writes to stock_entries, old_battery_transactions, or transactions.
+     * Cloud Functions server execution engine handles atomic distribution.
+     */
     suspend fun createFullSale(
         invoice: Invoice,
-        stockEntry: com.batterysales.data.models.StockEntry,
-        payment: com.batterysales.data.models.Payment?,
-        treasuryTransaction: com.batterysales.data.models.Transaction?,
-        oldBatteryTransaction: com.batterysales.data.models.OldBatteryTransaction?
+        stockEntry: com.batterysales.data.models.StockEntry? = null,
+        payment: com.batterysales.data.models.Payment? = null,
+        treasuryTransaction: com.batterysales.data.models.Transaction? = null,
+        oldBatteryTransaction: com.batterysales.data.models.OldBatteryTransaction? = null
     ): String {
-        val batch = firestore.batch()
-        val invoiceRef = firestore.collection(Invoice.COLLECTION_NAME).document()
-        val finalInvoice = invoice.copy(id = invoiceRef.id, createdAt = Date(), updatedAt = Date())
-
-        // Save Invoice document with items array embedded inside the invoice document itself
-        batch.set(invoiceRef, finalInvoice)
-
-        val stockRef = firestore.collection(com.batterysales.data.models.StockEntry.COLLECTION_NAME).document()
-        val finalStockEntry = stockEntry.copy(id = stockRef.id, invoiceId = finalInvoice.id)
-        batch.set(stockRef, finalStockEntry)
-
-        if (payment != null && payment.amount > 0.001) {
-            val paymentRef = firestore.collection(Payment.COLLECTION_NAME).document()
-            val finalPayment = payment.copy(id = paymentRef.id, invoiceId = finalInvoice.id, warehouseId = stockEntry.warehouseId)
-            batch.set(paymentRef, finalPayment)
-
-            if (treasuryTransaction != null) {
-                val treasuryRef = firestore.collection(com.batterysales.data.models.Transaction.COLLECTION_NAME).document()
-                batch.set(treasuryRef, treasuryTransaction.copy(id = treasuryRef.id, relatedId = finalPayment.id, warehouseId = stockEntry.warehouseId))
-            }
-        }
-
-        if (oldBatteryTransaction != null && oldBatteryTransaction.quantity > 0) {
-            val scrapRef = firestore.collection(com.batterysales.data.models.OldBatteryTransaction.COLLECTION_NAME).document()
-            val finalScrapTrans = oldBatteryTransaction.copy(id = scrapRef.id, invoiceId = finalInvoice.id, warehouseId = stockEntry.warehouseId)
-            batch.set(scrapRef, finalScrapTrans)
-        }
-
-        // Commit WriteBatch without phone-side stock manipulation or read loops
-        batch.commit().await()
+        val docRef = firestore.collection(Invoice.COLLECTION_NAME).document()
+        val finalInvoice = invoice.copy(
+            id = docRef.id,
+            createdAt = Date(),
+            updatedAt = Date()
+        )
+        docRef.set(finalInvoice).await()
         return finalInvoice.id
     }
 
+    /**
+     * Payment Command Layer: Writes a write-only command to payment_commands.
+     * Zero Client-Side Pre-Fetch Reads or local transactions.
+     */
     suspend fun addPayment(invoiceId: String, payment: Payment) {
-        val invoiceRef = firestore.collection(Invoice.COLLECTION_NAME).document(invoiceId)
-        
-        // Fetch existing payments for this invoice to verify if invoice was already collected today
-        val existingPaymentsSnap = firestore.collection(Payment.COLLECTION_NAME)
-            .whereEqualTo("invoiceId", invoiceId)
-            .get().await()
-            
-        val now = Date()
-        val pDate = payment.paymentDate ?: now
-        val isPaymentToday = com.batterysales.utils.DateUtils.isSameDay(pDate, now)
-        val hasPriorPaymentToday = isPaymentToday && existingPaymentsSnap.documents.any { doc ->
-            val date = doc.getDate("paymentDate") ?: doc.getDate("timestamp")
-            date != null && com.batterysales.utils.DateUtils.isSameDay(date, now)
-        }
-
-        firestore.runTransaction { transaction ->
-            // --- READ PHASE ---
-            val invoiceSnap = transaction.get(invoiceRef)
-            val invoice = invoiceSnap.toObject(Invoice::class.java)?.copy(id = invoiceSnap.id) ?: return@runTransaction
-            val targetWhId = invoice.warehouseId.ifBlank { "unassigned" }
-            val summarySnapshots = summaryRepository.getSummarySnapshots(transaction, listOf(targetWhId))
-            val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
-
-            // --- WRITE PHASE ---
-            val paymentRef = firestore.collection(Payment.COLLECTION_NAME).document()
-            val finalPayment = payment.copy(id = paymentRef.id, invoiceId = invoiceId, warehouseId = targetWhId)
-            transaction.set(paymentRef, finalPayment)
-
-            // Create Ledger Entry
-            if (finalPayment.paymentMethod == "bank") {
-                val bankRef = firestore.collection(com.batterysales.data.models.BankTransaction.COLLECTION_NAME).document()
-                transaction.set(bankRef, com.batterysales.data.models.BankTransaction(
-                    id = bankRef.id,
-                    billId = finalPayment.id,
-                    amount = finalPayment.amount,
-                    type = com.batterysales.data.models.BankTransactionType.DEPOSIT,
-                    description = "دفعة من زبون: ${invoice.customerName} - فاتورة #${invoice.invoiceNumber}",
-                    date = finalPayment.paymentDate,
-                    notes = finalPayment.notes,
-                    isSystemManaged = true
-                ))
-            } else {
-                val treasuryRef = firestore.collection(com.batterysales.data.models.Transaction.COLLECTION_NAME).document()
-                transaction.set(treasuryRef, com.batterysales.data.models.Transaction(
-                    id = treasuryRef.id,
-                    type = com.batterysales.data.models.TransactionType.PAYMENT,
-                    amount = finalPayment.amount,
-                    description = "دفعة من زبون: ${invoice.customerName} - فاتورة #${invoice.invoiceNumber}",
-                    relatedId = finalPayment.id,
-                    warehouseId = targetWhId,
-                    paymentMethod = finalPayment.paymentMethod,
-                    createdAt = finalPayment.paymentDate,
-                    isSystemManaged = true
-                ))
-            }
-            
-            val newTotalPaid = invoice.paidAmount + finalPayment.amount
-            val newRemaining = invoice.totalAmount - newTotalPaid
-            val newStatus = if (newRemaining <= 0.001) "paid" else "pending"
-            
-            transaction.update(invoiceRef, mapOf(
-                "paidAmount" to newTotalPaid,
-                "remainingAmount" to newRemaining,
-                "status" to newStatus,
-                "updatedAt" to Date()
-            ))
-
-            // Only increment unique invoice count if this invoice had NO prior payments today
-            val countChange = if (isPaymentToday && !hasPriorPaymentToday) 1 else 0
-
-            summaryRepository.applyFinancialUpdate(
-                transaction = transaction,
-                snapshots = summarySnapshots,
-                warehouseId = targetWhId,
-                cashChange = if (finalPayment.paymentMethod != "bank") finalPayment.amount else 0.0,
-                bankChange = if (finalPayment.paymentMethod == "bank") finalPayment.amount else 0.0,
-                pendingCollectionChange = -finalPayment.amount,
-                todayCollectionChange = if (isPaymentToday) finalPayment.amount else 0.0,
-                todayCollectionCountChange = countChange
-            )
-
-            val statsUpdates = mutableMapOf<String, Any>(
-                "totalCustomerDebt" to com.google.firebase.firestore.FieldValue.increment(-finalPayment.amount)
-            )
-
-            if (finalPayment.paymentMethod == "bank") {
-                statsUpdates["totalBankBalance"] = com.google.firebase.firestore.FieldValue.increment(finalPayment.amount)
-            } else {
-                statsUpdates["totalCashBalance"] = com.google.firebase.firestore.FieldValue.increment(finalPayment.amount)
-            }
-
-            transaction.set(statsRef, statsUpdates, com.google.firebase.firestore.SetOptions.merge())
-        }.await()
+        val commandRef = firestore.collection("payment_commands").document()
+        val command = mapOf(
+            "id" to commandRef.id,
+            "type" to "CREATE",
+            "invoiceId" to invoiceId,
+            "warehouseId" to payment.warehouseId,
+            "amount" to payment.amount,
+            "paymentMethod" to payment.paymentMethod,
+            "notes" to payment.notes,
+            "paymentDate" to (payment.paymentDate ?: Date()),
+            "status" to "PENDING",
+            "createdAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
+        )
+        commandRef.set(command).await()
     }
 
+    /**
+     * Payment Command Layer: Updates a payment via write-only command to payment_commands.
+     * Zero Client-Side Pre-Fetch Reads or local transactions.
+     */
     suspend fun updatePayment(payment: Payment) {
-        val invoiceRef = firestore.collection(Invoice.COLLECTION_NAME).document(payment.invoiceId)
-        val paymentRef = firestore.collection(Payment.COLLECTION_NAME).document(payment.id)
-
-        // Find linked ledger entries
-        val treasuryTransactions = firestore.collection(com.batterysales.data.models.Transaction.COLLECTION_NAME)
-            .whereEqualTo("relatedId", payment.id).get().await().documents
-        val bankTransactions = firestore.collection(com.batterysales.data.models.BankTransaction.COLLECTION_NAME)
-            .whereEqualTo("billId", payment.id).get().await().documents
-
-        firestore.runTransaction { transaction ->
-            // --- READ PHASE ---
-            val invoiceSnap = transaction.get(invoiceRef)
-            val invoice = invoiceSnap.toObject(Invoice::class.java)?.copy(id = invoiceSnap.id) ?: return@runTransaction
-            val pSnap = transaction.get(paymentRef)
-            val oldPayment = pSnap.toObject(Payment::class.java)?.copy(id = pSnap.id) ?: return@runTransaction
-            
-            val targetWhId = invoice.warehouseId.ifBlank { "unassigned" }
-            val summarySnapshots = summaryRepository.getSummarySnapshots(transaction, listOf(targetWhId))
-            val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
-
-            // --- WRITE PHASE ---
-            val finalPayment = payment.copy(warehouseId = targetWhId)
-            transaction.set(paymentRef, finalPayment)
-
-            val diff = finalPayment.amount - oldPayment.amount
-            
-            // Re-calculate daily stats delta
-            val now = Date()
-            val wasToday = com.batterysales.utils.DateUtils.isSameDay(oldPayment.paymentDate, now)
-            val isToday = com.batterysales.utils.DateUtils.isSameDay(finalPayment.paymentDate, now)
-            
-            var todayAmtDiff = 0.0
-            var todayCountDiff = 0
-            
-            if (wasToday && isToday) {
-                todayAmtDiff = diff
-            } else if (!wasToday && isToday) {
-                todayAmtDiff = finalPayment.amount
-                todayCountDiff = 1
-            } else if (wasToday && !isToday) {
-                todayAmtDiff = -oldPayment.amount
-                todayCountDiff = -1
-            }
-
-            // Sync with Ledger (Accounting)
-            treasuryTransactions.forEach { doc ->
-                transaction.update(doc.reference, mapOf(
-                    "amount" to finalPayment.amount,
-                    "createdAt" to finalPayment.paymentDate,
-                    "paymentMethod" to finalPayment.paymentMethod
-                ))
-            }
-            bankTransactions.forEach { doc ->
-                transaction.update(doc.reference, mapOf(
-                    "amount" to finalPayment.amount,
-                    "date" to finalPayment.paymentDate
-                ))
-            }
-            
-            val newTotalPaid = invoice.paidAmount + diff
-            val newRemaining = invoice.totalAmount - newTotalPaid
-            transaction.update(invoiceRef, mapOf(
-                "paidAmount" to newTotalPaid,
-                "remainingAmount" to newRemaining,
-                "status" to (if (newRemaining <= 0.001) "paid" else "pending"),
-                "updatedAt" to Date()
-            ))
-
-            summaryRepository.applyFinancialUpdate(
-                transaction = transaction,
-                snapshots = summarySnapshots,
-                warehouseId = targetWhId,
-                cashChange = if (finalPayment.paymentMethod != "bank") diff else 0.0,
-                bankChange = if (finalPayment.paymentMethod == "bank") diff else 0.0,
-                pendingCollectionChange = -diff,
-                todayCollectionChange = todayAmtDiff,
-                todayCollectionCountChange = todayCountDiff
-            )
-
-            val statsUpdates = mutableMapOf<String, Any>(
-                "totalCustomerDebt" to com.google.firebase.firestore.FieldValue.increment(-diff)
-            )
-            if (finalPayment.paymentMethod == "bank") {
-                statsUpdates["totalBankBalance"] = com.google.firebase.firestore.FieldValue.increment(diff)
-            } else {
-                statsUpdates["totalCashBalance"] = com.google.firebase.firestore.FieldValue.increment(diff)
-            }
-            transaction.set(statsRef, statsUpdates, com.google.firebase.firestore.SetOptions.merge())
-        }.await()
+        val commandRef = firestore.collection("payment_commands").document()
+        val command = mapOf(
+            "id" to commandRef.id,
+            "type" to "UPDATE",
+            "paymentId" to payment.id,
+            "invoiceId" to payment.invoiceId,
+            "warehouseId" to payment.warehouseId,
+            "amount" to payment.amount,
+            "paymentMethod" to payment.paymentMethod,
+            "notes" to payment.notes,
+            "paymentDate" to (payment.paymentDate ?: Date()),
+            "status" to "PENDING",
+            "createdAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
+        )
+        commandRef.set(command).await()
     }
 
-    suspend fun migrateInvoices() {
-        val snapshot = firestore.collection(Invoice.COLLECTION_NAME).get().await()
-        val allPayments = firestore.collection(Payment.COLLECTION_NAME).get().await()
-            .documents.mapNotNull { it.toObject(Payment::class.java) }
-        
-        val paymentsByInvoice = allPayments.groupBy { it.invoiceId }
-
-        snapshot.documents.chunked(500).forEach { chunk ->
-            val batch = firestore.batch()
-            var count = 0
-            chunk.forEach { doc ->
-                val invoice = doc.toObject(Invoice::class.java) ?: return@forEach
-                val updates = mutableMapOf<String, Any>()
-                
-                // 1. Fix Dates
-                if (!doc.contains("invoiceDate") || doc.getDate("invoiceDate")?.time == 0L) {
-                    updates["invoiceDate"] = doc.getDate("createdAt") ?: Date()
-                }
-
-                // 2. Fix Paid/Remaining Amount
-                val invoicePayments = paymentsByInvoice[doc.id] ?: emptyList()
-                val actualPaid = invoicePayments.sumOf { it.amount }
-                val expectedRemaining = (invoice.totalAmount - actualPaid).coerceAtLeast(0.0)
-
-                if (Math.abs(invoice.paidAmount - actualPaid) > 0.001) {
-                    updates["paidAmount"] = actualPaid
-                }
-                if (Math.abs(invoice.remainingAmount - expectedRemaining) > 0.001) {
-                    updates["remainingAmount"] = expectedRemaining
-                }
-
-                // 3. Fix Status
-                val correctStatus = if (expectedRemaining <= 0.001) "paid" else "pending"
-                if (invoice.status != correctStatus && invoice.status != "cancelled") {
-                    updates["status"] = correctStatus
-                }
-
-                if (updates.isNotEmpty()) {
-                    batch.update(doc.reference, updates)
-                    count++
-                }
-            }
-            if (count > 0) batch.commit().await()
-        }
-    }
-
+    /**
+     * Payment Command Layer: Deletes a payment via write-only command to payment_commands.
+     * Zero Client-Side Pre-Fetch Reads or local transactions.
+     */
     suspend fun deletePayment(paymentId: String, invoiceId: String) {
-        val invoiceRef = firestore.collection(Invoice.COLLECTION_NAME).document(invoiceId)
-        val paymentRef = firestore.collection(Payment.COLLECTION_NAME).document(paymentId)
-
-        // Find linked ledger entries and remaining payments for this invoice
-        val treasuryTransactions = firestore.collection(com.batterysales.data.models.Transaction.COLLECTION_NAME)
-            .whereEqualTo("relatedId", paymentId).get().await().documents
-        val bankTransactions = firestore.collection(com.batterysales.data.models.BankTransaction.COLLECTION_NAME)
-            .whereEqualTo("billId", paymentId).get().await().documents
-        val allInvoicePaymentsSnap = firestore.collection(Payment.COLLECTION_NAME)
-            .whereEqualTo("invoiceId", invoiceId).get().await()
-
-        val now = Date()
-        val otherPaymentsToday = allInvoicePaymentsSnap.documents
-            .filter { it.id != paymentId }
-            .any { doc ->
-                val date = doc.getDate("paymentDate") ?: doc.getDate("timestamp")
-                date != null && com.batterysales.utils.DateUtils.isSameDay(date, now)
-            }
-
-        firestore.runTransaction { transaction ->
-            // --- READ PHASE ---
-            val invoiceSnap = transaction.get(invoiceRef)
-            val invoice = invoiceSnap.toObject(Invoice::class.java)?.copy(id = invoiceSnap.id) ?: return@runTransaction
-            val pSnap = transaction.get(paymentRef)
-            val oldPayment = pSnap.toObject(Payment::class.java)?.copy(id = pSnap.id) ?: return@runTransaction
-            
-            val targetWhId = invoice.warehouseId.ifBlank { "unassigned" }
-            val summarySnapshots = summaryRepository.getSummarySnapshots(transaction, listOf(targetWhId))
-            val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
-
-            // --- WRITE PHASE ---
-            transaction.delete(paymentRef)
-            treasuryTransactions.forEach { transaction.delete(it.reference) }
-            bankTransactions.forEach { transaction.delete(it.reference) }
-            
-            val newTotalPaid = invoice.paidAmount - oldPayment.amount
-            val newRemaining = invoice.totalAmount - newTotalPaid
-            transaction.update(invoiceRef, mapOf(
-                "paidAmount" to newTotalPaid,
-                "remainingAmount" to newRemaining,
-                "status" to (if (newRemaining <= 0.001) "paid" else "pending"),
-                "updatedAt" to Date()
-            ))
-
-            // Only reverse from today if it was paid today
-            val wasToday = com.batterysales.utils.DateUtils.isSameDay(oldPayment.paymentDate, now)
-            val countChange = if (wasToday && !otherPaymentsToday) -1 else 0
-
-            summaryRepository.applyFinancialUpdate(
-                transaction = transaction,
-                snapshots = summarySnapshots,
-                warehouseId = targetWhId,
-                cashChange = if (oldPayment.paymentMethod != "bank") -oldPayment.amount else 0.0,
-                bankChange = if (oldPayment.paymentMethod == "bank") -oldPayment.amount else 0.0,
-                pendingCollectionChange = oldPayment.amount,
-                todayCollectionChange = if (wasToday) -oldPayment.amount else 0.0,
-                todayCollectionCountChange = countChange
-            )
-
-            val statsUpdates = mutableMapOf<String, Any>(
-                "totalCustomerDebt" to com.google.firebase.firestore.FieldValue.increment(oldPayment.amount)
-            )
-            if (oldPayment.paymentMethod == "bank") {
-                statsUpdates["totalBankBalance"] = com.google.firebase.firestore.FieldValue.increment(-oldPayment.amount)
-            } else {
-                statsUpdates["totalCashBalance"] = com.google.firebase.firestore.FieldValue.increment(-oldPayment.amount)
-            }
-            transaction.set(statsRef, statsUpdates, com.google.firebase.firestore.SetOptions.merge())
-        }.await()
+        val commandRef = firestore.collection("payment_commands").document()
+        val command = mapOf(
+            "id" to commandRef.id,
+            "type" to "DELETE",
+            "paymentId" to paymentId,
+            "invoiceId" to invoiceId,
+            "status" to "PENDING",
+            "createdAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
+        )
+        commandRef.set(command).await()
     }
+
 }
  
