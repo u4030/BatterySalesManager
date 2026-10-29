@@ -134,8 +134,8 @@ class StockTransferViewModel @Inject constructor(
         
         viewModelScope.launch {
             try {
-                // Fetch the summary for the specific source warehouse
-                val summary = summaryRepository.getInventorySummary(warehouse.id, forceRefresh = true)
+                // Fetch the summary for the specific source warehouse (ZERO reads preference)
+                val summary = summaryRepository.getInventorySummary(warehouse.id)
                 cachedInventorySummary = summary
                 
                 // Refresh stock levels for the current list of variants based on new summary

@@ -56,49 +56,53 @@ class SalesViewModel @Inject constructor(
     private val networkHelper: com.batterysales.utils.NetworkHelper
 ) : ViewModel() {
 
+    private val selectedWarehouseState = MutableStateFlow<Warehouse?>(null)
+
     private val _uiState = MutableStateFlow(SalesUiState(isLoading = true))
     val uiState: StateFlow<SalesUiState> = _uiState.asStateFlow()
 
     private var currentUser: User? = null
     private var cachedInventorySummary: InventorySummary? = null
-    private var summaryJob: kotlinx.coroutines.Job? = null
 
     init {
         loadInitialData()
+        observeWarehouseSummaryReactive()
     }
 
-    private fun observeInventorySummary(warehouseId: String?) {
-        summaryJob?.cancel()
-        summaryJob = viewModelScope.launch {
-            summaryRepository.getInventorySummaryFlow(warehouseId)
-                .onEach { summary ->
-                    cachedInventorySummary = summary
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private fun observeWarehouseSummaryReactive() {
+        selectedWarehouseState
+            .flatMapLatest { wh ->
+                val whId = wh?.id ?: currentUser?.warehouseId
+                summaryRepository.getInventorySummaryFlow(whId)
+            }
+            .onEach { summary ->
+                cachedInventorySummary = summary
 
-                    val user = currentUser
-                    val isSeller = user?.role == User.ROLE_SELLER
-                    val summaryItems = summary.items.values
-                    val availableProductIds = summaryItems.filter { it.currentStock > 0 }.map { it.productId }.toSet()
+                val user = currentUser
+                val isSeller = user?.role == User.ROLE_SELLER
+                val summaryItems = summary.items.values
+                val availableProductIds = summaryItems.filter { it.currentStock > 0 }.map { it.productId }.toSet()
 
-                    val currentProducts = productRepository.getProductsOnce()
-                    val filteredProducts = if (isSeller && availableProductIds.isNotEmpty()) {
-                        currentProducts.filter { !it.archived && availableProductIds.contains(it.id) }
-                    } else {
-                        currentProducts.filter { !it.archived }
-                    }
-
-                    _uiState.update { state ->
-                        state.copy(
-                            products = filteredProducts.sortedBy { p -> p.name }
-                        )
-                    }
-
-                    val selectedProd = _uiState.value.selectedProduct
-                    if (selectedProd != null) {
-                        loadVariantsForProduct(selectedProd, _uiState.value.selectedVariant?.id)
-                    }
+                val currentProducts = productRepository.getProductsOnce()
+                val filteredProducts = if (isSeller && availableProductIds.isNotEmpty()) {
+                    currentProducts.filter { !it.archived && availableProductIds.contains(it.id) }
+                } else {
+                    currentProducts.filter { !it.archived }
                 }
-                .launchIn(viewModelScope)
-        }
+
+                _uiState.update { state ->
+                    state.copy(
+                        products = filteredProducts.sortedBy { p -> p.name }
+                    )
+                }
+
+                val selectedProd = _uiState.value.selectedProduct
+                if (selectedProd != null) {
+                    loadVariantsForProduct(selectedProd, _uiState.value.selectedVariant?.id)
+                }
+            }
+            .launchIn(viewModelScope)
     }
 
     private fun loadInitialData() {
@@ -117,6 +121,8 @@ class SalesViewModel @Inject constructor(
                 val selectedWh = if (isSeller) activeWarehouses.find { w -> w.id == userWarehouseId } else activeWarehouses.firstOrNull()
                 val initialWhId = selectedWh?.id ?: userWarehouseId.ifEmpty { null }
 
+                selectedWarehouseState.value = selectedWh
+
                 _uiState.update {
                     it.copy(
                         products = products.filter { !it.archived }.sortedBy { p -> p.name },
@@ -128,8 +134,6 @@ class SalesViewModel @Inject constructor(
                         isLoading = false
                     )
                 }
-
-                observeInventorySummary(initialWhId)
             } catch (e: Exception) {
                 Log.e("SalesViewModel", "Error loading initial data", e)
                 _uiState.update { it.copy(isLoading = false, errorMessage = "فشل تحميل البيانات") }
@@ -231,8 +235,8 @@ class SalesViewModel @Inject constructor(
 
     fun onWarehouseSelected(warehouse: Warehouse) {
         if (_uiState.value.selectedWarehouse?.id == warehouse.id) return
+        selectedWarehouseState.value = warehouse
         _uiState.update { it.copy(selectedWarehouse = warehouse) }
-        observeInventorySummary(warehouse.id)
     }
 
     fun onQuantityChanged(quantity: String) {

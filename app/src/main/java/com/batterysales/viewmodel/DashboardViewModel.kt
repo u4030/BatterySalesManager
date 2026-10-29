@@ -62,7 +62,6 @@ class DashboardViewModel @Inject constructor(
     private val warehouseRepository: WarehouseRepository,
     private val stockEntryRepository: StockEntryRepository,
     private val approvalRepository: ApprovalRepository,
-    private val systemAlertRepository: SystemAlertRepository,
     private val firestore: com.google.firebase.firestore.FirebaseFirestore
 ) : ViewModel() {
 
@@ -129,7 +128,7 @@ class DashboardViewModel @Inject constructor(
         val userWarehouseId = user.warehouseId
 
         val systemStats = SystemStats(
-            totalCashBalance = hub.financialStatus.totalCashBalance,
+            totalCashBalance = hub.financialStatus.globalCashBalance,
             totalBankBalance = hub.bankSummary.globalBankBalance,
             totalSupplierDebt = if (isAdmin) hub.supplierSummary.totalSupplierDebt else 0.0,
             totalCustomerDebt = 0.0,
@@ -142,12 +141,12 @@ class DashboardViewModel @Inject constructor(
 
         val whStats = if (isAdmin) {
             warehouses.map { wh ->
-                val bal = hub.financialStatus.subWarehouseBalances[wh.id] ?: 0.0
+                val bal = hub.financialStatus.warehouseBalances[wh.id]?.cashBalance ?: 0.0
                 WarehouseStats(wh.id, wh.name, bal, 0)
             }
         } else {
             val targetWhId = userWarehouseId ?: ""
-            val bal = hub.financialStatus.subWarehouseBalances[targetWhId] ?: 0.0
+            val bal = hub.financialStatus.warehouseBalances[targetWhId]?.cashBalance ?: 0.0
             listOf(WarehouseStats(targetWhId, warehouses.find { it.id == targetWhId }?.name ?: "مخزن", bal, 0))
         }
 
