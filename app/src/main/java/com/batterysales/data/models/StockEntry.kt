@@ -1,13 +1,11 @@
 package com.batterysales.data.models
 
-import com.google.firebase.firestore.PropertyName
 import java.util.Date
 
 data class StockEntry(
     val id: String = "",
-    @get:PropertyName("productVariantId")
-    @set:PropertyName("productVariantId")
-    var productVariantId: String = "",
+    var variantId: String = "",
+    val productVariantId: String = "", // Legacy fallback compatibility
     val productName: String = "", // Denormalized product name
     val capacity: Int = 0, // Denormalized capacity
     val specification: String = "", // Denormalized specification
@@ -36,11 +34,11 @@ data class StockEntry(
     val settlementNotes: List<String> = emptyList(), // ملاحظات التسوية (أرقام الشيكات، المرتجعات، إلخ)
     val linkedAllocations: Map<String, Double> = emptyMap() // تتبع المبالغ المرتبطة من كل سند (ID -> Amount)
 ) {
-    @get:PropertyName("variantId")
-    @set:PropertyName("variantId")
-    var variantId: String
-        get() = productVariantId
-        set(value) { if (value.isNotEmpty()) productVariantId = value }
+    /**
+     * Returns active variant ID handling both new 'variantId' and legacy 'productVariantId'.
+     */
+    fun getEffectiveVariantId(): String = variantId.ifBlank { productVariantId }
+
     /**
      * Calculates the net impact of this entry on stock levels.
      * For purchases (quantity > 0): quantity - returnedQuantity
@@ -93,4 +91,3 @@ data class StockEntry(
         const val STATUS_PENDING = "pending"
     }
 }
- 
