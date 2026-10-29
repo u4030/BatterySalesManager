@@ -7,5 +7,6 @@ if (!admin.apps.length) {
 }
 
 export { processSalesOrder, processInvoiceCreated } from "./triggers/salesOrders";
+export { onStockEntryCreated } from "./triggers/stockEntries";
 export { processPaymentCommand } from "./triggers/paymentCommands";
 export { processReturnCommand } from "./triggers/returnCommands";

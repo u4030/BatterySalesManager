@@ -27,16 +27,74 @@ async function handleSaleDoc(snapshot: admin.firestore.DocumentSnapshot, orderId
       const scrapAmps = Number(orderData.oldBatteriesTotalAmperes || 0);
       const scrapVal = Number(orderData.oldBatteriesValue || 0);
 
-      // 1. خصم المخزن ذرّياً (Zero Pre-Fetch)
+      // 1. Atomically deduct stock from stocks, product_variants, and summaries
       for (const item of items) {
-        const prodId = item.productId || item.productVariantId || "";
-        if (prodId) {
-          const stockRef = db.collection("stocks").doc(`${prodId}_${warehouseId}`);
-          transaction.set(stockRef, { quantity: FieldValue.increment(-Number(item.quantity)) }, { merge: true });
+        const variantId = item.productId || item.productVariantId || "";
+        const qty = Number(item.quantity || 0);
+
+        if (variantId && qty > 0) {
+          // Update stocks collection
+          const stockRef = db.collection("stocks").doc(`${variantId}_${warehouseId}`);
+          transaction.set(stockRef, { quantity: FieldValue.increment(-qty) }, { merge: true });
+
+          // Update product_variants document currentStock map
+          const variantRef = db.collection("product_variants").doc(variantId);
+          transaction.set(variantRef, {
+            [`currentStock.${warehouseId}`]: FieldValue.increment(-qty),
+            updatedAt: FieldValue.serverTimestamp()
+          }, { merge: true });
+
+          // Update Read-Model summaries/inventory_wh_${warehouseId}
+          const whSummaryRef = db.collection("summaries").doc(`inventory_wh_${warehouseId}`);
+          transaction.set(whSummaryRef, {
+            [`items.${variantId}.currentStock`]: FieldValue.increment(-qty),
+            version: FieldValue.increment(1),
+            lastUpdated: FieldValue.serverTimestamp()
+          }, { merge: true });
+
+          // Update Read-Model summaries/inventory_global
+          const globalSummaryRef = db.collection("summaries").doc("inventory_global");
+          transaction.set(globalSummaryRef, {
+            [`items.${variantId}.currentStock`]: FieldValue.increment(-qty),
+            version: FieldValue.increment(1),
+            lastUpdated: FieldValue.serverTimestamp()
+          }, { merge: true });
+
+          // Low-Stock Threshold check
+          const variantSnap = await transaction.get(variantRef);
+          if (variantSnap.exists) {
+            const vData = variantSnap.data() || {};
+            const stockMap = vData.currentStock || {};
+            const currentStockInWh = (stockMap[warehouseId] || 0) - qty;
+            const minQty = Number(vData.minQuantities?.[warehouseId] || vData.minQuantity || 0);
+            const productName = vData.productName || item.productName || "منتج";
+            const capacity = Number(vData.capacity || 0);
+            const specification = vData.specification || "";
+
+            if (minQty > 0 && currentStockInWh <= minQty) {
+              const alertRef = db.collection("system_alerts").doc(`low_stock_${variantId}`);
+              transaction.set(alertRef, {
+                id: `low_stock_${variantId}`,
+                type: "low_stock",
+                title: `مخزون منخفض: ${productName}`,
+                message: `المخزون المتوفر (${currentStockInWh}) أقل من الحد الأدنى (${minQty})`,
+                relatedId: variantId,
+                warehouseId,
+                timestamp: FieldValue.serverTimestamp(),
+                resolved: false,
+                data: {
+                  capacity,
+                  specification,
+                  currentStock: currentStockInWh,
+                  threshold: minQty
+                }
+              }, { merge: true });
+            }
+          }
         }
       }
 
-      // 2. معالجة مستودع السكراب والخردة تلقائياً
+      // 2. Adjust Scrap Warehouse
       if (scrapQty > 0) {
         const scrapRef = db.collection("scrap_warehouses").doc(`scrap_wh_${warehouseId}`);
         transaction.set(scrapRef, {
@@ -47,7 +105,7 @@ async function handleSaleDoc(snapshot: admin.firestore.DocumentSnapshot, orderId
         }, { merge: true });
       }
 
-      // 3. تحديث ملخص الذمم والوضع المالي المركزي في الـ Dashboard Hub
+      // 3. Update Financial Read-Model in summaries/dashboard_hub
       const isBank = paymentMethod === "bank";
       const hubRef = db.doc("summaries/dashboard_hub");
       transaction.set(hubRef, {
