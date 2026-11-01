@@ -40,6 +40,7 @@ class WarehouseViewModel @Inject constructor(
     /**
      * Strict Listen-Only Protocol:
      * Continuously streams warehouses and user role without any .get() server calls.
+     * Dampens UI re-renders using distinctUntilChanged on warehouse id and stocks map.
      */
     private fun observeWarehousesAndUser() {
         viewModelScope.launch {
@@ -50,7 +51,9 @@ class WarehouseViewModel @Inject constructor(
             _uiState.update { it.copy(isAdmin = isAdmin) }
 
             warehouseRepository.getWarehouses()
-                .distinctUntilChanged()
+                .distinctUntilChanged { old, new ->
+                    old.map { it.id to it.stocks } == new.map { it.id to it.stocks }
+                }
                 .collect { allWh ->
                     val filteredWh = if (isAdmin) allWh else allWh.filter { it.id == user?.warehouseId }
                     val currentSelected = _uiState.value.selectedWarehouseId

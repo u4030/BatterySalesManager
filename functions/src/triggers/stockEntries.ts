@@ -34,6 +34,7 @@ export const onStockEntryCreated = onDocumentCreated(
     const whSummaryRef = db.doc(`summaries/inventory_wh_${warehouseId}`);
     const globalSummaryRef = db.doc("summaries/inventory_global");
     const warehouseRef = db.doc(`warehouses/${warehouseId}`);
+    const alertRef = db.doc(`system_alerts/low_stock_${variantId}`);
     const syncRegistryRef = db.doc("summaries/sync_registry");
     const dashboardHubRef = db.doc("summaries/dashboard_hub");
 
@@ -46,10 +47,12 @@ export const onStockEntryCreated = onDocumentCreated(
           return;
         }
 
-        const [variantSnap, whSummarySnap, globalSummarySnap] = await Promise.all([
+        const [variantSnap, whSummarySnap, globalSummarySnap, warehouseSnap, alertSnap] = await Promise.all([
           transaction.get(variantRef),
           transaction.get(whSummaryRef),
           transaction.get(globalSummaryRef),
+          transaction.get(warehouseRef),
+          transaction.get(alertRef),
         ]);
 
         const variant = variantSnap.exists ? (variantSnap.data() || {}) : {};
@@ -58,7 +61,6 @@ export const onStockEntryCreated = onDocumentCreated(
         const oldTotalStock = Object.values(currentStockMap).reduce((acc: number, val: any) => acc + Number(val || 0), 0);
 
         // Weighted Average Cost calculation:
-        // If incoming costPrice > 0 and netQty > 0, calculate new weighted average cost
         let newWac = oldWac;
         if (costPrice > 0 && netQty > 0) {
           const totalExistingValue = Math.max(0, oldTotalStock) * oldWac;
@@ -74,16 +76,21 @@ export const onStockEntryCreated = onDocumentCreated(
         const oldWhItem = whItems[variantId] || {};
         const newWhStock = Math.max(0, Number(oldWhItem.currentStock || 0) + netQty);
         const itemCost = newWac > 0 ? newWac : Number(entry.costPrice || oldWhItem.weightedAverageCost || 0);
+        const minQty = Number((variant.minQuantities || {})[warehouseId] ?? variant.minQuantity ?? oldWhItem.minQuantity ?? 0);
+        const pName = entry.productName || variant.productName || oldWhItem.productName || "منتج";
+        const capacity = Number(entry.capacity || variant.capacity || oldWhItem.capacity || 0);
+        const spec = entry.specification || variant.specification || oldWhItem.specification || "";
+        const barcode = variant.barcode || oldWhItem.barcode || "";
 
         whItems[variantId] = {
           variantId: variantId,
           productId: variant.productId || oldWhItem.productId || "",
-          productName: entry.productName || variant.productName || oldWhItem.productName || "منتج",
-          capacity: Number(entry.capacity || variant.capacity || oldWhItem.capacity || 0),
-          specification: entry.specification || variant.specification || oldWhItem.specification || "",
-          barcode: variant.barcode || oldWhItem.barcode || "",
+          productName: pName,
+          capacity: capacity,
+          specification: spec,
+          barcode: barcode,
           currentStock: newWhStock,
-          minQuantity: (variant.minQuantities || {})[warehouseId] ?? variant.minQuantity ?? oldWhItem.minQuantity ?? 0,
+          minQuantity: minQty,
           weightedAverageCost: itemCost,
           sellingPrice: Number(variant.sellingPrice || oldWhItem.sellingPrice || 0),
           updatedAt: now,
@@ -107,10 +114,10 @@ export const onStockEntryCreated = onDocumentCreated(
         globalItems[variantId] = {
           variantId: variantId,
           productId: variant.productId || oldGlobalItem.productId || "",
-          productName: entry.productName || variant.productName || oldGlobalItem.productName || "منتج",
-          capacity: Number(entry.capacity || variant.capacity || oldGlobalItem.capacity || 0),
-          specification: entry.specification || variant.specification || oldGlobalItem.specification || "",
-          barcode: variant.barcode || oldGlobalItem.barcode || "",
+          productName: pName,
+          capacity: capacity,
+          specification: spec,
+          barcode: barcode,
           currentStock: newGlobalStock,
           minQuantity: Number(variant.minQuantity || oldGlobalItem.minQuantity || 0),
           weightedAverageCost: itemCost,
@@ -127,6 +134,42 @@ export const onStockEntryCreated = onDocumentCreated(
           (acc: number, item: any) => acc + Number(item?.currentStock || 0),
           0
         );
+
+        // Low Stock Check & Alert Handling (Atomically inside transaction)
+        const whName = warehouseSnap.exists ? (warehouseSnap.data()?.name || warehouseId) : warehouseId;
+        const isLowStock = minQty > 0 && newWhStock <= minQty;
+        let alertDelta = 0;
+
+        if (isLowStock) {
+          const specSuffix = spec ? ` | ${spec}` : "";
+          const alertData = {
+            id: `low_stock_${variantId}`,
+            type: "low_stock",
+            title: `مخزون منخفض: ${pName}`,
+            message: `${capacity}A${specSuffix} - ${whName}: الحالي ${newWhStock} من ${minQty}`,
+            relatedId: variantId,
+            resolved: false,
+            timestamp: now,
+            data: {
+              capacity: capacity,
+              specification: spec,
+              warehouseId: warehouseId,
+              warehouseName: whName,
+              currentStock: newWhStock,
+              threshold: minQty,
+            },
+          };
+          transaction.set(alertRef, alertData, { merge: true });
+          if (!alertSnap.exists || alertSnap.data()?.resolved === true) {
+            alertDelta = 1;
+          }
+        } else if (alertSnap.exists) {
+          // If stock is now safe, delete or resolve alert
+          transaction.delete(alertRef);
+          if (alertSnap.data()?.resolved !== true) {
+            alertDelta = -1;
+          }
+        }
 
         // --- WRITE PHASE ---
         // 1. Mark as processed (Idempotency Guard)
@@ -199,24 +242,28 @@ export const onStockEntryCreated = onDocumentCreated(
             inventoryVersion: FieldValue.increment(1),
             suppliersVersion: FieldValue.increment(1),
             financialVersion: FieldValue.increment(1),
+            alertsVersion: alertDelta !== 0 ? FieldValue.increment(1) : FieldValue.increment(0),
             lastModified: now,
           },
           { merge: true }
         );
 
-        transaction.set(
-          dashboardHubRef,
-          {
-            "inventorySummary.totalValue": Math.max(0, globalTotalValue),
-            "inventorySummary.totalItemsCount": Math.max(0, globalTotalItemsCount),
-            "syncRegistry.inventoryVersion": FieldValue.increment(1),
-            "syncRegistry.suppliersVersion": FieldValue.increment(1),
-            "syncRegistry.financialVersion": FieldValue.increment(1),
-            "syncRegistry.lastModified": now,
-            lastUpdated: now,
-          },
-          { merge: true }
-        );
+        const hubUpdates: Record<string, any> = {
+          "inventorySummary.totalValue": Math.max(0, globalTotalValue),
+          "inventorySummary.totalItemsCount": Math.max(0, globalTotalItemsCount),
+          "syncRegistry.inventoryVersion": FieldValue.increment(1),
+          "syncRegistry.suppliersVersion": FieldValue.increment(1),
+          "syncRegistry.financialVersion": FieldValue.increment(1),
+          "syncRegistry.lastModified": now,
+          lastUpdated: now,
+        };
+
+        if (alertDelta !== 0) {
+          hubUpdates["scrapAndAlertsSummary.activeLowStockAlertsCount"] = FieldValue.increment(alertDelta);
+          hubUpdates["syncRegistry.alertsVersion"] = FieldValue.increment(1);
+        }
+
+        transaction.set(dashboardHubRef, hubUpdates, { merge: true });
       });
     } catch (error) {
       console.error(`Error in onStockEntryCreated transaction execution for ${entryId}:`, error);
