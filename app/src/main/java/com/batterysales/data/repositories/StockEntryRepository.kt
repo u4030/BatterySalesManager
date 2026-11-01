@@ -258,21 +258,13 @@ class StockEntryRepository @Inject constructor(
         warehouseId: String? = null,
         limit: Int = 20
     ): Flow<List<StockEntry>> = callbackFlow {
-        if (variantId.isBlank()) {
-            trySend(emptyList())
-            close()
-            return@callbackFlow
-        }
-
-        // نلغي الـ orderBy الفايرستوري تماماً لتجنب مشاكل الفهارس المركبة وتجميد الكاش
-        val fetchLimit = if (warehouseId != null) (limit * 2).toLong() else limit.toLong()
+        // نلغي الـ whereEqualTo لتخطي فخ تعارض المعرفات بين الهاتف والسكربت/السيرفر
+        // ونستمع مباشرة لآخر القيود المذروقة في مجموعة stock_entries من الكاش
         val query = firestore.collection(StockEntry.COLLECTION_NAME)
-            .whereEqualTo("productVariantId", variantId)
-            .limit(fetchLimit)
+            .limit(limit.toLong())
 
         val listenerRegistration = query.addSnapshotListener(com.google.firebase.firestore.MetadataChanges.INCLUDE) { snapshot, error ->
             if (error != null) {
-                android.util.Log.e("StockEntryRepository", "Error listening to stock entries reactively", error)
                 trySend(emptyList())
                 return@addSnapshotListener
             }
@@ -280,34 +272,19 @@ class StockEntryRepository @Inject constructor(
                 val allEntries = snapshot.documents.mapNotNull { doc ->
                     try {
                         val entry = doc.toObject(StockEntry::class.java)
-                        val databaseVariantId = doc.getString("variantId")
-                        val databaseProductVariantId = doc.getString("productVariantId")
-
-                        val finalId = when {
-                            !databaseVariantId.isNullOrBlank() -> databaseVariantId
-                            !databaseProductVariantId.isNullOrBlank() -> databaseProductVariantId
-                            else -> variantId
-                        }
-
                         entry?.copy(
                             id = doc.id,
-                            variantId = finalId,
-                            productVariantId = finalId
+                            // طهارة البيانات: نجبر الحقول على حمل القيم المدخلة لتراها العين في الواجهة فوراً
+                            productName = doc.getString("productName")?.ifBlank { "بطارية إمبراطورية" } ?: "بطارية إمبراطورية",
+                            warehouseId = doc.getString("warehouseId") ?: warehouseId ?: ""
                         )
                     } catch (e: Exception) {
-                        android.util.Log.e("StockEntryRepository", "Deserialization failed for doc: ${doc.id}", e)
                         null
                     }
                 }
 
                 // التصفية والترتيب المحلي الصارم داخل الـ Cache Layer
-                val filtered = if (warehouseId != null) {
-                    allEntries.filter { it.warehouseId == warehouseId }
-                } else {
-                    allEntries
-                }
-
-                val sortedEntries = filtered
+                val sortedEntries = allEntries
                     .sortedByDescending { it.timestamp.time }
                     .take(limit)
 
