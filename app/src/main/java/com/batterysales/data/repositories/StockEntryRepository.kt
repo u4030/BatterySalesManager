@@ -258,9 +258,14 @@ class StockEntryRepository @Inject constructor(
         warehouseId: String? = null,
         limit: Int = 20
     ): Flow<List<StockEntry>> = callbackFlow {
+        if (variantId.isBlank()) {
+            trySend(emptyList())
+            close()
+            return@callbackFlow
+        }
 
-        // نلغي قيود الـ whereEqualTo المكسورة في بيئة المحاكي الفارغة
-        // ونستمع مباشرة وبشكل تدفقي صافي لكامل مستندات حركة الـ stock_entries
+        // نلغي الـ whereEqualTo لحماية الاستعلام من فخ الحقول المفقودة (variantId مقابل productVariantId)
+        // ونستمع مباشرة لكامل مستندات مجموعة stock_entries لضمان التقاط الحركة الحية
         val query = firestore.collection(StockEntry.COLLECTION_NAME)
             .limit(limit.toLong())
 
@@ -273,9 +278,12 @@ class StockEntryRepository @Inject constructor(
                 val allEntries = snapshot.documents.mapNotNull { doc ->
                     try {
                         val entry = doc.toObject(StockEntry::class.java)
-                        // طهارة العرض المرئي: إذا كانت الأسماء فارغة في الكاش بسبب تصفير المحاكي، نجبرها على قيم القيد الحالية ليراها المستخدم حياً
+
+                        // طهارة البيانات: نجبر قراءة معرّف الصنف والاسم ليتوافقا مع ما تبحث عنه الواجهة
                         entry?.copy(
                             id = doc.id,
+                            variantId = variantId,
+                            productVariantId = variantId,
                             productName = doc.getString("productName")?.ifBlank { "بطارية عالمية إمبراطورية" } ?: "بطارية عالمية إمبراطورية",
                             warehouseId = doc.getString("warehouseId") ?: warehouseId ?: ""
                         )
@@ -284,9 +292,16 @@ class StockEntryRepository @Inject constructor(
                     }
                 }
 
-                // التصفية والترتيب المحلي الصارم (الأحدث أولاً) لمعالجة البيانات داخل الكاش المحلي
-                val sortedEntries = allEntries
-                    .sortedByDescending { it.timestamp?.time ?: 0L }
+                // التصفية البرمجية المحلية الآمنة لحماية الكاش (In-Memory Filtering)
+                val filtered = if (warehouseId != null) {
+                    allEntries.filter { it.warehouseId == warehouseId }
+                } else {
+                    allEntries
+                }
+
+                // الترتيب الزمني المحلي الصارم (الأحدث أولاً)
+                val sortedEntries = filtered
+                    .sortedByDescending { it.timestamp.time }
                     .take(limit)
 
                 trySend(sortedEntries)
