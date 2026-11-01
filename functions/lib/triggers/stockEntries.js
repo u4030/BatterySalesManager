@@ -61,7 +61,8 @@ exports.onStockEntryCreated = (0, firestore_1.onDocumentCreated)("stock_entries/
     const whSummaryRef = db.doc(`summaries/inventory_wh_${warehouseId}`);
     const globalSummaryRef = db.doc("summaries/inventory_global");
     const warehouseRef = db.doc(`warehouses/${warehouseId}`);
-    const alertRef = db.doc(`system_alerts/low_stock_${variantId}`);
+    const alertId = `low_stock_${variantId}_${warehouseId}`;
+    const alertRef = db.collection("system_alerts").doc(alertId);
     const syncRegistryRef = db.doc("summaries/sync_registry");
     const dashboardHubRef = db.doc("summaries/dashboard_hub");
     try {
@@ -140,37 +141,30 @@ exports.onStockEntryCreated = (0, firestore_1.onDocumentCreated)("stock_entries/
             };
             const globalTotalValue = Object.values(globalItems).reduce((acc, item) => acc + (Number(item?.currentStock || 0) * Number(item?.weightedAverageCost || 0)), 0);
             const globalTotalItemsCount = Object.values(globalItems).reduce((acc, item) => acc + Number(item?.currentStock || 0), 0);
-            // Low Stock Check & Clean JSON Alert Handling (Atomically inside transaction)
+            // Anti-Flapping Low Stock Alert Handling (Pure plain JS Object, NO Buffer data)
             const whName = String(warehouseSnap.exists ? (warehouseSnap.data()?.name || warehouseId) : warehouseId);
             const isLowStock = minQty > 0 && newWhStock <= minQty;
             let alertDelta = 0;
             if (isLowStock) {
-                const alertPayload = {
-                    id: `low_stock_${variantId}`,
-                    type: "low_stock",
-                    title: `مخزون منخفض: ${pName}`,
-                    message: `المخزون منخفض للصنف ${pName}`,
-                    relatedId: variantId,
-                    warehouseId: warehouseId,
-                    warehouseName: whName,
-                    resolved: false,
-                    timestamp: now,
-                    data: {
-                        capacity: capacity,
-                        specification: spec,
+                // If alert exists and already active, do nothing to prevent flapping
+                if (!alertSnap.exists || alertSnap.data()?.resolved === true) {
+                    const alertPayload = {
+                        id: alertId,
+                        type: "low_stock",
+                        title: "مستوى المخزون منخفض",
+                        message: `الصنف ${pName} شارف على النفاد في المستودع`,
                         warehouseId: warehouseId,
                         warehouseName: whName,
-                        currentStock: newWhStock,
-                        threshold: minQty,
-                    },
-                };
-                transaction.set(alertRef, alertPayload, { merge: true });
-                if (!alertSnap.exists || alertSnap.data()?.resolved === true) {
+                        relatedId: variantId,
+                        resolved: false,
+                        timestamp: now,
+                    };
+                    transaction.set(alertRef, alertPayload);
                     alertDelta = 1;
                 }
             }
             else if (alertSnap.exists) {
-                // If stock is now safe, delete alert
+                // Stock has recovered safely above threshold -> delete alert
                 transaction.delete(alertRef);
                 if (alertSnap.data()?.resolved !== true) {
                     alertDelta = -1;

@@ -8,8 +8,9 @@ import { FieldValue } from "firebase-admin/firestore";
  * onVariantWritten Trigger:
  * Centralized Alert & Idempotency Management:
  * Verifies stock changes against minQuantities across warehouses.
- * Writes system_alerts/low_stock_${variantId} if any warehouse stock is at or below its minQuantity.
- * Deletes the alert document only when stock levels across all warehouses are safe.
+ * Writes clean plain JavaScript objects for system_alerts/low_stock_${variantId}_${warehouseId}.
+ * Prevents flapping by skipping redundant writes when alert already exists,
+ * and only deleting when stock has risen above the security threshold.
  */
 export const onVariantWritten = onDocumentWritten(
   "product_variants/{variantId}",
@@ -41,8 +42,14 @@ export const onVariantWritten = onDocumentWritten(
     const now = FieldValue.serverTimestamp();
 
     if (!afterSnap.exists) {
-      // Document deleted - cleanup alerts and update sync
+      // Document deleted - cleanup alerts for all warehouses
+      const existingAlerts = await db.collection("system_alerts")
+        .where("relatedId", "==", variantId)
+        .get();
+
+      existingAlerts.docs.forEach((doc) => batch.delete(doc.ref));
       batch.delete(db.doc(`system_alerts/low_stock_${variantId}`));
+
       batch.set(db.doc("summaries/sync_registry"), {
         inventoryVersion: FieldValue.increment(1),
         alertsVersion: FieldValue.increment(1),
@@ -64,8 +71,14 @@ export const onVariantWritten = onDocumentWritten(
     const variant = afterSnap.data();
 
     if (!variant || variant.archived || variant.isDiscontinued) {
-      // If archived or discontinued, remove alert
+      // If archived or discontinued, remove alerts
+      const existingAlerts = await db.collection("system_alerts")
+        .where("relatedId", "==", variantId)
+        .get();
+
+      existingAlerts.docs.forEach((doc) => batch.delete(doc.ref));
       batch.delete(db.doc(`system_alerts/low_stock_${variantId}`));
+
       batch.set(db.doc("summaries/sync_registry"), {
         inventoryVersion: FieldValue.increment(1),
         alertsVersion: FieldValue.increment(1),
@@ -85,13 +98,15 @@ export const onVariantWritten = onDocumentWritten(
     }
 
     try {
-      const [warehousesSnap, productSnap, existingAlertSnap] = await Promise.all([
+      const [warehousesSnap, productSnap, existingAlertsSnap] = await Promise.all([
         db.collection("warehouses").get(),
         variant.productId ? db.collection("products").doc(String(variant.productId)).get() : Promise.resolve(null),
-        db.doc(`system_alerts/low_stock_${variantId}`).get(),
+        db.collection("system_alerts").where("relatedId", "==", variantId).get(),
       ]);
 
       const warehouseDocs = warehousesSnap.docs;
+      const existingAlertsMap = new Map<string, admin.firestore.QueryDocumentSnapshot>();
+      existingAlertsSnap.docs.forEach((d) => existingAlertsMap.set(d.id, d));
 
       let pName = String(variant.productName || "");
       if (!pName && productSnap && productSnap.exists) {
@@ -102,13 +117,8 @@ export const onVariantWritten = onDocumentWritten(
       const currentStockMap = (variant.currentStock || {}) as Record<string, any>;
       const minQuantitiesMap = (variant.minQuantities || {}) as Record<string, any>;
       const defaultMinQty = Number(variant.minQuantity || 0);
-      const capacity = Number(variant.capacity || 0);
-      const spec = String(variant.specification || "");
 
-      const warehousesDetailsMap: Record<string, { currentStock: number; threshold: number; warehouseName: string }> = {};
-      const lowStockDetailsList: string[] = [];
-      let primaryWarehouseId = "";
-      let primaryWarehouseName = "";
+      let netAlertDelta = 0;
 
       warehouseDocs.forEach((whDoc) => {
         const whId = String(whDoc.id);
@@ -118,70 +128,44 @@ export const onVariantWritten = onDocumentWritten(
         const rawMin = minQuantitiesMap[whId];
         const threshold = typeof rawMin === "number" ? rawMin : (rawMin ? Number(rawMin) : defaultMinQty);
 
+        const alertDocId = `low_stock_${variantId}_${whId}`;
+        const existingAlertDoc = existingAlertsMap.get(alertDocId);
+
         if (threshold > 0 && currentQty <= threshold) {
-          warehousesDetailsMap[whId] = {
-            currentStock: currentQty,
-            threshold: threshold,
-            warehouseName: whName,
-          };
-          lowStockDetailsList.push(`${whName}: الحالي ${currentQty} من ${threshold}`);
-          if (!primaryWarehouseId) {
-            primaryWarehouseId = whId;
-            primaryWarehouseName = whName;
+          // Low stock condition: anti-flapping guard
+          // If already existing and unresolved, DO NOTHING to save delete/re-create churn
+          if (!existingAlertDoc || existingAlertDoc.data()?.resolved === true) {
+            const alertPayload = {
+              id: alertDocId,
+              type: "low_stock",
+              title: "مستوى المخزون منخفض",
+              message: `الصنف ${pName} شارف على النفاد في المستودع`,
+              warehouseId: whId,
+              warehouseName: whName,
+              relatedId: variantId,
+              resolved: false,
+              timestamp: now,
+            };
+            batch.set(db.collection("system_alerts").doc(alertDocId), alertPayload);
+            netAlertDelta += 1;
+          }
+        } else if (existingAlertDoc) {
+          // Stock has recovered safely above threshold -> delete alert
+          batch.delete(existingAlertDoc.ref);
+          if (existingAlertDoc.data()?.resolved !== true) {
+            netAlertDelta -= 1;
           }
         }
       });
 
-      const unifiedAlertRef = db.collection("system_alerts").doc(`low_stock_${variantId}`);
-      let alertDelta = 0;
-
-      if (lowStockDetailsList.length > 0) {
-        const alertPayload = {
-          id: `low_stock_${variantId}`,
-          type: "low_stock",
-          title: `مخزون منخفض: ${pName}`,
-          message: `المخزون منخفض للصنف ${pName}`,
-          relatedId: variantId,
-          warehouseId: primaryWarehouseId,
-          warehouseName: primaryWarehouseName,
-          resolved: false,
-          timestamp: now,
-          data: {
-            capacity: capacity,
-            specification: spec,
-            warehouseId: primaryWarehouseId,
-            warehouseName: primaryWarehouseName,
-            currentStock: Object.values(warehousesDetailsMap)[0]?.currentStock || 0,
-            threshold: Object.values(warehousesDetailsMap)[0]?.threshold || defaultMinQty,
-            warehousesDetails: warehousesDetailsMap,
-          },
-        };
-        batch.set(unifiedAlertRef, alertPayload, { merge: true });
-
-        if (!existingAlertSnap.exists || existingAlertSnap.data()?.resolved === true) {
-          alertDelta = 1;
-        }
-
-        // Clean up legacy individual warehouse alert documents
-        warehouseDocs.forEach((whDoc) => {
-          batch.delete(db.collection("system_alerts").doc(`low_stock_${variantId}_${whDoc.id}`));
-        });
-      } else if (existingAlertSnap.exists) {
-        // Stock safely exceeds threshold across all warehouses -> delete alert
-        batch.delete(unifiedAlertRef);
-        if (existingAlertSnap.data()?.resolved !== true) {
-          alertDelta = -1;
-        }
-        warehouseDocs.forEach((whDoc) => {
-          batch.delete(db.collection("system_alerts").doc(`low_stock_${variantId}_${whDoc.id}`));
-        });
-      }
+      // Cleanup legacy unified doc if present
+      batch.delete(db.collection("system_alerts").doc(`low_stock_${variantId}`));
 
       batch.set(
         db.doc("summaries/sync_registry"),
         {
           inventoryVersion: FieldValue.increment(1),
-          alertsVersion: alertDelta !== 0 ? FieldValue.increment(1) : FieldValue.increment(0),
+          alertsVersion: netAlertDelta !== 0 ? FieldValue.increment(1) : FieldValue.increment(0),
           last_alert_update: now,
           lastModified: now,
         },
@@ -195,8 +179,8 @@ export const onVariantWritten = onDocumentWritten(
         lastUpdated: now,
       };
 
-      if (alertDelta !== 0) {
-        hubUpdates["scrapAndAlertsSummary.activeLowStockAlertsCount"] = FieldValue.increment(alertDelta);
+      if (netAlertDelta !== 0) {
+        hubUpdates["scrapAndAlertsSummary.activeLowStockAlertsCount"] = FieldValue.increment(netAlertDelta);
         hubUpdates["syncRegistry.alertsVersion"] = FieldValue.increment(1);
       }
 

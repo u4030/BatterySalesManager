@@ -147,9 +147,17 @@ class DashboardViewModel @Inject constructor(
             val currentQty = (alert.data["currentStock"] as? Number)?.toInt() ?: 0
             val minQty = (alert.data["threshold"] as? Number)?.toInt() ?: 0
 
+            val displayName = if (alert.title.startsWith("مخزون منخفض: ")) {
+                alert.title.removePrefix("مخزون منخفض: ")
+            } else if (alert.message.contains("الصنف ") && alert.message.contains(" شارف على النفاد")) {
+                alert.message.substringAfter("الصنف ").substringBefore(" شارف على النفاد").trim()
+            } else {
+                alert.title.ifBlank { "منتج" }
+            }
+
             LowStockItem(
                 variantId = alert.relatedId,
-                productName = alert.title.replace("مخزون منخفض: ", ""),
+                productName = displayName,
                 capacity = capacity,
                 specification = specification,
                 currentQuantity = currentQty,
