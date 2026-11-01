@@ -3,6 +3,7 @@ package com.batterysales.data.repositories
 import com.batterysales.data.models.ProductVariant
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.MetadataChanges
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.Source
 import kotlinx.coroutines.channels.awaitClose
@@ -86,6 +87,21 @@ class ProductVariantRepository @Inject constructor(
                 if (snapshot != null) {
                     val variants = snapshot.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }
                     trySend(variants).isSuccess
+                }
+            }
+        awaitClose { listenerRegistration.remove() }
+    }
+
+    fun getVariantsFlow(): Flow<List<ProductVariant>> = callbackFlow {
+        val listenerRegistration = firestore.collection(ProductVariant.COLLECTION_NAME)
+            .addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
+                if (error != null) {
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    val variants = snapshot.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }
+                    trySend(variants)
                 }
             }
         awaitClose { listenerRegistration.remove() }
