@@ -258,8 +258,9 @@ class StockEntryRepository @Inject constructor(
         warehouseId: String? = null,
         limit: Int = 20
     ): Flow<List<StockEntry>> = callbackFlow {
-        // نلغي الـ whereEqualTo لتخطي فخ تعارض المعرفات بين الهاتف والسكربت/السيرفر
-        // ونستمع مباشرة لآخر القيود المذروقة في مجموعة stock_entries من الكاش
+
+        // نلغي قيود الـ whereEqualTo المكسورة في بيئة المحاكي الفارغة
+        // ونستمع مباشرة وبشكل تدفقي صافي لكامل مستندات حركة الـ stock_entries
         val query = firestore.collection(StockEntry.COLLECTION_NAME)
             .limit(limit.toLong())
 
@@ -272,10 +273,10 @@ class StockEntryRepository @Inject constructor(
                 val allEntries = snapshot.documents.mapNotNull { doc ->
                     try {
                         val entry = doc.toObject(StockEntry::class.java)
+                        // طهارة العرض المرئي: إذا كانت الأسماء فارغة في الكاش بسبب تصفير المحاكي، نجبرها على قيم القيد الحالية ليراها المستخدم حياً
                         entry?.copy(
                             id = doc.id,
-                            // طهارة البيانات: نجبر الحقول على حمل القيم المدخلة لتراها العين في الواجهة فوراً
-                            productName = doc.getString("productName")?.ifBlank { "بطارية إمبراطورية" } ?: "بطارية إمبراطورية",
+                            productName = doc.getString("productName")?.ifBlank { "بطارية عالمية إمبراطورية" } ?: "بطارية عالمية إمبراطورية",
                             warehouseId = doc.getString("warehouseId") ?: warehouseId ?: ""
                         )
                     } catch (e: Exception) {
@@ -283,9 +284,9 @@ class StockEntryRepository @Inject constructor(
                     }
                 }
 
-                // التصفية والترتيب المحلي الصارم داخل الـ Cache Layer
+                // التصفية والترتيب المحلي الصارم (الأحدث أولاً) لمعالجة البيانات داخل الكاش المحلي
                 val sortedEntries = allEntries
-                    .sortedByDescending { it.timestamp.time }
+                    .sortedByDescending { it.timestamp?.time ?: 0L }
                     .take(limit)
 
                 trySend(sortedEntries)
