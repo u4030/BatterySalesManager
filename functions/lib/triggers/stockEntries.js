@@ -47,8 +47,8 @@ exports.onStockEntryCreated = (0, firestore_1.onDocumentCreated)("stock_entries/
     const entry = event.data.data();
     if (!entry)
         return;
-    const variantId = entry.productVariantId || entry.variantId;
-    const warehouseId = entry.warehouseId;
+    const variantId = String(entry.productVariantId || entry.variantId || "");
+    const warehouseId = String(entry.warehouseId || "");
     if (!variantId || !warehouseId)
         return;
     const qty = Number(entry.quantity || 0);
@@ -100,13 +100,13 @@ exports.onStockEntryCreated = (0, firestore_1.onDocumentCreated)("stock_entries/
             const newWhStock = Math.max(0, Number(oldWhItem.currentStock || 0) + netQty);
             const itemCost = newWac > 0 ? newWac : Number(entry.costPrice || oldWhItem.weightedAverageCost || 0);
             const minQty = Number((variant.minQuantities || {})[warehouseId] ?? variant.minQuantity ?? oldWhItem.minQuantity ?? 0);
-            const pName = entry.productName || variant.productName || oldWhItem.productName || "منتج";
+            const pName = String(entry.productName || variant.productName || oldWhItem.productName || "منتج");
             const capacity = Number(entry.capacity || variant.capacity || oldWhItem.capacity || 0);
-            const spec = entry.specification || variant.specification || oldWhItem.specification || "";
-            const barcode = variant.barcode || oldWhItem.barcode || "";
+            const spec = String(entry.specification || variant.specification || oldWhItem.specification || "");
+            const barcode = String(variant.barcode || oldWhItem.barcode || "");
             whItems[variantId] = {
                 variantId: variantId,
-                productId: variant.productId || oldWhItem.productId || "",
+                productId: String(variant.productId || oldWhItem.productId || ""),
                 productName: pName,
                 capacity: capacity,
                 specification: spec,
@@ -126,7 +126,7 @@ exports.onStockEntryCreated = (0, firestore_1.onDocumentCreated)("stock_entries/
             const newGlobalStock = Math.max(0, Number(oldGlobalItem.currentStock || 0) + netQty);
             globalItems[variantId] = {
                 variantId: variantId,
-                productId: variant.productId || oldGlobalItem.productId || "",
+                productId: String(variant.productId || oldGlobalItem.productId || ""),
                 productName: pName,
                 capacity: capacity,
                 specification: spec,
@@ -140,18 +140,19 @@ exports.onStockEntryCreated = (0, firestore_1.onDocumentCreated)("stock_entries/
             };
             const globalTotalValue = Object.values(globalItems).reduce((acc, item) => acc + (Number(item?.currentStock || 0) * Number(item?.weightedAverageCost || 0)), 0);
             const globalTotalItemsCount = Object.values(globalItems).reduce((acc, item) => acc + Number(item?.currentStock || 0), 0);
-            // Low Stock Check & Alert Handling (Atomically inside transaction)
-            const whName = warehouseSnap.exists ? (warehouseSnap.data()?.name || warehouseId) : warehouseId;
+            // Low Stock Check & Clean JSON Alert Handling (Atomically inside transaction)
+            const whName = String(warehouseSnap.exists ? (warehouseSnap.data()?.name || warehouseId) : warehouseId);
             const isLowStock = minQty > 0 && newWhStock <= minQty;
             let alertDelta = 0;
             if (isLowStock) {
-                const specSuffix = spec ? ` | ${spec}` : "";
-                const alertData = {
+                const alertPayload = {
                     id: `low_stock_${variantId}`,
                     type: "low_stock",
                     title: `مخزون منخفض: ${pName}`,
-                    message: `${capacity}A${specSuffix} - ${whName}: الحالي ${newWhStock} من ${minQty}`,
+                    message: `المخزون منخفض للصنف ${pName}`,
                     relatedId: variantId,
+                    warehouseId: warehouseId,
+                    warehouseName: whName,
                     resolved: false,
                     timestamp: now,
                     data: {
@@ -163,13 +164,13 @@ exports.onStockEntryCreated = (0, firestore_1.onDocumentCreated)("stock_entries/
                         threshold: minQty,
                     },
                 };
-                transaction.set(alertRef, alertData, { merge: true });
+                transaction.set(alertRef, alertPayload, { merge: true });
                 if (!alertSnap.exists || alertSnap.data()?.resolved === true) {
                     alertDelta = 1;
                 }
             }
             else if (alertSnap.exists) {
-                // If stock is now safe, delete or resolve alert
+                // If stock is now safe, delete alert
                 transaction.delete(alertRef);
                 if (alertSnap.data()?.resolved !== true) {
                     alertDelta = -1;

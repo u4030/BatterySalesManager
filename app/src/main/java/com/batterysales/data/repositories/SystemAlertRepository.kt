@@ -15,9 +15,9 @@ class SystemAlertRepository @Inject constructor(
 ) {
 
     /**
-     * Cache-First snapshot listener for active system alerts.
-     * Uses MetadataChanges.INCLUDE to ensure immediate emission from local cache,
-     * protecting against quota bleeding during websocket disconnects and reconnects.
+     * Clean websocket-throttled snapshot listener for active system alerts.
+     * Enforces Cache-First filtering using MetadataChanges.INCLUDE to protect against
+     * quota bleeding on repeated mobile websocket drops/reconnects.
      */
     fun listenToSystemAlerts(limit: Long = 20): Flow<List<SystemAlert>> = callbackFlow {
         val query = firestore.collection(SystemAlert.COLLECTION_NAME)
@@ -30,11 +30,25 @@ class SystemAlertRepository @Inject constructor(
                 return@addSnapshotListener
             }
 
-            snapshot?.let {
-                val alerts = it.documents.mapNotNull { doc ->
-                    doc.toObject(SystemAlert::class.java)?.copy(id = doc.id)
+            // Reject refetches and server strain if the update is just a websocket sync bounce
+            if (snapshot != null && !snapshot.metadata.isFromCache) {
+                val alerts = snapshot.documents.mapNotNull { doc ->
+                    try {
+                        doc.toObject(SystemAlert::class.java)?.copy(id = doc.id)
+                    } catch (e: Exception) {
+                        null
+                    }
                 }
                 trySend(alerts)
+            } else if (snapshot != null && snapshot.metadata.isFromCache && snapshot.documents.isNotEmpty()) {
+                val cachedAlerts = snapshot.documents.mapNotNull { doc ->
+                    try {
+                        doc.toObject(SystemAlert::class.java)?.copy(id = doc.id)
+                    } catch (e: Exception) {
+                        null
+                    }
+                }
+                trySend(cachedAlerts)
             }
         }
         awaitClose { listener.remove() }

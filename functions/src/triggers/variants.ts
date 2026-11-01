@@ -36,7 +36,7 @@ export const onVariantWritten = onDocumentWritten(
 
     console.time("onVariantWritten_totalTime");
     const db = admin.firestore();
-    const variantId = event.params.variantId;
+    const variantId = String(event.params.variantId);
     const batch = db.batch();
     const now = FieldValue.serverTimestamp();
 
@@ -87,15 +87,15 @@ export const onVariantWritten = onDocumentWritten(
     try {
       const [warehousesSnap, productSnap, existingAlertSnap] = await Promise.all([
         db.collection("warehouses").get(),
-        variant.productId ? db.collection("products").doc(variant.productId).get() : Promise.resolve(null),
+        variant.productId ? db.collection("products").doc(String(variant.productId)).get() : Promise.resolve(null),
         db.doc(`system_alerts/low_stock_${variantId}`).get(),
       ]);
 
       const warehouseDocs = warehousesSnap.docs;
 
-      let pName = variant.productName || "";
+      let pName = String(variant.productName || "");
       if (!pName && productSnap && productSnap.exists) {
-        pName = productSnap.data()?.name || "منتج";
+        pName = String(productSnap.data()?.name || "منتج");
       }
       if (!pName) pName = "منتج";
 
@@ -103,6 +103,7 @@ export const onVariantWritten = onDocumentWritten(
       const minQuantitiesMap = (variant.minQuantities || {}) as Record<string, any>;
       const defaultMinQty = Number(variant.minQuantity || 0);
       const capacity = Number(variant.capacity || 0);
+      const spec = String(variant.specification || "");
 
       const warehousesDetailsMap: Record<string, { currentStock: number; threshold: number; warehouseName: string }> = {};
       const lowStockDetailsList: string[] = [];
@@ -110,8 +111,8 @@ export const onVariantWritten = onDocumentWritten(
       let primaryWarehouseName = "";
 
       warehouseDocs.forEach((whDoc) => {
-        const whId = whDoc.id;
-        const whName = whDoc.data()?.name || "مخزن";
+        const whId = String(whDoc.id);
+        const whName = String(whDoc.data()?.name || "مخزن");
         const rawStock = currentStockMap[whId];
         const currentQty = typeof rawStock === "number" ? rawStock : Number(rawStock || 0);
         const rawMin = minQuantitiesMap[whId];
@@ -135,31 +136,27 @@ export const onVariantWritten = onDocumentWritten(
       let alertDelta = 0;
 
       if (lowStockDetailsList.length > 0) {
-        const specSuffix = variant.specification ? ` | ${variant.specification}` : "";
-        batch.set(
-          unifiedAlertRef,
-          {
-            id: unifiedAlertRef.id,
-            type: "low_stock",
-            title: `مخزون منخفض: ${pName}`,
-            message: `${capacity}A${specSuffix} - ${lowStockDetailsList.join(" | ")}`,
-            relatedId: variantId,
+        const alertPayload = {
+          id: `low_stock_${variantId}`,
+          type: "low_stock",
+          title: `مخزون منخفض: ${pName}`,
+          message: `المخزون منخفض للصنف ${pName}`,
+          relatedId: variantId,
+          warehouseId: primaryWarehouseId,
+          warehouseName: primaryWarehouseName,
+          resolved: false,
+          timestamp: now,
+          data: {
+            capacity: capacity,
+            specification: spec,
             warehouseId: primaryWarehouseId,
             warehouseName: primaryWarehouseName,
-            resolved: false,
-            timestamp: now,
-            data: {
-              capacity: capacity,
-              specification: variant.specification || "",
-              warehouseId: primaryWarehouseId,
-              warehouseName: primaryWarehouseName,
-              currentStock: Object.values(warehousesDetailsMap)[0]?.currentStock || 0,
-              threshold: Object.values(warehousesDetailsMap)[0]?.threshold || defaultMinQty,
-              warehousesDetails: warehousesDetailsMap,
-            },
+            currentStock: Object.values(warehousesDetailsMap)[0]?.currentStock || 0,
+            threshold: Object.values(warehousesDetailsMap)[0]?.threshold || defaultMinQty,
+            warehousesDetails: warehousesDetailsMap,
           },
-          { merge: true }
-        );
+        };
+        batch.set(unifiedAlertRef, alertPayload, { merge: true });
 
         if (!existingAlertSnap.exists || existingAlertSnap.data()?.resolved === true) {
           alertDelta = 1;
