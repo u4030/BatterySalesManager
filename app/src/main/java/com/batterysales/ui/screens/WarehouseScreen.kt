@@ -192,16 +192,20 @@ fun WarehouseScreen(
                                     }
                                 }
                                 
+                                val stockCount = (item.variant.currentStock?.get(uiState.selectedWarehouseId) as? Number)?.toInt()
+                                    ?: item.warehouseQuantities[uiState.selectedWarehouseId]
+                                    ?: item.totalQuantity
+
                                 Surface(
-                                    color = if (isLowStock) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primaryContainer,
-                                    shape = androidx.compose.foundation.shape.CircleShape
+                                    color = if (isLowStock) MaterialTheme.colorScheme.error else Color(0xFF10B981).copy(alpha = 0.12f),
+                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
                                 ) {
                                     Text(
-                                        text = stock.toString(),
+                                        text = "$stockCount حبات",
                                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                                         style = MaterialTheme.typography.titleLarge,
-                                        fontWeight = FontWeight.ExtraBold,
-                                        color = if (isLowStock) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onPrimaryContainer
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isLowStock) MaterialTheme.colorScheme.onError else Color(0xFF10B981) // الأخضر الإمبراطوري الصارم للمخزون الحركي
                                     )
                                 }
                             }
