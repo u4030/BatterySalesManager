@@ -21,6 +21,7 @@ class WarehouseRepository @Inject constructor(
     /**
      * Continuous snapshot listener streaming warehouses locally from cache.
      * Adheres to the Listen-Only protocol with MetadataChanges.INCLUDE.
+     * Rejects false/pending write bounces during mobile websocket reconnections.
      */
     fun getWarehouses(): Flow<List<Warehouse>> = callbackFlow {
         val listenerRegistration = firestore.collection(Warehouse.COLLECTION_NAME)
@@ -32,7 +33,7 @@ class WarehouseRepository @Inject constructor(
                     }
                     return@addSnapshotListener
                 }
-                if (snapshot != null) {
+                if (snapshot != null && !snapshot.metadata.hasPendingWrites()) {
                     val warehouses = snapshot.documents.mapNotNull { doc ->
                         doc.toObject(Warehouse::class.java)?.copy(id = doc.id)
                     }

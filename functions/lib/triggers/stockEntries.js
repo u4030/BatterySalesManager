@@ -47,9 +47,9 @@ exports.onStockEntryCreated = (0, firestore_1.onDocumentCreated)("stock_entries/
     const entry = event.data.data();
     if (!entry)
         return;
-    const variantId = String(entry.productVariantId || entry.variantId || "");
+    const productVariantId = String(entry.productVariantId || entry.variantId || "");
     const warehouseId = String(entry.warehouseId || "");
-    if (!variantId || !warehouseId)
+    if (!productVariantId || !warehouseId)
         return;
     const qty = Number(entry.quantity || 0);
     const returnedQty = Number(entry.returnedQuantity || 0);
@@ -57,11 +57,11 @@ exports.onStockEntryCreated = (0, firestore_1.onDocumentCreated)("stock_entries/
     const costPrice = Number(entry.costPrice || 0);
     const now = firestore_2.FieldValue.serverTimestamp();
     const processedRef = db.doc(`processed_transactions/${entryId}`);
-    const variantRef = db.doc(`product_variants/${variantId}`);
+    const variantRef = db.doc(`product_variants/${productVariantId}`);
     const whSummaryRef = db.doc(`summaries/inventory_wh_${warehouseId}`);
     const globalSummaryRef = db.doc("summaries/inventory_global");
     const warehouseRef = db.doc(`warehouses/${warehouseId}`);
-    const alertId = `low_stock_${variantId}_${warehouseId}`;
+    const alertId = `low_stock_${productVariantId}`;
     const alertRef = db.collection("system_alerts").doc(alertId);
     const syncRegistryRef = db.doc("summaries/sync_registry");
     const dashboardHubRef = db.doc("summaries/dashboard_hub");
@@ -73,11 +73,10 @@ exports.onStockEntryCreated = (0, firestore_1.onDocumentCreated)("stock_entries/
                 console.log(`[IdempotencyGuard] StockEntry ${entryId} already processed. Skipping execution.`);
                 return;
             }
-            const [variantSnap, whSummarySnap, globalSummarySnap, warehouseSnap, alertSnap] = await Promise.all([
+            const [variantSnap, whSummarySnap, globalSummarySnap, alertSnap] = await Promise.all([
                 transaction.get(variantRef),
                 transaction.get(whSummaryRef),
                 transaction.get(globalSummaryRef),
-                transaction.get(warehouseRef),
                 transaction.get(alertRef),
             ]);
             const variant = variantSnap.exists ? (variantSnap.data() || {}) : {};
@@ -97,7 +96,7 @@ exports.onStockEntryCreated = (0, firestore_1.onDocumentCreated)("stock_entries/
             }
             // Warehouse Inventory Summary (summaries/inventory_wh_[id])
             const whItems = whSummarySnap.exists ? (whSummarySnap.data()?.items || {}) : {};
-            const oldWhItem = whItems[variantId] || {};
+            const oldWhItem = whItems[productVariantId] || {};
             const newWhStock = Math.max(0, Number(oldWhItem.currentStock || 0) + netQty);
             const itemCost = newWac > 0 ? newWac : Number(entry.costPrice || oldWhItem.weightedAverageCost || 0);
             const minQty = Number((variant.minQuantities || {})[warehouseId] ?? variant.minQuantity ?? oldWhItem.minQuantity ?? 0);
@@ -105,8 +104,8 @@ exports.onStockEntryCreated = (0, firestore_1.onDocumentCreated)("stock_entries/
             const capacity = Number(entry.capacity || variant.capacity || oldWhItem.capacity || 0);
             const spec = String(entry.specification || variant.specification || oldWhItem.specification || "");
             const barcode = String(variant.barcode || oldWhItem.barcode || "");
-            whItems[variantId] = {
-                variantId: variantId,
+            whItems[productVariantId] = {
+                variantId: productVariantId,
                 productId: String(variant.productId || oldWhItem.productId || ""),
                 productName: pName,
                 capacity: capacity,
@@ -123,10 +122,10 @@ exports.onStockEntryCreated = (0, firestore_1.onDocumentCreated)("stock_entries/
             const whTotalItemsCount = Object.values(whItems).reduce((acc, item) => acc + Number(item?.currentStock || 0), 0);
             // Global Inventory Summary (summaries/inventory_global)
             const globalItems = globalSummarySnap.exists ? (globalSummarySnap.data()?.items || {}) : {};
-            const oldGlobalItem = globalItems[variantId] || {};
+            const oldGlobalItem = globalItems[productVariantId] || {};
             const newGlobalStock = Math.max(0, Number(oldGlobalItem.currentStock || 0) + netQty);
-            globalItems[variantId] = {
-                variantId: variantId,
+            globalItems[productVariantId] = {
+                variantId: productVariantId,
                 productId: String(variant.productId || oldGlobalItem.productId || ""),
                 productName: pName,
                 capacity: capacity,
@@ -141,30 +140,29 @@ exports.onStockEntryCreated = (0, firestore_1.onDocumentCreated)("stock_entries/
             };
             const globalTotalValue = Object.values(globalItems).reduce((acc, item) => acc + (Number(item?.currentStock || 0) * Number(item?.weightedAverageCost || 0)), 0);
             const globalTotalItemsCount = Object.values(globalItems).reduce((acc, item) => acc + Number(item?.currentStock || 0), 0);
-            // Anti-Flapping Low Stock Alert Handling (Pure plain JS Object, NO Buffer data)
-            const whName = String(warehouseSnap.exists ? (warehouseSnap.data()?.name || warehouseId) : warehouseId);
-            const isLowStock = minQty > 0 && newWhStock <= minQty;
+            // Low Stock Check & Clean 100% Pure JSON Payload (Strictly no byte buffers)
+            const newTotalStock = Math.max(0, oldTotalStock) + netQty;
+            const totalMinQty = Number(variant.minQuantity || minQty || 0);
+            const isLowStock = (minQty > 0 && newWhStock <= minQty) || (totalMinQty > 0 && newTotalStock <= totalMinQty);
             let alertDelta = 0;
             if (isLowStock) {
-                // If alert exists and already active, do nothing to prevent flapping
+                const alertPayload = {
+                    id: alertId,
+                    type: "low_stock",
+                    title: "مخزون منخفض",
+                    message: `الصنف شارف على النفاد في المستودع`,
+                    variantId: productVariantId,
+                    warehouseId: warehouseId,
+                    resolved: false,
+                    timestamp: now,
+                };
+                transaction.set(alertRef, alertPayload, { merge: true });
                 if (!alertSnap.exists || alertSnap.data()?.resolved === true) {
-                    const alertPayload = {
-                        id: alertId,
-                        type: "low_stock",
-                        title: "مستوى المخزون منخفض",
-                        message: `الصنف ${pName} شارف على النفاد في المستودع`,
-                        warehouseId: warehouseId,
-                        warehouseName: whName,
-                        relatedId: variantId,
-                        resolved: false,
-                        timestamp: now,
-                    };
-                    transaction.set(alertRef, alertPayload);
                     alertDelta = 1;
                 }
             }
             else if (alertSnap.exists) {
-                // Stock has recovered safely above threshold -> delete alert
+                // If stock safely recovered above threshold, delete alert
                 transaction.delete(alertRef);
                 if (alertSnap.data()?.resolved !== true) {
                     alertDelta = -1;
@@ -174,11 +172,11 @@ exports.onStockEntryCreated = (0, firestore_1.onDocumentCreated)("stock_entries/
             // 1. Mark as processed (Idempotency Guard)
             transaction.set(processedRef, {
                 entryId: entryId,
-                variantId: variantId,
+                variantId: productVariantId,
                 warehouseId: warehouseId,
                 processedAt: now,
             });
-            // 2. Update product_variants/${variantId}
+            // 2. Update product_variants/${productVariantId}
             transaction.set(variantRef, {
                 currentStock: {
                     [warehouseId]: firestore_2.FieldValue.increment(netQty),
@@ -199,7 +197,7 @@ exports.onStockEntryCreated = (0, firestore_1.onDocumentCreated)("stock_entries/
             // 4. Update warehouses/${warehouseId} stocks and updatedAt
             transaction.set(warehouseRef, {
                 stocks: {
-                    [variantId]: firestore_2.FieldValue.increment(netQty),
+                    [productVariantId]: firestore_2.FieldValue.increment(netQty),
                 },
                 updatedAt: now,
             }, { merge: true });
