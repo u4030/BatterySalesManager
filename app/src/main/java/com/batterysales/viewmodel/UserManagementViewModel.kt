@@ -1,0 +1,171 @@
+package com.batterysales.viewmodel
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.batterysales.data.models.User
+import com.batterysales.data.models.Warehouse
+import com.batterysales.data.repositories.UserRepository
+import com.batterysales.data.repositories.WarehouseRepository
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+
+data class UserManagementUiState(
+    val users: List<User> = emptyList(),
+    val warehouses: List<Warehouse> = emptyList(),
+    val isLoading: Boolean = true,
+    val isSubmitting: Boolean = false,
+    val successMessage: String? = null,
+    val errorMessage: String? = null
+)
+
+@HiltViewModel
+class UserManagementViewModel @Inject constructor(
+    private val userRepository: UserRepository,
+    private val warehouseRepository: WarehouseRepository
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow(UserManagementUiState())
+    val uiState: StateFlow<UserManagementUiState> = _uiState.asStateFlow()
+
+    private val refreshTrigger = MutableStateFlow(0)
+
+    init {
+        refreshTrigger.onEach {
+            loadData()
+        }.launchIn(viewModelScope)
+    }
+
+    private fun loadData() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true) }
+            try {
+                // Use snapshot listener for users as it's a small collection and changes are rare but important
+                // However, for warehouses, use one-time fetch.
+                val warehouses = warehouseRepository.getWarehousesOnce()
+                userRepository.getAllUsersFlow().collect { users ->
+                    _uiState.update { it.copy(
+                        users = users,
+                        warehouses = warehouses,
+                        isLoading = false
+                    ) }
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(isLoading = false, errorMessage = "خطأ في تحميل البيانات") }
+            }
+        }
+    }
+
+    fun refresh() {
+        refreshTrigger.value += 1
+    }
+
+    fun updateUserRole(user: User, newRole: String) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSubmitting = true) }
+            try {
+                val updatedUser = user.copy(role = newRole)
+                userRepository.updateUser(updatedUser)
+                _uiState.update { it.copy(successMessage = "تم تحديث الدور بنجاح") }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "فشل تحديث الدور: ${e.message}") }
+            } finally {
+                _uiState.update { it.copy(isSubmitting = false) }
+            }
+        }
+    }
+
+    fun toggleUserStatus(user: User) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSubmitting = true) }
+            try {
+                val updatedUser = user.copy(isActive = !user.isActive)
+                userRepository.updateUser(updatedUser)
+                val statusText = if (updatedUser.isActive) "تنشيط" else "إيقاف"
+                _uiState.update { it.copy(successMessage = "تم $statusText المستخدم بنجاح") }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "فشل تحديث حالة المستخدم: ${e.message}") }
+            } finally {
+                _uiState.update { it.copy(isSubmitting = false) }
+            }
+        }
+    }
+
+    fun togglePermission(user: User, permission: String) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSubmitting = true) }
+            try {
+                val currentPermissions = user.permissions.toMutableList()
+                if (currentPermissions.contains(permission)) {
+                    currentPermissions.remove(permission)
+                } else {
+                    currentPermissions.add(permission)
+                }
+                val updatedUser = user.copy(permissions = currentPermissions)
+                userRepository.updateUser(updatedUser)
+                _uiState.update { it.copy(successMessage = "تم تحديث الصلاحيات") }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "فشل تحديث الصلاحيات") }
+            } finally {
+                _uiState.update { it.copy(isSubmitting = false) }
+            }
+        }
+    }
+
+    fun deleteUser(userId: String) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSubmitting = true) }
+            try {
+                userRepository.deleteUser(userId)
+                _uiState.update { it.copy(successMessage = "تم حذف المستخدم بنجاح") }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "فشل حذف المستخدم: ${e.message}") }
+            } finally {
+                _uiState.update { it.copy(isSubmitting = false) }
+            }
+        }
+    }
+
+    fun linkUserToWarehouse(user: User, warehouseId: String?) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSubmitting = true) }
+            try {
+                val updatedUser = user.copy(warehouseId = warehouseId)
+                userRepository.updateUser(updatedUser)
+                _uiState.update { it.copy(successMessage = "تم ربط المستودع بنجاح") }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "فشل ربط المستودع: ${e.message}") }
+            } finally {
+                _uiState.update { it.copy(isSubmitting = false) }
+            }
+        }
+    }
+
+    fun createUser(email: String, password: String, displayName: String, role: String, warehouseId: String?) {
+        viewModelScope.launch {
+            if (email.isBlank() || password.length < 6 || displayName.isBlank()) {
+                _uiState.update { it.copy(errorMessage = "الرجاء التأكد من صحة البيانات (كلمة المرور 6 أحرف على الأقل)") }
+                return@launch
+            }
+            _uiState.update { it.copy(isSubmitting = true) }
+            try {
+                userRepository.registerUser(email, password, displayName, role, warehouseId)
+                _uiState.update { it.copy(
+                    isSubmitting = false,
+                    successMessage = "تم إنشاء المستخدم بنجاح"
+                ) }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(
+                    isSubmitting = false,
+                    errorMessage = "فشل إنشاء المستخدم: ${e.message}"
+                ) }
+            }
+        }
+    }
+
+    fun dismissMessages() {
+        _uiState.update { it.copy(successMessage = null, errorMessage = null) }
+    }
+}
+ 

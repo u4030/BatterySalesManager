@@ -1,0 +1,135 @@
+package com.batterysales.viewmodel
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.batterysales.data.models.Supplier
+import com.batterysales.data.repositories.SupplierRepository
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+
+@HiltViewModel
+class SupplierViewModel @Inject constructor(
+    private val supplierRepository: SupplierRepository
+) : ViewModel() {
+
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery = _searchQuery.asStateFlow()
+
+    private val refreshTrigger = MutableStateFlow(0)
+    private val _allSuppliers = MutableStateFlow<List<Supplier>>(emptyList())
+    
+    val suppliers = combine(_allSuppliers, _searchQuery) { suppliers, query ->
+        if (query.isBlank()) suppliers
+        else suppliers.filter { it.name.contains(query, ignoreCase = true) }
+    }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading = _isLoading.asStateFlow()
+
+    private val _isSubmitting = MutableStateFlow(false)
+    val isSubmitting = _isSubmitting.asStateFlow()
+
+    private val _error = MutableStateFlow<String?>(null)
+    val error = _error.asStateFlow()
+
+    init {
+        refreshTrigger.onEach {
+            loadSuppliers()
+        }.launchIn(viewModelScope)
+    }
+
+    fun loadSuppliers() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                val list = supplierRepository.getSuppliersOnce()
+                _allSuppliers.value = list
+            } catch (e: Exception) {
+                _error.value = "فشل تحميل الموردين: ${e.message}"
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    fun refresh() {
+        refreshTrigger.value += 1
+    }
+
+    fun onSearchQueryChanged(query: String) {
+        _searchQuery.value = query
+    }
+
+    fun addSupplier(name: String, phone: String, email: String, address: String, yearlyTarget: Double, target2: Double = 0.0, target3: Double = 0.0) {
+        viewModelScope.launch {
+            _isSubmitting.value = true
+            try {
+                val supplier = Supplier(
+                    name = name,
+                    phone = phone,
+                    email = email,
+                    address = address,
+                    yearlyTarget = yearlyTarget,
+                    yearlyTarget2 = target2,
+                    yearlyTarget3 = target3
+                )
+                supplierRepository.addSupplier(supplier)
+                refresh()
+            } catch (e: Exception) {
+                _error.value = "فشل إضافة المورد: ${e.message}"
+            } finally {
+                _isSubmitting.value = false
+            }
+        }
+    }
+
+    fun updateSupplier(supplier: Supplier) {
+        viewModelScope.launch {
+            _isSubmitting.value = true
+            try {
+                supplierRepository.updateSupplier(supplier)
+                refresh()
+            } catch (e: Exception) {
+                _error.value = "فشل تحديث المورد: ${e.message}"
+            } finally {
+                _isSubmitting.value = false
+            }
+        }
+    }
+
+    fun deleteSupplier(id: String) {
+        viewModelScope.launch {
+            _isSubmitting.value = true
+            try {
+                supplierRepository.deleteSupplier(id)
+                refresh()
+            } catch (e: Exception) {
+                _error.value = "فشل حذف المورد: ${e.message}"
+            } finally {
+                _isSubmitting.value = false
+            }
+        }
+    }
+
+    fun resetSupplier(supplier: Supplier) {
+        viewModelScope.launch {
+            _isSubmitting.value = true
+            try {
+                val updated = supplier.copy(resetDate = java.util.Date())
+                supplierRepository.updateSupplier(updated)
+                refresh()
+            } catch (e: Exception) {
+                _error.value = "فشل إعادة ضبط المورد: ${e.message}"
+            } finally {
+                _isSubmitting.value = false
+            }
+        }
+    }
+
+    fun clearError() {
+        _error.value = null
+    }
+}
+ 
