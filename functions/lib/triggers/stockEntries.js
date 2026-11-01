@@ -41,114 +41,163 @@ const firestore_2 = require("firebase-admin/firestore");
 exports.onStockEntryCreated = (0, firestore_1.onDocumentCreated)("stock_entries/{entryId}", async (event) => {
     if (!event.data)
         return;
-    console.time("onStockEntryCreated_executionTime");
+    const entryId = event.params.entryId;
+    console.time(`onStockEntryCreated_${entryId}`);
     const db = admin.firestore();
     const entry = event.data.data();
     if (!entry)
         return;
-    const variantId = entry.productVariantId;
+    const variantId = entry.productVariantId || entry.variantId;
     const warehouseId = entry.warehouseId;
     if (!variantId || !warehouseId)
         return;
     const qty = Number(entry.quantity || 0);
     const returnedQty = Number(entry.returnedQuantity || 0);
     const netQty = qty - returnedQty;
+    const costPrice = Number(entry.costPrice || 0);
     const now = firestore_2.FieldValue.serverTimestamp();
-    const batch = db.batch();
-    // 1. Update Variant currentStock map
-    batch.set(db.doc(`product_variants/${variantId}`), {
-        currentStock: {
-            [warehouseId]: firestore_2.FieldValue.increment(netQty),
-        },
-    }, { merge: true });
+    const processedRef = db.doc(`processed_transactions/${entryId}`);
+    const variantRef = db.doc(`product_variants/${variantId}`);
+    const whSummaryRef = db.doc(`summaries/inventory_wh_${warehouseId}`);
+    const globalSummaryRef = db.doc("summaries/inventory_global");
+    const warehouseRef = db.doc(`warehouses/${warehouseId}`);
+    const syncRegistryRef = db.doc("summaries/sync_registry");
+    const dashboardHubRef = db.doc("summaries/dashboard_hub");
     try {
-        const [whSummarySnap, globalSummarySnap, variantSnap] = await Promise.all([
-            db.doc(`summaries/inventory_wh_${warehouseId}`).get(),
-            db.doc("summaries/inventory_global").get(),
-            db.doc(`product_variants/${variantId}`).get(),
-        ]);
-        const variant = variantSnap.exists ? (variantSnap.data() || {}) : {};
-        // 2. Update Warehouse Inventory Summary (summaries/inventory_wh_[id])
-        const whItems = whSummarySnap.exists ? (whSummarySnap.data()?.items || {}) : {};
-        const oldWhItem = whItems[variantId] || {};
-        const newWhStock = Math.max(0, Number(oldWhItem.currentStock || 0) + netQty);
-        const itemCost = Number(entry.costPrice || variant.weightedAverageCost || oldWhItem.weightedAverageCost || 0);
-        whItems[variantId] = {
-            variantId: variantId,
-            productId: variant.productId || oldWhItem.productId || "",
-            productName: entry.productName || variant.productName || oldWhItem.productName || "منتج",
-            capacity: Number(entry.capacity || variant.capacity || oldWhItem.capacity || 0),
-            specification: entry.specification || variant.specification || oldWhItem.specification || "",
-            barcode: variant.barcode || oldWhItem.barcode || "",
-            currentStock: newWhStock,
-            minQuantity: (variant.minQuantities || {})[warehouseId] ?? variant.minQuantity ?? oldWhItem.minQuantity ?? 0,
-            weightedAverageCost: itemCost,
-            sellingPrice: Number(variant.sellingPrice || oldWhItem.sellingPrice || 0),
-            updatedAt: now,
-            isDiscontinued: Boolean(variant.isDiscontinued ?? oldWhItem.isDiscontinued),
-        };
-        const whTotalValue = Object.values(whItems).reduce((acc, item) => acc + (Number(item?.currentStock || 0) * Number(item?.weightedAverageCost || 0)), 0);
-        const whTotalItemsCount = Object.values(whItems).reduce((acc, item) => acc + Number(item?.currentStock || 0), 0);
-        batch.set(db.doc(`summaries/inventory_wh_${warehouseId}`), {
-            id: `inventory_wh_${warehouseId}`,
-            warehouseId: warehouseId,
-            items: whItems,
-            totalValue: Math.max(0, whTotalValue),
-            totalItemsCount: Math.max(0, whTotalItemsCount),
-            lastUpdated: now,
-            version: firestore_2.FieldValue.increment(1),
-        }, { merge: true });
-        // 3. Update Global Inventory Summary (summaries/inventory_global)
-        const globalItems = globalSummarySnap.exists ? (globalSummarySnap.data()?.items || {}) : {};
-        const oldGlobalItem = globalItems[variantId] || {};
-        const newGlobalStock = Math.max(0, Number(oldGlobalItem.currentStock || 0) + netQty);
-        globalItems[variantId] = {
-            variantId: variantId,
-            productId: variant.productId || oldGlobalItem.productId || "",
-            productName: entry.productName || variant.productName || oldGlobalItem.productName || "منتج",
-            capacity: Number(entry.capacity || variant.capacity || oldGlobalItem.capacity || 0),
-            specification: entry.specification || variant.specification || oldGlobalItem.specification || "",
-            barcode: variant.barcode || oldGlobalItem.barcode || "",
-            currentStock: newGlobalStock,
-            minQuantity: Number(variant.minQuantity || oldGlobalItem.minQuantity || 0),
-            weightedAverageCost: itemCost,
-            sellingPrice: Number(variant.sellingPrice || oldGlobalItem.sellingPrice || 0),
-            updatedAt: now,
-            isDiscontinued: Boolean(variant.isDiscontinued ?? oldGlobalItem.isDiscontinued),
-        };
-        const globalTotalValue = Object.values(globalItems).reduce((acc, item) => acc + (Number(item?.currentStock || 0) * Number(item?.weightedAverageCost || 0)), 0);
-        const globalTotalItemsCount = Object.values(globalItems).reduce((acc, item) => acc + Number(item?.currentStock || 0), 0);
-        batch.set(db.doc("summaries/inventory_global"), {
-            id: "inventory_global",
-            warehouseId: null,
-            items: globalItems,
-            totalValue: Math.max(0, globalTotalValue),
-            totalItemsCount: Math.max(0, globalTotalItemsCount),
-            lastUpdated: now,
-            version: firestore_2.FieldValue.increment(1),
-        }, { merge: true });
-        // 4. Update Sync Registry & Dashboard Hub
-        batch.set(db.doc("summaries/sync_registry"), {
-            inventoryVersion: firestore_2.FieldValue.increment(1),
-            suppliersVersion: firestore_2.FieldValue.increment(1),
-            financialVersion: firestore_2.FieldValue.increment(1),
-            lastModified: now,
-        }, { merge: true });
-        batch.set(db.doc("summaries/dashboard_hub"), {
-            "inventorySummary.totalValue": Math.max(0, globalTotalValue),
-            "inventorySummary.totalItemsCount": Math.max(0, globalTotalItemsCount),
-            "syncRegistry.inventoryVersion": firestore_2.FieldValue.increment(1),
-            "syncRegistry.suppliersVersion": firestore_2.FieldValue.increment(1),
-            "syncRegistry.financialVersion": firestore_2.FieldValue.increment(1),
-            "syncRegistry.lastModified": now,
-            lastUpdated: now,
-        }, { merge: true });
-        await batch.commit();
+        await db.runTransaction(async (transaction) => {
+            // --- READ PHASE ---
+            const processedSnap = await transaction.get(processedRef);
+            if (processedSnap.exists) {
+                console.log(`[IdempotencyGuard] StockEntry ${entryId} already processed. Skipping execution.`);
+                return;
+            }
+            const [variantSnap, whSummarySnap, globalSummarySnap] = await Promise.all([
+                transaction.get(variantRef),
+                transaction.get(whSummaryRef),
+                transaction.get(globalSummaryRef),
+            ]);
+            const variant = variantSnap.exists ? (variantSnap.data() || {}) : {};
+            const oldWac = Number(variant.weightedAverageCost || 0);
+            const currentStockMap = (variant.currentStock || {});
+            const oldTotalStock = Object.values(currentStockMap).reduce((acc, val) => acc + Number(val || 0), 0);
+            // Weighted Average Cost calculation:
+            // If incoming costPrice > 0 and netQty > 0, calculate new weighted average cost
+            let newWac = oldWac;
+            if (costPrice > 0 && netQty > 0) {
+                const totalExistingValue = Math.max(0, oldTotalStock) * oldWac;
+                const incomingValue = netQty * costPrice;
+                const totalNewStock = Math.max(0, oldTotalStock) + netQty;
+                newWac = totalNewStock > 0 ? (totalExistingValue + incomingValue) / totalNewStock : costPrice;
+            }
+            else if (newWac <= 0 && costPrice > 0) {
+                newWac = costPrice;
+            }
+            // Warehouse Inventory Summary (summaries/inventory_wh_[id])
+            const whItems = whSummarySnap.exists ? (whSummarySnap.data()?.items || {}) : {};
+            const oldWhItem = whItems[variantId] || {};
+            const newWhStock = Math.max(0, Number(oldWhItem.currentStock || 0) + netQty);
+            const itemCost = newWac > 0 ? newWac : Number(entry.costPrice || oldWhItem.weightedAverageCost || 0);
+            whItems[variantId] = {
+                variantId: variantId,
+                productId: variant.productId || oldWhItem.productId || "",
+                productName: entry.productName || variant.productName || oldWhItem.productName || "منتج",
+                capacity: Number(entry.capacity || variant.capacity || oldWhItem.capacity || 0),
+                specification: entry.specification || variant.specification || oldWhItem.specification || "",
+                barcode: variant.barcode || oldWhItem.barcode || "",
+                currentStock: newWhStock,
+                minQuantity: (variant.minQuantities || {})[warehouseId] ?? variant.minQuantity ?? oldWhItem.minQuantity ?? 0,
+                weightedAverageCost: itemCost,
+                sellingPrice: Number(variant.sellingPrice || oldWhItem.sellingPrice || 0),
+                updatedAt: now,
+                isDiscontinued: Boolean(variant.isDiscontinued ?? oldWhItem.isDiscontinued),
+            };
+            const whTotalValue = Object.values(whItems).reduce((acc, item) => acc + (Number(item?.currentStock || 0) * Number(item?.weightedAverageCost || 0)), 0);
+            const whTotalItemsCount = Object.values(whItems).reduce((acc, item) => acc + Number(item?.currentStock || 0), 0);
+            // Global Inventory Summary (summaries/inventory_global)
+            const globalItems = globalSummarySnap.exists ? (globalSummarySnap.data()?.items || {}) : {};
+            const oldGlobalItem = globalItems[variantId] || {};
+            const newGlobalStock = Math.max(0, Number(oldGlobalItem.currentStock || 0) + netQty);
+            globalItems[variantId] = {
+                variantId: variantId,
+                productId: variant.productId || oldGlobalItem.productId || "",
+                productName: entry.productName || variant.productName || oldGlobalItem.productName || "منتج",
+                capacity: Number(entry.capacity || variant.capacity || oldGlobalItem.capacity || 0),
+                specification: entry.specification || variant.specification || oldGlobalItem.specification || "",
+                barcode: variant.barcode || oldGlobalItem.barcode || "",
+                currentStock: newGlobalStock,
+                minQuantity: Number(variant.minQuantity || oldGlobalItem.minQuantity || 0),
+                weightedAverageCost: itemCost,
+                sellingPrice: Number(variant.sellingPrice || oldGlobalItem.sellingPrice || 0),
+                updatedAt: now,
+                isDiscontinued: Boolean(variant.isDiscontinued ?? oldGlobalItem.isDiscontinued),
+            };
+            const globalTotalValue = Object.values(globalItems).reduce((acc, item) => acc + (Number(item?.currentStock || 0) * Number(item?.weightedAverageCost || 0)), 0);
+            const globalTotalItemsCount = Object.values(globalItems).reduce((acc, item) => acc + Number(item?.currentStock || 0), 0);
+            // --- WRITE PHASE ---
+            // 1. Mark as processed (Idempotency Guard)
+            transaction.set(processedRef, {
+                entryId: entryId,
+                variantId: variantId,
+                warehouseId: warehouseId,
+                processedAt: now,
+            });
+            // 2. Update product_variants/${variantId}
+            transaction.set(variantRef, {
+                currentStock: {
+                    [warehouseId]: firestore_2.FieldValue.increment(netQty),
+                },
+                weightedAverageCost: newWac,
+                updatedAt: now,
+            }, { merge: true });
+            // 3. Update summaries/inventory_wh_${warehouseId}
+            transaction.set(whSummaryRef, {
+                id: `inventory_wh_${warehouseId}`,
+                warehouseId: warehouseId,
+                items: whItems,
+                totalValue: Math.max(0, whTotalValue),
+                totalItemsCount: Math.max(0, whTotalItemsCount),
+                lastUpdated: now,
+                version: firestore_2.FieldValue.increment(1),
+            }, { merge: true });
+            // 4. Update warehouses/${warehouseId} stocks and updatedAt
+            transaction.set(warehouseRef, {
+                stocks: {
+                    [variantId]: firestore_2.FieldValue.increment(netQty),
+                },
+                updatedAt: now,
+            }, { merge: true });
+            // 5. Update summaries/inventory_global
+            transaction.set(globalSummaryRef, {
+                id: "inventory_global",
+                warehouseId: null,
+                items: globalItems,
+                totalValue: Math.max(0, globalTotalValue),
+                totalItemsCount: Math.max(0, globalTotalItemsCount),
+                lastUpdated: now,
+                version: firestore_2.FieldValue.increment(1),
+            }, { merge: true });
+            // 6. Update Sync Registry & Dashboard Hub
+            transaction.set(syncRegistryRef, {
+                inventoryVersion: firestore_2.FieldValue.increment(1),
+                suppliersVersion: firestore_2.FieldValue.increment(1),
+                financialVersion: firestore_2.FieldValue.increment(1),
+                lastModified: now,
+            }, { merge: true });
+            transaction.set(dashboardHubRef, {
+                "inventorySummary.totalValue": Math.max(0, globalTotalValue),
+                "inventorySummary.totalItemsCount": Math.max(0, globalTotalItemsCount),
+                "syncRegistry.inventoryVersion": firestore_2.FieldValue.increment(1),
+                "syncRegistry.suppliersVersion": firestore_2.FieldValue.increment(1),
+                "syncRegistry.financialVersion": firestore_2.FieldValue.increment(1),
+                "syncRegistry.lastModified": now,
+                lastUpdated: now,
+            }, { merge: true });
+        });
     }
     catch (error) {
-        console.error("Error in onStockEntryCreated batch execution:", error);
+        console.error(`Error in onStockEntryCreated transaction execution for ${entryId}:`, error);
     }
-    console.timeEnd("onStockEntryCreated_executionTime");
+    console.timeEnd(`onStockEntryCreated_${entryId}`);
 });
 exports.onStockEntryUpdated = (0, firestore_1.onDocumentUpdated)("stock_entries/{entryId}", async (event) => {
     if (!event.data)

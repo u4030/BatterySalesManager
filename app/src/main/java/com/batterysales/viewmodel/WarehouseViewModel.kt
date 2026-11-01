@@ -34,26 +34,45 @@ class WarehouseViewModel @Inject constructor(
     private var cachedSummary: InventorySummary? = null
 
     init {
-        loadInitialData()
+        observeWarehousesAndUser()
     }
 
-    private fun loadInitialData() {
+    /**
+     * Strict Listen-Only Protocol:
+     * Continuously streams warehouses and user role without any .get() server calls.
+     */
+    private fun observeWarehousesAndUser() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
             val user = userRepository.getCurrentUser()
             val isAdmin = user?.role == User.ROLE_ADMIN
-            val allWh = warehouseRepository.getWarehousesOnce()
-            
-            val filteredWh = if (isAdmin) allWh else allWh.filter { it.id == user?.warehouseId }
-            val initialWhId = if (isAdmin) (filteredWh.firstOrNull()?.id ?: "") else user?.warehouseId ?: ""
-            
-            _uiState.update { it.copy(
-                warehouses = filteredWh,
-                isAdmin = isAdmin,
-                selectedWarehouseId = initialWhId
-            ) }
-            
-            loadWarehouseInventory(initialWhId)
+
+            _uiState.update { it.copy(isAdmin = isAdmin) }
+
+            warehouseRepository.getWarehouses()
+                .distinctUntilChanged()
+                .collect { allWh ->
+                    val filteredWh = if (isAdmin) allWh else allWh.filter { it.id == user?.warehouseId }
+                    val currentSelected = _uiState.value.selectedWarehouseId
+                    val newSelectedWhId = when {
+                        currentSelected.isNotEmpty() && filteredWh.any { it.id == currentSelected } -> currentSelected
+                        isAdmin -> filteredWh.firstOrNull()?.id ?: ""
+                        else -> user?.warehouseId ?: ""
+                    }
+
+                    _uiState.update { current ->
+                        current.copy(
+                            warehouses = filteredWh,
+                            selectedWarehouseId = newSelectedWhId
+                        )
+                    }
+
+                    if (newSelectedWhId.isNotEmpty() && (newSelectedWhId != currentSelected || summaryJob == null)) {
+                        loadWarehouseInventory(newSelectedWhId)
+                    } else if (filteredWh.isEmpty()) {
+                        _uiState.update { it.copy(isLoading = false) }
+                    }
+                }
         }
     }
 
@@ -136,7 +155,6 @@ class WarehouseViewModel @Inject constructor(
             _uiState.update { it.copy(isSubmitting = true) }
             try {
                 warehouseRepository.addWarehouse(Warehouse(name = name, location = location, isMain = isMain))
-                loadInitialData()
             } finally {
                 _uiState.update { it.copy(isSubmitting = false) }
             }
@@ -148,7 +166,6 @@ class WarehouseViewModel @Inject constructor(
             _uiState.update { it.copy(isSubmitting = true) }
             try {
                 warehouseRepository.updateWarehouse(warehouse)
-                loadInitialData()
             } finally {
                 _uiState.update { it.copy(isSubmitting = false) }
             }
@@ -160,11 +177,9 @@ class WarehouseViewModel @Inject constructor(
             _uiState.update { it.copy(isSubmitting = true) }
             try {
                 warehouseRepository.deleteWarehouse(warehouseId)
-                loadInitialData()
             } finally {
                 _uiState.update { it.copy(isSubmitting = false) }
             }
         }
     }
 }
- 
