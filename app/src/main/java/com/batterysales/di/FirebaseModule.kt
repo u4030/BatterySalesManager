@@ -21,10 +21,11 @@ object FirebaseModule {
     // =========================================================================
     // CHANGE THIS IP TO YOUR COMPUTER'S LOCAL WI-FI IP ADDRESS
     // For Android Emulator: use "10.0.2.2"
-    // For Physical Phone via Wi-Fi: use your local IP, e.g. "172.29.52.107"
+    // For Physical Phone via Wi-Fi: use your local IP, e.g. "172.30.2.65"
     // Set to null or empty "" to disable emulator and connect to Production Firebase
     // =========================================================================
-    const val EMULATOR_HOST_IP = "172.30.2.65" // <-- Place your computer's local Wi-Fi IP address here
+    const val EMULATOR_IP = com.batterysales.utils.Constants.EMULATOR_IP
+    const val EMULATOR_HOST_IP = EMULATOR_IP
 
     private const val USE_EMULATOR = true
 
@@ -48,9 +49,9 @@ object FirebaseModule {
     @Singleton
     fun provideFirebaseAuth(): FirebaseAuth {
         val auth = FirebaseAuth.getInstance()
-        if (USE_EMULATOR && EMULATOR_HOST_IP.isNotBlank()) {
+        if (USE_EMULATOR && EMULATOR_IP.isNotBlank()) {
             try {
-                auth.useEmulator(EMULATOR_HOST_IP, 9099)
+                auth.useEmulator(EMULATOR_IP, 9099)
             } catch (e: Exception) {
                 // Ignore if emulator already set
             }
@@ -69,10 +70,10 @@ object FirebaseModule {
             .build()
         firestore.firestoreSettings = settings
 
-        if (USE_EMULATOR && EMULATOR_HOST_IP.isNotBlank()) {
-            runEmulatorConnectivityCheck(EMULATOR_HOST_IP, 8080)
+        if (USE_EMULATOR && EMULATOR_IP.isNotBlank()) {
+            runEmulatorConnectivityCheck(EMULATOR_IP, 8080)
             try {
-                firestore.useEmulator(EMULATOR_HOST_IP, 8080)
+                firestore.useEmulator(EMULATOR_IP, 8080)
             } catch (e: Exception) {
                 // Ignore if emulator already set
             }

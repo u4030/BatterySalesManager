@@ -4,6 +4,8 @@ package com.batterysales.utils
  * ثوابت التطبيق
  */
 object Constants {
+    // الـ IP الصحيح والمؤكد لربط الهاتف مع محاكي الكمبيوتر
+    const val EMULATOR_IP = "172.30.2.65" // ضع رقم الـ IPv4 الخاص بجهازك هنا صراحة
     // Firebase Collections
     object Collections {
         const val USERS = "users"
