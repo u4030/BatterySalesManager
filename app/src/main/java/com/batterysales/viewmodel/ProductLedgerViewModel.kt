@@ -73,22 +73,27 @@ class ProductLedgerViewModel @Inject constructor(
     private val refreshTrigger = MutableStateFlow(0)
     private val _isDataLoaded = MutableStateFlow(false)
 
+    // التحكم بحجم الصفحة الحالية محلياً لمنع جلطات الكاش الفايرستوري
+    private val _currentLimit = MutableStateFlow(20)
+
     private data class LedgerFilters(
         val category: LedgerCategory,
         val query: String,
         val user: com.batterysales.data.models.User?,
-        val warehouses: List<Warehouse>
+        val warehouses: List<Warehouse>,
+        val limit: Int
     )
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    val ledgerItems: Flow<PagingData<LedgerItem>> = combine(
+    val ledgerItems: StateFlow<List<LedgerItem>> = combine(
         listOf(
             _selectedCategory, 
             _searchQuery, 
             userRepository.getCurrentUserFlow(), 
             warehouseRepository.getWarehouses(),
             refreshTrigger, 
-            _isDataLoaded
+            _isDataLoaded,
+            _currentLimit
         )
     ) { args: Array<Any?> ->
         val category = args[0] as LedgerCategory
@@ -96,30 +101,39 @@ class ProductLedgerViewModel @Inject constructor(
         val user = args[2] as com.batterysales.data.models.User?
         val warehouses = args[3] as List<Warehouse>
         val loaded = args[5] as Boolean
+        val limit = args[6] as Int
         
         if (!loaded && query.isEmpty()) null
-        else LedgerFilters(category, query, user, warehouses)
+        else LedgerFilters(category, query, user, warehouses, limit)
     }.filterNotNull().flatMapLatest { filters ->
         val warehouseMap = filters.warehouses.associateBy { it.id }
         val user = filters.user
         val warehouseFilter = targetWarehouseId ?: if (user?.role == "seller") user.warehouseId else null
-        
-        Pager(PagingConfig(pageSize = 20)) { StockEntryPagingSource(stockEntryRepository, productVariantId, warehouseFilter) }
-            .flow.map { pagingData ->
-                pagingData.map { entry -> LedgerItem(entry = entry, warehouseName = warehouseMap[entry.warehouseId]?.name ?: "Unknown") }
-                    .filter { item ->
-                        val categoryMatch = when (filters.category) {
-                            LedgerCategory.ALL -> true
-                            LedgerCategory.PURCHASES -> item.entry.quantity > 0 && item.entry.invoiceId == null && item.entry.supplier != "Sale" && item.entry.costPrice > 0 && !item.entry.supplier.contains("Reversal")
-                            LedgerCategory.SALES -> item.entry.invoiceId != null || item.entry.supplier == "Sale"
-                            LedgerCategory.TRANSFERS -> item.entry.costPrice == 0.0 && item.entry.invoiceId == null && item.entry.supplier != "Sale" && !item.entry.supplier.contains("Reversal")
-                            LedgerCategory.RETURNS -> item.entry.supplier.contains("Reversal") || item.entry.returnedQuantity > 0
-                        }
-                        val searchMatch = if (filters.query.isBlank()) true else item.entry.supplier.contains(filters.query, ignoreCase = true) || item.warehouseName.contains(filters.query, ignoreCase = true) || item.entry.createdByUserName.contains(filters.query, ignoreCase = true) || item.entry.invoiceNumber.contains(filters.query, ignoreCase = true)
-                        categoryMatch && searchMatch
-                    }
-            }.cachedIn(viewModelScope)
-    }
+
+        stockEntryRepository.listenToStockEntriesReactive(
+            variantId = productVariantId,
+            warehouseId = warehouseFilter,
+            limit = filters.limit
+        ).map { entries ->
+            entries.map { entry ->
+                LedgerItem(entry = entry, warehouseName = warehouseMap[entry.warehouseId]?.name ?: "Unknown")
+            }.filter { item ->
+                val categoryMatch = when (filters.category) {
+                    LedgerCategory.ALL -> true
+                    LedgerCategory.PURCHASES -> item.entry.quantity > 0 && item.entry.invoiceId == null && item.entry.supplier != "Sale" && item.entry.costPrice > 0 && !item.entry.supplier.contains("Reversal")
+                    LedgerCategory.SALES -> item.entry.invoiceId != null || item.entry.supplier == "Sale"
+                    LedgerCategory.TRANSFERS -> item.entry.costPrice == 0.0 && item.entry.invoiceId == null && item.entry.supplier != "Sale" && !item.entry.supplier.contains("Reversal")
+                    LedgerCategory.RETURNS -> item.entry.supplier.contains("Reversal") || item.entry.returnedQuantity > 0
+                }
+                val searchMatch = if (filters.query.isBlank()) true else item.entry.supplier.contains(filters.query, ignoreCase = true) || item.warehouseName.contains(filters.query, ignoreCase = true) || item.entry.createdByUserName.contains(filters.query, ignoreCase = true) || item.entry.invoiceNumber.contains(filters.query, ignoreCase = true)
+                categoryMatch && searchMatch
+            }
+        }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
+    )
 
     init {
         viewModelScope.launch {
@@ -129,9 +143,20 @@ class ProductLedgerViewModel @Inject constructor(
         }
     }
 
+    /**
+     * توسيع نطاق الكاش تلقائياً عند الاقتراب من نهاية القائمة
+     */
+    fun loadMoreEntries() {
+        if (_isLoadingMore.value) return
+        _currentLimit.value += 20
+    }
+
     fun loadData(reset: Boolean = false) {
         _isDataLoaded.value = true
-        if (reset) refreshTrigger.value += 1
+        if (reset) {
+            _currentLimit.value = 20
+            refreshTrigger.value += 1
+        }
     }
 
     fun selectCategory(category: LedgerCategory) { _selectedCategory.value = category }

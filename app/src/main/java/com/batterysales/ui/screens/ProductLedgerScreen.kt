@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.paging.compose.collectAsLazyPagingItems
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -47,7 +47,7 @@ fun ProductLedgerScreen(
     navController: NavHostController,
     viewModel: ProductLedgerViewModel = hiltViewModel()
 ) {
-    val pagingItems = viewModel.ledgerItems.collectAsLazyPagingItems()
+    val ledgerItemsList by viewModel.ledgerItems.collectAsState()
     val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
 
     DisposableEffect(lifecycleOwner) {
@@ -74,25 +74,11 @@ fun ProductLedgerScreen(
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // Load more when reaching the end
-    val shouldLoadMore = remember {
-        derivedStateOf {
-            val lastVisibleItem = listState.layoutInfo.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf false
-            lastVisibleItem.index >= listState.layoutInfo.totalItemsCount - 5
-        }
-    }
-
-    LaunchedEffect(shouldLoadMore.value) {
-        if (shouldLoadMore.value && !isLoading && !isLoadingMore) {
-            viewModel.loadData()
-        }
-    }
-
     // Auto-scroll to highlighted entry
-    LaunchedEffect(pagingItems.itemSnapshotList, viewModel.highlightEntryId) {
+    LaunchedEffect(ledgerItemsList, viewModel.highlightEntryId) {
         val targetId = viewModel.highlightEntryId
         if (targetId != null) {
-            val index = pagingItems.itemSnapshotList.indexOfFirst { it?.entry?.id == targetId }
+            val index = ledgerItemsList.indexOfFirst { it.entry.id == targetId }
             if (index != -1) {
                 listState.animateScrollToItem(index + 1) // +1 for Header
             }
@@ -189,13 +175,12 @@ fun ProductLedgerScreen(
         colors = listOf(Color(0xFFE53935), Color(0xFFFB8C00))
     )
 
-    val rawLedgerItems = remember(pagingItems.itemSnapshotList, viewModel.highlightEntryId) {
-        val list = pagingItems.itemSnapshotList.items.filterNotNull()
+    val rawLedgerItems = remember(ledgerItemsList, viewModel.highlightEntryId) {
         val highlightId = viewModel.highlightEntryId
         if (!highlightId.isNullOrEmpty()) {
-            list.sortedWith(compareByDescending<LedgerItem> { it.entry.id == highlightId })
+            ledgerItemsList.sortedWith(compareByDescending<LedgerItem> { it.entry.id == highlightId })
         } else {
-            list
+            ledgerItemsList
         }
     }
 
@@ -264,15 +249,19 @@ fun ProductLedgerScreen(
                 }
             }
 
-            if (pagingItems.loadState.refresh is androidx.paging.LoadState.Loading) {
+            if (isLoading && rawLedgerItems.isEmpty()) {
                 item {
                     Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = accentColor)
                     }
                 }
             } else {
-                items(rawLedgerItems.size) { index ->
-                    val it = rawLedgerItems[index]
+                itemsIndexed(rawLedgerItems) { index, it ->
+                    // حارس الـ Pagination المحلي: إذا وصلنا لآخر 3 عناصر، اطلب المزيد حركياً لتوسيع الكاش
+                    if (index >= rawLedgerItems.size - 3) {
+                        viewModel.loadMoreEntries()
+                    }
+
                     Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                         LedgerItemCard(
                             item = it,
@@ -309,7 +298,7 @@ fun ProductLedgerScreen(
                 }
             }
 
-            if (pagingItems.loadState.append is androidx.paging.LoadState.Loading) {
+            if (isLoadingMore) {
                 item {
                     Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(modifier = Modifier.size(32.dp), color = accentColor)

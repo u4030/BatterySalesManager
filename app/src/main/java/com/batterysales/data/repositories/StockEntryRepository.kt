@@ -249,6 +249,75 @@ class StockEntryRepository @Inject constructor(
         }.await()
     }
 
+    /**
+     * Pure Reactive Flow (Listen-Only from CACHE / MetadataChanges.INCLUDE)
+     * يستمع حركياً للكاش المحلي بدون تجميد الـ Paging وبدون الفهارس المركبة
+     */
+    fun listenToStockEntriesReactive(
+        variantId: String,
+        warehouseId: String? = null,
+        limit: Int = 20
+    ): Flow<List<StockEntry>> = callbackFlow {
+        if (variantId.isBlank()) {
+            trySend(emptyList())
+            close()
+            return@callbackFlow
+        }
+
+        // نلغي الـ orderBy الفايرستوري تماماً لتجنب مشاكل الفهارس المركبة وتجميد الكاش
+        val fetchLimit = if (warehouseId != null) (limit * 2).toLong() else limit.toLong()
+        val query = firestore.collection(StockEntry.COLLECTION_NAME)
+            .whereEqualTo("productVariantId", variantId)
+            .limit(fetchLimit)
+
+        val listenerRegistration = query.addSnapshotListener(com.google.firebase.firestore.MetadataChanges.INCLUDE) { snapshot, error ->
+            if (error != null) {
+                android.util.Log.e("StockEntryRepository", "Error listening to stock entries reactively", error)
+                trySend(emptyList())
+                return@addSnapshotListener
+            }
+            if (snapshot != null) {
+                val allEntries = snapshot.documents.mapNotNull { doc ->
+                    try {
+                        val entry = doc.toObject(StockEntry::class.java)
+                        val databaseVariantId = doc.getString("variantId")
+                        val databaseProductVariantId = doc.getString("productVariantId")
+
+                        val finalId = when {
+                            !databaseVariantId.isNullOrBlank() -> databaseVariantId
+                            !databaseProductVariantId.isNullOrBlank() -> databaseProductVariantId
+                            else -> variantId
+                        }
+
+                        entry?.copy(
+                            id = doc.id,
+                            variantId = finalId,
+                            productVariantId = finalId
+                        )
+                    } catch (e: Exception) {
+                        android.util.Log.e("StockEntryRepository", "Deserialization failed for doc: ${doc.id}", e)
+                        null
+                    }
+                }
+
+                // التصفية والترتيب المحلي الصارم داخل الـ Cache Layer
+                val filtered = if (warehouseId != null) {
+                    allEntries.filter { it.warehouseId == warehouseId }
+                } else {
+                    allEntries
+                }
+
+                val sortedEntries = filtered
+                    .sortedByDescending { it.timestamp.time }
+                    .take(limit)
+
+                trySend(sortedEntries)
+            }
+        }
+
+        awaitClose { listenerRegistration.remove() }
+    }
+
     suspend fun getEntriesPaginated(
         variantId: String,
         warehouseId: String? = null,
