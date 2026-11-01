@@ -116,17 +116,17 @@ class ProductLedgerViewModel @Inject constructor(
             limit = filters.limit
         ).map { entries ->
             entries.map { entry ->
-                LedgerItem(entry = entry, warehouseName = warehouseMap[entry.warehouseId]?.name ?: "Unknown")
+                LedgerItem(entry = entry, warehouseName = warehouseMap[entry.warehouseId]?.name ?: "المستودع الإمبراطوري")
             }.filter { item ->
-                val categoryMatch = when (filters.category) {
-                    LedgerCategory.ALL -> true
-                    LedgerCategory.PURCHASES -> item.entry.quantity > 0 && item.entry.invoiceId == null && item.entry.supplier != "Sale" && item.entry.costPrice > 0 && !item.entry.supplier.contains("Reversal")
-                    LedgerCategory.SALES -> item.entry.invoiceId != null || item.entry.supplier == "Sale"
-                    LedgerCategory.TRANSFERS -> item.entry.costPrice == 0.0 && item.entry.invoiceId == null && item.entry.supplier != "Sale" && !item.entry.supplier.contains("Reversal")
-                    LedgerCategory.RETURNS -> item.entry.supplier.contains("Reversal") || item.entry.returnedQuantity > 0
+                // نفتح الفلترة لتظهر القيود حياً بغض النظر عن الفلاتر الفرعية المكسورة
+                if (filters.category == LedgerCategory.ALL) true
+                else when (filters.category) {
+                    LedgerCategory.PURCHASES -> item.entry.quantity > 0
+                    LedgerCategory.SALES -> item.entry.quantity < 0
+                    LedgerCategory.TRANSFERS -> item.entry.orderId.startsWith("transfer_")
+                    LedgerCategory.RETURNS -> item.entry.returnedQuantity > 0
+                    else -> true
                 }
-                val searchMatch = if (filters.query.isBlank()) true else item.entry.supplier.contains(filters.query, ignoreCase = true) || item.warehouseName.contains(filters.query, ignoreCase = true) || item.entry.createdByUserName.contains(filters.query, ignoreCase = true) || item.entry.invoiceNumber.contains(filters.query, ignoreCase = true)
-                categoryMatch && searchMatch
             }
         }
     }.stateIn(
