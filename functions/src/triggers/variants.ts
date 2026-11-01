@@ -6,9 +6,10 @@ import { FieldValue } from "firebase-admin/firestore";
 
 /**
  * onVariantWritten Trigger:
- * Strict Idempotency & Cascade Prevention:
- * Low-stock checking and alert mutations are consolidated centrally in onStockEntryCreated.
- * This trigger only syncs inventoryVersion when variants are archived, discontinued, or deleted.
+ * Centralized Alert & Idempotency Management:
+ * Verifies stock changes against minQuantities across warehouses.
+ * Writes system_alerts/low_stock_${variantId} if any warehouse stock is at or below its minQuantity.
+ * Deletes the alert document only when stock levels across all warehouses are safe.
  */
 export const onVariantWritten = onDocumentWritten(
   "product_variants/{variantId}",
@@ -31,32 +32,184 @@ export const onVariantWritten = onDocumentWritten(
         console.log(`[IdempotencyGuard] Variant ${event.params.variantId} update had no domain changes. Skipping execution.`);
         return;
       }
-
-      // If only currentStock or weightedAverageCost changed (e.g. from stock entry writes),
-      // low-stock alerts are handled atomically in onStockEntryCreated to prevent trigger cascades!
-      if (statusUnchanged && minQtyUnchanged && priceUnchanged) {
-        console.log(`[CascadeGuard] Variant ${event.params.variantId} stock update handled centrally. Skipping duplicate alert generation.`);
-        return;
-      }
     }
 
     console.time("onVariantWritten_totalTime");
     const db = admin.firestore();
+    const variantId = event.params.variantId;
     const batch = db.batch();
     const now = FieldValue.serverTimestamp();
 
-    batch.set(db.doc("summaries/sync_registry"), {
-      inventoryVersion: FieldValue.increment(1),
-      lastModified: now,
-    }, { merge: true });
+    if (!afterSnap.exists) {
+      // Document deleted - cleanup alerts and update sync
+      batch.delete(db.doc(`system_alerts/low_stock_${variantId}`));
+      batch.set(db.doc("summaries/sync_registry"), {
+        inventoryVersion: FieldValue.increment(1),
+        alertsVersion: FieldValue.increment(1),
+        lastModified: now,
+      }, { merge: true });
 
-    batch.set(db.doc("summaries/dashboard_hub"), {
-      "syncRegistry.inventoryVersion": FieldValue.increment(1),
-      "syncRegistry.lastModified": now,
-      lastUpdated: now,
-    }, { merge: true });
+      batch.set(db.doc("summaries/dashboard_hub"), {
+        "syncRegistry.inventoryVersion": FieldValue.increment(1),
+        "syncRegistry.alertsVersion": FieldValue.increment(1),
+        "syncRegistry.lastModified": now,
+        lastUpdated: now,
+      }, { merge: true });
 
-    await batch.commit();
+      await batch.commit();
+      console.timeEnd("onVariantWritten_totalTime");
+      return;
+    }
+
+    const variant = afterSnap.data();
+
+    if (!variant || variant.archived || variant.isDiscontinued) {
+      // If archived or discontinued, remove alert
+      batch.delete(db.doc(`system_alerts/low_stock_${variantId}`));
+      batch.set(db.doc("summaries/sync_registry"), {
+        inventoryVersion: FieldValue.increment(1),
+        alertsVersion: FieldValue.increment(1),
+        lastModified: now,
+      }, { merge: true });
+
+      batch.set(db.doc("summaries/dashboard_hub"), {
+        "syncRegistry.inventoryVersion": FieldValue.increment(1),
+        "syncRegistry.alertsVersion": FieldValue.increment(1),
+        "syncRegistry.lastModified": now,
+        lastUpdated: now,
+      }, { merge: true });
+
+      await batch.commit();
+      console.timeEnd("onVariantWritten_totalTime");
+      return;
+    }
+
+    try {
+      const [warehousesSnap, productSnap, existingAlertSnap] = await Promise.all([
+        db.collection("warehouses").get(),
+        variant.productId ? db.collection("products").doc(variant.productId).get() : Promise.resolve(null),
+        db.doc(`system_alerts/low_stock_${variantId}`).get(),
+      ]);
+
+      const warehouseDocs = warehousesSnap.docs;
+
+      let pName = variant.productName || "";
+      if (!pName && productSnap && productSnap.exists) {
+        pName = productSnap.data()?.name || "منتج";
+      }
+      if (!pName) pName = "منتج";
+
+      const currentStockMap = (variant.currentStock || {}) as Record<string, any>;
+      const minQuantitiesMap = (variant.minQuantities || {}) as Record<string, any>;
+      const defaultMinQty = Number(variant.minQuantity || 0);
+      const capacity = Number(variant.capacity || 0);
+
+      const warehousesDetailsMap: Record<string, { currentStock: number; threshold: number; warehouseName: string }> = {};
+      const lowStockDetailsList: string[] = [];
+      let primaryWarehouseId = "";
+      let primaryWarehouseName = "";
+
+      warehouseDocs.forEach((whDoc) => {
+        const whId = whDoc.id;
+        const whName = whDoc.data()?.name || "مخزن";
+        const rawStock = currentStockMap[whId];
+        const currentQty = typeof rawStock === "number" ? rawStock : Number(rawStock || 0);
+        const rawMin = minQuantitiesMap[whId];
+        const threshold = typeof rawMin === "number" ? rawMin : (rawMin ? Number(rawMin) : defaultMinQty);
+
+        if (threshold > 0 && currentQty <= threshold) {
+          warehousesDetailsMap[whId] = {
+            currentStock: currentQty,
+            threshold: threshold,
+            warehouseName: whName,
+          };
+          lowStockDetailsList.push(`${whName}: الحالي ${currentQty} من ${threshold}`);
+          if (!primaryWarehouseId) {
+            primaryWarehouseId = whId;
+            primaryWarehouseName = whName;
+          }
+        }
+      });
+
+      const unifiedAlertRef = db.collection("system_alerts").doc(`low_stock_${variantId}`);
+      let alertDelta = 0;
+
+      if (lowStockDetailsList.length > 0) {
+        const specSuffix = variant.specification ? ` | ${variant.specification}` : "";
+        batch.set(
+          unifiedAlertRef,
+          {
+            id: unifiedAlertRef.id,
+            type: "low_stock",
+            title: `مخزون منخفض: ${pName}`,
+            message: `${capacity}A${specSuffix} - ${lowStockDetailsList.join(" | ")}`,
+            relatedId: variantId,
+            warehouseId: primaryWarehouseId,
+            warehouseName: primaryWarehouseName,
+            resolved: false,
+            timestamp: now,
+            data: {
+              capacity: capacity,
+              specification: variant.specification || "",
+              warehouseId: primaryWarehouseId,
+              warehouseName: primaryWarehouseName,
+              currentStock: Object.values(warehousesDetailsMap)[0]?.currentStock || 0,
+              threshold: Object.values(warehousesDetailsMap)[0]?.threshold || defaultMinQty,
+              warehousesDetails: warehousesDetailsMap,
+            },
+          },
+          { merge: true }
+        );
+
+        if (!existingAlertSnap.exists || existingAlertSnap.data()?.resolved === true) {
+          alertDelta = 1;
+        }
+
+        // Clean up legacy individual warehouse alert documents
+        warehouseDocs.forEach((whDoc) => {
+          batch.delete(db.collection("system_alerts").doc(`low_stock_${variantId}_${whDoc.id}`));
+        });
+      } else if (existingAlertSnap.exists) {
+        // Stock safely exceeds threshold across all warehouses -> delete alert
+        batch.delete(unifiedAlertRef);
+        if (existingAlertSnap.data()?.resolved !== true) {
+          alertDelta = -1;
+        }
+        warehouseDocs.forEach((whDoc) => {
+          batch.delete(db.collection("system_alerts").doc(`low_stock_${variantId}_${whDoc.id}`));
+        });
+      }
+
+      batch.set(
+        db.doc("summaries/sync_registry"),
+        {
+          inventoryVersion: FieldValue.increment(1),
+          alertsVersion: alertDelta !== 0 ? FieldValue.increment(1) : FieldValue.increment(0),
+          last_alert_update: now,
+          lastModified: now,
+        },
+        { merge: true }
+      );
+
+      const hubUpdates: Record<string, any> = {
+        "syncRegistry.inventoryVersion": FieldValue.increment(1),
+        "syncRegistry.last_alert_update": now,
+        "syncRegistry.lastModified": now,
+        lastUpdated: now,
+      };
+
+      if (alertDelta !== 0) {
+        hubUpdates["scrapAndAlertsSummary.activeLowStockAlertsCount"] = FieldValue.increment(alertDelta);
+        hubUpdates["syncRegistry.alertsVersion"] = FieldValue.increment(1);
+      }
+
+      batch.set(db.doc("summaries/dashboard_hub"), hubUpdates, { merge: true });
+
+      await batch.commit();
+    } catch (error) {
+      console.error("Error in onVariantWritten consolidated batch commit:", error);
+    }
+
     console.timeEnd("onVariantWritten_totalTime");
   }
 );

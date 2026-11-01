@@ -68,17 +68,7 @@ class DashboardViewModel @Inject constructor(
 
     private val _warehouses = MutableStateFlow<List<Warehouse>>(emptyList())
 
-    private val activeAlertsFlow: Flow<List<SystemAlert>> = callbackFlow {
-        val listener = firestore.collection(SystemAlert.COLLECTION_NAME)
-            .whereEqualTo("resolved", false)
-            .limit(20)
-            .addSnapshotListener { snap, e ->
-                if (e != null) return@addSnapshotListener
-                val alerts = snap?.documents?.mapNotNull { it.toObject(SystemAlert::class.java)?.copy(id = it.id) } ?: emptyList()
-                trySend(alerts)
-            }
-        awaitClose { listener.remove() }
-    }
+    private val activeAlertsFlow: Flow<List<SystemAlert>> = systemAlertRepository.listenToSystemAlerts(limit = 20)
 
     private val upcomingBillsFlow: Flow<List<Bill>> = callbackFlow {
         val listener = firestore.collection(Bill.COLLECTION_NAME)

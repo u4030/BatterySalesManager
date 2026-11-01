@@ -1,10 +1,10 @@
 package com.batterysales.data.repositories
 
 import com.batterysales.data.models.SystemAlert
-import com.google.firebase.firestore.DocumentSnapshot
-import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.Query
-import com.google.firebase.firestore.Source
+import com.google.firebase.firestore.*
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -13,6 +13,32 @@ import javax.inject.Singleton
 class SystemAlertRepository @Inject constructor(
     private val firestore: FirebaseFirestore
 ) {
+
+    /**
+     * Cache-First snapshot listener for active system alerts.
+     * Uses MetadataChanges.INCLUDE to ensure immediate emission from local cache,
+     * protecting against quota bleeding during websocket disconnects and reconnects.
+     */
+    fun listenToSystemAlerts(limit: Long = 20): Flow<List<SystemAlert>> = callbackFlow {
+        val query = firestore.collection(SystemAlert.COLLECTION_NAME)
+            .whereEqualTo("resolved", false)
+            .limit(limit)
+
+        val listener = query.addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
+            if (error != null) {
+                close(error)
+                return@addSnapshotListener
+            }
+
+            snapshot?.let {
+                val alerts = it.documents.mapNotNull { doc ->
+                    doc.toObject(SystemAlert::class.java)?.copy(id = doc.id)
+                }
+                trySend(alerts)
+            }
+        }
+        awaitClose { listener.remove() }
+    }
 
     suspend fun getAlertsPaginated(
         warehouseId: String? = null,
