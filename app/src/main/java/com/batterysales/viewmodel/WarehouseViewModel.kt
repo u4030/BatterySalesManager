@@ -31,6 +31,49 @@ class WarehouseViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(WarehouseUiState())
     val uiState: StateFlow<WarehouseUiState> = _uiState.asStateFlow()
 
+    val selectedWarehouseIdFlow: StateFlow<String> = _uiState
+        .map { it.selectedWarehouseId }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = ""
+        )
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val warehouseInventoryItems: StateFlow<List<com.batterysales.data.models.InventorySummaryItem>> = selectedWarehouseIdFlow
+        .flatMapLatest { whId ->
+            if (whId.isBlank()) flowOf(emptyList())
+            else {
+                // الاستماع الحركي الصارم (Listen-Only) لمجموعة الأصناف الحية مباشرة من الكاش
+                variantRepository.getVariantsFlow().map { variants ->
+                    variants.filter { !it.archived }.mapNotNull { variant ->
+                        // جلب الكمية المتاحة في هذا المستودع المختار يدوياً من خريطة الـ currentStock
+                        val stockInWh = (variant.currentStock?.get(whId) as? Number)?.toInt() ?: 0
+
+                        // حارس العرض: لا تبني ولا تعرض السطر إلا إذا كانت هناك كمية حقيقية داخل المستودع المختار
+                        if (stockInWh <= 0) null
+                        else {
+                            com.batterysales.data.models.InventorySummaryItem(
+                                variantId = variant.id,
+                                productId = variant.productId,
+                                productName = (variant.productName ?: "").ifBlank { "بطارية عالمية إمبراطورية" },
+                                capacity = variant.capacity,
+                                specification = variant.specification,
+                                barcode = variant.barcode,
+                                currentStock = stockInWh, // الـ 5 حبات الحية الحقيقية المسجلة يدوياً!
+                                weightedAverageCost = variant.weightedAverageCost,
+                                sellingPrice = variant.sellingPrice
+                            )
+                        }
+                    }
+                }
+            }
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
     private var cachedSummary: InventorySummary? = null
 
     init {
@@ -83,7 +126,7 @@ class WarehouseViewModel @Inject constructor(
             .map { variant ->
                 // جلب الكمية المتوفرة في هذا المستودع تحديداً
                 val stockInWh = (variant.currentStock?.get(targetWhId) as? Number)?.toInt() ?: 0
-                val prodName = variant.productName?.ifBlank { "بطارية عالمية" } ?: "بطارية عالمية"
+                val prodName = variant.productName?.ifBlank { "بطارية عالمية إمبراطورية" } ?: "بطارية عالمية إمبراطورية"
 
                 InventoryReportItem(
                     product = Product(id = variant.productId, name = prodName),
