@@ -164,6 +164,8 @@ class StockTransferViewModel @Inject constructor(
     }
 
     fun onTransferStock() {
+        if (_uiState.value.isSubmitting) return
+        _uiState.update { it.copy(isSubmitting = true) }
         viewModelScope.launch {
             val state = _uiState.value
             val variant = state.selectedVariant
@@ -172,22 +174,21 @@ class StockTransferViewModel @Inject constructor(
             val qty = state.quantity.toIntOrNull()
 
             if (variant == null || source == null || dest == null || qty == null || qty <= 0) {
-                _uiState.update { it.copy(errorMessage = "الرجاء ملء جميع الحقول بكمية صحيحة") }
+                _uiState.update { it.copy(errorMessage = "الرجاء ملء جميع الحقول بكمية صحيحة", isSubmitting = false) }
                 return@launch
             }
 
             if (source.id == dest.id) {
-                _uiState.update { it.copy(errorMessage = "لا يمكن نقل المخزون إلى نفس المستودع") }
+                _uiState.update { it.copy(errorMessage = "لا يمكن نقل المخزون إلى نفس المستودع", isSubmitting = false) }
                 return@launch
             }
 
             val available = state.stockLevels[Pair(variant.id, source.id)] ?: 0
             if (qty > available) {
-                _uiState.update { it.copy(errorMessage = "الكمية المطلوبة أكبر من المتوفر في المستودع ($available)") }
+                _uiState.update { it.copy(errorMessage = "الكمية المطلوبة أكبر من المتوفر في المستودع ($available)", isSubmitting = false) }
                 return@launch
             }
 
-            _uiState.update { it.copy(isSubmitting = true) }
             try {
                 if (!source.isActive || !dest.isActive) {
                     _uiState.update { it.copy(errorMessage = "عذراً، أحد المستودعات المختارة متوقف حالياً.", isSubmitting = false) }

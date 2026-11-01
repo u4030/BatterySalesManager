@@ -248,15 +248,27 @@ fun StockTransferScreen(
                 item {
                     Button(
                         onClick = {
-                            keyboardController.hideKeyboard()
-                            viewModel.onTransferStock()
+                            if (!uiState.isSubmitting) {
+                                keyboardController.hideKeyboard()
+                                viewModel.onTransferStock()
+                            }
                         },
                         modifier = Modifier.fillMaxWidth().height(56.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = accentColor),
                         shape = RoundedCornerShape(16.dp),
                         enabled = uiState.selectedVariant != null && uiState.sourceWarehouse != null && uiState.destinationWarehouse != null && uiState.quantity.isNotBlank() && !uiState.isSubmitting
                     ) {
-                        Text("بدء عملية الترحيل", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        if (uiState.isSubmitting) {
+                            CircularProgressIndicator(
+                                color = Color.White,
+                                strokeWidth = 3.dp,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("جاري الترحيل...", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        } else {
+                            Text("بدء عملية الترحيل", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        }
                     }
                 }
                 
