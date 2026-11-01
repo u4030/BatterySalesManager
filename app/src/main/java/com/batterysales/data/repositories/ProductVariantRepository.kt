@@ -91,7 +91,27 @@ class ProductVariantRepository @Inject constructor(
         awaitClose { listenerRegistration.remove() }
     }
 
-    @Deprecated("Use getVariantsForProductFlow or VariantPagingSource to avoid broad listens")
+    /**
+     * Pure Reactive Flow: Listens live to product_variants collection from CACHE/MetadataChanges.INCLUDE
+     */
+    fun getVariantsFlow(): Flow<List<ProductVariant>> = callbackFlow {
+        val listener = firestore.collection(ProductVariant.COLLECTION_NAME)
+            .addSnapshotListener(com.google.firebase.firestore.MetadataChanges.INCLUDE) { snapshot, error ->
+                if (error != null) {
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    val variants = snapshot.documents.mapNotNull { doc ->
+                        doc.toObject(ProductVariant::class.java)?.copy(id = doc.id)
+                    }
+                    trySend(variants)
+                }
+            }
+        awaitClose { listener.remove() }
+    }
+
+    @Deprecated("Use getVariantsForProductFlow or getVariantsFlow")
     fun getAllVariantsFlow(limit: Long = 100): Flow<List<ProductVariant>> = callbackFlow {
         val snapshot = try {
             firestore.collection(ProductVariant.COLLECTION_NAME)
