@@ -2,9 +2,11 @@ package com.batterysales.data.repositories
 
 import com.batterysales.data.models.SystemAlert
 import com.google.firebase.firestore.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -15,24 +17,22 @@ class SystemAlertRepository @Inject constructor(
 ) {
 
     /**
-     * Clean snapshot listener for active system alerts.
-     * Enforces Cache-First filtering using MetadataChanges.INCLUDE and rejects
-     * false updates while hasPendingWrites() is active to prevent quota bleeding
-     * during mobile websocket reconnections.
+     * Clean real-time snapshot listener for active system alerts.
+     * Allows valid Firestore document snapshots to immediately map to model objects
+     * on Dispatchers.IO without complex cache locks or blocking channel states.
      */
-    fun listenToSystemAlerts(limit: Long = 20): Flow<List<SystemAlert>> = callbackFlow {
+    fun getSystemAlertsFlowClean(): Flow<List<SystemAlert>> = callbackFlow {
         val query = firestore.collection(SystemAlert.COLLECTION_NAME)
             .whereEqualTo("resolved", false)
-            .limit(limit)
 
-        val listener = query.addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
+        val listener = query.addSnapshotListener { snapshot, error ->
             if (error != null) {
                 close(error)
                 return@addSnapshotListener
             }
 
-            if (snapshot != null && !snapshot.metadata.hasPendingWrites()) {
-                val alerts = snapshot.documents.mapNotNull { doc ->
+            snapshot?.let { snap ->
+                val alerts = snap.documents.mapNotNull { doc ->
                     try {
                         doc.toObject(SystemAlert::class.java)?.copy(id = doc.id)
                     } catch (e: Exception) {
@@ -43,7 +43,9 @@ class SystemAlertRepository @Inject constructor(
             }
         }
         awaitClose { listener.remove() }
-    }
+    }.flowOn(Dispatchers.IO)
+
+    fun listenToSystemAlerts(limit: Long = 20): Flow<List<SystemAlert>> = getSystemAlertsFlowClean()
 
     suspend fun getAlertsPaginated(
         warehouseId: String? = null,
