@@ -142,10 +142,22 @@ class DashboardViewModel @Inject constructor(
         }
 
         val lowStockItems = alerts.filter { isAdmin || it.warehouseId == userWarehouseId }.map { alert ->
-            val capacity = (alert.data["capacity"] as? Number)?.toInt() ?: 0
+            val capacity = when (val cap = alert.data["capacity"]) {
+                is Number -> cap.toInt()
+                is String -> cap.toIntOrNull() ?: 0
+                else -> 0
+            }
             val specification = (alert.data["specification"] as? String) ?: ""
-            val currentQty = (alert.data["currentStock"] as? Number)?.toInt() ?: 0
-            val minQty = (alert.data["threshold"] as? Number)?.toInt() ?: 0
+            val currentQty = when (val stock = alert.data["currentStock"]) {
+                is Number -> stock.toInt()
+                is String -> stock.toIntOrNull() ?: 0
+                else -> 0
+            }
+            val minQty = when (val threshold = alert.data["threshold"]) {
+                is Number -> threshold.toInt()
+                is String -> threshold.toIntOrNull() ?: 0
+                else -> 0
+            }
 
             val displayName = if (alert.title.startsWith("مخزون منخفض: ")) {
                 alert.title.removePrefix("مخزون منخفض: ")
