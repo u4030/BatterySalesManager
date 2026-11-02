@@ -34,7 +34,8 @@ export const onStockEntryCreated = onDocumentCreated(
     const whSummaryRef = db.doc(`summaries/inventory_wh_${warehouseId}`);
     const globalSummaryRef = db.doc("summaries/inventory_global");
     const warehouseRef = db.doc(`warehouses/${warehouseId}`);
-    const alertId = `low_stock_${productVariantId}`;
+    // 🛠️ المعايرة الدستورية: ربط التنبيه بالـ variant والـ warehouse معاً من جوليس
+    const alertId = `low_stock_${productVariantId}_${warehouseId}`;
     const alertRef = db.collection("system_alerts").doc(alertId);
     const syncRegistryRef = db.doc("summaries/sync_registry");
     const dashboardHubRef = db.doc("summaries/dashboard_hub");

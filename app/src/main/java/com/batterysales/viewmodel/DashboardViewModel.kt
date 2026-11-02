@@ -267,7 +267,7 @@ class DashboardViewModel @Inject constructor(
 
             allNotifications.add(
                 AppNotification(
-                    "low_stock_${item.variantId}_${item.warehouseId.ifBlank { item.warehouseName }}",
+                    "low_stock_${item.variantId}_${item.warehouseId}",
                     "مخزون منخفض: ${item.productName}",
                     message,
                     NotificationType.LOW_STOCK,
