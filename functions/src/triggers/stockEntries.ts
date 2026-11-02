@@ -145,8 +145,8 @@ export const onStockEntryCreated = onDocumentCreated(
           const alertPayload = {
             id: alertId,
             type: "low_stock",
-            title: "مخزون منخفض",
-            message: `الصنف شارف على النفاد في المستودع`,
+            title: "مخزون منخفض حرج",
+            message: `الصنف شارف على النفاد في دفاتر المستودع`,
             variantId: productVariantId,
             warehouseId: warehouseId,
             resolved: false,
