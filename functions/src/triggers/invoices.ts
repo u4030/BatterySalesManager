@@ -33,7 +33,9 @@ export const onInvoiceCreated = onDocumentCreated(
 
     const warehouseId = invoice.warehouseId || "";
     const items = (invoice.items || []) as Array<{ productId: string; quantity: number; total: number }>;
+    const totalAmount = Number(invoice.totalAmount || invoice.finalAmount || 0);
     const paidAmount = Number(invoice.paidAmount || 0);
+    const initialDebt = Math.max(0, totalAmount - paidAmount);
     const paymentMethod = invoice.paymentMethod || "cash";
     const scrapAmps = Number(invoice.oldBatteriesTotalAmperes || 0);
     const scrapVal = Number(invoice.oldBatteriesValue || 0);
@@ -88,12 +90,32 @@ export const onInvoiceCreated = onDocumentCreated(
     // 2. Commit batch
     await batch.commit();
 
-    // 3. Update Dashboard Hub delta
+    // 3. Update Dashboard Hub delta with atomic debt receivables
+    const subWarehouseDeltas: Record<string, number> = {};
+    if (warehouseId) {
+      subWarehouseDeltas[warehouseId] = !isBank ? paidAmount : 0;
+    }
+
+    if (initialDebt > 0 && warehouseId) {
+      await db.doc(`summaries/financial_status`).set({
+        warehouseBalances: {
+          [warehouseId]: {
+            pendingCollection: FieldValue.increment(initialDebt),
+            totalReceivables: FieldValue.increment(initialDebt),
+          }
+        },
+        totalCustomerDebt: FieldValue.increment(initialDebt),
+        totalReceivables: FieldValue.increment(initialDebt),
+        lastUpdated: now,
+      }, { merge: true });
+    }
+
     await applyDashboardHubDelta({
       cashDelta: !isBank ? paidAmount : 0,
       bankDelta: isBank ? paidAmount : 0,
       scrapAmperesDelta: scrapAmps,
       scrapValueDelta: scrapVal,
+      subWarehouseDeltas: Object.keys(subWarehouseDeltas).length > 0 ? subWarehouseDeltas : undefined,
       updatedDomains: ["inventory", "financial"],
     });
 

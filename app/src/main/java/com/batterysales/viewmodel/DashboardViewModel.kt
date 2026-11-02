@@ -135,6 +135,7 @@ class DashboardViewModel @Inject constructor(
     val uiState: StateFlow<DashboardUiState> = combine(
         userRepository.getCurrentUserFlow(),
         summaryRepository.getDashboardHubFlow(),
+        summaryRepository.getFinancialStatusFlow(),
         _warehouses,
         lowStockAlertsFlow,
         upcomingBillsFlow,
@@ -142,24 +143,27 @@ class DashboardViewModel @Inject constructor(
     ) { args: Array<Any?> ->
         val user = args[0] as? User
         val hub = args[1] as? DashboardHub ?: DashboardHub()
+        val financialStatus = args[2] as? FinancialStatus ?: FinancialStatus()
         @Suppress("UNCHECKED_CAST")
-        val warehouses = args[2] as? List<Warehouse> ?: emptyList()
+        val warehouses = args[3] as? List<Warehouse> ?: emptyList()
         @Suppress("UNCHECKED_CAST")
-        val alerts = args[3] as? List<SystemAlert> ?: emptyList()
+        val alerts = args[4] as? List<SystemAlert> ?: emptyList()
         @Suppress("UNCHECKED_CAST")
-        val bills = args[4] as? List<Bill> ?: emptyList()
-        val pendingCount = args[5] as? Int ?: 0
+        val bills = args[5] as? List<Bill> ?: emptyList()
+        val pendingCount = args[6] as? Int ?: 0
 
         if (user == null) return@combine DashboardUiState(isLoading = false)
 
         val isAdmin = user.role == "admin"
         val userWarehouseId = user.warehouseId
 
+        val totalCustomerDebt = financialStatus.warehouseBalances.values.sumOf { it.pendingCollection }
+
         val systemStats = SystemStats(
             totalCashBalance = hub.financialStatus.totalCashBalance,
             totalBankBalance = hub.bankSummary.globalBankBalance,
             totalSupplierDebt = if (isAdmin) hub.supplierSummary.totalSupplierDebt else 0.0,
-            totalCustomerDebt = 0.0,
+            totalCustomerDebt = totalCustomerDebt,
             totalUnpaidBills = hub.bankSummary.totalUnpaidBills,
             totalUnpaidChecks = hub.bankSummary.totalUnpaidChecks,
             totalInventoryQuantity = hub.inventorySummary.totalItemsCount,
@@ -170,12 +174,17 @@ class DashboardViewModel @Inject constructor(
         val whStats = if (isAdmin) {
             warehouses.map { wh ->
                 val bal = hub.financialStatus.subWarehouseBalances[wh.id] ?: 0.0
-                WarehouseStats(wh.id, wh.name, bal, 0)
+                val whFinancial = financialStatus.warehouseBalances[wh.id]
+                val todayColl = whFinancial?.todayCollection ?: 0.0
+                val todayCount = whFinancial?.todayCollectionCount ?: 0
+                WarehouseStats(wh.id, wh.name, todayColl, todayCount)
             }
         } else {
             val targetWhId = userWarehouseId ?: ""
-            val bal = hub.financialStatus.subWarehouseBalances[targetWhId] ?: 0.0
-            listOf(WarehouseStats(targetWhId, warehouses.find { it.id == targetWhId }?.name ?: "مخزن", bal, 0))
+            val whFinancial = financialStatus.warehouseBalances[targetWhId]
+            val todayColl = whFinancial?.todayCollection ?: 0.0
+            val todayCount = whFinancial?.todayCollectionCount ?: 0
+            listOf(WarehouseStats(targetWhId, warehouses.find { it.id == targetWhId }?.name ?: "مخزن", todayColl, todayCount))
         }
 
         val lowStockItems = alerts.filter { isAdmin || it.warehouseId == userWarehouseId }.map { alert ->
