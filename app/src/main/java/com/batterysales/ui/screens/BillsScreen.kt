@@ -33,7 +33,9 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavHostController
 import com.batterysales.data.models.Bill
 import com.batterysales.data.models.BillStatus
+import androidx.compose.ui.platform.LocalContext
 import com.batterysales.data.models.BillType
+import com.batterysales.utils.NetworkHelper
 import com.batterysales.viewmodel.BillViewModel
 import java.text.SimpleDateFormat
 import java.util.*
@@ -53,8 +55,8 @@ fun BillsScreen(
     val warehouses by viewModel.warehouses.collectAsState()
     val supplierOverpayments by viewModel.supplierOverpayments.collectAsState()
     val lifecycleOwner = LocalLifecycleOwner.current
-
-    val networkHelper = (androidx.compose.ui.platform.LocalContext.current.applicationContext as com.batterysales.BatterySalesApp).networkHelper 
+    val context = LocalContext.current
+    val networkHelper = remember { NetworkHelper(context) }
     val isOnline by networkHelper.isOnlineFlow.collectAsState(initial = true)
 
     DisposableEffect(lifecycleOwner) {
@@ -661,7 +663,8 @@ fun PaymentDialog(
         onDismiss = onDismiss,
         title = "تسديد مبلغ",
         confirmButton = {
-            val isOnline = (androidx.compose.ui.platform.LocalContext.current.applicationContext as? com.batterysales.BatterySalesApp)?.networkHelper?.isNetworkConnected() ?: true
+            val dialogContext = LocalContext.current
+            val isOnline = remember(dialogContext) { NetworkHelper(dialogContext) }.isNetworkConnected()
             Button(
                 onClick = {
                     val amt = amount.toDoubleOrNull() ?: 0.0
@@ -718,7 +721,8 @@ fun AddBillDialog(
         onDismiss = onDismiss,
         title = "إضافة كمبيالة/شيك جديد",
         confirmButton = {
-            val isOnline = (androidx.compose.ui.platform.LocalContext.current.applicationContext as? com.batterysales.BatterySalesApp)?.networkHelper?.isNetworkConnected() ?: true
+            val dialogContext = LocalContext.current
+            val isOnline = remember(dialogContext) { NetworkHelper(dialogContext) }.isNetworkConnected()
             Button(
                 onClick = {
                     val amt = amount.toDoubleOrNull() ?: 0.0

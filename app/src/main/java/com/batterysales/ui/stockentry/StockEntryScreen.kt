@@ -30,6 +30,8 @@ import com.batterysales.ui.components.HeaderIconButton
 import com.batterysales.ui.components.CustomKeyboardTextField
 import com.batterysales.ui.components.KeyboardLanguage
 import com.batterysales.ui.components.ConnectivityBanner
+import com.batterysales.utils.NetworkHelper
+import androidx.compose.ui.platform.LocalContext
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -39,7 +41,8 @@ fun StockEntryScreen(
     navController: NavController,
     viewModel: StockEntryViewModel = hiltViewModel()
 ) {
-    val networkHelper = (androidx.compose.ui.platform.LocalContext.current.applicationContext as com.batterysales.BatterySalesApp).networkHelper 
+    val context = LocalContext.current
+    val networkHelper = remember { NetworkHelper(context) }
     val isOnline by networkHelper.isOnlineFlow.collectAsState(initial = true)
 
     val uiState by viewModel.uiState.collectAsState()
@@ -459,7 +462,8 @@ fun StockEntryContent(
             }
         }
 
-        val networkHelper = (androidx.compose.ui.platform.LocalContext.current.applicationContext as com.batterysales.BatterySalesApp).networkHelper 
+        val context = LocalContext.current
+        val networkHelper = remember { NetworkHelper(context) }
         val isOnlineLocal by networkHelper.isOnlineFlow.collectAsState(initial = true)
 
         if (uiState.isEditMode && uiState.isPendingStatus && uiState.isAdmin) {

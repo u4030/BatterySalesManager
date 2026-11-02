@@ -29,7 +29,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavHostController
 import com.batterysales.data.models.BankTransaction
+import androidx.compose.ui.platform.LocalContext
 import com.batterysales.data.models.BankTransactionType
+import com.batterysales.utils.NetworkHelper
 import com.batterysales.viewmodel.BankViewModel
 import java.text.SimpleDateFormat
 import java.util.*
@@ -48,8 +50,8 @@ fun BankScreen(
     val keyboardController = com.batterysales.ui.components.LocalCustomKeyboardController.current
     val pagingItems = viewModel.transactions.collectAsLazyPagingItems()
     val lifecycleOwner = LocalLifecycleOwner.current
-
-    val networkHelper = (androidx.compose.ui.platform.LocalContext.current.applicationContext as com.batterysales.BatterySalesApp).networkHelper 
+    val context = LocalContext.current
+    val networkHelper = remember { NetworkHelper(context) }
     val isOnline by networkHelper.isOnlineFlow.collectAsState(initial = true)
 
     DisposableEffect(lifecycleOwner) {
@@ -476,7 +478,8 @@ fun AddBankTransactionDialog(
         onDismiss = onDismiss,
         title = if (type == com.batterysales.data.models.BankTransactionType.DEPOSIT) "إيداع في البنك" else "سحب من البنك",
         confirmButton = {
-            val isOnline = (androidx.compose.ui.platform.LocalContext.current.applicationContext as? com.batterysales.BatterySalesApp)?.networkHelper?.isNetworkConnected() ?: true
+            val dialogContext = LocalContext.current
+            val isOnline = remember(dialogContext) { NetworkHelper(dialogContext) }.isNetworkConnected()
             Button(
                 onClick = {
                     val amt = amount.toDoubleOrNull() ?: 0.0

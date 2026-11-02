@@ -31,7 +31,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavHostController
 import com.batterysales.data.models.Transaction
+import androidx.compose.ui.platform.LocalContext
 import com.batterysales.data.models.TransactionType
+import com.batterysales.utils.NetworkHelper
 import com.batterysales.viewmodel.AccountingViewModel
 import java.text.SimpleDateFormat
 import java.util.*
@@ -50,8 +52,8 @@ fun AccountingScreen(
     val keyboardController = com.batterysales.ui.components.LocalCustomKeyboardController.current
     val pagingItems = viewModel.transactions.collectAsLazyPagingItems()
     val lifecycleOwner = LocalLifecycleOwner.current
-    
-    val networkHelper = (androidx.compose.ui.platform.LocalContext.current.applicationContext as com.batterysales.BatterySalesApp).networkHelper 
+    val context = LocalContext.current
+    val networkHelper = remember { NetworkHelper(context) }
     val isOnline by networkHelper.isOnlineFlow.collectAsState(initial = true)
 
     DisposableEffect(lifecycleOwner) {
@@ -720,7 +722,8 @@ fun AddTransactionDialog(
         onDismiss = onDismiss,
         title = if (type == TransactionType.INCOME) "إيداع مبلغ" else "سحب مبلغ / مصروف",
         confirmButton = {
-            val isOnline = (androidx.compose.ui.platform.LocalContext.current.applicationContext as? com.batterysales.BatterySalesApp)?.networkHelper?.isNetworkConnected() ?: true
+            val dialogContext = LocalContext.current
+            val isOnline = remember(dialogContext) { NetworkHelper(dialogContext) }.isNetworkConnected()
             Button(
                 onClick = {
                     val amt = amount.toDoubleOrNull() ?: 0.0
