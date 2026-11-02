@@ -17,35 +17,35 @@ class SystemAlertRepository @Inject constructor(
 ) {
 
     /**
-     * Clean real-time snapshot listener for active system alerts.
-     * Allows valid Firestore document snapshots to immediately map to model objects
-     * on Dispatchers.IO without complex cache locks or blocking channel states.
+     * Continuous snapshot listener for system alerts without Firestore server-side queries.
+     * Prevents compound index drops in the Firebase emulator and filters active unresolved alerts locally.
      */
-    fun getSystemAlertsFlowClean(): Flow<List<SystemAlert>> = callbackFlow {
-        val query = firestore.collection(SystemAlert.COLLECTION_NAME)
-            .whereEqualTo("resolved", false)
-
-        val listener = query.addSnapshotListener { snapshot, error ->
-            if (error != null) {
-                close(error)
-                return@addSnapshotListener
-            }
-
-            snapshot?.let { snap ->
-                val alerts = snap.documents.mapNotNull { doc ->
-                    try {
-                        doc.toObject(SystemAlert::class.java)?.copy(id = doc.id)
-                    } catch (e: Exception) {
-                        null
-                    }
+    fun getSystemAlertsFlow(): Flow<List<SystemAlert>> = callbackFlow {
+        val listener = firestore.collection(SystemAlert.COLLECTION_NAME)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
                 }
-                trySend(alerts)
+
+                snapshot?.let { snap ->
+                    val alerts = snap.documents.mapNotNull { doc ->
+                        try {
+                            val alert = doc.toObject(SystemAlert::class.java)?.copy(id = doc.id)
+                            if (alert != null && !alert.resolved) alert else null
+                        } catch (e: Exception) {
+                            null
+                        }
+                    }
+                    trySend(alerts)
+                }
             }
-        }
         awaitClose { listener.remove() }
     }.flowOn(Dispatchers.IO)
 
-    fun listenToSystemAlerts(limit: Long = 20): Flow<List<SystemAlert>> = getSystemAlertsFlowClean()
+    fun getSystemAlertsFlowClean(): Flow<List<SystemAlert>> = getSystemAlertsFlow()
+
+    fun listenToSystemAlerts(limit: Long = 20): Flow<List<SystemAlert>> = getSystemAlertsFlow()
 
     suspend fun getAlertsPaginated(
         warehouseId: String? = null,
