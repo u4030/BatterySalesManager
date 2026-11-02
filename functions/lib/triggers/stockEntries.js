@@ -141,19 +141,16 @@ exports.onStockEntryCreated = (0, firestore_1.onDocumentCreated)("stock_entries/
             const globalTotalValue = Object.values(globalItems).reduce((acc, item) => acc + (Number(item?.currentStock || 0) * Number(item?.weightedAverageCost || 0)), 0);
             const globalTotalItemsCount = Object.values(globalItems).reduce((acc, item) => acc + Number(item?.currentStock || 0), 0);
             // Low Stock Check & Clean 100% Pure JSON Payload matching Android ViewModel keys
-            const newTotalStock = Math.max(0, oldTotalStock) + netQty;
-            const totalMinQty = Number(variant.minQuantity || minQty || 0);
-            const isLowStock = (minQty > 0 && newWhStock <= minQty) || (totalMinQty > 0 && newTotalStock <= totalMinQty);
             let alertDelta = 0;
-            if (isLowStock) {
+            if (newWhStock <= minQty) {
                 const alertPayload = {
                     id: alertId,
                     type: "low_stock",
                     title: `مخزون منخفض: ${pName}`,
-                    message: `الكمية المتوفرة حرجة في المستودع`,
+                    message: `الكمية المتوفرة حرجة في دفاتر المستودع`,
                     variantId: productVariantId,
                     warehouseId: warehouseId,
-                    resolved: false,
+                    resolved: false, // حقل الفلترة لـ Kotlin صريح
                     timestamp: now,
                     data: {
                         capacity: capacity,
@@ -167,11 +164,13 @@ exports.onStockEntryCreated = (0, firestore_1.onDocumentCreated)("stock_entries/
                     alertDelta = 1;
                 }
             }
-            else if (alertSnap.exists) {
-                // If stock safely recovered above threshold, delete alert
-                transaction.delete(alertRef);
-                if (alertSnap.data()?.resolved !== true) {
-                    alertDelta = -1;
+            else {
+                // إذا ترحل مخزون آمن فوق حد الأمان، يمسح التنبيه فوراً وفي نفس الضربة الذرية
+                if (alertSnap.exists) {
+                    transaction.delete(alertRef);
+                    if (alertSnap.data()?.resolved !== true) {
+                        alertDelta = -1;
+                    }
                 }
             }
             // --- WRITE PHASE ---
