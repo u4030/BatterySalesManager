@@ -63,12 +63,49 @@ class DashboardViewModel @Inject constructor(
     private val stockEntryRepository: StockEntryRepository,
     private val approvalRepository: ApprovalRepository,
     private val systemAlertRepository: SystemAlertRepository,
+    private val salesRepository: SalesRepository,
     private val firestore: com.google.firebase.firestore.FirebaseFirestore
 ) : ViewModel() {
 
     private val _warehouses = MutableStateFlow<List<Warehouse>>(emptyList())
 
-    private val activeAlertsFlow: Flow<List<SystemAlert>> = systemAlertRepository.getSystemAlertsFlow()
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private val lowStockAlertsFlow: Flow<List<SystemAlert>> = userRepository.getCurrentUserFlow().flatMapLatest { user ->
+        if (user == null) {
+            flowOf(emptyList())
+        } else {
+            val isAdmin = user.role == "admin"
+            if (isAdmin) {
+                // Admins observe all active system alerts via systemAlertRepository
+                systemAlertRepository.getSystemAlertsFlow()
+            } else {
+                // Sellers / warehouse managers observe their warehouse low stock alerts atomically with 0ms latency
+                val whId = user.warehouseId ?: ""
+                salesRepository.listenToLowStockAlerts(whId).map { rawList ->
+                    rawList.map { map ->
+                        val dataMap = (map["data"] as? Map<*, *>)?.mapKeys { it.key.toString() }?.mapValues { it.value ?: "" } ?: emptyMap<String, Any>()
+                        SystemAlert(
+                            id = map["id"]?.toString() ?: "",
+                            title = map["title"]?.toString() ?: "",
+                            message = map["message"]?.toString() ?: "",
+                            type = map["type"]?.toString() ?: "LOW_STOCK",
+                            relatedId = map["relatedId"]?.toString() ?: map["variantId"]?.toString() ?: "",
+                            variantId = map["variantId"]?.toString() ?: map["relatedId"]?.toString() ?: "",
+                            warehouseId = map["warehouseId"]?.toString(),
+                            warehouseName = map["warehouseName"]?.toString(),
+                            currentStock = (map["currentStock"] as? Number)?.toInt(),
+                            threshold = (map["threshold"] as? Number)?.toInt(),
+                            capacity = (map["capacity"] as? Number)?.toInt(),
+                            specification = map["specification"]?.toString() ?: "",
+                            resolved = (map["resolved"] as? Boolean) ?: false,
+                            status = map["status"]?.toString() ?: "active",
+                            data = dataMap
+                        )
+                    }
+                }
+            }
+        }
+    }
 
     private val upcomingBillsFlow: Flow<List<Bill>> = callbackFlow {
         val listener = firestore.collection(Bill.COLLECTION_NAME)
@@ -99,7 +136,7 @@ class DashboardViewModel @Inject constructor(
         userRepository.getCurrentUserFlow(),
         summaryRepository.getDashboardHubFlow(),
         _warehouses,
-        activeAlertsFlow,
+        lowStockAlertsFlow,
         upcomingBillsFlow,
         pendingCountFlow
     ) { args: Array<Any?> ->
