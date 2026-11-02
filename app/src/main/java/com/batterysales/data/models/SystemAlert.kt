@@ -8,12 +8,17 @@ data class SystemAlert(
     val title: String = "",
     val message: String = "",
     val relatedId: String = "", // variantId, entryId, etc.
+    val variantId: String = "",
     val warehouseId: String? = null,
     val warehouseName: String? = null,
     val resolved: Boolean = false,
     val status: String = "active",
     val timestamp: Date = Date(),
     val isRead: Boolean = false,
+    val currentStock: Any? = null,
+    val threshold: Any? = null,
+    val capacity: Any? = null,
+    val specification: String = "",
     val data: Map<String, Any> = emptyMap()
 ) {
     companion object {
@@ -24,4 +29,3 @@ data class SystemAlert(
         const val TYPE_FINANCIAL_DUE = "financial_due"
     }
 }
- 

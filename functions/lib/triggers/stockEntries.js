@@ -140,19 +140,24 @@ exports.onStockEntryCreated = (0, firestore_1.onDocumentCreated)("stock_entries/
             };
             const globalTotalValue = Object.values(globalItems).reduce((acc, item) => acc + (Number(item?.currentStock || 0) * Number(item?.weightedAverageCost || 0)), 0);
             const globalTotalItemsCount = Object.values(globalItems).reduce((acc, item) => acc + Number(item?.currentStock || 0), 0);
-            // Low Stock Check & Clean 100% Pure JSON Payload matching Android ViewModel keys
+            // Low Stock Check & Flattened Pure JSON Payload (Strictly no byte buffers)
             let alertDelta = 0;
             if (newWhStock <= minQty) {
                 const alertPayload = {
                     id: alertId,
                     type: "low_stock",
                     title: `مخزون منخفض: ${pName}`,
-                    message: `الكمية المتوفرة حرجة في دفاتر المستودع`,
+                    message: `الكمية المتوفرة حرجة في المستودع`,
                     variantId: productVariantId,
                     warehouseId: warehouseId,
-                    resolved: false, // 🛠️ حقن حقل الفلترة المركزي للأندرويد كـ Boolean نقي
+                    resolved: false, // 🛠️ حقن حقل الفلترة المركزي للأندرويد كـ Boolean
                     status: "active",
                     timestamp: now,
+                    // فرد البيانات لمنع تلف الـ Buffer
+                    currentStock: newWhStock,
+                    threshold: minQty,
+                    capacity: capacity,
+                    specification: spec,
                     data: {
                         capacity: capacity,
                         specification: spec,
@@ -166,7 +171,6 @@ exports.onStockEntryCreated = (0, firestore_1.onDocumentCreated)("stock_entries/
                 }
             }
             else {
-                // إذا ترحل مخزون آمن فوق حد الأمان، يمسح التنبيه فوراً وفي نفس الضربة الذرية
                 if (alertSnap.exists) {
                     transaction.delete(alertRef);
                     if (alertSnap.data()?.resolved !== true) {

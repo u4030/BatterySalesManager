@@ -142,18 +142,18 @@ class DashboardViewModel @Inject constructor(
         }
 
         val lowStockItems = alerts.filter { isAdmin || it.warehouseId == userWarehouseId }.map { alert ->
-            val capacity = when (val cap = alert.data["capacity"]) {
+            val capacity = when (val cap = alert.capacity ?: alert.data["capacity"]) {
                 is Number -> cap.toInt()
                 is String -> cap.toIntOrNull() ?: 0
                 else -> 0
             }
-            val specification = (alert.data["specification"] as? String) ?: ""
-            val currentQty = when (val stock = alert.data["currentStock"]) {
+            val specification = alert.specification.ifEmpty { (alert.data["specification"] as? String) ?: "" }
+            val currentQty = when (val stock = alert.currentStock ?: alert.data["currentStock"]) {
                 is Number -> stock.toInt()
                 is String -> stock.toIntOrNull() ?: 0
                 else -> 0
             }
-            val minQty = when (val threshold = alert.data["threshold"]) {
+            val minQty = when (val threshold = alert.threshold ?: alert.data["threshold"]) {
                 is Number -> threshold.toInt()
                 is String -> threshold.toIntOrNull() ?: 0
                 else -> 0

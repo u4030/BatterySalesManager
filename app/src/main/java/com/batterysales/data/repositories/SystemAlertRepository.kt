@@ -17,7 +17,7 @@ class SystemAlertRepository @Inject constructor(
 ) {
 
     /**
-     * Continuous snapshot listener for system alerts without Firestore server-side queries.
+     * Continuous snapshot listener for system alerts without complex server-side filters.
      * Prevents compound index drops in the Firebase emulator and filters active unresolved alerts locally.
      */
     fun getSystemAlertsFlow(): Flow<List<SystemAlert>> = callbackFlow {

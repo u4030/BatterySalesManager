@@ -135,7 +135,7 @@ export const onStockEntryCreated = onDocumentCreated(
           0
         );
 
-        // Low Stock Check & Clean 100% Pure JSON Payload matching Android ViewModel keys
+        // Low Stock Check & Flattened Pure JSON Payload (Strictly no byte buffers)
         let alertDelta = 0;
 
         if (newWhStock <= minQty) {
@@ -143,12 +143,17 @@ export const onStockEntryCreated = onDocumentCreated(
             id: alertId,
             type: "low_stock",
             title: `مخزون منخفض: ${pName}`,
-            message: `الكمية المتوفرة حرجة في دفاتر المستودع`,
+            message: `الكمية المتوفرة حرجة في المستودع`,
             variantId: productVariantId,
             warehouseId: warehouseId,
-            resolved: false, // 🛠️ حقن حقل الفلترة المركزي للأندرويد كـ Boolean نقي
+            resolved: false, // 🛠️ حقن حقل الفلترة المركزي للأندرويد كـ Boolean
             status: "active",
             timestamp: now,
+            // فرد البيانات لمنع تلف الـ Buffer
+            currentStock: newWhStock,
+            threshold: minQty,
+            capacity: capacity,
+            specification: spec,
             data: {
               capacity: capacity,
               specification: spec,
@@ -161,7 +166,6 @@ export const onStockEntryCreated = onDocumentCreated(
             alertDelta = 1;
           }
         } else {
-          // إذا ترحل مخزون آمن فوق حد الأمان، يمسح التنبيه فوراً وفي نفس الضربة الذرية
           if (alertSnap.exists) {
             transaction.delete(alertRef);
             if (alertSnap.data()?.resolved !== true) {
