@@ -97,7 +97,9 @@ exports.onStockEntryCreated = (0, firestore_1.onDocumentCreated)("stock_entries/
             // Warehouse Inventory Summary (summaries/inventory_wh_[id])
             const whItems = whSummarySnap.exists ? (whSummarySnap.data()?.items || {}) : {};
             const oldWhItem = whItems[productVariantId] || {};
-            const newWhStock = Math.max(0, Number(oldWhItem.currentStock || 0) + netQty);
+            const variantWhStock = Number(currentStockMap[warehouseId] || 0);
+            const baseWhStock = oldWhItem.currentStock !== undefined ? Number(oldWhItem.currentStock || 0) : variantWhStock;
+            const newWhStock = Math.max(0, baseWhStock + netQty);
             const itemCost = newWac > 0 ? newWac : Number(entry.costPrice || oldWhItem.weightedAverageCost || 0);
             const minQty = Number((variant.minQuantities || {})[warehouseId] ?? variant.minQuantity ?? oldWhItem.minQuantity ?? 0);
             const pName = String(entry.productName || variant.productName || oldWhItem.productName || "منتج");
@@ -142,18 +144,21 @@ exports.onStockEntryCreated = (0, firestore_1.onDocumentCreated)("stock_entries/
             const globalTotalItemsCount = Object.values(globalItems).reduce((acc, item) => acc + Number(item?.currentStock || 0), 0);
             // Low Stock Check & Flattened Pure JSON Payload (Strictly no byte buffers)
             let alertDelta = 0;
-            if (newWhStock <= minQty) {
+            const isTransfer = entry.orderId && String(entry.orderId).startsWith("transfer_");
+            const alertMessage = isTransfer
+                ? `الصنف شارف على النفاد في المستودع بعد عملية النقل`
+                : `الكمية المتوفرة حرجة في المستودع`;
+            if (newWhStock <= minQty && minQty > 0) {
                 const alertPayload = {
                     id: alertId,
                     type: "low_stock",
-                    title: `مخزون منخفض: ${pName}`,
-                    message: `الكمية المتوفرة حرجة في المستودع`,
+                    title: `مخزون منخفض حرج`,
+                    message: alertMessage,
                     variantId: productVariantId,
                     warehouseId: warehouseId,
-                    resolved: false, // 🛠️ حقن حقل الفلترة المركزي للأندرويد كـ Boolean
+                    resolved: false, // فلترة Kotlin الصارمة
                     status: "active",
                     timestamp: now,
-                    // فرد البيانات لمنع تلف الـ Buffer
                     currentStock: newWhStock,
                     threshold: minQty,
                     capacity: capacity,
@@ -170,7 +175,8 @@ exports.onStockEntryCreated = (0, firestore_1.onDocumentCreated)("stock_entries/
                     alertDelta = 1;
                 }
             }
-            else {
+            else if (newWhStock > minQty) {
+                // إذا كان المخزون آمناً أو تم ترحيل كمية كافية، يُمسح التنبيه ذرياً
                 if (alertSnap.exists) {
                     transaction.delete(alertRef);
                     if (alertSnap.data()?.resolved !== true) {
