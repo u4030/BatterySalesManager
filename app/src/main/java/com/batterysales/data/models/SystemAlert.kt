@@ -10,6 +10,8 @@ data class SystemAlert(
     val relatedId: String = "", // variantId, entryId, etc.
     val warehouseId: String? = null,
     val warehouseName: String? = null,
+    val resolved: Boolean = false,
+    val status: String = "active",
     val timestamp: Date = Date(),
     val isRead: Boolean = false,
     val data: Map<String, Any> = emptyMap()

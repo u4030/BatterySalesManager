@@ -150,7 +150,8 @@ exports.onStockEntryCreated = (0, firestore_1.onDocumentCreated)("stock_entries/
                     message: `الكمية المتوفرة حرجة في دفاتر المستودع`,
                     variantId: productVariantId,
                     warehouseId: warehouseId,
-                    resolved: false, // حقل الفلترة لـ Kotlin صريح
+                    resolved: false, // 🛠️ حقن حقل الفلترة المركزي للأندرويد كـ Boolean نقي
+                    status: "active",
                     timestamp: now,
                     data: {
                         capacity: capacity,
