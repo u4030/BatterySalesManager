@@ -39,9 +39,10 @@ const admin = __importStar(require("firebase-admin"));
 const firestore_2 = require("firebase-admin/firestore");
 /**
  * onVariantWritten Trigger:
- * Centralized low-stock alert injector and sync reconciler.
- * Evaluates variant stock levels against minQuantities and writes a clean unified alert
- * with an explicit boolean resolved: false.
+ * Strictly silent: Zero side-effects for system alerts or warehouse stock.
+ * Low stock checks and system alerts logic are 100% centralized inside onStockEntryCreated.
+ * This trigger only manages domain IdempotencyGuard and increments inventoryVersion on
+ * sync_registry / dashboard_hub when domain fields change, eliminating race conditions (flapping).
  */
 exports.onVariantWritten = (0, firestore_1.onDocumentWritten)("product_variants/{variantId}", async (event) => {
     if (!event.data)
@@ -60,104 +61,27 @@ exports.onVariantWritten = (0, firestore_1.onDocumentWritten)("product_variants/
             console.log(`[IdempotencyGuard] Variant ${event.params.variantId} update had no domain changes. Skipping execution.`);
             return;
         }
+        // If only currentStock or weightedAverageCost changed (written from onStockEntryCreated),
+        // exit immediately to prevent cascading updates and race conditions!
+        if (statusUnchanged && minQtyUnchanged && priceUnchanged) {
+            console.log(`[CascadeGuard] Variant ${event.params.variantId} stock update handled centrally. Skipping duplicate trigger execution.`);
+            return;
+        }
     }
     console.time("onVariantWritten_totalTime");
     const db = admin.firestore();
-    const variantId = String(event.params.variantId);
-    const unifiedAlertRef = db.collection("system_alerts").doc(`low_stock_${variantId}`);
     const batch = db.batch();
     const now = firestore_2.FieldValue.serverTimestamp();
-    if (!afterSnap.exists) {
-        // Document deleted - cleanup unified alert
-        batch.delete(unifiedAlertRef);
-        batch.set(db.doc("summaries/sync_registry"), {
-            inventoryVersion: firestore_2.FieldValue.increment(1),
-            alertsVersion: firestore_2.FieldValue.increment(1),
-            lastModified: now,
-        }, { merge: true });
-        batch.set(db.doc("summaries/dashboard_hub"), {
-            "syncRegistry.inventoryVersion": firestore_2.FieldValue.increment(1),
-            "syncRegistry.alertsVersion": firestore_2.FieldValue.increment(1),
-            "syncRegistry.lastModified": now,
-            lastUpdated: now,
-        }, { merge: true });
-        await batch.commit();
-        console.timeEnd("onVariantWritten_totalTime");
-        return;
-    }
-    const variant = afterSnap.data();
-    if (!variant || variant.archived || variant.isDiscontinued) {
-        batch.delete(unifiedAlertRef);
-        batch.set(db.doc("summaries/sync_registry"), {
-            inventoryVersion: firestore_2.FieldValue.increment(1),
-            alertsVersion: firestore_2.FieldValue.increment(1),
-            lastModified: now,
-        }, { merge: true });
-        batch.set(db.doc("summaries/dashboard_hub"), {
-            "syncRegistry.inventoryVersion": firestore_2.FieldValue.increment(1),
-            "syncRegistry.alertsVersion": firestore_2.FieldValue.increment(1),
-            "syncRegistry.lastModified": now,
-            lastUpdated: now,
-        }, { merge: true });
-        await batch.commit();
-        console.timeEnd("onVariantWritten_totalTime");
-        return;
-    }
-    try {
-        const currentStockMap = (variant.currentStock || {});
-        const minQuantitiesMap = (variant.minQuantities || {});
-        const defaultMinQty = Number(variant.minQuantity || 0);
-        // Check if stock in any warehouse or total stock is at or below threshold
-        let isLow = false;
-        const stockEntries = Object.entries(currentStockMap);
-        if (stockEntries.length > 0) {
-            for (const [whId, rawQty] of stockEntries) {
-                const qty = typeof rawQty === "number" ? rawQty : Number(rawQty || 0);
-                const rawMin = minQuantitiesMap[whId];
-                const threshold = typeof rawMin === "number" ? rawMin : (rawMin ? Number(rawMin) : defaultMinQty);
-                if (threshold > 0 && qty <= threshold) {
-                    isLow = true;
-                    break;
-                }
-            }
-        }
-        const totalStock = Object.values(currentStockMap).reduce((acc, v) => acc + Number(v || 0), 0);
-        if (defaultMinQty > 0 && totalStock <= defaultMinQty) {
-            isLow = true;
-        }
-        if (isLow) {
-            const alertPayload = {
-                id: `low_stock_${variantId}`,
-                type: "low_stock",
-                title: `مخزون منخفض حرج`,
-                message: `المخزون الحالي هبط تحت حد الأمان المعتمد`,
-                variantId: variantId,
-                resolved: false, // حقل الفلترة المركزي نقي وصريح
-                timestamp: now,
-            };
-            batch.set(unifiedAlertRef, alertPayload, { merge: true });
-        }
-        else {
-            batch.delete(unifiedAlertRef);
-        }
-        batch.set(db.doc("summaries/sync_registry"), {
-            inventoryVersion: firestore_2.FieldValue.increment(1),
-            alertsVersion: firestore_2.FieldValue.increment(1),
-            last_alert_update: now,
-            lastModified: now,
-        }, { merge: true });
-        batch.set(db.doc("summaries/dashboard_hub"), {
-            "syncRegistry.inventoryVersion": firestore_2.FieldValue.increment(1),
-            "syncRegistry.alertsVersion": firestore_2.FieldValue.increment(1),
-            "syncRegistry.last_alert_update": now,
-            "syncRegistry.lastModified": now,
-            lastUpdated: now,
-        }, { merge: true });
-        await batch.commit();
-    }
-    catch (error) {
-        console.error("Error in onVariantWritten consolidated batch commit:", error);
-    }
+    batch.set(db.doc("summaries/sync_registry"), {
+        inventoryVersion: firestore_2.FieldValue.increment(1),
+        lastModified: now,
+    }, { merge: true });
+    batch.set(db.doc("summaries/dashboard_hub"), {
+        "syncRegistry.inventoryVersion": firestore_2.FieldValue.increment(1),
+        "syncRegistry.lastModified": now,
+        lastUpdated: now,
+    }, { merge: true });
+    await batch.commit();
     console.timeEnd("onVariantWritten_totalTime");
 });
 //# sourceMappingURL=variants.js.map

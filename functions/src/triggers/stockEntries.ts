@@ -135,7 +135,7 @@ export const onStockEntryCreated = onDocumentCreated(
           0
         );
 
-        // Low Stock Check & Clean 100% Pure JSON Payload (Strictly no byte buffers)
+        // Low Stock Check & Clean 100% Pure JSON Payload matching Android ViewModel keys
         const newTotalStock = Math.max(0, oldTotalStock) + netQty;
         const totalMinQty = Number(variant.minQuantity || minQty || 0);
         const isLowStock = (minQty > 0 && newWhStock <= minQty) || (totalMinQty > 0 && newTotalStock <= totalMinQty);
@@ -145,12 +145,18 @@ export const onStockEntryCreated = onDocumentCreated(
           const alertPayload = {
             id: alertId,
             type: "low_stock",
-            title: "مخزون منخفض حرج",
-            message: `الصنف شارف على النفاد في دفاتر المستودع`,
+            title: `مخزون منخفض: ${pName}`,
+            message: `الكمية المتوفرة حرجة في المستودع`,
             variantId: productVariantId,
             warehouseId: warehouseId,
             resolved: false,
             timestamp: now,
+            data: {
+              capacity: capacity,
+              specification: spec,
+              currentStock: newWhStock,
+              threshold: minQty,
+            },
           };
           transaction.set(alertRef, alertPayload, { merge: true });
           if (!alertSnap.exists || alertSnap.data()?.resolved === true) {
