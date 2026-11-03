@@ -82,10 +82,17 @@ class DashboardViewModel @Inject constructor(
                 // Sellers / warehouse managers observe their warehouse low stock alerts atomically with 0ms latency
                 val whId = user.warehouseId ?: ""
                 salesRepository.listenToLowStockAlerts(whId).map { rawList ->
-                    rawList.map { map ->
+                    rawList.mapNotNull { map ->
+                        val docId = map["id"]?.toString() ?: ""
+                        if (docId.isBlank() || map.isEmpty()) return@mapNotNull null
+
+                        val isResolved = (map["resolved"] as? Boolean) ?: false
+                        val status = map["status"]?.toString() ?: "active"
+                        if (isResolved || status == "resolved" || status == "deleted") return@mapNotNull null
+
                         val dataMap = (map["data"] as? Map<*, *>)?.mapKeys { it.key.toString() }?.mapValues { it.value ?: "" } ?: emptyMap<String, Any>()
                         SystemAlert(
-                            id = map["id"]?.toString() ?: "",
+                            id = docId,
                             title = map["title"]?.toString() ?: "",
                             message = map["message"]?.toString() ?: "",
                             type = map["type"]?.toString() ?: "LOW_STOCK",
@@ -97,8 +104,8 @@ class DashboardViewModel @Inject constructor(
                             threshold = (map["threshold"] as? Number)?.toInt(),
                             capacity = (map["capacity"] as? Number)?.toInt(),
                             specification = map["specification"]?.toString() ?: "",
-                            resolved = (map["resolved"] as? Boolean) ?: false,
-                            status = map["status"]?.toString() ?: "active",
+                            resolved = false,
+                            status = status,
                             data = dataMap
                         )
                     }
@@ -207,37 +214,43 @@ class DashboardViewModel @Inject constructor(
             listOf(WarehouseStats(targetWhId, name, todayColl, todayCount))
         }
 
-        // فرز وتجهيز التنبيهات اللحظية المطرودة محليا بـ 0ms
-        val lowStockItems = alerts.filter { isAdmin || it.warehouseId == userWarehouseId }.map { alert ->
-            val capacity = when (val cap = alert.capacity ?: alert.data["capacity"]) {
-                is Number -> cap.toInt()
-                is String -> cap.toIntOrNull() ?: 0
-                else -> 0
+        // فرز وتجهيز التنبيهات اللحظية المطرودة محليا بـ 0ms مع استهلاك رمز الإصدار version لإعادة التقييم القسري عند إلغاء الفاتورة
+        val broadcastVersion = financialStatus.version
+        val lowStockItems = alerts
+            .filter { alert ->
+                !alert.resolved && alert.status != "resolved" && alert.status != "deleted" &&
+                (isAdmin || alert.warehouseId == userWarehouseId)
             }
-            val specification = alert.specification.ifEmpty { (alert.data["specification"] as? String) ?: "" }
-            val currentQty = when (val stock = alert.currentStock ?: alert.data["currentStock"]) {
-                is Number -> stock.toInt()
-                is String -> stock.toIntOrNull() ?: 0
-                else -> 0
-            }
-            val minQty = when (val threshold = alert.threshold ?: alert.data["threshold"]) {
-                is Number -> threshold.toInt()
-                is String -> threshold.toIntOrNull() ?: 0
-                else -> 0
-            }
-            val displayName = alert.title.removePrefix("تنبيه: ").ifBlank { "صنف بطارية" }
+            .mapNotNull { alert ->
+                val capacity = when (val cap = alert.capacity ?: alert.data["capacity"]) {
+                    is Number -> cap.toInt()
+                    is String -> cap.toIntOrNull() ?: 0
+                    else -> 0
+                }
+                val specification = alert.specification.ifEmpty { (alert.data["specification"] as? String) ?: "" }
+                val currentQty = when (val stock = alert.currentStock ?: alert.data["currentStock"]) {
+                    is Number -> stock.toInt()
+                    is String -> stock.toIntOrNull() ?: 0
+                    else -> 0
+                }
+                val minQty = when (val threshold = alert.threshold ?: alert.data["threshold"]) {
+                    is Number -> threshold.toInt()
+                    is String -> threshold.toIntOrNull() ?: 0
+                    else -> 0
+                }
+                val displayName = alert.title.removePrefix("تنبيه: ").ifBlank { "صنف بطارية" }
 
-            LowStockItem(
-                variantId = alert.relatedId,
-                productName = displayName,
-                capacity = capacity,
-                specification = specification,
-                currentQuantity = currentQty,
-                minQuantity = minQty,
-                warehouseName = warehouses.find { it.id == alert.warehouseId }?.name ?: alert.warehouseName ?: "مستودع غير معروف",
-                warehouseId = alert.warehouseId ?: ""
-            )
-        }
+                LowStockItem(
+                    variantId = alert.relatedId,
+                    productName = displayName,
+                    capacity = capacity,
+                    specification = specification,
+                    currentQuantity = currentQty,
+                    minQuantity = minQty,
+                    warehouseName = warehouses.find { it.id == alert.warehouseId }?.name ?: alert.warehouseName ?: "مستودع غير معروف",
+                    warehouseId = alert.warehouseId ?: ""
+                )
+            }
 
         DashboardUiState(
             pendingApprovalsCount = if (isAdmin) pendingCount else 0,
