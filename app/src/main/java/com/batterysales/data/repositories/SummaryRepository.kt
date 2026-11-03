@@ -578,11 +578,16 @@ class SummaryRepository @Inject constructor(
 
     fun getFinancialStatusFlow(): Flow<FinancialStatus> = callbackFlow {
         val listener = summariesCollection.document("financial_status")
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) return@addSnapshotListener
-                val status = snapshot?.toObject(FinancialStatus::class.java) ?: FinancialStatus()
-                cachedFinancialStatus = status
-                trySend(status)
+            .addSnapshotListener(com.google.firebase.firestore.MetadataChanges.INCLUDE) { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    val status = snapshot.toObject(FinancialStatus::class.java) ?: FinancialStatus()
+                    cachedFinancialStatus = status
+                    trySend(status)
+                }
             }
         awaitClose { listener.remove() }
     }

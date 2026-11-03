@@ -90,22 +90,47 @@ export const onInvoiceCreated = onDocumentCreated(
     // 2. Commit batch
     await batch.commit();
 
-    // 3. Update Dashboard Hub delta with atomic debt receivables
+    // 3. Update Dashboard Hub delta & per-warehouse daily collection stats with atomic debt receivables
     const subWarehouseDeltas: Record<string, number> = {};
     if (warehouseId) {
       subWarehouseDeltas[warehouseId] = !isBank ? paidAmount : 0;
     }
 
-    if (initialDebt > 0 && warehouseId) {
+    const todayDateStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    const whBalanceUpdate: Record<string, any> = {
+      cashBalance: FieldValue.increment(!isBank ? paidAmount : 0),
+      bankBalance: FieldValue.increment(isBank ? paidAmount : 0),
+      todayCollection: FieldValue.increment(paidAmount),
+      todayCollectionCount: FieldValue.increment(paidAmount > 0 ? 1 : 0),
+      lastInvoiceDate: todayDateStr,
+    };
+
+    if (initialDebt > 0) {
+      whBalanceUpdate.pendingCollection = FieldValue.increment(initialDebt);
+      whBalanceUpdate.totalReceivables = FieldValue.increment(initialDebt);
+    }
+
+    if (warehouseId) {
       await db.doc(`summaries/financial_status`).set({
         warehouseBalances: {
-          [warehouseId]: {
-            pendingCollection: FieldValue.increment(initialDebt),
-            totalReceivables: FieldValue.increment(initialDebt),
-          }
+          [warehouseId]: whBalanceUpdate,
         },
+        todayCollection: FieldValue.increment(paidAmount),
+        todayCollectionCount: FieldValue.increment(paidAmount > 0 ? 1 : 0),
         totalCustomerDebt: FieldValue.increment(initialDebt),
         totalReceivables: FieldValue.increment(initialDebt),
+        lastUpdated: now,
+        version: FieldValue.increment(1),
+      }, { merge: true });
+
+      // Compound document for isolated daily sales aggregation: summaries/daily_${warehouseId}_${todayDateStr}
+      await db.doc(`summaries/daily_${warehouseId}_${todayDateStr}`).set({
+        warehouseId: warehouseId,
+        date: todayDateStr,
+        totalSales: FieldValue.increment(totalAmount),
+        totalInvoices: FieldValue.increment(1),
+        totalPaid: FieldValue.increment(paidAmount),
+        totalDebt: FieldValue.increment(initialDebt),
         lastUpdated: now,
       }, { merge: true });
     }
