@@ -527,21 +527,6 @@ class InvoiceRepository @Inject constructor(
                 statsUpdates["totalCashBalance"] = com.google.firebase.firestore.FieldValue.increment(finalPayment.amount)
             }
 
-            val financialRef = firestore.collection("summaries").document("financial_status")
-            transaction.set(
-                financialRef,
-                mapOf(
-                    "warehouseBalances" to mapOf(
-                        targetWhId to mapOf(
-                            "pendingCollection" to com.google.firebase.firestore.FieldValue.increment(-finalPayment.amount),
-                            "totalReceivables" to com.google.firebase.firestore.FieldValue.increment(-finalPayment.amount)
-                        )
-                    ),
-                    "totalReceivables" to com.google.firebase.firestore.FieldValue.increment(-finalPayment.amount)
-                ),
-                com.google.firebase.firestore.SetOptions.merge()
-            )
-
             transaction.set(statsRef, statsUpdates, com.google.firebase.firestore.SetOptions.merge())
         }.await()
     }
