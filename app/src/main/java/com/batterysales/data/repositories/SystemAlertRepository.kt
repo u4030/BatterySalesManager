@@ -17,21 +17,19 @@ class SystemAlertRepository @Inject constructor(
 ) {
 
     /**
-     * Cache-First snapshot listener for active system alerts with double-guard
-     * (hasPendingWrites & isFromCache). Ensures that as soon as the atomic write completes
-     * locally, alerts are instantly pushed to the UI with 0ms delay while protecting
-     * against reconnect bounces.
+     * Continuous snapshot listener for system alerts without complex server-side filters.
+     * Prevents compound index drops in the Firebase emulator and filters active unresolved alerts locally.
      */
     fun getSystemAlertsFlow(): Flow<List<SystemAlert>> = callbackFlow {
         val listener = firestore.collection(SystemAlert.COLLECTION_NAME)
-            .addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
+            .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     close(error)
                     return@addSnapshotListener
                 }
 
-                if (snapshot != null) {
-                    val alerts = snapshot.documents.mapNotNull { doc ->
+                snapshot?.let { snap ->
+                    val alerts = snap.documents.mapNotNull { doc ->
                         try {
                             val alert = doc.toObject(SystemAlert::class.java)?.copy(id = doc.id)
                             if (alert != null && !alert.resolved) alert else null

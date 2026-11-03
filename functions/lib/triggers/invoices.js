@@ -61,7 +61,9 @@ exports.onInvoiceCreated = (0, firestore_1.onDocumentCreated)("invoices/{invoice
         return;
     const warehouseId = invoice.warehouseId || "";
     const items = (invoice.items || []);
+    const totalAmount = Number(invoice.totalAmount || invoice.finalAmount || 0);
     const paidAmount = Number(invoice.paidAmount || 0);
+    const initialDebt = Math.max(0, totalAmount - paidAmount);
     const paymentMethod = invoice.paymentMethod || "cash";
     const scrapAmps = Number(invoice.oldBatteriesTotalAmperes || 0);
     const scrapVal = Number(invoice.oldBatteriesValue || 0);
@@ -97,12 +99,30 @@ exports.onInvoiceCreated = (0, firestore_1.onDocumentCreated)("invoices/{invoice
     });
     // 2. Commit batch
     await batch.commit();
-    // 3. Update Dashboard Hub delta
+    // 3. Update Dashboard Hub delta with atomic debt receivables
+    const subWarehouseDeltas = {};
+    if (warehouseId) {
+        subWarehouseDeltas[warehouseId] = !isBank ? paidAmount : 0;
+    }
+    if (initialDebt > 0 && warehouseId) {
+        await db.doc(`summaries/financial_status`).set({
+            warehouseBalances: {
+                [warehouseId]: {
+                    pendingCollection: firestore_2.FieldValue.increment(initialDebt),
+                    totalReceivables: firestore_2.FieldValue.increment(initialDebt),
+                }
+            },
+            totalCustomerDebt: firestore_2.FieldValue.increment(initialDebt),
+            totalReceivables: firestore_2.FieldValue.increment(initialDebt),
+            lastUpdated: now,
+        }, { merge: true });
+    }
     await (0, dashboardHub_1.applyDashboardHubDelta)({
         cashDelta: !isBank ? paidAmount : 0,
         bankDelta: isBank ? paidAmount : 0,
         scrapAmperesDelta: scrapAmps,
         scrapValueDelta: scrapVal,
+        subWarehouseDeltas: Object.keys(subWarehouseDeltas).length > 0 ? subWarehouseDeltas : undefined,
         updatedDomains: ["inventory", "financial"],
     });
     console.timeEnd("onInvoiceCreated_executionTime");

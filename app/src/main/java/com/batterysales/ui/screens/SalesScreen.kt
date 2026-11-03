@@ -22,6 +22,7 @@ import androidx.navigation.NavController
 import com.batterysales.ui.components.BarcodeScanner
 import com.batterysales.utils.NetworkHelper
 import com.batterysales.viewmodel.SalesViewModel
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
@@ -36,7 +37,8 @@ import com.batterysales.ui.components.HeaderIconButton
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltViewModel()) {
-    val networkHelper = (androidx.compose.ui.platform.LocalContext.current.applicationContext as com.batterysales.BatterySalesApp).networkHelper 
+    val context = LocalContext.current
+    val networkHelper = remember { NetworkHelper(context) }
 
     val isOnline by networkHelper.isOnlineFlow.collectAsState(initial = true)
     val uiState by viewModel.uiState.collectAsState()

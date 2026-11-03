@@ -28,6 +28,7 @@ data class SalesUiState(
     val isWarehouseFixed: Boolean = false,
     val userRole: String = "",
     val userWarehouseId: String = "",
+    val salesList: List<Map<String, Any>> = emptyList(),
     val isLoading: Boolean = false,
     val isSubmitting: Boolean = false,
     val errorMessage: String? = null,
@@ -42,6 +43,7 @@ class SalesViewModel @Inject constructor(
     private val warehouseRepository: WarehouseRepository,
     private val summaryRepository: SummaryRepository,
     private val invoiceRepository: InvoiceRepository,
+    private val salesRepository: SalesRepository,
     private val userRepository: UserRepository,
     private val oldBatteryRepository: OldBatteryRepository,
     private val networkHelper: com.batterysales.utils.NetworkHelper
@@ -56,6 +58,18 @@ class SalesViewModel @Inject constructor(
 
     init {
         loadInitialData()
+        observeSales()
+    }
+
+    private fun observeSales() {
+        salesRepository.listenToSalesAtomic()
+            .onEach { sales ->
+                _uiState.update { it.copy(salesList = sales) }
+            }
+            .catch { e ->
+                Log.e("SalesViewModel", "Error observing atomic sales", e)
+            }
+            .launchIn(viewModelScope)
     }
 
     private fun observeInventorySummary(warehouseId: String?) {

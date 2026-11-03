@@ -63,12 +63,49 @@ class DashboardViewModel @Inject constructor(
     private val stockEntryRepository: StockEntryRepository,
     private val approvalRepository: ApprovalRepository,
     private val systemAlertRepository: SystemAlertRepository,
+    private val salesRepository: SalesRepository,
     private val firestore: com.google.firebase.firestore.FirebaseFirestore
 ) : ViewModel() {
 
     private val _warehouses = MutableStateFlow<List<Warehouse>>(emptyList())
 
-    private val activeAlertsFlow: Flow<List<SystemAlert>> = systemAlertRepository.getSystemAlertsFlow()
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private val lowStockAlertsFlow: Flow<List<SystemAlert>> = userRepository.getCurrentUserFlow().flatMapLatest { user ->
+        if (user == null) {
+            flowOf(emptyList())
+        } else {
+            val isAdmin = user.role == "admin"
+            if (isAdmin) {
+                // Admins observe all active system alerts via systemAlertRepository
+                systemAlertRepository.getSystemAlertsFlow()
+            } else {
+                // Sellers / warehouse managers observe their warehouse low stock alerts atomically with 0ms latency
+                val whId = user.warehouseId ?: ""
+                salesRepository.listenToLowStockAlerts(whId).map { rawList ->
+                    rawList.map { map ->
+                        val dataMap = (map["data"] as? Map<*, *>)?.mapKeys { it.key.toString() }?.mapValues { it.value ?: "" } ?: emptyMap<String, Any>()
+                        SystemAlert(
+                            id = map["id"]?.toString() ?: "",
+                            title = map["title"]?.toString() ?: "",
+                            message = map["message"]?.toString() ?: "",
+                            type = map["type"]?.toString() ?: "LOW_STOCK",
+                            relatedId = map["relatedId"]?.toString() ?: map["variantId"]?.toString() ?: "",
+                            variantId = map["variantId"]?.toString() ?: map["relatedId"]?.toString() ?: "",
+                            warehouseId = map["warehouseId"]?.toString(),
+                            warehouseName = map["warehouseName"]?.toString(),
+                            currentStock = (map["currentStock"] as? Number)?.toInt(),
+                            threshold = (map["threshold"] as? Number)?.toInt(),
+                            capacity = (map["capacity"] as? Number)?.toInt(),
+                            specification = map["specification"]?.toString() ?: "",
+                            resolved = (map["resolved"] as? Boolean) ?: false,
+                            status = map["status"]?.toString() ?: "active",
+                            data = dataMap
+                        )
+                    }
+                }
+            }
+        }
+    }
 
     private val upcomingBillsFlow: Flow<List<Bill>> = callbackFlow {
         val listener = firestore.collection(Bill.COLLECTION_NAME)
@@ -98,31 +135,35 @@ class DashboardViewModel @Inject constructor(
     val uiState: StateFlow<DashboardUiState> = combine(
         userRepository.getCurrentUserFlow(),
         summaryRepository.getDashboardHubFlow(),
+        summaryRepository.getFinancialStatusFlow(),
         _warehouses,
-        activeAlertsFlow,
+        lowStockAlertsFlow,
         upcomingBillsFlow,
         pendingCountFlow
     ) { args: Array<Any?> ->
         val user = args[0] as? User
         val hub = args[1] as? DashboardHub ?: DashboardHub()
+        val financialStatus = args[2] as? FinancialStatus ?: FinancialStatus()
         @Suppress("UNCHECKED_CAST")
-        val warehouses = args[2] as? List<Warehouse> ?: emptyList()
+        val warehouses = args[3] as? List<Warehouse> ?: emptyList()
         @Suppress("UNCHECKED_CAST")
-        val alerts = args[3] as? List<SystemAlert> ?: emptyList()
+        val alerts = args[4] as? List<SystemAlert> ?: emptyList()
         @Suppress("UNCHECKED_CAST")
-        val bills = args[4] as? List<Bill> ?: emptyList()
-        val pendingCount = args[5] as? Int ?: 0
+        val bills = args[5] as? List<Bill> ?: emptyList()
+        val pendingCount = args[6] as? Int ?: 0
 
         if (user == null) return@combine DashboardUiState(isLoading = false)
 
         val isAdmin = user.role == "admin"
         val userWarehouseId = user.warehouseId
 
+        val totalCustomerDebt = financialStatus.warehouseBalances.values.sumOf { it.pendingCollection }
+
         val systemStats = SystemStats(
             totalCashBalance = hub.financialStatus.totalCashBalance,
             totalBankBalance = hub.bankSummary.globalBankBalance,
             totalSupplierDebt = if (isAdmin) hub.supplierSummary.totalSupplierDebt else 0.0,
-            totalCustomerDebt = 0.0,
+            totalCustomerDebt = totalCustomerDebt,
             totalUnpaidBills = hub.bankSummary.totalUnpaidBills,
             totalUnpaidChecks = hub.bankSummary.totalUnpaidChecks,
             totalInventoryQuantity = hub.inventorySummary.totalItemsCount,
@@ -133,12 +174,17 @@ class DashboardViewModel @Inject constructor(
         val whStats = if (isAdmin) {
             warehouses.map { wh ->
                 val bal = hub.financialStatus.subWarehouseBalances[wh.id] ?: 0.0
-                WarehouseStats(wh.id, wh.name, bal, 0)
+                val whFinancial = financialStatus.warehouseBalances[wh.id]
+                val todayColl = whFinancial?.todayCollection ?: 0.0
+                val todayCount = whFinancial?.todayCollectionCount ?: 0
+                WarehouseStats(wh.id, wh.name, todayColl, todayCount)
             }
         } else {
             val targetWhId = userWarehouseId ?: ""
-            val bal = hub.financialStatus.subWarehouseBalances[targetWhId] ?: 0.0
-            listOf(WarehouseStats(targetWhId, warehouses.find { it.id == targetWhId }?.name ?: "مخزن", bal, 0))
+            val whFinancial = financialStatus.warehouseBalances[targetWhId]
+            val todayColl = whFinancial?.todayCollection ?: 0.0
+            val todayCount = whFinancial?.todayCollectionCount ?: 0
+            listOf(WarehouseStats(targetWhId, warehouses.find { it.id == targetWhId }?.name ?: "مخزن", todayColl, todayCount))
         }
 
         val lowStockItems = alerts.filter { isAdmin || it.warehouseId == userWarehouseId }.map { alert ->
