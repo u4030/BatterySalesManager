@@ -177,24 +177,30 @@ class DashboardViewModel @Inject constructor(
         }
         val currentJordanDateStr = jordanDateFormat.format(Date())
 
+        // Combine static warehouses with any dynamically registered warehouses from financialStatus.warehouseBalances
+        val warehouseMap = warehouses.associateBy { it.id }.toMutableMap()
+
         val whStats = if (isAdmin) {
-            warehouses.map { wh ->
-                val whFinancial = financialStatus.warehouseBalances[wh.id]
-                // Instant check: if lastInvoiceDate matches today OR if todayCollection > 0, reflect it immediately
+            // Unify warehouse IDs from both static list and reactive financial balances
+            val allWhIds = (warehouses.map { it.id } + financialStatus.warehouseBalances.keys).distinct()
+            allWhIds.map { whId ->
+                val name = warehouseMap[whId]?.name ?: "مستودع $whId"
+                val whFinancial = financialStatus.warehouseBalances[whId]
                 val hasTodayActivity = whFinancial?.lastInvoiceDate == currentJordanDateStr ||
                     (whFinancial?.lastInvoiceDate.isNullOrEmpty() && (whFinancial?.todayCollection ?: 0.0) > 0.0)
                 val todayColl = if (hasTodayActivity) (whFinancial?.todayCollection ?: 0.0) else 0.0
                 val todayCount = if (hasTodayActivity) (whFinancial?.todayCollectionCount ?: 0) else 0
-                WarehouseStats(wh.id, wh.name, todayColl, todayCount)
+                WarehouseStats(whId, name, todayColl, todayCount)
             }
         } else {
             val targetWhId = userWarehouseId ?: ""
+            val name = warehouseMap[targetWhId]?.name ?: warehouses.find { it.id == targetWhId }?.name ?: "مخزن"
             val whFinancial = financialStatus.warehouseBalances[targetWhId]
             val hasTodayActivity = whFinancial?.lastInvoiceDate == currentJordanDateStr ||
                 (whFinancial?.lastInvoiceDate.isNullOrEmpty() && (whFinancial?.todayCollection ?: 0.0) > 0.0)
             val todayColl = if (hasTodayActivity) (whFinancial?.todayCollection ?: 0.0) else 0.0
             val todayCount = if (hasTodayActivity) (whFinancial?.todayCollectionCount ?: 0) else 0
-            listOf(WarehouseStats(targetWhId, warehouses.find { it.id == targetWhId }?.name ?: "مخزن", todayColl, todayCount))
+            listOf(WarehouseStats(targetWhId, name, todayColl, todayCount))
         }
 
         val lowStockItems = alerts.filter { isAdmin || it.warehouseId == userWarehouseId }.map { alert ->

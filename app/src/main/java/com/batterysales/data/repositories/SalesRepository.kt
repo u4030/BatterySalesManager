@@ -43,9 +43,9 @@ class SalesRepository @Inject constructor(
 
     // 2. مستمع التنبيهات الفوري (0ms Latency) المطابق لمعمارية التنبيهات المطهرة ذرياً مع تفريغ لحظي للتنبيهات المحذوفة
     fun listenToLowStockAlerts(warehouseId: String): Flow<List<Map<String, Any>>> = callbackFlow {
+        // إسقاط قيد whereEqualTo("resolved", false) من مستوى استعلام Firestore لتفادي تجميد الكاش المركب عند الحذف
         val query = firestore.collection("system_alerts")
             .whereEqualTo("warehouseId", warehouseId)
-            .whereEqualTo("resolved", false) // مطابقة الاستعلام الخطي للسيرفر
 
         val currentAlertsMap = java.util.concurrent.ConcurrentHashMap<String, Map<String, Any>>()
 
@@ -59,30 +59,30 @@ class SalesRepository @Inject constructor(
                 // فحص صريح للتغييرات الهيكلية لطرد أي تنبيه محذوف بلحظتها (0ms Latency)
                 for (change in snap.documentChanges) {
                     val docId = change.document.id
-                    when (change.type) {
-                        DocumentChange.Type.REMOVED -> {
+                    val isResolved = change.document.getBoolean("resolved") ?: false
+
+                    if (change.type == DocumentChange.Type.REMOVED || isResolved) {
+                        currentAlertsMap.remove(docId)
+                    } else if (change.type == DocumentChange.Type.ADDED || change.type == DocumentChange.Type.MODIFIED) {
+                        val doc = change.document
+                        if (doc.exists() && !isResolved) {
+                            val data = doc.data?.plus("id" to doc.id) ?: emptyMap()
+                            currentAlertsMap[docId] = data
+                        } else {
                             currentAlertsMap.remove(docId)
-                        }
-                        DocumentChange.Type.ADDED,
-                        DocumentChange.Type.MODIFIED -> {
-                            val doc = change.document
-                            val isResolved = doc.getBoolean("resolved") ?: false
-                            if (doc.exists() && !isResolved) {
-                                val data = doc.data?.plus("id" to doc.id) ?: emptyMap()
-                                currentAlertsMap[docId] = data
-                            } else {
-                                currentAlertsMap.remove(docId)
-                            }
                         }
                     }
                 }
 
-            // تنظيف القائمة والتحقق القاطع من بقاء المستندات نشطة في السيرفر والكاش محليا
-            val validDocIds = snap.documents.filter { it.exists() && it.getBoolean("resolved") != true }.map { it.id }.toSet()
-            currentAlertsMap.keys.retainAll(validDocIds)
+                // تنظيف القائمة والتحقق القاطع من بقاء المستندات نشطة في السيرفر والكاش محليا
+                val validDocIds = snap.documents
+                    .filter { it.exists() && it.getBoolean("resolved") != true }
+                    .map { it.id }
+                    .toSet()
+                currentAlertsMap.keys.retainAll(validDocIds)
 
-            // بث فوري وتدفق لحظي إلى واجهة العرض للـ Composable الشاشة
-            trySend(currentAlertsMap.values.toList()).isSuccess
+                // بث فوري وتدفق لحظي إلى واجهة العرض للـ Composable الشاشة
+                trySend(currentAlertsMap.values.toList()).isSuccess
             }
         }
         awaitClose { registration.remove() }
