@@ -702,8 +702,6 @@ class InvoiceRepository @Inject constructor(
             
             val targetWhId = invoice.warehouseId.ifBlank { "unassigned" }
             val summarySnapshots = summaryRepository.getSummarySnapshots(transaction, listOf(targetWhId))
-            val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
-
             // --- WRITE PHASE ---
             transaction.delete(paymentRef)
             treasuryTransactions.forEach { transaction.delete(it.reference) }
@@ -737,16 +735,6 @@ class InvoiceRepository @Inject constructor(
                 todayCollectionChange = if (wasToday) -oldPayment.amount else 0.0,
                 todayCollectionCountChange = countChange
             )
-
-            val statsUpdates = mutableMapOf<String, Any>(
-                "totalCustomerDebt" to com.google.firebase.firestore.FieldValue.increment(oldPayment.amount)
-            )
-            if (oldPayment.paymentMethod == "bank") {
-                statsUpdates["totalBankBalance"] = com.google.firebase.firestore.FieldValue.increment(-oldPayment.amount)
-            } else {
-                statsUpdates["totalCashBalance"] = com.google.firebase.firestore.FieldValue.increment(-oldPayment.amount)
-            }
-            transaction.set(statsRef, statsUpdates, com.google.firebase.firestore.SetOptions.merge())
         }.await()
     }
 }
