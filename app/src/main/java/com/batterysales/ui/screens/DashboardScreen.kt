@@ -285,12 +285,12 @@ fun DashboardScreen(
                                                         style = MaterialTheme.typography.labelSmall
                                                     )
                                                     Text(
-                                                        "JD ${
+                                                        "${
                                                             String.format(
                                                                 "%,.2f",
                                                                 stats.todayCollection
                                                             )
-                                                        }",
+                                                        } JOD",
                                                         color = Color(0xFF10B981),
                                                         fontWeight = FontWeight.Bold,
                                                         style = MaterialTheme.typography.bodyLarge

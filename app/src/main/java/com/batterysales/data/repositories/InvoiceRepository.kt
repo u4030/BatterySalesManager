@@ -430,6 +430,7 @@ class InvoiceRepository @Inject constructor(
         }
 
         // Commit WriteBatch without phone-side stock manipulation or read loops
+        // Debt deltas and inventory decrements are processed atomically by backend triggers
         batch.commit().await()
         return finalInvoice.id
     }
@@ -525,6 +526,21 @@ class InvoiceRepository @Inject constructor(
             } else {
                 statsUpdates["totalCashBalance"] = com.google.firebase.firestore.FieldValue.increment(finalPayment.amount)
             }
+
+            val financialRef = firestore.collection("summaries").document("financial_status")
+            transaction.set(
+                financialRef,
+                mapOf(
+                    "warehouseBalances" to mapOf(
+                        targetWhId to mapOf(
+                            "pendingCollection" to com.google.firebase.firestore.FieldValue.increment(-finalPayment.amount),
+                            "totalReceivables" to com.google.firebase.firestore.FieldValue.increment(-finalPayment.amount)
+                        )
+                    ),
+                    "totalReceivables" to com.google.firebase.firestore.FieldValue.increment(-finalPayment.amount)
+                ),
+                com.google.firebase.firestore.SetOptions.merge()
+            )
 
             transaction.set(statsRef, statsUpdates, com.google.firebase.firestore.SetOptions.merge())
         }.await()
