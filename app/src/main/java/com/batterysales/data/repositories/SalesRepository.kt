@@ -40,7 +40,7 @@ class SalesRepository @Inject constructor(
         awaitClose { registration.remove() }
     }
 
-    // 2. مستمع التنبيهات الفوري (0ms Latency) المطابق لمعمارية التنبيهات المطهرة ذرياً
+    // 2. مستمع التنبيهات الفوري (0ms Latency) المطابق لمعمارية التنبيهات المطهرة ذرياً مع تفريغ لحظي للتنبيهات المحذوفة
     fun listenToLowStockAlerts(warehouseId: String): Flow<List<Map<String, Any>>> = callbackFlow {
         val query = firestore.collection("system_alerts")
             .whereEqualTo("warehouseId", warehouseId)
@@ -53,10 +53,14 @@ class SalesRepository @Inject constructor(
             }
 
             snapshot?.let { snap ->
-                // القضاء التام على الـ Latency: تحديث UI فوري بمجرد كتابة الـ Transaction محلياً
-                val alerts = snap.documents.map { doc ->
-                    doc.data?.plus("id" to doc.id) ?: emptyMap()
-                }
+                // القضاء التام على الـ Latency واستبعاد التنبيهات المحذوفة أو المحلولة بلحظتها
+                val alerts = snap.documents
+                    .filter { doc ->
+                        doc.exists() && (doc.getBoolean("resolved") != true)
+                    }
+                    .map { doc ->
+                        doc.data?.plus("id" to doc.id) ?: emptyMap()
+                    }
                 trySend(alerts)
             }
         }
