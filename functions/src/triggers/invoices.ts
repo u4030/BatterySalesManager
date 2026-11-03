@@ -118,7 +118,9 @@ export const onInvoiceCreated = onDocumentCreated(
     }
 
     if (warehouseId) {
-      await db.doc(`summaries/financial_status`).set({
+      const summaryBatch = db.batch();
+
+      summaryBatch.set(db.doc(`summaries/financial_status`), {
         warehouseBalances: {
           [warehouseId]: whBalanceUpdate,
         },
@@ -130,8 +132,14 @@ export const onInvoiceCreated = onDocumentCreated(
         version: FieldValue.increment(1),
       }, { merge: true });
 
+      // Parallel atomic bump on summaries/dashboard_hub to force immediate client hub listener redraw
+      summaryBatch.set(db.doc(`summaries/dashboard_hub`), {
+        version: FieldValue.increment(1),
+        lastUpdated: now,
+      }, { merge: true });
+
       // Compound document for isolated daily sales aggregation: summaries/daily_${warehouseId}_${todayDateStr}
-      await db.doc(`summaries/daily_${warehouseId}_${todayDateStr}`).set({
+      summaryBatch.set(db.doc(`summaries/daily_${warehouseId}_${todayDateStr}`), {
         warehouseId: warehouseId,
         date: todayDateStr,
         totalSales: FieldValue.increment(totalAmount),
@@ -140,6 +148,8 @@ export const onInvoiceCreated = onDocumentCreated(
         totalDebt: FieldValue.increment(initialDebt),
         lastUpdated: now,
       }, { merge: true });
+
+      await summaryBatch.commit();
     }
 
     await applyDashboardHubDelta({

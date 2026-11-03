@@ -160,15 +160,15 @@ class DashboardViewModel @Inject constructor(
         val totalCustomerDebt = financialStatus.warehouseBalances.values.sumOf { it.pendingCollection }
 
         val systemStats = SystemStats(
-            totalCashBalance = hub.financialStatus.totalCashBalance,
-            totalBankBalance = hub.bankSummary.globalBankBalance,
+            totalCashBalance = if (financialStatus.globalCashBalance != 0.0) financialStatus.globalCashBalance else hub.financialStatus.totalCashBalance,
+            totalBankBalance = if (financialStatus.globalBankBalance != 0.0) financialStatus.globalBankBalance else hub.bankSummary.globalBankBalance,
             totalSupplierDebt = if (isAdmin) hub.supplierSummary.totalSupplierDebt else 0.0,
             totalCustomerDebt = totalCustomerDebt,
-            totalUnpaidBills = hub.bankSummary.totalUnpaidBills,
-            totalUnpaidChecks = hub.bankSummary.totalUnpaidChecks,
+            totalUnpaidBills = if (financialStatus.totalUnpaidBills != 0.0) financialStatus.totalUnpaidBills else hub.bankSummary.totalUnpaidBills,
+            totalUnpaidChecks = if (financialStatus.totalUnpaidChecks != 0.0) financialStatus.totalUnpaidChecks else hub.bankSummary.totalUnpaidChecks,
             totalInventoryQuantity = hub.inventorySummary.totalItemsCount,
             totalInventoryValue = hub.inventorySummary.totalValue,
-            updatedAt = hub.lastUpdated
+            updatedAt = if (financialStatus.lastUpdated.after(hub.lastUpdated)) financialStatus.lastUpdated else hub.lastUpdated
         )
 
         // Local Jordan timezone format (YYYY-MM-DD)
