@@ -224,7 +224,7 @@ class DashboardViewModel @Inject constructor(
                 is String -> threshold.toIntOrNull() ?: 0
                 else -> 0
             }
-            val displayName = alert.title.removePrefix("تنبيه: ").ifBlank { "بطارية صنف" }
+            val displayName = alert.title.removePrefix("تنبيه: ").ifBlank { "صنف بطارية" }
 
             LowStockItem(
                 variantId = alert.relatedId,
@@ -233,7 +233,7 @@ class DashboardViewModel @Inject constructor(
                 specification = specification,
                 currentQuantity = currentQty,
                 minQuantity = minQty,
-                warehouseName = warehouses.find { it.id == alert.warehouseId }?.name ?: alert.warehouseName ?: "مستودع غير معرف",
+                warehouseName = warehouses.find { it.id == alert.warehouseId }?.name ?: alert.warehouseName ?: "مستودع",
                 warehouseId = alert.warehouseId ?: ""
             )
         }
