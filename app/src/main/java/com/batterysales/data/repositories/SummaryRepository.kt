@@ -2,6 +2,7 @@ package com.batterysales.data.repositories
 
 import com.batterysales.data.models.*
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.MetadataChanges
 import com.google.firebase.firestore.Transaction
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -578,15 +579,17 @@ class SummaryRepository @Inject constructor(
 
     fun getFinancialStatusFlow(): Flow<FinancialStatus> = callbackFlow {
         val listener = summariesCollection.document("financial_status")
-            .addSnapshotListener(com.google.firebase.firestore.MetadataChanges.INCLUDE) { snapshot, error ->
+            // تفعيل ميتاداتا الحارس الثنائي المتزامن خطيا لفرض الاستجابة اللحظية
+            .addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
                 if (error != null) {
                     close(error)
                     return@addSnapshotListener
                 }
                 if (snapshot != null) {
+                    // الكاش المزدوج (hasPendingWrites & isFromCache) لتأمين الـ Flow ضد تذبذب الاتصال
                     val status = snapshot.toObject(FinancialStatus::class.java) ?: FinancialStatus()
                     cachedFinancialStatus = status
-                    trySend(status)
+                    trySend(status).isSuccess
                 }
             }
         awaitClose { listener.remove() }

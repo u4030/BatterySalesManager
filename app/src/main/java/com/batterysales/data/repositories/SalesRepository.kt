@@ -77,11 +77,12 @@ class SalesRepository @Inject constructor(
                     }
                 }
 
-                // التأكد من مطابقة جميع وثائق اللقطة النشطة الحالية
-                val validDocIds = snap.documents.filter { it.exists() && it.getBoolean("resolved") != true }.map { it.id }.toSet()
-                currentAlertsMap.keys.retainAll(validDocIds)
+            // تنظيف القائمة والتحقق القاطع من بقاء المستندات نشطة في السيرفر والكاش محليا
+            val validDocIds = snap.documents.filter { it.exists() && it.getBoolean("resolved") != true }.map { it.id }.toSet()
+            currentAlertsMap.keys.retainAll(validDocIds)
 
-                trySend(currentAlertsMap.values.toList())
+            // بث فوري وتدفق لحظي إلى واجهة العرض للـ Composable الشاشة
+            trySend(currentAlertsMap.values.toList()).isSuccess
             }
         }
         awaitClose { registration.remove() }
