@@ -180,17 +180,20 @@ class DashboardViewModel @Inject constructor(
         val whStats = if (isAdmin) {
             warehouses.map { wh ->
                 val whFinancial = financialStatus.warehouseBalances[wh.id]
-                val isToday = whFinancial?.lastInvoiceDate.isNullOrEmpty() || whFinancial?.lastInvoiceDate == currentJordanDateStr
-                val todayColl = if (isToday) (whFinancial?.todayCollection ?: 0.0) else 0.0
-                val todayCount = if (isToday) (whFinancial?.todayCollectionCount ?: 0) else 0
+                // Instant check: if lastInvoiceDate matches today OR if todayCollection > 0, reflect it immediately
+                val hasTodayActivity = whFinancial?.lastInvoiceDate == currentJordanDateStr ||
+                    (whFinancial?.lastInvoiceDate.isNullOrEmpty() && (whFinancial?.todayCollection ?: 0.0) > 0.0)
+                val todayColl = if (hasTodayActivity) (whFinancial?.todayCollection ?: 0.0) else 0.0
+                val todayCount = if (hasTodayActivity) (whFinancial?.todayCollectionCount ?: 0) else 0
                 WarehouseStats(wh.id, wh.name, todayColl, todayCount)
             }
         } else {
             val targetWhId = userWarehouseId ?: ""
             val whFinancial = financialStatus.warehouseBalances[targetWhId]
-            val isToday = whFinancial?.lastInvoiceDate.isNullOrEmpty() || whFinancial?.lastInvoiceDate == currentJordanDateStr
-            val todayColl = if (isToday) (whFinancial?.todayCollection ?: 0.0) else 0.0
-            val todayCount = if (isToday) (whFinancial?.todayCollectionCount ?: 0) else 0
+            val hasTodayActivity = whFinancial?.lastInvoiceDate == currentJordanDateStr ||
+                (whFinancial?.lastInvoiceDate.isNullOrEmpty() && (whFinancial?.todayCollection ?: 0.0) > 0.0)
+            val todayColl = if (hasTodayActivity) (whFinancial?.todayCollection ?: 0.0) else 0.0
+            val todayCount = if (hasTodayActivity) (whFinancial?.todayCollectionCount ?: 0) else 0
             listOf(WarehouseStats(targetWhId, warehouses.find { it.id == targetWhId }?.name ?: "مخزن", todayColl, todayCount))
         }
 

@@ -23,6 +23,8 @@ class SystemAlertRepository @Inject constructor(
      * against reconnect bounces.
      */
     fun getSystemAlertsFlow(): Flow<List<SystemAlert>> = callbackFlow {
+        val currentAlertsMap = java.util.concurrent.ConcurrentHashMap<String, SystemAlert>()
+
         val listener = firestore.collection(SystemAlert.COLLECTION_NAME)
             .addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
                 if (error != null) {
@@ -31,15 +33,36 @@ class SystemAlertRepository @Inject constructor(
                 }
 
                 if (snapshot != null) {
-                    val alerts = snapshot.documents.mapNotNull { doc ->
-                        try {
-                            val alert = doc.toObject(SystemAlert::class.java)?.copy(id = doc.id)
-                            if (alert != null && !alert.resolved) alert else null
-                        } catch (e: Exception) {
-                            null
+                    // فحص صريح ومباشر لتغيرات الوثائق لإزالة التنبيهات المحذوفة فوراً (0ms)
+                    for (change in snapshot.documentChanges) {
+                        val docId = change.document.id
+                        when (change.type) {
+                            DocumentChange.Type.REMOVED -> {
+                                currentAlertsMap.remove(docId)
+                            }
+                            DocumentChange.Type.ADDED,
+                            DocumentChange.Type.MODIFIED -> {
+                                val doc = change.document
+                                val alert = try {
+                                    doc.toObject(SystemAlert::class.java)?.copy(id = doc.id)
+                                } catch (e: Exception) {
+                                    null
+                                }
+                                if (alert != null && !alert.resolved) {
+                                    currentAlertsMap[docId] = alert
+                                } else {
+                                    currentAlertsMap.remove(docId)
+                                }
+                            }
                         }
                     }
-                    trySend(alerts)
+
+                    val validDocIds = snapshot.documents.filter { doc ->
+                        doc.exists() && doc.getBoolean("resolved") != true
+                    }.map { it.id }.toSet()
+                    currentAlertsMap.keys.retainAll(validDocIds)
+
+                    trySend(currentAlertsMap.values.toList()).isSuccess
                 }
             }
         awaitClose { listener.remove() }
