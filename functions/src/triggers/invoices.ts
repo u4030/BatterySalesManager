@@ -181,8 +181,94 @@ export const onInvoiceDeleted = onDocumentDeleted(
   "invoices/{invoiceId}",
   async (event) => {
     if (!event.data) return;
+    const db = admin.firestore();
+    const invoice = event.data.data() || {};
+    const warehouseId = invoice.warehouseId || "";
+    const items = (invoice.items || []) as Array<{ productId: string; quantity: number }>;
+    const now = FieldValue.serverTimestamp();
+
+    if (items.length > 0 && warehouseId) {
+      await db.runTransaction(async (transaction) => {
+        // Read phase: inspect safety stock threshold and current stock for each variant
+        const variantRefs = items.map(item => db.doc(`product_variants/${item.productId}`));
+        const alertRefs = items.map(item => db.doc(`system_alerts/low_stock_${item.productId}_${warehouseId}`));
+
+        const variantSnaps = await Promise.all(variantRefs.map(ref => transaction.get(ref)));
+        const alertSnaps = await Promise.all(alertRefs.map(ref => transaction.get(ref)));
+
+        let alertDeletionsCount = 0;
+
+        items.forEach((item, index) => {
+          const variantSnap = variantSnaps[index];
+          const alertSnap = alertSnaps[index];
+          const qty = Number(item.quantity || 0);
+
+          if (variantSnap.exists && qty > 0) {
+            const variantData = variantSnap.data() || {};
+            const currentStockMap = (variantData.currentStock || {}) as Record<string, number>;
+            const currentWhStock = Number(currentStockMap[warehouseId] || 0);
+            const restoredStock = currentWhStock + qty;
+
+            const minQty = Number((variantData.minQuantities || {})[warehouseId] ?? variantData.minQuantity ?? 0);
+
+            // If restored stock is strictly greater than safety threshold, delete alert atomically
+            if (restoredStock > minQty && alertSnap.exists) {
+              transaction.delete(alertRefs[index]);
+              alertDeletionsCount++;
+            }
+
+            // Restore variant currentStock
+            transaction.set(
+              variantRefs[index],
+              {
+                currentStock: {
+                  [warehouseId]: FieldValue.increment(qty),
+                },
+                updatedAt: now,
+              },
+              { merge: true }
+            );
+
+            // Restore warehouse summary currentStock
+            transaction.set(
+              db.doc(`summaries/inventory_wh_${warehouseId}`),
+              {
+                [`items.${item.productId}.currentStock`]: FieldValue.increment(qty),
+                lastUpdated: now,
+                version: FieldValue.increment(1),
+              },
+              { merge: true }
+            );
+
+            // Restore global summary currentStock
+            transaction.set(
+              db.doc("summaries/inventory_global"),
+              {
+                [`items.${item.productId}.currentStock`]: FieldValue.increment(qty),
+                lastUpdated: now,
+                version: FieldValue.increment(1),
+              },
+              { merge: true }
+            );
+          }
+        });
+
+        if (alertDeletionsCount > 0) {
+          transaction.set(
+            db.doc("summaries/dashboard_hub"),
+            {
+              "scrapAndAlertsSummary.activeLowStockAlertsCount": FieldValue.increment(-alertDeletionsCount),
+              "syncRegistry.alertsVersion": FieldValue.increment(1),
+              lastUpdated: now,
+            },
+            { merge: true }
+          );
+        }
+      });
+    }
+
     await applyDashboardHubDelta({
-      updatedDomains: ["inventory", "financial"],
+      updatedDomains: ["inventory", "financial", "alerts"],
     });
   }
 );
