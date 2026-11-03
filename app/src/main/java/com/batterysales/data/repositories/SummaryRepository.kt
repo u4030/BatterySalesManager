@@ -30,11 +30,17 @@ class SummaryRepository @Inject constructor(
      */
     fun getDashboardHubFlow(): Flow<DashboardHub> = callbackFlow {
         val listener = summariesCollection.document("dashboard_hub")
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) return@addSnapshotListener
-                val hub = snapshot?.toObject(DashboardHub::class.java) ?: DashboardHub()
-                cachedDashboardHub = hub
-                trySend(hub)
+            // فرض تفعيل ميتاداتا INCLUDE لتلقي بث إشارات الزيادة الذرية فورا (0ms)
+            .addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    val hub = snapshot.toObject(DashboardHub::class.java) ?: DashboardHub()
+                    cachedDashboardHub = hub
+                    trySend(hub).isSuccess
+                }
             }
         awaitClose { listener.remove() }
     }

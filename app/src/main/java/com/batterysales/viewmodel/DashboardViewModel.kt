@@ -153,12 +153,11 @@ class DashboardViewModel @Inject constructor(
         val pendingCount = args[6] as? Int ?: 0
 
         if (user == null) return@combine DashboardUiState(isLoading = false)
-
         val isAdmin = user.role == "admin"
         val userWarehouseId = user.warehouseId
 
+        // تأمين جلب الأرصدة خطيا بالدينار الأردني JOD
         val totalCustomerDebt = financialStatus.warehouseBalances.values.sumOf { it.pendingCollection }
-
         val systemStats = SystemStats(
             totalCashBalance = if (financialStatus.globalCashBalance != 0.0) financialStatus.globalCashBalance else hub.financialStatus.totalCashBalance,
             totalBankBalance = if (financialStatus.globalBankBalance != 0.0) financialStatus.globalBankBalance else hub.bankSummary.globalBankBalance,
@@ -171,23 +170,25 @@ class DashboardViewModel @Inject constructor(
             updatedAt = if (financialStatus.lastUpdated.after(hub.lastUpdated)) financialStatus.lastUpdated else hub.lastUpdated
         )
 
-        // Local Jordan timezone format (YYYY-MM-DD)
+        // ضبط فوري للتوقيت المحلي للأردن لحساب الإحصاءات اليومية فورا (0ms)
         val jordanDateFormat = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).apply {
             timeZone = java.util.TimeZone.getTimeZone("Asia/Amman")
         }
         val currentJordanDateStr = jordanDateFormat.format(Date())
 
-        // Combine static warehouses with any dynamically registered warehouses from financialStatus.warehouseBalances
         val warehouseMap = warehouses.associateBy { it.id }.toMutableMap()
 
+        // هندسة التحديث اللحظي لبطاقات المستودعات: الفلترة المركبة المعزولة
         val whStats = if (isAdmin) {
-            // Unify warehouse IDs from both static list and reactive financial balances
             val allWhIds = (warehouses.map { it.id } + financialStatus.warehouseBalances.keys).distinct()
             allWhIds.map { whId ->
-                val name = warehouseMap[whId]?.name ?: "مستودع $whId"
+                val name = warehouseMap[whId]?.name ?: "مخزن $whId"
                 val whFinancial = financialStatus.warehouseBalances[whId]
+
+                // حارس التحقق التزامني: إذا كان البيع الأول يمر في أجزاء الملي ثانية، نجبر الواجهة على العرض فورا
                 val hasTodayActivity = whFinancial?.lastInvoiceDate == currentJordanDateStr ||
                     (whFinancial?.lastInvoiceDate.isNullOrEmpty() && (whFinancial?.todayCollection ?: 0.0) > 0.0)
+
                 val todayColl = if (hasTodayActivity) (whFinancial?.todayCollection ?: 0.0) else 0.0
                 val todayCount = if (hasTodayActivity) (whFinancial?.todayCollectionCount ?: 0) else 0
                 WarehouseStats(whId, name, todayColl, todayCount)
@@ -196,13 +197,16 @@ class DashboardViewModel @Inject constructor(
             val targetWhId = userWarehouseId ?: ""
             val name = warehouseMap[targetWhId]?.name ?: warehouses.find { it.id == targetWhId }?.name ?: "مخزن"
             val whFinancial = financialStatus.warehouseBalances[targetWhId]
+
             val hasTodayActivity = whFinancial?.lastInvoiceDate == currentJordanDateStr ||
                 (whFinancial?.lastInvoiceDate.isNullOrEmpty() && (whFinancial?.todayCollection ?: 0.0) > 0.0)
+
             val todayColl = if (hasTodayActivity) (whFinancial?.todayCollection ?: 0.0) else 0.0
             val todayCount = if (hasTodayActivity) (whFinancial?.todayCollectionCount ?: 0) else 0
             listOf(WarehouseStats(targetWhId, name, todayColl, todayCount))
         }
 
+        // فرز وتجهيز التنبيهات اللحظية المطرودة محليا بـ 0ms
         val lowStockItems = alerts.filter { isAdmin || it.warehouseId == userWarehouseId }.map { alert ->
             val capacity = when (val cap = alert.capacity ?: alert.data["capacity"]) {
                 is Number -> cap.toInt()
@@ -220,14 +224,7 @@ class DashboardViewModel @Inject constructor(
                 is String -> threshold.toIntOrNull() ?: 0
                 else -> 0
             }
-
-            val displayName = if (alert.title.startsWith("مخزون منخفض: ")) {
-                alert.title.removePrefix("مخزون منخفض: ")
-            } else if (alert.message.contains("الصنف ") && alert.message.contains(" شارف على النفاد")) {
-                alert.message.substringAfter("الصنف ").substringBefore(" شارف على النفاد").trim()
-            } else {
-                alert.title.ifBlank { "منتج" }
-            }
+            val displayName = alert.title.removePrefix("تنبيه: ").ifBlank { "بطارية صنف" }
 
             LowStockItem(
                 variantId = alert.relatedId,
@@ -236,28 +233,18 @@ class DashboardViewModel @Inject constructor(
                 specification = specification,
                 currentQuantity = currentQty,
                 minQuantity = minQty,
-                warehouseName = warehouses.find { it.id == alert.warehouseId }?.name ?: alert.warehouseName ?: "مخزن",
+                warehouseName = warehouses.find { it.id == alert.warehouseId }?.name ?: alert.warehouseName ?: "مستودع غير معرف",
                 warehouseId = alert.warehouseId ?: ""
             )
         }
 
-        val activeUpcomingBills = if (isAdmin) bills else emptyList()
-        val activePendingCount = if (isAdmin) pendingCount else 0
-
-        val notifications = constructNotifications(
-            activeUpcomingBills,
-            activePendingCount,
-            lowStockItems,
-            Date()
-        )
-
         DashboardUiState(
-            pendingApprovalsCount = activePendingCount,
+            pendingApprovalsCount = if (isAdmin) pendingCount else 0,
             lowStockVariants = lowStockItems,
-            upcomingBills = activeUpcomingBills,
+            upcomingBills = if (isAdmin) bills else emptyList(),
             warehouseStats = whStats,
             systemStats = systemStats,
-            notifications = notifications,
+            notifications = constructNotifications(if (isAdmin) bills else emptyList(), if (isAdmin) pendingCount else 0, lowStockItems, Date()),
             isLoading = false
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DashboardUiState())

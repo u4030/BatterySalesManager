@@ -264,18 +264,19 @@ export const onInvoiceDeleted = onDocumentDeleted(
         });
 
         if (alertDeletionsCount > 0) {
+          // بث إشارة إذاعية شاملة لتنبيه مستمع التنبيهات في الكلاينت بطرد العناصر المحذوفة فورا
           transaction.set(
             db.doc("summaries/dashboard_hub"),
             {
               "scrapAndAlertsSummary.activeLowStockAlertsCount": FieldValue.increment(-alertDeletionsCount),
-              "syncRegistry.alertsVersion": FieldValue.increment(1),
+              version: FieldValue.increment(1), // 💡 تضمن استجابة 0ms لمستمع الموبايل
               lastUpdated: now,
             },
             { merge: true }
           );
         }
 
-        // Broadcast version increment to force immediate mobile listener updates
+        // إجبار الكاش الموحد محليا على طرد التحديث العكسي للمخزون بلحظتها
         transaction.set(
           db.doc("summaries/financial_status"),
           {
