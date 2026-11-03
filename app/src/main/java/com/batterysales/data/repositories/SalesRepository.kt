@@ -74,14 +74,7 @@ class SalesRepository @Inject constructor(
                     }
                 }
 
-                // تنظيف القائمة والتحقق القاطع من بقاء المستندات نشطة في السيرفر والكاش محليا
-                val validDocIds = snap.documents
-                    .filter { it.exists() && it.getBoolean("resolved") != true }
-                    .map { it.id }
-                    .toSet()
-                currentAlertsMap.keys.retainAll(validDocIds)
-
-                // بث فوري وتدفق لحظي إلى واجهة العرض للـ Composable الشاشة
+                // بث فوري وتدفق لحظي إلى واجهة العرض للـ Composable الشاشة مع تفريغ فوري ومباشر دون فلاتر ثابتة متأخرة
                 trySend(currentAlertsMap.values.toList()).isSuccess
             }
         }

@@ -681,13 +681,17 @@ class InvoiceRepository @Inject constructor(
         val allInvoicePaymentsSnap = firestore.collection(Payment.COLLECTION_NAME)
             .whereEqualTo("invoiceId", invoiceId).get().await()
 
-        val now = Date()
-        val otherPaymentsToday = allInvoicePaymentsSnap.documents
+        val remainingActivePayments = allInvoicePaymentsSnap.documents
             .filter { it.id != paymentId }
-            .any { doc ->
-                val date = doc.getDate("paymentDate") ?: doc.getDate("timestamp")
-                date != null && com.batterysales.utils.DateUtils.isSameDay(date, now)
-            }
+            .mapNotNull { it.toObject(Payment::class.java)?.copy(id = it.id) }
+
+        val newTotalPaid = remainingActivePayments.sumOf { it.amount }
+
+        val now = Date()
+        val otherPaymentsToday = remainingActivePayments.any { p ->
+            val date = p.paymentDate ?: p.timestamp
+            date != null && com.batterysales.utils.DateUtils.isSameDay(date, now)
+        }
 
         firestore.runTransaction { transaction ->
             // --- READ PHASE ---
@@ -705,12 +709,17 @@ class InvoiceRepository @Inject constructor(
             treasuryTransactions.forEach { transaction.delete(it.reference) }
             bankTransactions.forEach { transaction.delete(it.reference) }
             
-            val newTotalPaid = invoice.paidAmount - oldPayment.amount
-            val newRemaining = invoice.totalAmount - newTotalPaid
+            val newRemainingAmount = (invoice.totalAmount - newTotalPaid).coerceAtLeast(0.0)
+            val newStatus = when {
+                newRemainingAmount <= 0.001 -> "paid"
+                newTotalPaid > 0.001 -> "partial"
+                else -> "pending"
+            }
+
             transaction.update(invoiceRef, mapOf(
                 "paidAmount" to newTotalPaid,
-                "remainingAmount" to newRemaining,
-                "status" to (if (newRemaining <= 0.001) "paid" else "pending"),
+                "remainingAmount" to newRemainingAmount,
+                "status" to newStatus,
                 "updatedAt" to Date()
             ))
 

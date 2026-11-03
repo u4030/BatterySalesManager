@@ -57,11 +57,6 @@ class SystemAlertRepository @Inject constructor(
                         }
                     }
 
-                    val validDocIds = snapshot.documents.filter { doc ->
-                        doc.exists() && doc.getBoolean("resolved") != true
-                    }.map { it.id }.toSet()
-                    currentAlertsMap.keys.retainAll(validDocIds)
-
                     trySend(currentAlertsMap.values.toList()).isSuccess
                 }
             }
