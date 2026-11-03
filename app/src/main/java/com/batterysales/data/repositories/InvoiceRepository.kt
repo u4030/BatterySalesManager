@@ -702,11 +702,13 @@ class InvoiceRepository @Inject constructor(
             
             val targetWhId = invoice.warehouseId.ifBlank { "unassigned" }
             val summarySnapshots = summaryRepository.getSummarySnapshots(transaction, listOf(targetWhId))
+
             // --- WRITE PHASE ---
             transaction.delete(paymentRef)
             treasuryTransactions.forEach { transaction.delete(it.reference) }
             bankTransactions.forEach { transaction.delete(it.reference) }
             
+            // معادلة رياضية مرنة لاحتساب المتبقي الفعلي خطياً بالدينار الأردني JOD
             val newRemainingAmount = (invoice.totalAmount - newTotalPaid).coerceAtLeast(0.0)
             val newStatus = when {
                 newRemainingAmount <= 0.001 -> "paid"
@@ -721,7 +723,7 @@ class InvoiceRepository @Inject constructor(
                 "updatedAt" to Date()
             ))
 
-            // Only reverse from today if it was paid today
+            // عكس الحركة اليومية للصناديق المعزولة محلياً في الكاش فورا للكلاينت (0ms)
             val wasToday = com.batterysales.utils.DateUtils.isSameDay(oldPayment.paymentDate, now)
             val countChange = if (wasToday && !otherPaymentsToday) -1 else 0
 
@@ -735,6 +737,9 @@ class InvoiceRepository @Inject constructor(
                 todayCollectionChange = if (wasToday) -oldPayment.amount else 0.0,
                 todayCollectionCountChange = countChange
             )
+
+            // 🛑 تم بتر وحذف كود تحديث "statsRef" من جهة الموبايل نهائياً لمنع التداخل الحسابي المزدوج وثغرة قلب الأرصدة عشوائياً.
+            // الحسابات العامة لـ totalCustomerDebt تُدار بالكامل سيرفر-سايد لضمان اتساق الدلتا المالية %100.
         }.await()
     }
 }

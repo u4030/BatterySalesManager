@@ -25,6 +25,7 @@ class SystemAlertRepository @Inject constructor(
     fun getSystemAlertsFlow(): Flow<List<SystemAlert>> = callbackFlow {
         val currentAlertsMap = java.util.concurrent.ConcurrentHashMap<String, SystemAlert>()
 
+        // فرض الاستماع الحي للمجموعة بالكامل متضمناً ميتاداتا INCLUDE لالتقاط أحداث الحذف فوراً (0ms)
         val listener = firestore.collection(SystemAlert.COLLECTION_NAME)
             .addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
                 if (error != null) {
@@ -33,7 +34,7 @@ class SystemAlertRepository @Inject constructor(
                 }
 
                 if (snapshot != null) {
-                    // فحص صريح ومباشر لتغيرات الوثائق لإزالة التنبيهات المحذوفة فوراً (0ms)
+                    // تفتيش هيكلي عكسي صارم ومباشر لتغيرات الوثائق دون الاعتماد على القوائم الثابتة المعلقة
                     for (change in snapshot.documentChanges) {
                         val docId = change.document.id
                         when (change.type) {
@@ -57,6 +58,7 @@ class SystemAlertRepository @Inject constructor(
                         }
                     }
 
+                    // بث إذاعي تدفقي لحظي ومباشر ومطهر للواجهة الرسومية Jetpack Compose
                     trySend(currentAlertsMap.values.toList()).isSuccess
                 }
             }
