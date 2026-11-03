@@ -136,7 +136,7 @@ class DashboardViewModel @Inject constructor(
         userRepository.getCurrentUserFlow(),
         summaryRepository.getDashboardHubFlow(),
         summaryRepository.getFinancialStatusFlow(),
-        _warehouses,
+        warehouseRepository.getWarehouses(),
         lowStockAlertsFlow,
         upcomingBillsFlow,
         pendingCountFlow
@@ -145,7 +145,8 @@ class DashboardViewModel @Inject constructor(
         val hub = args[1] as? DashboardHub ?: DashboardHub()
         val financialStatus = args[2] as? FinancialStatus ?: FinancialStatus()
         @Suppress("UNCHECKED_CAST")
-        val warehouses = args[3] as? List<Warehouse> ?: emptyList()
+        val streamWarehouses = args[3] as? List<Warehouse> ?: emptyList()
+        val warehouses = if (streamWarehouses.isNotEmpty()) streamWarehouses else _warehouses.value
         @Suppress("UNCHECKED_CAST")
         val alerts = args[4] as? List<SystemAlert> ?: emptyList()
         @Suppress("UNCHECKED_CAST")
@@ -178,14 +179,14 @@ class DashboardViewModel @Inject constructor(
 
         val warehouseMap = warehouses.associateBy { it.id }.toMutableMap()
 
-        // هندسة التحديث اللحظي لبطاقات المستودعات: الفلترة المركبة المعزولة
+        // بناء بطاقات المستودعات بالاعتماد النشط على مفاتيح warehouseBalances الحية لكسر جمود التدفق تماماً
         val whStats = if (isAdmin) {
-            val allWhIds = (warehouses.map { it.id } + financialStatus.warehouseBalances.keys).distinct()
+            val allWhIds = (financialStatus.warehouseBalances.keys + warehouses.map { it.id }).distinct()
             allWhIds.map { whId ->
                 val name = warehouseMap[whId]?.name ?: "مخزن $whId"
                 val whFinancial = financialStatus.warehouseBalances[whId]
 
-                // حارس التحقق التزامني: إذا كان البيع الأول يمر في أجزاء الملي ثانية، نجبر الواجهة على العرض فورا
+                // حارس التوقيت التزامني: إذا مر المبيع الأول، نجبر قنوات الواجهة على الإطلاق فورا
                 val hasTodayActivity = whFinancial?.lastInvoiceDate == currentJordanDateStr ||
                     (whFinancial?.lastInvoiceDate.isNullOrEmpty() && (whFinancial?.todayCollection ?: 0.0) > 0.0)
 
