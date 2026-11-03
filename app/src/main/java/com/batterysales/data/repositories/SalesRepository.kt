@@ -1,5 +1,6 @@
 package com.batterysales.data.repositories
 
+import com.google.firebase.firestore.DocumentChange
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.MetadataChanges
 import com.google.firebase.firestore.Query
@@ -46,6 +47,8 @@ class SalesRepository @Inject constructor(
             .whereEqualTo("warehouseId", warehouseId)
             .whereEqualTo("resolved", false) // مطابقة الاستعلام الخطي للسيرفر
 
+        val currentAlertsMap = java.util.concurrent.ConcurrentHashMap<String, Map<String, Any>>()
+
         val registration = query.addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
             if (error != null) {
                 close(error)
@@ -53,15 +56,32 @@ class SalesRepository @Inject constructor(
             }
 
             snapshot?.let { snap ->
-                // القضاء التام على الـ Latency واستبعاد التنبيهات المحذوفة أو المحلولة بلحظتها
-                val alerts = snap.documents
-                    .filter { doc ->
-                        doc.exists() && (doc.getBoolean("resolved") != true)
+                // فحص صريح للتغييرات الهيكلية لطرد أي تنبيه محذوف بلحظتها (0ms Latency)
+                for (change in snap.documentChanges) {
+                    val docId = change.document.id
+                    when (change.type) {
+                        DocumentChange.Type.REMOVED -> {
+                            currentAlertsMap.remove(docId)
+                        }
+                        DocumentChange.Type.ADDED,
+                        DocumentChange.Type.MODIFIED -> {
+                            val doc = change.document
+                            val isResolved = doc.getBoolean("resolved") ?: false
+                            if (doc.exists() && !isResolved) {
+                                val data = doc.data?.plus("id" to doc.id) ?: emptyMap()
+                                currentAlertsMap[docId] = data
+                            } else {
+                                currentAlertsMap.remove(docId)
+                            }
+                        }
                     }
-                    .map { doc ->
-                        doc.data?.plus("id" to doc.id) ?: emptyMap()
-                    }
-                trySend(alerts)
+                }
+
+                // التأكد من مطابقة جميع وثائق اللقطة النشطة الحالية
+                val validDocIds = snap.documents.filter { it.exists() && it.getBoolean("resolved") != true }.map { it.id }.toSet()
+                currentAlertsMap.keys.retainAll(validDocIds)
+
+                trySend(currentAlertsMap.values.toList())
             }
         }
         awaitClose { registration.remove() }

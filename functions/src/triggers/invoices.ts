@@ -264,6 +264,16 @@ export const onInvoiceDeleted = onDocumentDeleted(
             { merge: true }
           );
         }
+
+        // Broadcast version increment to force immediate mobile listener updates
+        transaction.set(
+          db.doc("summaries/financial_status"),
+          {
+            version: FieldValue.increment(1),
+            lastUpdated: now,
+          },
+          { merge: true }
+        );
       });
     }
 
