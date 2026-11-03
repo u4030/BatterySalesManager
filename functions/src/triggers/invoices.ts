@@ -96,7 +96,14 @@ export const onInvoiceCreated = onDocumentCreated(
       subWarehouseDeltas[warehouseId] = !isBank ? paidAmount : 0;
     }
 
-    const todayDateStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    // Calculate localized date string in Asia/Amman (UTC+3) to ensure temporal consistency
+    const todayDateStr = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Amman",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date()); // Outputs YYYY-MM-DD in Asia/Amman
+
     const whBalanceUpdate: Record<string, any> = {
       cashBalance: FieldValue.increment(!isBank ? paidAmount : 0),
       bankBalance: FieldValue.increment(isBank ? paidAmount : 0),

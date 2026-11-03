@@ -171,19 +171,26 @@ class DashboardViewModel @Inject constructor(
             updatedAt = hub.lastUpdated
         )
 
+        // Local Jordan timezone format (YYYY-MM-DD)
+        val jordanDateFormat = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).apply {
+            timeZone = java.util.TimeZone.getTimeZone("Asia/Amman")
+        }
+        val currentJordanDateStr = jordanDateFormat.format(Date())
+
         val whStats = if (isAdmin) {
             warehouses.map { wh ->
-                val bal = hub.financialStatus.subWarehouseBalances[wh.id] ?: 0.0
                 val whFinancial = financialStatus.warehouseBalances[wh.id]
-                val todayColl = whFinancial?.todayCollection ?: 0.0
-                val todayCount = whFinancial?.todayCollectionCount ?: 0
+                val isToday = whFinancial?.lastInvoiceDate.isNullOrEmpty() || whFinancial?.lastInvoiceDate == currentJordanDateStr
+                val todayColl = if (isToday) (whFinancial?.todayCollection ?: 0.0) else 0.0
+                val todayCount = if (isToday) (whFinancial?.todayCollectionCount ?: 0) else 0
                 WarehouseStats(wh.id, wh.name, todayColl, todayCount)
             }
         } else {
             val targetWhId = userWarehouseId ?: ""
             val whFinancial = financialStatus.warehouseBalances[targetWhId]
-            val todayColl = whFinancial?.todayCollection ?: 0.0
-            val todayCount = whFinancial?.todayCollectionCount ?: 0
+            val isToday = whFinancial?.lastInvoiceDate.isNullOrEmpty() || whFinancial?.lastInvoiceDate == currentJordanDateStr
+            val todayColl = if (isToday) (whFinancial?.todayCollection ?: 0.0) else 0.0
+            val todayCount = if (isToday) (whFinancial?.todayCollectionCount ?: 0) else 0
             listOf(WarehouseStats(targetWhId, warehouses.find { it.id == targetWhId }?.name ?: "مخزن", todayColl, todayCount))
         }
 
