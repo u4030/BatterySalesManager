@@ -64,19 +64,39 @@ class DashboardViewModel @Inject constructor(
     private val approvalRepository: ApprovalRepository,
     private val systemAlertRepository: SystemAlertRepository,
     private val salesRepository: SalesRepository,
+    private val persistentSyncManager: com.batterysales.data.local.PersistentSyncManager,
     private val firestore: com.google.firebase.firestore.FirebaseFirestore
 ) : ViewModel() {
 
     private val _warehouses = MutableStateFlow<List<Warehouse>>(emptyList())
+    // حارس التنبيهات المطرودة محلياً في الذاكرة الحية (0ms) لمنع الـ Phantom Alerts
+    private val _locallySuppressedAlertIds = MutableStateFlow<Set<String>>(emptySet())
+
+    fun suppressAlertLocally(variantId: String, warehouseId: String) {
+        val compositeId = "low_stock_${variantId}_${warehouseId}"
+        _locallySuppressedAlertIds.update { it + compositeId + "bill_$variantId" }
+    }
+
+    data class AlertStreamContext(
+        val user: User?,
+        val versionToken: Long,
+        val suppressedIds: Set<String>
+    )
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     private val lowStockAlertsFlow: Flow<List<SystemAlert>> = combine(
         userRepository.getCurrentUserFlow(),
-        summaryRepository.getFinancialStatusFlow()
-    ) { user: User?, financialStatus: FinancialStatus ->
-        user to financialStatus.version
-    }.flatMapLatest { pair ->
-        val user = pair.first
+        summaryRepository.getFinancialStatusFlow(),
+        _locallySuppressedAlertIds
+    ) { user, financialStatus, suppressedIds ->
+        AlertStreamContext(
+            user = user,
+            versionToken = financialStatus.version,
+            suppressedIds = suppressedIds
+        )
+    }.flatMapLatest { ctx ->
+        val user = ctx.user
+        val suppressedIds = ctx.suppressedIds
         if (user == null) {
             flowOf(emptyList())
         } else {
@@ -118,9 +138,16 @@ class DashboardViewModel @Inject constructor(
                 }
             }
 
-            // ربط قسري لتدفق التنبيهات مع رمز النسخة version للبث الفوري 0ms
+            // ربط قسري لتدفق التنبيهات مع رمز النسخة version وطرد المعزول محلياً بـ 0ms
             alertsSourceFlow.map { list ->
-                list.filter { !it.resolved && it.status != "resolved" && it.status != "deleted" }
+                list.filter { alert ->
+                    val compositeId = "low_stock_${alert.relatedId.ifEmpty { alert.variantId }}_${alert.warehouseId ?: ""}"
+                    !alert.resolved &&
+                    alert.status != "resolved" &&
+                    alert.status != "deleted" &&
+                    !suppressedIds.contains(alert.id) &&
+                    !suppressedIds.contains(compositeId)
+                }
             }
         }
     }
