@@ -343,16 +343,34 @@ class AccountingViewModel @Inject constructor(
     }
 
     fun addManualTransaction(type: TransactionType, amount: Double, description: String, referenceNumber: String = "", paymentMethod: String = "cash") {
+        // --- تعديل تفاؤلي فوري لرصيد الخزينة بـ (0ms) بالدينار الأردني JOD ---
+        val delta = if (type == TransactionType.INCOME) amount else -amount
+        _balance.update { (it + delta).coerceAtLeast(0.0) }
+
         viewModelScope.launch {
             _isSubmitting.value = true
+            val opId = "acc_tx_${System.currentTimeMillis()}"
             try {
+                persistentSyncManager.recordPendingOperation(
+                    com.batterysales.data.local.PendingSyncOperation(
+                        operationId = opId,
+                        type = "TREASURY_TRANSACTION",
+                        relatedId = referenceNumber.ifEmpty { opId },
+                        status = "PENDING_SYNC"
+                    )
+                )
+
                 val transaction = Transaction(
                     type = type, amount = amount, description = description, 
                     referenceNumber = referenceNumber, warehouseId = _selectedWarehouseId.value ?: "", 
                     paymentMethod = paymentMethod
                 )
                 repository.addTransaction(transaction)
+                persistentSyncManager.removePendingOperation(opId)
                 loadData(reset = true)
+            } catch (e: Exception) {
+                persistentSyncManager.removePendingOperation(opId)
+                _errorMessage.value = e.message
             } finally {
                 _isSubmitting.value = false
             }

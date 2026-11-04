@@ -30,6 +30,7 @@ class InvoiceDetailViewModel @Inject constructor(
     private val invoiceRepository: InvoiceRepository,
     private val paymentRepository: PaymentRepository,
     private val accountingRepository: AccountingRepository,
+    private val persistentSyncManager: com.batterysales.data.local.PersistentSyncManager,
     private val stockEntryRepository: com.batterysales.data.repositories.StockEntryRepository,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
@@ -147,9 +148,22 @@ class InvoiceDetailViewModel @Inject constructor(
         }
 
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val opId = "pay_del_${System.currentTimeMillis()}_$paymentId"
             try {
+                // قيد المعاملة العكسية كـ PENDING_SYNC في DataStore لحمايتها من الموت المفاجئ للهاتف
+                persistentSyncManager.recordPendingOperation(
+                    com.batterysales.data.local.PendingSyncOperation(
+                        operationId = opId,
+                        type = "PAYMENT_DELETE",
+                        relatedId = paymentId,
+                        status = "PENDING_SYNC"
+                    )
+                )
+
                 invoiceRepository.deletePayment(paymentId, invoiceId)
+                persistentSyncManager.removePendingOperation(opId)
             } catch (e: Exception) {
+                persistentSyncManager.removePendingOperation(opId)
                 // في حال فشل المعاملة، التراجع التفاؤلي لحالة الواجهة السابقة
                 _uiState.update {
                     it.copy(
