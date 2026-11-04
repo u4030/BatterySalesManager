@@ -49,7 +49,8 @@ class SystemAlertRepository @Inject constructor(
                                 } catch (e: Exception) {
                                     null
                                 }
-                                if (alert != null && !alert.resolved) {
+
+                                if (alert != null && !alert.resolved && alert.status != "deleted") {
                                     currentAlertsMap[docId] = alert
                                 } else {
                                     currentAlertsMap.remove(docId)

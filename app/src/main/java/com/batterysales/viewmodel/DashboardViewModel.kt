@@ -215,42 +215,45 @@ class DashboardViewModel @Inject constructor(
         }
 
         // فرز وتجهيز التنبيهات اللحظية المطرودة محليا بـ 0ms مع استهلاك رمز الإصدار version لإعادة التقييم القسري عند إلغاء الفاتورة
-        val broadcastVersion = financialStatus.version
-        val lowStockItems = alerts
-            .filter { alert ->
-                !alert.resolved && alert.status != "resolved" && alert.status != "deleted" &&
-                (isAdmin || alert.warehouseId == userWarehouseId)
-            }
-            .mapNotNull { alert ->
-                val capacity = when (val cap = alert.capacity ?: alert.data["capacity"]) {
-                    is Number -> cap.toInt()
-                    is String -> cap.toIntOrNull() ?: 0
-                    else -> 0
-                }
-                val specification = alert.specification.ifEmpty { (alert.data["specification"] as? String) ?: "" }
-                val currentQty = when (val stock = alert.currentStock ?: alert.data["currentStock"]) {
-                    is Number -> stock.toInt()
-                    is String -> stock.toIntOrNull() ?: 0
-                    else -> 0
-                }
-                val minQty = when (val threshold = alert.threshold ?: alert.data["threshold"]) {
-                    is Number -> threshold.toInt()
-                    is String -> threshold.toIntOrNull() ?: 0
-                    else -> 0
-                }
-                val displayName = alert.title.removePrefix("تنبيه: ").ifBlank { "صنف بطارية" }
+        val broadcastVersion = financialStatus.version // بث إشاري حاسم لالتقاط البرودكاست
 
-                LowStockItem(
-                    variantId = alert.relatedId,
-                    productName = displayName,
-                    capacity = capacity,
-                    specification = specification,
-                    currentQuantity = currentQty,
-                    minQuantity = minQty,
-                    warehouseName = warehouses.find { it.id == alert.warehouseId }?.name ?: alert.warehouseName ?: "مستودع غير معروف",
-                    warehouseId = alert.warehouseId ?: ""
-                )
+        val lowStockItems = alerts.filter { alert ->
+            // قراءة المستندات النشطة فقط والتي لم يتم حذفها هيكلياً من السيرفر والكاش محلياً
+            !alert.resolved && alert.status != "resolved" && alert.status != "deleted" &&
+            (isAdmin || alert.warehouseId == userWarehouseId)
+        }.map { alert ->
+            val rawCap = alert.capacity ?: alert.data["capacity"]
+            val capacity: Int = when (rawCap) {
+                is Number -> rawCap.toInt()
+                is String -> rawCap.toIntOrNull() ?: 0
+                else -> 0
             }
+            val specification = alert.specification.ifEmpty { (alert.data["specification"] as? String) ?: "" }
+            val rawStock = alert.currentStock ?: alert.data["currentStock"]
+            val currentQty: Int = when (rawStock) {
+                is Number -> rawStock.toInt()
+                is String -> rawStock.toIntOrNull() ?: 0
+                else -> 0
+            }
+            val rawMin = alert.threshold ?: alert.data["threshold"]
+            val minQty: Int = when (rawMin) {
+                is Number -> rawMin.toInt()
+                is String -> rawMin.toIntOrNull() ?: 0
+                else -> 0
+            }
+            val displayName = alert.title.removePrefix("تنبيه: ").ifBlank { "بطارية صنف" }
+
+            LowStockItem(
+                variantId = alert.relatedId,
+                productName = displayName,
+                capacity = capacity,
+                specification = specification,
+                currentQuantity = currentQty,
+                minQuantity = minQty,
+                warehouseName = warehouses.find { it.id == alert.warehouseId }?.name ?: alert.warehouseName ?: "مستودع غير معرف",
+                warehouseId = alert.warehouseId ?: ""
+            )
+        }
 
         DashboardUiState(
             pendingApprovalsCount = if (isAdmin) pendingCount else 0,
