@@ -78,6 +78,7 @@ class StockEntryViewModel @Inject constructor(
     private val supplierRepository: SupplierRepository,
     private val billRepository: BillRepository,
     private val userRepository: UserRepository,
+    private val persistentSyncManager: com.batterysales.data.local.PersistentSyncManager,
     private val networkHelper: com.batterysales.utils.NetworkHelper,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
@@ -430,11 +431,23 @@ class StockEntryViewModel @Inject constructor(
                             )
                         } else null
 
+                        val opId = "stock_entry_${System.currentTimeMillis()}_$orderId"
+                        persistentSyncManager.recordPendingOperation(
+                            com.batterysales.data.local.PendingSyncOperation(
+                                operationId = opId,
+                                type = "STOCK_ENTRY",
+                                relatedId = orderId,
+                                status = "PENDING_SYNC"
+                            )
+                        )
+
                         stockEntryRepository.saveStockOrderBatch(
                             entries = entries,
                             variantsToUpdate = variantsToUpdate,
                             bill = billToCreate
                         )
+
+                        persistentSyncManager.removePendingOperation(opId)
                     }
                     true
                 }
