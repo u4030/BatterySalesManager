@@ -22,7 +22,7 @@ class AccountingRepository @Inject constructor(
         if (warehouseId != null && warehouseId != "all") {
             query = query.whereEqualTo("warehouseId", warehouseId)
         }
-        val listener = query.addSnapshotListener { snap, err ->
+        val listener = query.addSnapshotListener(com.google.firebase.firestore.MetadataChanges.INCLUDE) { snap, err ->
             if (err != null) {
                 close(err)
                 return@addSnapshotListener
@@ -159,7 +159,11 @@ class AccountingRepository @Inject constructor(
             query = query.startAfter(lastDocument)
         }
 
-        val snapshot = query.limit(limit).get().await()
+        val snapshot = try {
+            query.limit(limit).get(com.google.firebase.firestore.Source.CACHE).await()
+        } catch (e: Exception) {
+            query.limit(limit).get().await()
+        }
         val transactions = snapshot.documents.mapNotNull { it.toObject(Transaction::class.java)?.copy(id = it.id) }
         val lastDoc = snapshot.documents.lastOrNull()
 
