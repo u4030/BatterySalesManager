@@ -16,7 +16,7 @@ class SupplierRepository @Inject constructor(
 ) {
     fun getSuppliers(): Flow<List<Supplier>> = callbackFlow {
         val listenerRegistration = firestore.collection(Supplier.COLLECTION_NAME)
-            .addSnapshotListener { snapshot, error ->
+            .addSnapshotListener(com.google.firebase.firestore.MetadataChanges.INCLUDE) { snapshot, error ->
                 if (error != null) {
                     close(error)
                     return@addSnapshotListener
@@ -49,7 +49,7 @@ class SupplierRepository @Inject constructor(
     fun getSupplierFlow(supplierId: String): Flow<Supplier?> = callbackFlow {
         val listenerRegistration = firestore.collection(Supplier.COLLECTION_NAME)
             .document(supplierId)
-            .addSnapshotListener { snapshot, error ->
+            .addSnapshotListener(com.google.firebase.firestore.MetadataChanges.INCLUDE) { snapshot, error ->
                 if (error != null) {
                     close(error)
                     return@addSnapshotListener
