@@ -26,7 +26,8 @@ class AccountingViewModel @Inject constructor(
     private val repository: AccountingRepository,
     private val summaryRepository: SummaryRepository,
     private val userRepository: UserRepository,
-    private val warehouseRepository: WarehouseRepository
+    private val warehouseRepository: WarehouseRepository,
+    private val persistentSyncManager: com.batterysales.data.local.PersistentSyncManager
 ) : ViewModel() {
 
     private val _balance = MutableStateFlow(0.0)
@@ -267,6 +268,13 @@ class AccountingViewModel @Inject constructor(
 
                 if (currentWhId == null || currentWhId == "all" || currentWhId == mainWh?.id) {
                     _errorMessage.value = "يرجى تحديد مستودع فرعي لترحيل رصيده إلى الخزينة الرئيسية."
+                    return@launch
+                }
+
+                // --- حارس القفل الصارم لترحيل الصندوق (Gatekeeper Lock) ---
+                val pendingOps = persistentSyncManager.pendingOperationsFlow.first()
+                if (pendingOps.any { it.status == "PENDING_SYNC" }) {
+                    _errorMessage.value = "تنبيه مانع: توجد عمليات بيع أو تسديد معلقة لم تكتمل مزامنتها بعد من أجهزة البائعين. يرجى انتظار استقرار المزامنة أولاً لتجنب العجز المالي."
                     return@launch
                 }
 

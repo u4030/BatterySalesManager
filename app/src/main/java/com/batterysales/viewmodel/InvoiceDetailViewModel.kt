@@ -119,12 +119,45 @@ class InvoiceDetailViewModel @Inject constructor(
     }
 
     fun deletePayment(paymentId: String) {
+        val currentPayments = _uiState.value.payments
+        val currentInvoice = _uiState.value.invoice
+
+        // --- طرد الدفعة تفاؤلياً من الذاكرة الحية وإعادة احتساب الرصيد بـ (0ms) ---
+        val targetPayment = currentPayments.find { it.id == paymentId }
+        val updatedPayments = currentPayments.filter { it.id != paymentId }
+        val newPaidAmount = updatedPayments.sumOf { it.amount }
+        val newRemaining = ((currentInvoice?.totalAmount ?: 0.0) - newPaidAmount).coerceAtLeast(0.0)
+        val newStatus = when {
+            newRemaining <= 0.001 -> "paid"
+            newPaidAmount > 0.001 -> "partial"
+            else -> "pending"
+        }
+        val optimisticInvoice = currentInvoice?.copy(
+            paidAmount = newPaidAmount,
+            remainingAmount = newRemaining,
+            status = newStatus
+        )
+
+        _uiState.update {
+            it.copy(
+                payments = updatedPayments,
+                invoice = optimisticInvoice ?: it.invoice,
+                isSubmitting = true
+            )
+        }
+
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            _uiState.update { it.copy(isSubmitting = true) }
             try {
                 invoiceRepository.deletePayment(paymentId, invoiceId)
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = "فشل حذف الدفعة: ${e.message}") }
+                // في حال فشل المعاملة، التراجع التفاؤلي لحالة الواجهة السابقة
+                _uiState.update {
+                    it.copy(
+                        payments = currentPayments,
+                        invoice = currentInvoice,
+                        errorMessage = "فشل حذف الدفعة: ${e.message}"
+                    )
+                }
             } finally {
                 _uiState.update { it.copy(isSubmitting = false) }
             }

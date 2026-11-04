@@ -181,7 +181,7 @@ class DashboardViewModel @Inject constructor(
         userRepository.getCurrentUserFlow(),
         summaryRepository.getDashboardHubFlow(),
         summaryRepository.getFinancialStatusFlow(),
-        warehouseRepository.getWarehouses(),
+        _warehouses,
         lowStockAlertsFlow,
         upcomingBillsFlow,
         pendingCountFlow
@@ -190,8 +190,7 @@ class DashboardViewModel @Inject constructor(
         val hub = args[1] as? DashboardHub ?: DashboardHub()
         val financialStatus = args[2] as? FinancialStatus ?: FinancialStatus()
         @Suppress("UNCHECKED_CAST")
-        val streamWarehouses = args[3] as? List<Warehouse> ?: emptyList()
-        val warehouses = if (streamWarehouses.isNotEmpty()) streamWarehouses else _warehouses.value
+        val warehouses = args[3] as? List<Warehouse> ?: emptyList()
         @Suppress("UNCHECKED_CAST")
         val alerts = args[4] as? List<SystemAlert> ?: emptyList()
         @Suppress("UNCHECKED_CAST")
