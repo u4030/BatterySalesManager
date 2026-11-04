@@ -86,23 +86,30 @@ class DashboardViewModel @Inject constructor(
     data class AlertStreamContext(
         val user: User?,
         val versionToken: Long,
-        val suppressedIds: Set<String>
+        val suppressedIds: Set<String>,
+        val pendingSuppressedIds: Set<String>
     )
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     private val lowStockAlertsFlow: Flow<List<SystemAlert>> = combine(
         userRepository.getCurrentUserFlow(),
         summaryRepository.getFinancialStatusFlow(),
-        _locallySuppressedAlertIds
-    ) { user, financialStatus, suppressedIds ->
+        _locallySuppressedAlertIds,
+        persistentSyncManager.pendingOperationsFlow
+    ) { user, financialStatus, suppressedIds, pendingOps ->
+        val diskSuppressed = pendingOps
+            .filter { it.type == "ALERT_SUPPRESS" }
+            .map { it.relatedId }
+            .toSet()
         AlertStreamContext(
             user = user,
             versionToken = financialStatus.version,
-            suppressedIds = suppressedIds
+            suppressedIds = suppressedIds,
+            pendingSuppressedIds = diskSuppressed
         )
     }.flatMapLatest { ctx ->
         val user = ctx.user
-        val suppressedIds = ctx.suppressedIds
+        val allSuppressed = ctx.suppressedIds + ctx.pendingSuppressedIds
         if (user == null) {
             flowOf(emptyList())
         } else {
@@ -151,8 +158,8 @@ class DashboardViewModel @Inject constructor(
                     !alert.resolved &&
                     alert.status != "resolved" &&
                     alert.status != "deleted" &&
-                    !suppressedIds.contains(alert.id) &&
-                    !suppressedIds.contains(compositeId)
+                    !allSuppressed.contains(alert.id) &&
+                    !allSuppressed.contains(compositeId)
                 }
             }
         }
