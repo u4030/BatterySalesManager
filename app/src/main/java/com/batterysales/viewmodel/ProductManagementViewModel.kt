@@ -39,6 +39,7 @@ class ProductManagementViewModel @Inject constructor(
     private val summaryRepository: com.batterysales.data.repositories.SummaryRepository,
     private val warehouseRepository: WarehouseRepository,
     private val supplierRepository: SupplierRepository,
+    private val persistentSyncManager: com.batterysales.data.local.PersistentSyncManager,
     private val userRepository: UserRepository,
     private val approvalRepository: ApprovalRepository
 ) : ViewModel() {
@@ -164,7 +165,19 @@ class ProductManagementViewModel @Inject constructor(
 
                 val product = Product(name = name, supplierId = supplierId)
                 if (product.isValid()) {
+                    // حقن تفاؤلي فوري في القائمة الحية بـ (0ms)
+                    _products.update { it + product }
+                    val opId = "prod_add_${System.currentTimeMillis()}"
+                    persistentSyncManager.recordPendingOperation(
+                        com.batterysales.data.local.PendingSyncOperation(
+                            operationId = opId,
+                            type = "PRODUCT_ADD",
+                            relatedId = product.name,
+                            status = "PENDING_SYNC"
+                        )
+                    )
                     productRepository.addProduct(product)
+                    persistentSyncManager.removePendingOperation(opId)
                     loadProducts()
                 } else {
                     _errorMessage.value = product.getValidationError()
