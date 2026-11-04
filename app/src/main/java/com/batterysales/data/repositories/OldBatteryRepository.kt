@@ -7,21 +7,29 @@ import com.google.firebase.firestore.AggregateSource
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
-import com.google.firebase.firestore.snapshots
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 
 class OldBatteryRepository @Inject constructor(
     private val firestore: FirebaseFirestore
 ) {
-    fun getAllTransactionsFlow(): Flow<List<OldBatteryTransaction>> {
-        return firestore.collection(OldBatteryTransaction.COLLECTION_NAME)
-            .snapshots()
-            .map { snapshot ->
-                snapshot.documents.mapNotNull { it.toObject(OldBatteryTransaction::class.java)?.copy(id = it.id) }
+    fun getAllTransactionsFlow(): Flow<List<OldBatteryTransaction>> = callbackFlow {
+        val listenerRegistration = firestore.collection(OldBatteryTransaction.COLLECTION_NAME)
+            .orderBy("date", Query.Direction.DESCENDING)
+            .addSnapshotListener(com.google.firebase.firestore.MetadataChanges.INCLUDE) { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    val transactions = snapshot.documents.mapNotNull { it.toObject(OldBatteryTransaction::class.java)?.copy(id = it.id) }
+                    trySend(transactions).isSuccess
+                }
             }
+        awaitClose { listenerRegistration.remove() }
     }
 
     suspend fun addTransaction(transaction: OldBatteryTransaction): String {
@@ -265,7 +273,16 @@ class OldBatteryRepository @Inject constructor(
             query = query.startAfter(lastDocument)
         }
 
-        val snapshot = query.limit(limit).get().await()
+        val snapshot = try {
+            if (lastDocument == null) {
+                val cacheSnap = query.limit(limit).get(com.google.firebase.firestore.Source.CACHE).await()
+                if (!cacheSnap.isEmpty) cacheSnap else query.limit(limit).get(com.google.firebase.firestore.Source.SERVER).await()
+            } else {
+                query.limit(limit).get().await()
+            }
+        } catch (e: Exception) {
+            query.limit(limit).get().await()
+        }
         val transactions = snapshot.documents.mapNotNull { it.toObject(OldBatteryTransaction::class.java)?.copy(id = it.id) }
         val lastDoc = snapshot.documents.lastOrNull()
 

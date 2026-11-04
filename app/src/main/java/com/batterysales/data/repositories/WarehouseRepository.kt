@@ -33,11 +33,11 @@ class WarehouseRepository @Inject constructor(
                     }
                     return@addSnapshotListener
                 }
-                if (snapshot != null && !snapshot.metadata.hasPendingWrites()) {
+                if (snapshot != null) {
                     val warehouses = snapshot.documents.mapNotNull { doc ->
                         doc.toObject(Warehouse::class.java)?.copy(id = doc.id)
                     }
-                    if (warehouses.isNotEmpty() || !snapshot.metadata.isFromCache) {
+                    if (warehouses.isNotEmpty() || !snapshot.metadata.isFromCache || snapshot.metadata.hasPendingWrites()) {
                         cachedWarehouses = warehouses
                         trySend(warehouses).isSuccess
                     } else if (cachedWarehouses.isNotEmpty()) {
