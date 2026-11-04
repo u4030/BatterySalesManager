@@ -30,7 +30,7 @@ class PaymentRepository @Inject constructor(
     fun getPaymentsForInvoice(invoiceId: String): Flow<List<Payment>> = callbackFlow {
         val listenerRegistration = firestore.collection(Payment.COLLECTION_NAME)
             .whereEqualTo("invoiceId", invoiceId)
-            .addSnapshotListener { snapshot, error ->
+            .addSnapshotListener(com.google.firebase.firestore.MetadataChanges.INCLUDE) { snapshot, error ->
                 if (error != null) {
                     close(error)
                     return@addSnapshotListener

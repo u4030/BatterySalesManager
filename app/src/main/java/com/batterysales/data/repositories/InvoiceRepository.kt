@@ -42,7 +42,7 @@ class InvoiceRepository @Inject constructor(
         val listenerRegistration = firestore.collection(Invoice.COLLECTION_NAME)
             .orderBy("createdAt", Query.Direction.DESCENDING)
             .limit(limit)
-            .addSnapshotListener { snapshot, error ->
+            .addSnapshotListener(com.google.firebase.firestore.MetadataChanges.INCLUDE) { snapshot, error ->
                 if (error != null) {
                     close(error)
                     return@addSnapshotListener
