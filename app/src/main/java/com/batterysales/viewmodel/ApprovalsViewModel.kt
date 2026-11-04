@@ -36,6 +36,7 @@ class ApprovalsViewModel @Inject constructor(
     private val summaryRepository: com.batterysales.data.repositories.SummaryRepository,
     private val warehouseRepository: WarehouseRepository,
     private val approvalRepository: ApprovalRepository,
+    private val persistentSyncManager: com.batterysales.data.local.PersistentSyncManager,
     private val billRepository: com.batterysales.data.repositories.BillRepository,
     private val userRepository: UserRepository
 ) : ViewModel() {
@@ -114,9 +115,23 @@ class ApprovalsViewModel @Inject constructor(
     }
 
     fun approveEntry(entryId: String) {
+        // --- طرد تفاؤلي فوري للطلب من القائمة بـ (0ms) ---
+        val previousItems = _approvalItems.value
+        _approvalItems.update { it.filter { item -> item.entry?.id != entryId } }
+
         viewModelScope.launch {
             _isSubmitting.value = true
+            val opId = "appr_entry_${System.currentTimeMillis()}_$entryId"
             try {
+                persistentSyncManager.recordPendingOperation(
+                    com.batterysales.data.local.PendingSyncOperation(
+                        operationId = opId,
+                        type = "APPROVAL_ENTRY",
+                        relatedId = entryId,
+                        status = "PENDING_SYNC"
+                    )
+                )
+
                 stockEntryRepository.approveEntry(entryId)
                 
                 // تحديث الروابط التلقائية للمورد بعد الموافقة
@@ -125,7 +140,10 @@ class ApprovalsViewModel @Inject constructor(
                         billRepository.autoLinkBillsForSupplier(entry.supplierId)
                     }
                 }
+                persistentSyncManager.removePendingOperation(opId)
             } catch (e: Exception) {
+                persistentSyncManager.removePendingOperation(opId)
+                _approvalItems.value = previousItems
                 Log.e("ApprovalsViewModel", "Error approving entry", e)
             } finally {
                 _isSubmitting.value = false
@@ -134,11 +152,27 @@ class ApprovalsViewModel @Inject constructor(
     }
 
     fun rejectEntry(entryId: String) {
+        val previousItems = _approvalItems.value
+        _approvalItems.update { it.filter { item -> item.entry?.id != entryId } }
+
         viewModelScope.launch {
             _isSubmitting.value = true
+            val opId = "rej_entry_${System.currentTimeMillis()}_$entryId"
             try {
+                persistentSyncManager.recordPendingOperation(
+                    com.batterysales.data.local.PendingSyncOperation(
+                        operationId = opId,
+                        type = "REJECT_ENTRY",
+                        relatedId = entryId,
+                        status = "PENDING_SYNC"
+                    )
+                )
+
                 stockEntryRepository.deleteStockEntry(entryId)
+                persistentSyncManager.removePendingOperation(opId)
             } catch (e: Exception) {
+                persistentSyncManager.removePendingOperation(opId)
+                _approvalItems.value = previousItems
                 Log.e("ApprovalsViewModel", "Error rejecting entry", e)
             } finally {
                 _isSubmitting.value = false

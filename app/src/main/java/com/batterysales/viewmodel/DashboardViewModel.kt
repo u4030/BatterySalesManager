@@ -41,6 +41,7 @@ data class DashboardUiState(
     val warehouseStats: List<WarehouseStats> = emptyList(),
     val notifications: List<AppNotification> = emptyList(),
     val systemStats: SystemStats = SystemStats(),
+    val blockingConflictError: String? = null,
     val isLoading: Boolean = true
 )
 
@@ -71,6 +72,11 @@ class DashboardViewModel @Inject constructor(
     private val _warehouses = MutableStateFlow<List<Warehouse>>(emptyList())
     // حارس التنبيهات المطرودة محلياً في الذاكرة الحية (0ms) لمنع الـ Phantom Alerts
     private val _locallySuppressedAlertIds = MutableStateFlow<Set<String>>(emptySet())
+    private val _blockingConflictError = MutableStateFlow<String?>(null)
+
+    fun dismissBlockingConflict() {
+        _blockingConflictError.value = null
+    }
 
     fun suppressAlertLocally(variantId: String, warehouseId: String) {
         val compositeId = "low_stock_${variantId}_${warehouseId}"
@@ -298,6 +304,7 @@ class DashboardViewModel @Inject constructor(
             upcomingBills = if (isAdmin) bills else emptyList(),
             warehouseStats = whStats,
             systemStats = systemStats,
+            blockingConflictError = _blockingConflictError.value,
             notifications = constructNotifications(if (isAdmin) bills else emptyList(), if (isAdmin) pendingCount else 0, lowStockItems, Date()),
             isLoading = false
         )

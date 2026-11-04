@@ -355,6 +355,33 @@ fun DashboardScreen(
         }
     }
 
+    if (dashboardState.blockingConflictError != null) {
+        AlertDialog(
+            onDismissRequest = { /* يمنع الإغلاق باللمس العشوائي للخلفية */ },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFEF4444))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("تنبيه تضارب حرج (Conflict Lock)", color = Color(0xFFEF4444), fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Text(
+                    text = dashboardState.blockingConflictError ?: "تم رصد تعارض في مبيع القطعة الأخيرة بين بائعين. تم التراجع التلقائي بنجاح.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = { dashboardViewModel.dismissBlockingConflict() },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
+                ) {
+                    Text("توقيع وتأكيد الاطلاع", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+    }
+
     if (showNotificationDialog) {
         NotificationDialog(
             notifications = dashboardState.notifications,
