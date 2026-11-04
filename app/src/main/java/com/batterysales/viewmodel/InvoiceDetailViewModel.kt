@@ -119,7 +119,7 @@ class InvoiceDetailViewModel @Inject constructor(
     }
 
     fun deletePayment(paymentId: String) {
-        viewModelScope.launch {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             _uiState.update { it.copy(isSubmitting = true) }
             try {
                 invoiceRepository.deletePayment(paymentId, invoiceId)

@@ -70,12 +70,18 @@ class DashboardViewModel @Inject constructor(
     private val _warehouses = MutableStateFlow<List<Warehouse>>(emptyList())
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    private val lowStockAlertsFlow: Flow<List<SystemAlert>> = userRepository.getCurrentUserFlow().flatMapLatest { user ->
+    private val lowStockAlertsFlow: Flow<List<SystemAlert>> = combine(
+        userRepository.getCurrentUserFlow(),
+        summaryRepository.getFinancialStatusFlow()
+    ) { user: User?, financialStatus: FinancialStatus ->
+        user to financialStatus.version
+    }.flatMapLatest { pair ->
+        val user = pair.first
         if (user == null) {
             flowOf(emptyList())
         } else {
             val isAdmin = user.role == "admin"
-            if (isAdmin) {
+            val alertsSourceFlow = if (isAdmin) {
                 // Admins observe all active system alerts via systemAlertRepository
                 systemAlertRepository.getSystemAlertsFlow()
             } else {
@@ -110,6 +116,11 @@ class DashboardViewModel @Inject constructor(
                         )
                     }
                 }
+            }
+
+            // ربط قسري لتدفق التنبيهات مع رمز النسخة version للبث الفوري 0ms
+            alertsSourceFlow.map { list ->
+                list.filter { !it.resolved && it.status != "resolved" && it.status != "deleted" }
             }
         }
     }
