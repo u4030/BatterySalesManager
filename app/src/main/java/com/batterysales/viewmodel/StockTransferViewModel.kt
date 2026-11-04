@@ -34,6 +34,7 @@ class StockTransferViewModel @Inject constructor(
     private val warehouseRepository: WarehouseRepository,
     private val stockEntryRepository: StockEntryRepository,
     private val summaryRepository: SummaryRepository,
+    private val persistentSyncManager: com.batterysales.data.local.PersistentSyncManager,
     private val userRepository: UserRepository
 ) : ViewModel() {
 
@@ -189,11 +190,28 @@ class StockTransferViewModel @Inject constructor(
                 return@launch
             }
 
+            // --- المقاصة التفاؤلية المزدوجة الفورية (0ms) ---
+            val newStockMap = state.stockLevels.toMutableMap()
+            newStockMap[Pair(variant.id, source.id)] = (available - qty).coerceAtLeast(0)
+            val destStock = state.stockLevels[Pair(variant.id, dest.id)] ?: 0
+            newStockMap[Pair(variant.id, dest.id)] = destStock + qty
+            _uiState.update { it.copy(stockLevels = newStockMap) }
+
+            val opId = "transfer_${System.currentTimeMillis()}_${variant.id}"
             try {
                 if (!source.isActive || !dest.isActive) {
                     _uiState.update { it.copy(errorMessage = "عذراً، أحد المستودعات المختارة متوقف حالياً.", isSubmitting = false) }
                     return@launch
                 }
+
+                persistentSyncManager.recordPendingOperation(
+                    com.batterysales.data.local.PendingSyncOperation(
+                        operationId = opId,
+                        type = "STOCK_TRANSFER",
+                        relatedId = variant.id,
+                        status = "PENDING_SYNC"
+                    )
+                )
 
                 stockEntryRepository.transferStockBulk(
                     listOf(
@@ -211,6 +229,7 @@ class StockTransferViewModel @Inject constructor(
                     )
                 )
 
+                persistentSyncManager.removePendingOperation(opId)
                 loadInitialData()
 
                 // Clear fields and reset state for next operation instead of closing screen
@@ -227,6 +246,7 @@ class StockTransferViewModel @Inject constructor(
                 }
             } catch (e: Exception) {
                 Log.e("StockTransferVM", "Transfer error", e)
+                persistentSyncManager.removePendingOperation(opId)
                 _uiState.update { it.copy(errorMessage = "فشل النقل: ${e.message}", isSubmitting = false) }
             }
         }
