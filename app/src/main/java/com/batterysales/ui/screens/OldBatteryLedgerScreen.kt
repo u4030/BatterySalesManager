@@ -48,6 +48,7 @@ fun OldBatteryLedgerScreen(
     val keyboardController = com.batterysales.ui.components.LocalCustomKeyboardController.current
     val pagingItems = viewModel.transactions.collectAsLazyPagingItems()
     val summary by viewModel.summary.collectAsState()
+    val scrapUiState by viewModel.scrapUiState.collectAsState()
     val scrapWarehouses by viewModel.scrapWarehouses.collectAsState()
     val isSeller by viewModel.isSeller.collectAsState()
     val userWarehouseId by viewModel.userWarehouseId.collectAsState()

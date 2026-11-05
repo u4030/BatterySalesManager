@@ -24,6 +24,11 @@ import kotlinx.coroutines.tasks.await
 import java.util.*
 import javax.inject.Inject
 
+data class ScrapUiState(
+    val totalAmperes: Double = 0.0,
+    val totalCount: Int = 0
+)
+
 @HiltViewModel
 class OldBatteryViewModel @Inject constructor(
     private val repository: OldBatteryRepository,
@@ -31,11 +36,32 @@ class OldBatteryViewModel @Inject constructor(
     private val accountingRepository: AccountingRepository,
     private val invoiceRepository: InvoiceRepository,
     private val userRepository: com.batterysales.data.repositories.UserRepository,
-    private val warehouseRepository: com.batterysales.data.repositories.WarehouseRepository
+    private val warehouseRepository: com.batterysales.data.repositories.WarehouseRepository,
+    private val persistentSyncManager: com.batterysales.data.local.PersistentSyncManager,
+    private val summaryRepository: com.batterysales.data.repositories.SummaryRepository
 ) : ViewModel() {
+
+    private val _scrapUiState = MutableStateFlow(ScrapUiState())
+    val scrapUiState = _scrapUiState.asStateFlow()
 
     private val _summary = MutableStateFlow(Pair(0, 0.0))
     val summary = _summary.asStateFlow()
+
+    fun recordScrapTransaction(variantId: String, amperes: Int, isIncoming: Boolean) {
+        val factor = if (isIncoming) 1 else -1
+        _scrapUiState.update {
+            it.copy(
+                totalAmperes = (it.totalAmperes + (amperes * factor)).coerceAtLeast(0.0),
+                totalCount = (it.totalCount + factor).coerceAtLeast(0)
+            )
+        }
+        _summary.update { current ->
+            Pair(
+                (current.first + factor).coerceAtLeast(0),
+                (current.second + (amperes * factor)).coerceAtLeast(0.0)
+            )
+        }
+    }
 
     private val _warehouseSummary = MutableStateFlow<Map<String, Pair<Int, Double>>>(emptyMap())
     val warehouseSummary = _warehouseSummary.asStateFlow()
@@ -263,11 +289,23 @@ class OldBatteryViewModel @Inject constructor(
     }
 
     fun addManualIntake(quantity: Int, totalAmperes: Double, amount: Double, notes: String, warehouseId: String) {
+        val finalWarehouseId = if (_isSeller.value) _userWarehouseId.value ?: warehouseId else warehouseId
+        // المقاصة التفاؤلية الفورية لجرد السكراب والأمبيرات (0ms)
+        recordScrapTransaction(finalWarehouseId, totalAmperes.toInt(), isIncoming = true)
+
         viewModelScope.launch {
+            val opId = "scrap_in_${System.currentTimeMillis()}_$finalWarehouseId"
             try {
-                // Enforce seller warehouse if applicable
-                val finalWarehouseId = if (_isSeller.value) _userWarehouseId.value ?: warehouseId else warehouseId
-                
+                persistentSyncManager.recordPendingOperation(
+                    com.batterysales.data.local.PendingSyncOperation(
+                        operationId = opId,
+                        type = "SCRAP_INTAKE",
+                        relatedId = finalWarehouseId,
+                        amountDelta = totalAmperes,
+                        status = "PENDING_SYNC"
+                    )
+                )
+
                 val transaction = com.batterysales.data.models.OldBatteryTransaction(
                     quantity = quantity,
                     warehouseId = finalWarehouseId,
@@ -293,19 +331,34 @@ class OldBatteryViewModel @Inject constructor(
                     accountingRepository.addTransaction(treasuryTransaction)
                 }
                 
+                persistentSyncManager.removePendingOperation(opId)
                 refreshTrigger.value++
                 loadTransactions()
             } catch (e: Exception) {
+                persistentSyncManager.removePendingOperation(opId)
+                recordScrapTransaction(finalWarehouseId, totalAmperes.toInt(), isIncoming = false)
                 Log.e("OldBatteryViewModel", "Error adding manual intake", e)
             }
         }
     }
 
     fun sellBatteries(quantity: Int, totalAmperes: Double, amount: Double, warehouseId: String) {
+        val finalWarehouseId = if (_isSeller.value) _userWarehouseId.value ?: warehouseId else warehouseId
+        // المقاصة التفاؤلية الفورية لبيع السكراب لحمايته من البيع المزدوج (0ms)
+        recordScrapTransaction(finalWarehouseId, totalAmperes.toInt(), isIncoming = false)
+
         viewModelScope.launch {
+            val opId = "scrap_out_${System.currentTimeMillis()}_$finalWarehouseId"
             try {
-                // Enforce seller warehouse if applicable
-                val finalWarehouseId = if (_isSeller.value) _userWarehouseId.value ?: warehouseId else warehouseId
+                persistentSyncManager.recordPendingOperation(
+                    com.batterysales.data.local.PendingSyncOperation(
+                        operationId = opId,
+                        type = "SCRAP_SALE",
+                        relatedId = finalWarehouseId,
+                        amountDelta = -totalAmperes,
+                        status = "PENDING_SYNC"
+                    )
+                )
 
                 val transaction = OldBatteryTransaction(
                     quantity = quantity,
@@ -329,9 +382,12 @@ class OldBatteryViewModel @Inject constructor(
                 )
                 accountingRepository.addTransaction(treasuryTransaction)
                 
+                persistentSyncManager.removePendingOperation(opId)
                 refreshTrigger.value++
                 loadTransactions()
             } catch (e: Exception) {
+                persistentSyncManager.removePendingOperation(opId)
+                recordScrapTransaction(finalWarehouseId, totalAmperes.toInt(), isIncoming = true)
                 Log.e("OldBatteryViewModel", "Error selling batteries", e)
             }
         }
