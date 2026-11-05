@@ -201,11 +201,24 @@ class DashboardViewModel @Inject constructor(
         awaitClose { listener.remove() }
     }
 
+    private val _optimisticApprovalDelta = MutableStateFlow(0)
+    val optimisticApprovalDelta = _optimisticApprovalDelta.asStateFlow()
+
+    fun decrementApprovalCount() {
+        _optimisticApprovalDelta.update { it - 1 }
+    }
+
+    fun incrementApprovalCount() {
+        _optimisticApprovalDelta.update { it + 1 }
+    }
+
     private val pendingCountFlow: Flow<Int> = combine(
         stockEntryRepository.getPendingEntriesFlow().catch { emit(emptyList()) },
-        approvalRepository.getPendingRequestsFlow().catch { emit(emptyList()) }
-    ) { entries, reqs ->
-        entries.size + reqs.size
+        approvalRepository.getPendingRequestsFlow().catch { emit(emptyList()) },
+        _optimisticApprovalDelta
+    ) { entries, reqs, delta ->
+        val actualCount = entries.size + reqs.size
+        (actualCount + delta).coerceAtLeast(0)
     }
 
     val uiState: StateFlow<DashboardUiState> = combine(
