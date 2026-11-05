@@ -271,10 +271,11 @@ class AccountingViewModel @Inject constructor(
                     return@launch
                 }
 
-                // 1. فحص محلي + فحص سيرفر عبر مستند المزامنة المركزي المشترك (Multi-Device Gateway Lock)
-                val hasRemotePending = repository.checkRemotePendingOperationsOnce(targetWhId, dateStr)
-                if (hasRemotePending || persistentSyncManager.hasLocalPendingOperations()) {
-                    _errorMessage.value = "يُحظر الترحيل! توجد مبيعات معلقة لم تُستكمل مزامنتها من أجهزة البائعين في هذا المستودع."
+                // 1. فحص مركزي عبر السيرفر للتأكد من اتساق كافة أجهزة البائعين (Server-Driven Gateway Lock)
+                val isSyncRegistryClear = repository.checkGlobalSyncRegistryClear(targetWhId, dateStr)
+                if (!isSyncRegistryClear || persistentSyncManager.hasLocalPendingOperations()) {
+                    _errorMessage.value = "يُحظر الترحيل! توجد عمليات معلقة لدى أجهزة البائعين في هذا المستودع."
+                    _isSubmitting.value = false
                     return@launch
                 }
 

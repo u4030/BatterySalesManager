@@ -104,6 +104,7 @@ class DashboardViewModel @Inject constructor(
         val compositeId = "low_stock_${variantId}_${warehouseId}"
         _locallySuppressedAlertIds.update { it + compositeId + "bill_$variantId" }
         viewModelScope.launch {
+            // التوطين الصلب لمنع التنبيهات الوهمية حتى لو انطفأ الهاتف
             persistentSyncManager.recordPendingOperation(
                 com.batterysales.data.local.PendingSyncOperation(
                     operationId = "suppress_${System.currentTimeMillis()}_$compositeId",

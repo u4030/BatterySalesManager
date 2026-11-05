@@ -258,7 +258,8 @@ class BankViewModel @Inject constructor(
                     operationId = opId,
                     type = "BANK_DELETE",
                     relatedId = transactionId,
-                    status = "PENDING_SYNC"
+                    status = "PENDING_SYNC",
+                    amountDelta = if (isDeposit) -amount else amount
                 )
             )
             try {
