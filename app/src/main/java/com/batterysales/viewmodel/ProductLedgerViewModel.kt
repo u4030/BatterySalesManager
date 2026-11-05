@@ -24,7 +24,8 @@ import javax.inject.Inject
 
 data class LedgerItem(
     val entry: StockEntry,
-    val warehouseName: String
+    val warehouseName: String,
+    val isOptimistic: Boolean = false
 )
 
 enum class LedgerCategory(val label: String) {
@@ -74,12 +75,101 @@ class ProductLedgerViewModel @Inject constructor(
     private val refreshTrigger = MutableStateFlow(0)
     private val _isDataLoaded = MutableStateFlow(false)
 
+    private val _knownStableEntryIds = MutableStateFlow<Set<String>>(emptySet())
+
+    fun updateKnownStableEntries(entries: List<StockEntry>) {
+        val ids = entries.flatMap { listOfNotNull(it.id.ifEmpty { null }, it.orderId.ifEmpty { null }, it.invoiceId, it.invoiceNumber.ifEmpty { null }) }.toSet()
+        if (ids.isNotEmpty()) {
+            _knownStableEntryIds.update { it + ids }
+        }
+    }
+
     private data class LedgerFilters(
         val category: LedgerCategory,
         val query: String,
         val user: com.batterysales.data.models.User?,
         val warehouses: List<Warehouse>
     )
+
+    @Suppress("UNCHECKED_CAST")
+    val optimisticEntries: StateFlow<List<LedgerItem>> = combine(
+        listOf(
+            persistentSyncManager.pendingOperationsFlow,
+            warehouseRepository.getWarehouses(),
+            userRepository.getCurrentUserFlow(),
+            _selectedCategory,
+            _searchQuery,
+            _knownStableEntryIds
+        )
+    ) { args: Array<Any?> ->
+        val pendingOps = args[0] as List<com.batterysales.data.local.PendingSyncOperation>
+        val warehouses = args[1] as List<Warehouse>
+        val currentUser = args[2] as com.batterysales.data.models.User?
+        val category = args[3] as LedgerCategory
+        val query = args[4] as String
+        val stableIds = args[5] as Set<String>
+
+        val warehouseMap = warehouses.associateBy { it.id }
+        val whFilter = targetWarehouseId ?: if (currentUser?.role == "seller") currentUser.warehouseId else null
+
+        pendingOps
+            .filter { op ->
+                op.status == "PENDING_SYNC" &&
+                (op.relatedId == productVariantId || op.operationId.contains(productVariantId)) &&
+                !stableIds.contains(op.operationId) &&
+                !stableIds.contains(op.relatedId)
+            }
+            .mapNotNull { op ->
+                // Map PendingSyncOperation to StockEntry & LedgerItem (0ms influx)
+                val targetWh = whFilter ?: warehouses.firstOrNull()?.id ?: ""
+                val whName = warehouseMap[targetWh]?.name ?: "المستودع الرئيسي"
+                val capInt = variantCapacity.toIntOrNull() ?: 0
+
+                val (entryQty, supp, cost) = when (op.type) {
+                    "STOCK_ENTRY" -> Triple(1, "شراء معلق", 0.0)
+                    "SALE" -> Triple(-1, "Sale", 0.0)
+                    "STOCK_TRANSFER" -> Triple(0, "Transfer", 0.0)
+                    "STOCK_RETURN" -> Triple(1, "مرتجع معلق (Reversal)", 0.0)
+                    else -> Triple(1, "حركة معلقة", 0.0)
+                }
+
+                val stockEntry = StockEntry(
+                    id = op.operationId,
+                    productVariantId = productVariantId,
+                    productName = productName,
+                    capacity = capInt,
+                    specification = variantSpecification,
+                    warehouseId = targetWh,
+                    quantity = entryQty,
+                    costPrice = cost,
+                    totalCost = cost,
+                    timestamp = Date(op.timestamp),
+                    supplier = supp,
+                    orderId = op.operationId,
+                    status = "pending",
+                    createdByUserName = currentUser?.displayName ?: "أنا (معلق)"
+                )
+
+                val item = LedgerItem(
+                    entry = stockEntry,
+                    warehouseName = whName,
+                    isOptimistic = true
+                )
+
+                // Apply filtering
+                val categoryMatch = when (category) {
+                    LedgerCategory.ALL -> true
+                    LedgerCategory.PURCHASES -> item.entry.quantity > 0 && item.entry.invoiceId == null && item.entry.supplier != "Sale" && !item.entry.supplier.contains("Reversal")
+                    LedgerCategory.SALES -> item.entry.invoiceId != null || item.entry.supplier == "Sale"
+                    LedgerCategory.TRANSFERS -> item.entry.supplier == "Transfer" || (item.entry.costPrice == 0.0 && item.entry.invoiceId == null && item.entry.supplier != "Sale" && !item.entry.supplier.contains("Reversal"))
+                    LedgerCategory.RETURNS -> item.entry.supplier.contains("Reversal") || item.entry.returnedQuantity > 0
+                    else -> true
+                }
+                val searchMatch = if (query.isBlank()) true else item.entry.supplier.contains(query, ignoreCase = true) || item.warehouseName.contains(query, ignoreCase = true) || item.entry.createdByUserName.contains(query, ignoreCase = true)
+
+                if (categoryMatch && searchMatch) item else null
+            }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val ledgerItems: Flow<PagingData<LedgerItem>> = combine(
