@@ -35,6 +35,10 @@ class StockEntryRepository @Inject constructor(
         saveStockOrderBatch(entries = stockEntries, bill = bill)
     }
 
+    suspend fun saveStockEntriesBulk(entries: List<StockEntry>) {
+        saveStockOrderBatch(entries = entries)
+    }
+
     suspend fun saveStockOrderBatch(
         entries: List<StockEntry>,
         variantsToUpdate: List<ProductVariant> = emptyList(),

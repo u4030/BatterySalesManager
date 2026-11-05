@@ -61,7 +61,44 @@ data class StockEntryItem(
     val costPerAmpere: Double,
     val totalAmperes: Int,
     val totalCost: Double
-)
+) {
+    fun toCleanStockEntryWithoutWac(
+        warehouseId: String,
+        supplierName: String,
+        supplierId: String,
+        invoiceNumber: String,
+        invoiceDate: Date?,
+        orderId: String,
+        status: String,
+        createdBy: String,
+        createdByUserName: String,
+        timestamp: Date = Date()
+    ): StockEntry {
+        return StockEntry(
+            id = id,
+            productVariantId = productVariant.id,
+            productName = productName,
+            capacity = productVariant.capacity,
+            warehouseId = warehouseId,
+            quantity = quantity,
+            costPrice = costPrice,
+            costPerAmpere = costPerAmpere,
+            totalAmperes = totalAmperes,
+            totalCost = totalCost,
+            grandTotalAmperes = 0,
+            grandTotalCost = 0.0,
+            timestamp = timestamp,
+            invoiceDate = invoiceDate,
+            supplier = supplierName,
+            supplierId = supplierId,
+            invoiceNumber = invoiceNumber,
+            orderId = orderId,
+            status = status,
+            createdBy = createdBy,
+            createdByUserName = createdByUserName
+        )
+    }
+}
 
 enum class CostInputMode {
     BY_AMPERE,
@@ -383,28 +420,26 @@ class StockEntryViewModel @Inject constructor(
                         val grandTotalCost = state.stockItems.sumOf { it.totalCost }
                         val orderId = UUID.randomUUID().toString()
                         val now = Date()
+                        val status = if (currentUser?.role == "seller") "pending" else "approved"
+                        val userId = currentUser?.id ?: ""
+                        val userName = currentUser?.displayName ?: ""
+
+                        // حظر احتساب أو تمرير weightedAverageCost محلياً لتركها حصرياً لدوال السيرفر
                         val entries = state.stockItems.map { item ->
-                            StockEntry(
-                                productVariantId = item.productVariant.id,
-                                productName = item.productName,
-                                capacity = item.productVariant.capacity,
+                            item.toCleanStockEntryWithoutWac(
                                 warehouseId = state.selectedWarehouse.id,
-                                quantity = item.quantity,
-                                costPrice = item.costPrice,
-                                costPerAmpere = item.costPerAmpere,
-                                totalAmperes = item.totalAmperes,
-                                totalCost = item.totalCost,
-                                grandTotalAmperes = grandTotalAmperes,
-                                grandTotalCost = grandTotalCost,
-                                timestamp = now,
-                                invoiceDate = state.invoiceDate,
-                                supplier = state.supplierName,
+                                supplierName = state.supplierName,
                                 supplierId = state.selectedSupplier?.id ?: "",
                                 invoiceNumber = state.invoiceNumber,
+                                invoiceDate = state.invoiceDate,
                                 orderId = orderId,
-                                status = if (currentUser?.role == "seller") "pending" else "approved",
-                                createdBy = currentUser?.id ?: "",
-                                createdByUserName = currentUser?.displayName ?: ""
+                                status = status,
+                                createdBy = userId,
+                                createdByUserName = userName,
+                                timestamp = now
+                            ).copy(
+                                grandTotalAmperes = grandTotalAmperes,
+                                grandTotalCost = grandTotalCost
                             )
                         }
 
@@ -495,6 +530,44 @@ class StockEntryViewModel @Inject constructor(
             totalAmperes = totalAmperes,
             totalCost = totalCost
         )
+    }
+
+    /**
+     * Hard-locked save function strictly forbidding local weightedAverageCost manipulation.
+     */
+    fun saveStockEntry() {
+        val state = _uiState.value
+        val warehouse = state.selectedWarehouse ?: return
+        val orderId = UUID.randomUUID().toString()
+        val now = Date()
+        val status = if (currentUser?.role == "seller") "pending" else "approved"
+        val userId = currentUser?.id ?: ""
+        val userName = currentUser?.displayName ?: ""
+
+        val cleanEntries = state.stockItems.map { item ->
+            item.toCleanStockEntryWithoutWac(
+                warehouseId = warehouse.id,
+                supplierName = state.supplierName,
+                supplierId = state.selectedSupplier?.id ?: "",
+                invoiceNumber = state.invoiceNumber,
+                invoiceDate = state.invoiceDate,
+                orderId = orderId,
+                status = status,
+                createdBy = userId,
+                createdByUserName = userName,
+                timestamp = now
+            )
+        }
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSubmitting = true) }
+            try {
+                stockEntryRepository.saveStockEntriesBulk(cleanEntries)
+                _uiState.update { it.copy(isFinished = true, isSubmitting = false) }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "فشل حفظ القيود: ${e.message}", isSubmitting = false) }
+            }
+        }
     }
 
     fun onAddWarehouse(name: String) {
