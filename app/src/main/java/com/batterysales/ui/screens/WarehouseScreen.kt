@@ -38,28 +38,29 @@ fun WarehouseScreen(
     var warehouseToEdit by remember { mutableStateOf<Warehouse?>(null) }
     var showDeleteConfirm by remember { mutableStateOf<Warehouse?>(null) }
 
-    if (uiState.blockingConflictError != null) {
+    val errorWithCollision = uiState.errorWithCollision ?: uiState.blockingConflictError
+    if (errorWithCollision != null) {
         AlertDialog(
-            onDismissRequest = { /* يمنع الإغلاق باللمس العشوائي للخلفية */ },
+            onDismissRequest = { /* حظر الإغلاق العشوائي باللمس الخارجي */ },
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFEF4444))
+                    Icon(Icons.Default.Warning, contentDescription = null, tint = Color.Red)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("تنبيه مزامنة حرج (Conflict Lock)", color = Color(0xFFEF4444), fontWeight = FontWeight.Bold)
+                    Text("فشل اعتماد البيانات الرئيسية!", color = Color.Red, fontWeight = FontWeight.Bold)
                 }
             },
             text = {
                 Text(
-                    text = uiState.blockingConflictError ?: "",
+                    text = errorWithCollision,
                     style = MaterialTheme.typography.bodyMedium
                 )
             },
             confirmButton = {
                 Button(
-                    onClick = { viewModel.dismissBlockingConflict() },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
+                    onClick = { viewModel.clearCollisionError() },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
                 ) {
-                    Text("تأكيد القراءة", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text("تأكيد الاطلاع والتسوية", color = Color.White, fontWeight = FontWeight.Bold)
                 }
             }
         )

@@ -17,7 +17,8 @@ data class WarehouseUiState(
     val isLoading: Boolean = false,
     val isSubmitting: Boolean = false,
     val inventoryItems: List<InventoryReportItem> = emptyList(), // Nuclear: Full list
-    val blockingConflictError: String? = null
+    val blockingConflictError: String? = null,
+    val errorWithCollision: String? = blockingConflictError
 )
 
 @HiltViewModel
@@ -35,11 +36,15 @@ class WarehouseViewModel @Inject constructor(
 
     private var cachedSummary: InventorySummary? = null
 
-    fun dismissBlockingConflict() {
-        _uiState.update { it.copy(blockingConflictError = null) }
+    fun clearCollisionError() {
+        _uiState.update { it.copy(blockingConflictError = null, errorWithCollision = null) }
         viewModelScope.launch {
             persistentSyncManager.removePendingOperation("CRITICAL_WAREHOUSE_CONFLICT")
         }
+    }
+
+    fun dismissBlockingConflict() {
+        clearCollisionError()
     }
 
     init {
@@ -47,7 +52,7 @@ class WarehouseViewModel @Inject constructor(
             persistentSyncManager.pendingOperationsFlow.collect { ops ->
                 val conflictOp = ops.find { it.operationId == "CRITICAL_WAREHOUSE_CONFLICT" && it.status == "PENDING_SYNC" }
                 if (conflictOp != null && _uiState.value.blockingConflictError == null) {
-                    _uiState.update { it.copy(blockingConflictError = conflictOp.payloadJson) }
+                    _uiState.update { it.copy(blockingConflictError = conflictOp.payloadJson, errorWithCollision = conflictOp.payloadJson) }
                 }
             }
         }
@@ -204,7 +209,7 @@ class WarehouseViewModel @Inject constructor(
                 persistentSyncManager.removePendingOperation(opId)
                 _uiState.update { it.copy(warehouses = previousWarehouses) }
                 val errorMsg = "تنبيه مزامنة حرج: فشل اعتماد إضافة المستودع [$name] في السيرفر بسبب تعارض في البيانات أثناء انقطاع اتصالك. تم إعادة فهارس الكاش لحالتها الحقيقية تلقائياً، يرجى النقر لتأكيد الاطلاع وتوقيع التسوية يدوياً."
-                _uiState.update { it.copy(blockingConflictError = errorMsg) }
+                _uiState.update { it.copy(blockingConflictError = errorMsg, errorWithCollision = errorMsg) }
                 persistentSyncManager.recordPendingOperation(
                     com.batterysales.data.local.PendingSyncOperation(
                         operationId = "CRITICAL_WAREHOUSE_CONFLICT",

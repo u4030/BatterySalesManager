@@ -18,7 +18,8 @@ data class UserManagementUiState(
     val isSubmitting: Boolean = false,
     val successMessage: String? = null,
     val errorMessage: String? = null,
-    val blockingConflictError: String? = null
+    val blockingConflictError: String? = null,
+    val errorWithCollision: String? = blockingConflictError
 )
 
 @HiltViewModel
@@ -33,11 +34,15 @@ class UserManagementViewModel @Inject constructor(
 
     private val refreshTrigger = MutableStateFlow(0)
 
-    fun dismissBlockingConflict() {
-        _uiState.update { it.copy(blockingConflictError = null) }
+    fun clearCollisionError() {
+        _uiState.update { it.copy(blockingConflictError = null, errorWithCollision = null) }
         viewModelScope.launch {
             persistentSyncManager.removePendingOperation("CRITICAL_USER_CONFLICT")
         }
+    }
+
+    fun dismissBlockingConflict() {
+        clearCollisionError()
     }
 
     init {
@@ -45,7 +50,7 @@ class UserManagementViewModel @Inject constructor(
             persistentSyncManager.pendingOperationsFlow.collect { ops ->
                 val conflictOp = ops.find { it.operationId == "CRITICAL_USER_CONFLICT" && it.status == "PENDING_SYNC" }
                 if (conflictOp != null && _uiState.value.blockingConflictError == null) {
-                    _uiState.update { it.copy(blockingConflictError = conflictOp.payloadJson) }
+                    _uiState.update { it.copy(blockingConflictError = conflictOp.payloadJson, errorWithCollision = conflictOp.payloadJson) }
                 }
             }
         }
@@ -216,7 +221,7 @@ class UserManagementViewModel @Inject constructor(
                     isSubmitting = false
                 ) }
                 val errorMsg = "تنبيه مزامنة حرج: فشل اعتماد إضافة المستخدم [$displayName] في السيرفر بسبب تعارض في البيانات أثناء انقطاع اتصالك. تم إعادة فهارس الكاش لحالتها الحقيقية تلقائياً، يرجى النقر لتأكيد الاطلاع وتوقيع التسوية يدوياً."
-                _uiState.update { it.copy(blockingConflictError = errorMsg) }
+                _uiState.update { it.copy(blockingConflictError = errorMsg, errorWithCollision = errorMsg) }
                 persistentSyncManager.recordPendingOperation(
                     com.batterysales.data.local.PendingSyncOperation(
                         operationId = "CRITICAL_USER_CONFLICT",

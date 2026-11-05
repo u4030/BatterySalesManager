@@ -151,6 +151,24 @@ class ApprovalsViewModel @Inject constructor(
         }
     }
 
+    fun rejectEntryWithRollback(requestId: String) {
+        val previousList = _approvalItems.value
+        _approvalItems.update { it.filter { item -> item.entry?.id != requestId && item.request?.id != requestId } }
+        viewModelScope.launch {
+            try {
+                val target = previousList.find { it.entry?.id == requestId || it.request?.id == requestId }
+                if (target?.entry != null) {
+                    stockEntryRepository.deleteStockEntry(requestId)
+                } else {
+                    approvalRepository.updateRequestStatus(requestId, ApprovalRequest.STATUS_REJECTED, currentUser?.id)
+                }
+            } catch (e: Exception) {
+                _approvalItems.value = previousList // حارس الارتداد عند الفشل
+                Log.e("ApprovalsViewModel", "Error in rejectEntryWithRollback", e)
+            }
+        }
+    }
+
     fun rejectEntry(entryId: String) {
         val previousItems = _approvalItems.value
         _approvalItems.update { it.filter { item -> item.entry?.id != entryId } }

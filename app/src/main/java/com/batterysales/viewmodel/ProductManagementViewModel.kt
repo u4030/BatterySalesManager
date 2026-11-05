@@ -54,12 +54,17 @@ class ProductManagementViewModel @Inject constructor(
 
     private val _blockingConflictError = MutableStateFlow<String?>(null)
     val blockingConflictError = _blockingConflictError.asStateFlow()
+    val errorWithCollision = blockingConflictError
 
-    fun dismissBlockingConflict() {
+    fun clearCollisionError() {
         _blockingConflictError.value = null
         viewModelScope.launch {
             persistentSyncManager.removePendingOperation("CRITICAL_PRODUCT_CONFLICT")
         }
+    }
+
+    fun dismissBlockingConflict() {
+        clearCollisionError()
     }
 
     init {
