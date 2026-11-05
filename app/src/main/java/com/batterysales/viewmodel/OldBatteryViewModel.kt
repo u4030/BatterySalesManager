@@ -61,6 +61,8 @@ class OldBatteryViewModel @Inject constructor(
                 (current.second + (amperes * factor)).coerceAtLeast(0.0)
             )
         }
+        // حقن التحديث التفاؤلي مباشرة داخل كاش المستودع المشترك ليتدفق لحظياً في 0ms
+        summaryRepository.updateCacheOptimisticStock(variantId, variantId, factor)
     }
 
     private val _warehouseSummary = MutableStateFlow<Map<String, Pair<Int, Double>>>(emptyMap())

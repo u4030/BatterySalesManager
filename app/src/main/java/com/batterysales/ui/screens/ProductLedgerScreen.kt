@@ -282,7 +282,10 @@ fun ProductLedgerScreen(
 
             // Optimistic Entries Influx (0ms)
             if (displayOptimisticEntries.isNotEmpty()) {
-                items(displayOptimisticEntries.size, key = { "opt_${displayOptimisticEntries[it].entry.id}" }) { index ->
+                items(
+                    count = displayOptimisticEntries.size,
+                    key = { "opt_${displayOptimisticEntries[it].entry.id.ifEmpty { "item_$it" }}" }
+                ) { index ->
                     val it = displayOptimisticEntries[index]
                     Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                         LedgerItemCard(
@@ -307,7 +310,10 @@ fun ProductLedgerScreen(
                     }
                 }
             } else {
-                items(rawLedgerItems.size, key = { rawLedgerItems[it].entry.id }) { index ->
+                items(
+                    count = rawLedgerItems.size,
+                    key = { rawLedgerItems[it].entry.id.ifEmpty { "stable_$it" } }
+                ) { index ->
                     val it = rawLedgerItems[index]
                     Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                         LedgerItemCard(
