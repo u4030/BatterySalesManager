@@ -1,5 +1,6 @@
 package com.batterysales.data.repositories
 
+import android.util.Log
 import com.batterysales.data.models.Bill
 import com.batterysales.data.models.BillStatus
 import com.batterysales.data.models.BillType
@@ -37,6 +38,39 @@ class BillRepository @Inject constructor(
         } catch (e: Exception) {
             val snapshot = firestore.collection(Bill.COLLECTION_NAME).get().await()
             snapshot.documents.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) }
+        }
+    }
+
+    suspend fun tagBillsForPurchaseReturn(entryId: String, orderId: String, invoiceNumber: String, warningNote: String = "تنبيه: تم إرجاع مواد من هذه الطلبية - يرجى تعديل قيمة الكمبيالة أو إلغاؤها يدوياً") {
+        try {
+            val trimmedEntryId = entryId.trim()
+            val trimmedOrderId = orderId.trim()
+            val trimmedInvNum = invoiceNumber.trim()
+
+            if (trimmedEntryId.isEmpty() && trimmedOrderId.isEmpty() && trimmedInvNum.isEmpty()) return
+
+            val allBillsSnap = firestore.collection(Bill.COLLECTION_NAME).get().await()
+            val billsToTag = allBillsSnap.documents.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) }
+                .filter { bill ->
+                    ((trimmedEntryId.isNotEmpty() && bill.relatedEntryId == trimmedEntryId) ||
+                     (trimmedOrderId.isNotEmpty() && (bill.referenceNumber.contains(trimmedOrderId) || bill.description.contains(trimmedOrderId))) ||
+                     (trimmedInvNum.isNotEmpty() && (bill.referenceNumber.contains(trimmedInvNum) || bill.description.contains(trimmedInvNum)))) &&
+                    !bill.needsAdjustment
+                }
+
+            if (billsToTag.isNotEmpty()) {
+                val batch = firestore.batch()
+                billsToTag.forEach { b ->
+                    val ref = firestore.collection(Bill.COLLECTION_NAME).document(b.id)
+                    batch.update(ref, mapOf(
+                        "needsAdjustment" to true,
+                        "warningNote" to warningNote
+                    ))
+                }
+                batch.commit().await()
+            }
+        } catch (e: Exception) {
+            Log.e("BillRepository", "Error tagging bills for purchase return", e)
         }
     }
 

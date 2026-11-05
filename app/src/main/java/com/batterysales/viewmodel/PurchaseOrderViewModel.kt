@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.batterysales.data.local.PendingSyncOperation
 import com.batterysales.data.local.PersistentSyncManager
 import com.batterysales.data.models.StockEntry
+import com.batterysales.data.repositories.BillRepository
 import com.batterysales.data.repositories.ProductRepository
 import com.batterysales.data.repositories.StockEntryRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -24,6 +25,7 @@ data class PurchaseOrderUiState(
 class PurchaseOrderViewModel @Inject constructor(
     private val productRepository: ProductRepository,
     private val stockEntryRepository: StockEntryRepository,
+    private val billRepository: BillRepository,
     private val persistentSyncManager: PersistentSyncManager
 ) : ViewModel() {
 
@@ -47,6 +49,13 @@ class PurchaseOrderViewModel @Inject constructor(
                 )
 
                 stockEntryRepository.processReturn(entry, returnQty, "PURCHASE_RETURN", notes)
+                // ربط الكمبيالة المتأثرة بالطلب لتوسيمها تلقائياً بدون حذف
+                billRepository.tagBillsForPurchaseReturn(
+                    entryId = entry.id,
+                    orderId = entry.orderId,
+                    invoiceNumber = entry.invoiceNumber,
+                    warningNote = "تنبيه: تم إرجاع مواد من هذه الطلبية - يرجى تعديل قيمة الكمبيالة أو إلغاؤها يدوياً"
+                )
                 persistentSyncManager.removePendingOperation(opId)
             } catch (e: Exception) {
                 persistentSyncManager.removePendingOperation(opId)

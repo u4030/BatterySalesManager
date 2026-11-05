@@ -88,6 +88,9 @@ class BillViewModel @Inject constructor(
     private val _highlightBillId = MutableStateFlow<String?>(null)
     val highlightBillId = _highlightBillId.asStateFlow()
 
+    private val _flaggedBills = MutableStateFlow<Map<String, String>>(emptyMap())
+    val flaggedBills = _flaggedBills.asStateFlow()
+
     init {
         val highlightId = savedStateHandle.get<String>("highlightBillId")
         if (highlightId != null) {
@@ -205,7 +208,10 @@ class BillViewModel @Inject constructor(
         }
     }
 
-    fun tagBillNeedsAdjustment(billId: String, warningNote: String) {
+    fun handlePurchaseReturnFlags(billId: String, warningNote: String = "تنبيه: تم إرجاع مواد من هذه الطلبية") {
+        // --- تحديث تفاؤلي فوري في الذاكرة بـ (0ms) لمنع وميض الشاشة ---
+        _flaggedBills.update { it + (billId to warningNote) }
+
         viewModelScope.launch {
             val opId = "bill_adj_${System.currentTimeMillis()}_$billId"
             try {
@@ -229,6 +235,10 @@ class BillViewModel @Inject constructor(
                 persistentSyncManager.removePendingOperation(opId)
             }
         }
+    }
+
+    fun tagBillNeedsAdjustment(billId: String, warningNote: String) {
+        handlePurchaseReturnFlags(billId, warningNote)
     }
 
     fun addBill(description: String, amount: Double, dueDate: Date, billType: BillType, referenceNumber: String = "", supplierId: String = "", relatedEntryId: String? = null, warehouseId: String? = null, payImmediately: Boolean = false) {

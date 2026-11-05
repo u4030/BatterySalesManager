@@ -257,6 +257,13 @@ class ProductLedgerViewModel @Inject constructor(
                 )
 
                 stockEntryRepository.processReturn(entry, quantity, mode, notes)
+                // ربط الكمبيالة المتأثرة بالطلب لتوسيمها تلقائياً بدون حذف
+                billRepository.tagBillsForPurchaseReturn(
+                    entryId = entry.id,
+                    orderId = entry.orderId,
+                    invoiceNumber = entry.invoiceNumber,
+                    warningNote = "تنبيه: تم إرجاع مواد من هذه الطلبية - يرجى تعديل قيمة الكمبيالة أو إلغاؤها يدوياً"
+                )
                 persistentSyncManager.removePendingOperation(opId)
                 loadData(reset = true)
             } catch (e: Exception) {

@@ -78,6 +78,7 @@ fun BillsScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val isSubmitting by viewModel.isSubmitting.collectAsState()
     val highlightBillId by viewModel.highlightBillId.collectAsState()
+    val flaggedBills by viewModel.flaggedBills.collectAsState()
     val listState = rememberLazyListState()
 
     val rawBills = remember(pagingItems.itemSnapshotList, highlightBillId, suppliers) {
@@ -318,8 +319,11 @@ fun BillsScreen(
                 val supplier = suppliers.find { it.id == b.supplierId }
                 val isHighlighted = b.id == highlightBillId
 
-                val (needsAdj, warnMsg) = remember(b, supplier?.totalDebit, rawBills) {
-                    if (supplier != null && b.status != BillStatus.PAID && supplier.totalDebit > 0) {
+                val (needsAdj, warnMsg) = remember(b, supplier?.totalDebit, rawBills, flaggedBills) {
+                    val localFlagNote = flaggedBills[b.id]
+                    if (localFlagNote != null) {
+                        Pair(true, localFlagNote)
+                    } else if (supplier != null && b.status != BillStatus.PAID && supplier.totalDebit > 0) {
                         val unpaidSupplierBills = rawBills
                             .filter { it.supplierId == supplier.id && it.status != BillStatus.PAID }
                             .sortedBy { it.createdAt ?: Date(0) }
