@@ -74,11 +74,15 @@ class DashboardViewModel @Inject constructor(
     private val _locallySuppressedAlertIds = MutableStateFlow<Set<String>>(emptySet())
     private val _blockingConflictError = MutableStateFlow<String?>(null)
 
-    fun dismissBlockingConflict() {
+    fun acknowledgeConflictResolution() {
         _blockingConflictError.value = null
         viewModelScope.launch {
             persistentSyncManager.removePendingOperation("CRITICAL_CONFLICT_LOCK")
         }
+    }
+
+    fun dismissBlockingConflict() {
+        acknowledgeConflictResolution()
     }
 
     fun setBlockingConflict(msg: String) {

@@ -357,12 +357,16 @@ fun DashboardScreen(
 
     if (dashboardState.blockingConflictError != null) {
         AlertDialog(
-            onDismissRequest = { /* يمنع الإغلاق باللمس العشوائي للخلفية */ },
+            onDismissRequest = { /* حظر الإغلاق العشوائي باللمس الخارجي أو زر العودة */ },
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFEF4444))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("تنبيه تضارب حرج (Conflict Lock)", color = Color(0xFFEF4444), fontWeight = FontWeight.Bold)
+                    Text(
+                        text = "تنبيه مزامنة حرج وتعارض مخزني!",
+                        color = Color(0xFFEF4444),
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             },
             text = {
@@ -373,10 +377,14 @@ fun DashboardScreen(
             },
             confirmButton = {
                 Button(
-                    onClick = { dashboardViewModel.dismissBlockingConflict() },
+                    onClick = { dashboardViewModel.acknowledgeConflictResolution() },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
                 ) {
-                    Text("توقيع وتأكيد الاطلاع", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = "تأكيد الاطلاع وتوقيع التسوية المحاسبية",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         )
