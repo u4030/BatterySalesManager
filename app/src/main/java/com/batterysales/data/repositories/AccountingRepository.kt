@@ -22,7 +22,7 @@ class AccountingRepository @Inject constructor(
         if (warehouseId != null && warehouseId != "all") {
             query = query.whereEqualTo("warehouseId", warehouseId)
         }
-        val listener = query.addSnapshotListener { snap, err ->
+        val listener = query.addSnapshotListener(com.google.firebase.firestore.MetadataChanges.INCLUDE) { snap, err ->
             if (err != null) {
                 close(err)
                 return@addSnapshotListener
@@ -159,7 +159,11 @@ class AccountingRepository @Inject constructor(
             query = query.startAfter(lastDocument)
         }
 
-        val snapshot = query.limit(limit).get().await()
+        val snapshot = try {
+            query.limit(limit).get(com.google.firebase.firestore.Source.CACHE).await()
+        } catch (e: Exception) {
+            query.limit(limit).get().await()
+        }
         val transactions = snapshot.documents.mapNotNull { it.toObject(Transaction::class.java)?.copy(id = it.id) }
         val lastDoc = snapshot.documents.lastOrNull()
 
@@ -437,6 +441,78 @@ class AccountingRepository @Inject constructor(
             }
         }
         batch.commit().await()
+    }
+
+    suspend fun checkRemotePendingOperationsOnce(warehouseId: String, dateStr: String? = null): Boolean {
+        return try {
+            // Check central sync registry or active pending transactions collection
+            val registrySnap = firestore.collection("summaries").document("sync_registry").get().await()
+            val pendingWhs = registrySnap.get("pendingWarehouses") as? List<*>
+            if (pendingWhs != null && pendingWhs.contains(warehouseId)) {
+                return true
+            }
+
+            // Check if there are any pending payment/sales commands for this warehouse
+            val pendingSales = firestore.collection("sales_orders")
+                .whereEqualTo("warehouseId", warehouseId)
+                .whereEqualTo("status", "PENDING_SYNC")
+                .limit(1)
+                .get()
+                .await()
+
+            if (!pendingSales.isEmpty) return true
+
+            val pendingInvoices = firestore.collection("invoices")
+                .whereEqualTo("warehouseId", warehouseId)
+                .whereEqualTo("status", "PENDING_SYNC")
+                .limit(1)
+                .get()
+                .await()
+
+            !pendingInvoices.isEmpty
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    suspend fun executeDailyTransferAtomic(warehouseId: String, dateStr: String? = null) {
+        val allWh = firestore.collection("warehouses").get().await()
+        val warehouses = allWh.documents.mapNotNull { it.toObject(com.batterysales.data.models.Warehouse::class.java)?.copy(id = it.id) }
+        val mainWh = warehouses.find { it.isMain } 
+            ?: warehouses.find { it.name.contains("رئيسي") || it.name.lowercase().contains("main") } 
+            ?: warehouses.firstOrNull()
+
+        val targetMainId = mainWh?.id ?: "main_treasury"
+        val currentWh = warehouses.find { it.id == warehouseId }
+        val subWhName = currentWh?.name ?: "المستودع الفرعي"
+
+        val status = summaryRepository.getFinancialStatus()
+        val subCashBalance = status?.warehouseBalances?.get(warehouseId)?.cashBalance ?: 0.0
+
+        if (subCashBalance <= 0.001) {
+            throw Exception("رصيد الكاش الحالي في $subWhName يساوي صفر أو أقل، لا يتوفر رصيد للترحيل.")
+        }
+
+        val expenseRefId = addTransaction(Transaction(
+            type = TransactionType.EXPENSE,
+            amount = subCashBalance,
+            description = "ترحيل رصيد كاش إلى الخزينة الرئيسية (${mainWh?.name ?: "الرئيسي"})",
+            warehouseId = warehouseId,
+            paymentMethod = "cash",
+            createdAt = java.util.Date(),
+            isSystemManaged = true
+        ))
+
+        addTransaction(Transaction(
+            type = TransactionType.INCOME,
+            amount = subCashBalance,
+            description = "استلام ترحيل رصيد كاش من $subWhName",
+            warehouseId = targetMainId,
+            paymentMethod = "cash",
+            relatedId = expenseRefId,
+            createdAt = java.util.Date(),
+            isSystemManaged = true
+        ))
     }
 }
  

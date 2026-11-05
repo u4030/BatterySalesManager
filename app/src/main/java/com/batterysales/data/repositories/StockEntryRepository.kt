@@ -19,6 +19,7 @@ import javax.inject.Inject
 class StockEntryRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
     private val summaryRepository: SummaryRepository,
+    private val persistentSyncManager: dagger.Lazy<com.batterysales.data.local.PersistentSyncManager>,
     private val billRepository: dagger.Lazy<BillRepository>
 ) {
 
@@ -34,12 +35,30 @@ class StockEntryRepository @Inject constructor(
         saveStockOrderBatch(entries = stockEntries, bill = bill)
     }
 
+    suspend fun saveStockEntriesBulk(entries: List<StockEntry>) {
+        saveStockOrderBatch(entries = entries)
+    }
+
     suspend fun saveStockOrderBatch(
         entries: List<StockEntry>,
         variantsToUpdate: List<ProductVariant> = emptyList(),
         bill: Bill? = null
     ) {
         if (entries.isEmpty() && variantsToUpdate.isEmpty() && bill == null) return
+
+        try {
+            entries.forEach { entry ->
+                persistentSyncManager.get().recordPendingOperation(
+                    com.batterysales.data.local.PendingSyncOperation(
+                        operationId = entry.id.ifEmpty { "stock_entry_${System.currentTimeMillis()}" },
+                        type = "STOCK_ENTRY",
+                        relatedId = entry.productVariantId
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            // Non-blocking disk persistence
+        }
 
         val batch = firestore.batch()
         val now = Date()
@@ -236,6 +255,20 @@ class StockEntryRepository @Inject constructor(
 
     suspend fun transferStockBulk(items: List<TransferItem>) {
         if (items.isEmpty()) return
+
+        try {
+            items.forEach { item ->
+                persistentSyncManager.get().recordPendingOperation(
+                    com.batterysales.data.local.PendingSyncOperation(
+                        operationId = "transfer_${item.productVariantId}_${System.currentTimeMillis()}",
+                        type = "STOCK_TRANSFER",
+                        relatedId = item.productVariantId
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            // Non-blocking disk persistence
+        }
 
         firestore.runTransaction { transaction ->
             // --- READ PHASE (CONSOLIDATED BULK READ) ---

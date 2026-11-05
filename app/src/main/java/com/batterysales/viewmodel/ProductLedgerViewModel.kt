@@ -39,6 +39,7 @@ class ProductLedgerViewModel @Inject constructor(
     private val productVariantRepository: ProductVariantRepository,
     private val userRepository: UserRepository,
     private val warehouseRepository: WarehouseRepository,
+    private val persistentSyncManager: com.batterysales.data.local.PersistentSyncManager,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -154,10 +155,22 @@ class ProductLedgerViewModel @Inject constructor(
     fun processReturn(entry: StockEntry, quantity: Int, mode: String, notes: String) {
         viewModelScope.launch {
             _isLoading.value = true
+            val opId = "return_${System.currentTimeMillis()}_${entry.id}"
             try {
+                persistentSyncManager.recordPendingOperation(
+                    com.batterysales.data.local.PendingSyncOperation(
+                        operationId = opId,
+                        type = "STOCK_RETURN",
+                        relatedId = entry.id,
+                        status = "PENDING_SYNC"
+                    )
+                )
+
                 stockEntryRepository.processReturn(entry, quantity, mode, notes)
+                persistentSyncManager.removePendingOperation(opId)
                 loadData(reset = true)
             } catch (e: Exception) {
+                persistentSyncManager.removePendingOperation(opId)
                 _errorMessage.value = e.message ?: "حدث خطأ أثناء إرجاع المواد"
             } finally {
                 _isLoading.value = false

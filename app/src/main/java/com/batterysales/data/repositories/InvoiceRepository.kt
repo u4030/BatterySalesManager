@@ -42,7 +42,7 @@ class InvoiceRepository @Inject constructor(
         val listenerRegistration = firestore.collection(Invoice.COLLECTION_NAME)
             .orderBy("createdAt", Query.Direction.DESCENDING)
             .limit(limit)
-            .addSnapshotListener { snapshot, error ->
+            .addSnapshotListener(com.google.firebase.firestore.MetadataChanges.INCLUDE) { snapshot, error ->
                 if (error != null) {
                     close(error)
                     return@addSnapshotListener
@@ -394,6 +394,10 @@ class InvoiceRepository @Inject constructor(
         }.await()
     }
 
+    suspend fun cancelInvoiceAtomic(invoiceId: String) {
+        deleteInvoice(invoiceId)
+    }
+
     suspend fun createFullSale(
         invoice: Invoice,
         stockEntry: com.batterysales.data.models.StockEntry,
@@ -430,6 +434,7 @@ class InvoiceRepository @Inject constructor(
         }
 
         // Commit WriteBatch without phone-side stock manipulation or read loops
+        // Debt deltas and inventory decrements are processed atomically by backend triggers
         batch.commit().await()
         return finalInvoice.id
     }
@@ -680,13 +685,17 @@ class InvoiceRepository @Inject constructor(
         val allInvoicePaymentsSnap = firestore.collection(Payment.COLLECTION_NAME)
             .whereEqualTo("invoiceId", invoiceId).get().await()
 
-        val now = Date()
-        val otherPaymentsToday = allInvoicePaymentsSnap.documents
+        val remainingActivePayments = allInvoicePaymentsSnap.documents
             .filter { it.id != paymentId }
-            .any { doc ->
-                val date = doc.getDate("paymentDate") ?: doc.getDate("timestamp")
-                date != null && com.batterysales.utils.DateUtils.isSameDay(date, now)
-            }
+            .mapNotNull { it.toObject(Payment::class.java)?.copy(id = it.id) }
+
+        val newTotalPaid = remainingActivePayments.sumOf { it.amount }
+
+        val now = Date()
+        val otherPaymentsToday = remainingActivePayments.any { p ->
+            val date = p.paymentDate ?: p.timestamp
+            date != null && com.batterysales.utils.DateUtils.isSameDay(date, now)
+        }
 
         firestore.runTransaction { transaction ->
             // --- READ PHASE ---
@@ -697,23 +706,28 @@ class InvoiceRepository @Inject constructor(
             
             val targetWhId = invoice.warehouseId.ifBlank { "unassigned" }
             val summarySnapshots = summaryRepository.getSummarySnapshots(transaction, listOf(targetWhId))
-            val statsRef = firestore.collection(com.batterysales.data.models.SystemStats.COLLECTION_NAME).document(com.batterysales.data.models.SystemStats.DOCUMENT_ID)
 
             // --- WRITE PHASE ---
             transaction.delete(paymentRef)
             treasuryTransactions.forEach { transaction.delete(it.reference) }
             bankTransactions.forEach { transaction.delete(it.reference) }
             
-            val newTotalPaid = invoice.paidAmount - oldPayment.amount
-            val newRemaining = invoice.totalAmount - newTotalPaid
+            // معادلة رياضية مرنة لاحتساب المتبقي الفعلي خطياً بالدينار الأردني JOD
+            val newRemainingAmount = (invoice.totalAmount - newTotalPaid).coerceAtLeast(0.0)
+            val newStatus = when {
+                newRemainingAmount <= 0.001 -> "paid"
+                newTotalPaid > 0.001 -> "partial"
+                else -> "pending"
+            }
+
             transaction.update(invoiceRef, mapOf(
                 "paidAmount" to newTotalPaid,
-                "remainingAmount" to newRemaining,
-                "status" to (if (newRemaining <= 0.001) "paid" else "pending"),
+                "remainingAmount" to newRemainingAmount,
+                "status" to newStatus,
                 "updatedAt" to Date()
             ))
 
-            // Only reverse from today if it was paid today
+            // عكس الحركة اليومية للصناديق المعزولة محلياً في الكاش فورا للكلاينت (0ms)
             val wasToday = com.batterysales.utils.DateUtils.isSameDay(oldPayment.paymentDate, now)
             val countChange = if (wasToday && !otherPaymentsToday) -1 else 0
 
@@ -728,15 +742,8 @@ class InvoiceRepository @Inject constructor(
                 todayCollectionCountChange = countChange
             )
 
-            val statsUpdates = mutableMapOf<String, Any>(
-                "totalCustomerDebt" to com.google.firebase.firestore.FieldValue.increment(oldPayment.amount)
-            )
-            if (oldPayment.paymentMethod == "bank") {
-                statsUpdates["totalBankBalance"] = com.google.firebase.firestore.FieldValue.increment(-oldPayment.amount)
-            } else {
-                statsUpdates["totalCashBalance"] = com.google.firebase.firestore.FieldValue.increment(-oldPayment.amount)
-            }
-            transaction.set(statsRef, statsUpdates, com.google.firebase.firestore.SetOptions.merge())
+            // 🛑 تم بتر وحذف كود تحديث "statsRef" من جهة الموبايل نهائياً لمنع التداخل الحسابي المزدوج وثغرة قلب الأرصدة عشوائياً.
+            // الحسابات العامة لـ totalCustomerDebt تُدار بالكامل سيرفر-سايد لضمان اتساق الدلتا المالية %100.
         }.await()
     }
 }

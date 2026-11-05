@@ -2,6 +2,7 @@ package com.batterysales.data.repositories
 
 import com.batterysales.data.models.*
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.MetadataChanges
 import com.google.firebase.firestore.Transaction
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -29,11 +30,17 @@ class SummaryRepository @Inject constructor(
      */
     fun getDashboardHubFlow(): Flow<DashboardHub> = callbackFlow {
         val listener = summariesCollection.document("dashboard_hub")
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) return@addSnapshotListener
-                val hub = snapshot?.toObject(DashboardHub::class.java) ?: DashboardHub()
-                cachedDashboardHub = hub
-                trySend(hub)
+            // فرض تفعيل ميتاداتا INCLUDE لتلقي بث إشارات الزيادة الذرية فورا (0ms)
+            .addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    val hub = snapshot.toObject(DashboardHub::class.java) ?: DashboardHub()
+                    cachedDashboardHub = hub
+                    trySend(hub).isSuccess
+                }
             }
         awaitClose { listener.remove() }
     }
@@ -578,11 +585,18 @@ class SummaryRepository @Inject constructor(
 
     fun getFinancialStatusFlow(): Flow<FinancialStatus> = callbackFlow {
         val listener = summariesCollection.document("financial_status")
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) return@addSnapshotListener
-                val status = snapshot?.toObject(FinancialStatus::class.java) ?: FinancialStatus()
-                cachedFinancialStatus = status
-                trySend(status)
+            // تفعيل ميتاداتا الحارس الثنائي المتزامن خطيا لفرض الاستجابة اللحظية
+            .addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    // الكاش المزدوج (hasPendingWrites & isFromCache) لتأمين الـ Flow ضد تذبذب الاتصال
+                    val status = snapshot.toObject(FinancialStatus::class.java) ?: FinancialStatus()
+                    cachedFinancialStatus = status
+                    trySend(status).isSuccess
+                }
             }
         awaitClose { listener.remove() }
     }
@@ -635,4 +649,33 @@ class SummaryRepository @Inject constructor(
     }
 
     suspend fun getSyncRegistry(): SyncRegistry? = fetchSyncRegistry()
+
+    /**
+     * Optimistically update in-memory cache of variant stock for immediate 0ms reflection across open screens.
+     */
+    fun updateCacheOptimisticStock(variantId: String, warehouseId: String, deltaQty: Int) {
+        val keys = listOfNotNull(warehouseId.ifBlank { null }, "global")
+        val newCache = cachedInventorySummary.toMutableMap()
+
+        keys.forEach { key ->
+            val summary = newCache[key]
+            if (summary != null) {
+                val updatedItems = summary.items.toMutableMap()
+                val currentItem = updatedItems[variantId]
+                if (currentItem != null) {
+                    val updatedItem = currentItem.copy(
+                        currentStock = (currentItem.currentStock + deltaQty).coerceAtLeast(0),
+                        updatedAt = Date()
+                    )
+                    updatedItems[variantId] = updatedItem
+                    newCache[key] = summary.copy(
+                        items = updatedItems,
+                        totalItemsCount = (summary.totalItemsCount + deltaQty).coerceAtLeast(0),
+                        lastUpdated = Date()
+                    )
+                }
+            }
+        }
+        cachedInventorySummary = newCache
+    }
 }

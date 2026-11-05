@@ -26,7 +26,8 @@ class AccountingViewModel @Inject constructor(
     private val repository: AccountingRepository,
     private val summaryRepository: SummaryRepository,
     private val userRepository: UserRepository,
-    private val warehouseRepository: WarehouseRepository
+    private val warehouseRepository: WarehouseRepository,
+    private val persistentSyncManager: com.batterysales.data.local.PersistentSyncManager
 ) : ViewModel() {
 
     private val _balance = MutableStateFlow(0.0)
@@ -257,55 +258,32 @@ class AccountingViewModel @Inject constructor(
         _errorMessage.value = null
     }
 
-    fun transferDailyIncomeToMain() {
+    fun transferDailyIncomeToMain(warehouseId: String? = null, dateStr: String? = null) {
         viewModelScope.launch {
             _isSubmitting.value = true
             try {
-                val currentWhId = _selectedWarehouseId.value
+                val targetWhId = warehouseId ?: _selectedWarehouseId.value
                 val allWh = warehouseRepository.getWarehousesOnce()
                 val mainWh = allWh.find { it.isMain } ?: allWh.find { it.name.contains("رئيسي") || it.name.lowercase().contains("main") } ?: allWh.firstOrNull()
 
-                if (currentWhId == null || currentWhId == "all" || currentWhId == mainWh?.id) {
+                if (targetWhId == null || targetWhId == "all" || targetWhId == mainWh?.id) {
                     _errorMessage.value = "يرجى تحديد مستودع فرعي لترحيل رصيده إلى الخزينة الرئيسية."
                     return@launch
                 }
 
-                val currentWh = allWh.find { it.id == currentWhId }
-                val subWhName = currentWh?.name ?: "المستودع الفرعي"
-                val status = summaryRepository.getFinancialStatus()
-                val subCashBalance = status?.warehouseBalances?.get(currentWhId)?.cashBalance ?: 0.0
-
-                if (subCashBalance <= 0.001) {
-                    _errorMessage.value = "رصيد الكاش الحالي في $subWhName يساوي صفر أو أقل، لا يتوفر رصيد للترحيل."
+                // 1. فحص محلي + فحص سيرفر عبر مستند المزامنة المركزي المشترك (Multi-Device Gateway Lock)
+                val hasRemotePending = repository.checkRemotePendingOperationsOnce(targetWhId, dateStr)
+                if (hasRemotePending || persistentSyncManager.hasLocalPendingOperations()) {
+                    _errorMessage.value = "يُحظر الترحيل! توجد مبيعات معلقة لم تُستكمل مزامنتها من أجهزة البائعين في هذا المستودع."
                     return@launch
                 }
 
-                val targetMainId = mainWh?.id ?: "main_treasury"
-                val expenseRefId = repository.addTransaction(Transaction(
-                    type = TransactionType.EXPENSE,
-                    amount = subCashBalance,
-                    description = "ترحيل رصيد كاش إلى الخزينة الرئيسية (${mainWh?.name ?: "الرئيسي"})",
-                    warehouseId = currentWhId,
-                    paymentMethod = "cash",
-                    createdAt = Date(),
-                    isSystemManaged = true
-                ))
-
-                repository.addTransaction(Transaction(
-                    type = TransactionType.INCOME,
-                    amount = subCashBalance,
-                    description = "استلام ترحيل رصيد كاش من $subWhName",
-                    warehouseId = targetMainId,
-                    paymentMethod = "cash",
-                    relatedId = expenseRefId,
-                    createdAt = Date(),
-                    isSystemManaged = true
-                ))
-
+                // إتمام الترحيل المتسلسل التاريخي ذرياً
+                repository.executeDailyTransferAtomic(targetWhId, dateStr)
                 loadData(reset = true)
             } catch (e: Exception) {
                 Log.e("AccountingViewModel", "Error transferring daily income to main", e)
-                _errorMessage.value = "فشل ترحيل الرصيد: ${e.localizedMessage}"
+                _errorMessage.value = e.localizedMessage ?: "فشل ترحيل الرصيد"
             } finally {
                 _isSubmitting.value = false
             }
@@ -335,16 +313,34 @@ class AccountingViewModel @Inject constructor(
     }
 
     fun addManualTransaction(type: TransactionType, amount: Double, description: String, referenceNumber: String = "", paymentMethod: String = "cash") {
+        // --- تعديل تفاؤلي فوري لرصيد الخزينة بـ (0ms) بالدينار الأردني JOD ---
+        val delta = if (type == TransactionType.INCOME) amount else -amount
+        _balance.update { (it + delta).coerceAtLeast(0.0) }
+
         viewModelScope.launch {
             _isSubmitting.value = true
+            val opId = "acc_tx_${System.currentTimeMillis()}"
             try {
+                persistentSyncManager.recordPendingOperation(
+                    com.batterysales.data.local.PendingSyncOperation(
+                        operationId = opId,
+                        type = "TREASURY_TRANSACTION",
+                        relatedId = referenceNumber.ifEmpty { opId },
+                        status = "PENDING_SYNC"
+                    )
+                )
+
                 val transaction = Transaction(
                     type = type, amount = amount, description = description, 
                     referenceNumber = referenceNumber, warehouseId = _selectedWarehouseId.value ?: "", 
                     paymentMethod = paymentMethod
                 )
                 repository.addTransaction(transaction)
+                persistentSyncManager.removePendingOperation(opId)
                 loadData(reset = true)
+            } catch (e: Exception) {
+                persistentSyncManager.removePendingOperation(opId)
+                _errorMessage.value = e.message
             } finally {
                 _isSubmitting.value = false
             }

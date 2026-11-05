@@ -193,10 +193,10 @@ fun SupplierDetailsScreen(
                                     verticalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
                                     Box(modifier = Modifier.weight(1f).widthIn(min = 140.dp)) {
-                                        InfoBadge(label = "إجمالي مدين", value = "JD ${String.format("%.3f", item.totalDebit)}", color = Color(0xFFFB8C00))
+                                        InfoBadge(label = "إجمالي مدين", value = "${String.format("%.3f", item.totalDebit)} JOD", color = Color(0xFFFB8C00))
                                     }
                                     Box(modifier = Modifier.weight(1f).widthIn(min = 140.dp)) {
-                                        InfoBadge(label = "إجمالي دائن", value = "JD ${String.format("%.3f", item.totalCredit)}", color = Color(0xFF10B981))
+                                        InfoBadge(label = "إجمالي دائن", value = "${String.format("%.3f", item.totalCredit)} JOD", color = Color(0xFF10B981))
                                     }
                                 }
                                 Spacer(modifier = Modifier.height(12.dp))
@@ -225,7 +225,7 @@ fun SupplierDetailsScreen(
                                                 color = MaterialTheme.colorScheme.onSurface
                                             )
                                             Text(
-                                                text = "JD ${String.format("%,.3f", displayValue)}", 
+                                                text = "${String.format("%,.3f", displayValue)} JOD", 
                                                 style = MaterialTheme.typography.headlineSmall, 
                                                 fontWeight = FontWeight.ExtraBold, 
                                                 color = displayColor

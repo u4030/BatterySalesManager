@@ -60,25 +60,54 @@ class ProductVariantRepository @Inject constructor(
     }
 
     suspend fun getVariantsForProduct(productId: String): List<ProductVariant> {
-        val snapshot = firestore.collection(ProductVariant.COLLECTION_NAME)
-            .whereEqualTo("productId", productId)
-            .get()
-            .await()
-        return snapshot.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }
+        return try {
+            val snapshot = firestore.collection(ProductVariant.COLLECTION_NAME)
+                .whereEqualTo("productId", productId)
+                .get(Source.CACHE)
+                .await()
+            if (!snapshot.isEmpty) {
+                snapshot.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }
+            } else {
+                val serverSnap = firestore.collection(ProductVariant.COLLECTION_NAME)
+                    .whereEqualTo("productId", productId)
+                    .get(Source.SERVER)
+                    .await()
+                serverSnap.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }
+            }
+        } catch (e: Exception) {
+            val snapshot = firestore.collection(ProductVariant.COLLECTION_NAME)
+                .whereEqualTo("productId", productId)
+                .get()
+                .await()
+            snapshot.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }
+        }
     }
 
     suspend fun getVariant(variantId: String): ProductVariant? {
-        val snapshot = firestore.collection(ProductVariant.COLLECTION_NAME)
-            .document(variantId)
-            .get()
-            .await()
-        return snapshot.toObject(ProductVariant::class.java)?.copy(id = snapshot.id)
+        return try {
+            val snapshot = firestore.collection(ProductVariant.COLLECTION_NAME)
+                .document(variantId)
+                .get(Source.CACHE)
+                .await()
+            snapshot.toObject(ProductVariant::class.java)?.copy(id = snapshot.id)
+                ?: firestore.collection(ProductVariant.COLLECTION_NAME)
+                    .document(variantId)
+                    .get(Source.SERVER)
+                    .await()
+                    .toObject(ProductVariant::class.java)?.copy(id = snapshot.id)
+        } catch (e: Exception) {
+            val snapshot = firestore.collection(ProductVariant.COLLECTION_NAME)
+                .document(variantId)
+                .get()
+                .await()
+            snapshot.toObject(ProductVariant::class.java)?.copy(id = snapshot.id)
+        }
     }
 
     fun getVariantsForProductFlow(productId: String): Flow<List<ProductVariant>> = callbackFlow {
         val listenerRegistration = firestore.collection(ProductVariant.COLLECTION_NAME)
             .whereEqualTo("productId", productId)
-            .addSnapshotListener { snapshot, error ->
+            .addSnapshotListener(com.google.firebase.firestore.MetadataChanges.INCLUDE) { snapshot, error ->
                 if (error != null) {
                     close(error)
                     return@addSnapshotListener

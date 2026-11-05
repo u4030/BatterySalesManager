@@ -28,6 +28,7 @@ class BillViewModel @Inject constructor(
     private val accountingRepository: AccountingRepository,
     private val bankRepository: BankRepository,
     private val warehouseRepository: WarehouseRepository,
+    private val persistentSyncManager: com.batterysales.data.local.PersistentSyncManager,
     private val savedStateHandle: androidx.lifecycle.SavedStateHandle
 ) : ViewModel() {
 
@@ -178,12 +179,55 @@ class BillViewModel @Inject constructor(
     }
 
     fun recordPayment(bill: Bill, amount: Double, method: String, warehouseId: String, notes: String) {
+        // --- تعديل تفاؤلي فوري لإجمالي غير المسدد بالدينار الأردني JOD (0ms) ---
+        _totalUnpaid.update { (it - amount).coerceAtLeast(0.0) }
+
         viewModelScope.launch {
             _isSubmitting.value = true
+            val opId = "bill_pay_${System.currentTimeMillis()}_${bill.id}"
             try {
+                persistentSyncManager.recordPendingOperation(
+                    com.batterysales.data.local.PendingSyncOperation(
+                        operationId = opId,
+                        type = "BILL_PAYMENT",
+                        relatedId = bill.id,
+                        status = "PENDING_SYNC"
+                    )
+                )
+
                 repository.addBillPayment(bill, amount, method, warehouseId, notes)
+                persistentSyncManager.removePendingOperation(opId)
                 loadData()
+            } catch (e: Exception) {
+                persistentSyncManager.removePendingOperation(opId)
+                _totalUnpaid.update { it + amount }
             } finally { _isSubmitting.value = false }
+        }
+    }
+
+    fun tagBillNeedsAdjustment(billId: String, warningNote: String) {
+        viewModelScope.launch {
+            val opId = "bill_adj_${System.currentTimeMillis()}_$billId"
+            try {
+                persistentSyncManager.recordPendingOperation(
+                    com.batterysales.data.local.PendingSyncOperation(
+                        operationId = opId,
+                        type = "BILL_ADJUSTMENT",
+                        relatedId = billId,
+                        status = "PENDING_SYNC"
+                    )
+                )
+
+                val bill = repository.getBill(billId)
+                if (bill != null) {
+                    val updated = bill.copy(needsAdjustment = true, warningNote = warningNote)
+                    repository.updateBill(updated)
+                }
+                persistentSyncManager.removePendingOperation(opId)
+                loadData()
+            } catch (e: Exception) {
+                persistentSyncManager.removePendingOperation(opId)
+            }
         }
     }
 

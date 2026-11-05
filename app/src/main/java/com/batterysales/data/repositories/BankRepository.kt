@@ -9,7 +9,9 @@ import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.snapshots
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
@@ -21,13 +23,21 @@ class BankRepository @Inject constructor(
     /**
      * Warning: Dangerous broad listener. Use getTransactionsPaginated instead.
      */
-    fun getAllTransactionsFlow(limit: Long = 1000): Flow<List<BankTransaction>> {
-        return firestore.collection(BankTransaction.COLLECTION_NAME)
+    fun getAllTransactionsFlow(limit: Long = 1000): Flow<List<BankTransaction>> = callbackFlow {
+        val registration = firestore.collection(BankTransaction.COLLECTION_NAME)
+            .orderBy("date", Query.Direction.DESCENDING)
             .limit(limit)
-            .snapshots()
-            .map { snapshot ->
-                snapshot.documents.mapNotNull { it.toObject(BankTransaction::class.java)?.copy(id = it.id) }
+            .addSnapshotListener(com.google.firebase.firestore.MetadataChanges.INCLUDE) { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    val list = snapshot.documents.mapNotNull { it.toObject(BankTransaction::class.java)?.copy(id = it.id) }
+                    trySend(list)
+                }
             }
+        awaitClose { registration.remove() }
     }
 
     suspend fun addTransaction(transaction: BankTransaction): String {
@@ -251,7 +261,11 @@ class BankRepository @Inject constructor(
             query = query.startAfter(lastDocument)
         }
 
-        val snapshot = query.limit(limit).get().await()
+        val snapshot = try {
+            query.limit(limit).get(com.google.firebase.firestore.Source.CACHE).await()
+        } catch (e: Exception) {
+            query.limit(limit).get().await()
+        }
         val transactions = snapshot.documents.mapNotNull { it.toObject(BankTransaction::class.java)?.copy(id = it.id) }
         val lastDoc = snapshot.documents.lastOrNull()
 

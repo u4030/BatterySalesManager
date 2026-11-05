@@ -180,7 +180,7 @@ fun InvoiceDetailScreen(
                                     }
                                     
                                     Text(
-                                        "JD ${String.format("%.3f", Math.abs(entry.totalCost))}",
+                                        "${String.format("%.3f", Math.abs(entry.totalCost))} JOD",
                                         style = MaterialTheme.typography.bodyLarge,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onSurface
@@ -219,11 +219,11 @@ fun InvoiceDetailScreen(
                                     
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(item.productName, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                                        Text("JD ${String.format("%.3f", item.price)} للقطعة", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text("${String.format("%.3f", item.price)} JOD للقطعة", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                     
                                     Text(
-                                        "JD ${String.format("%.3f", item.total)}",
+                                        "${String.format("%.3f", item.total)} JOD",
                                         style = MaterialTheme.typography.bodyLarge,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onSurface
@@ -248,7 +248,7 @@ fun InvoiceDetailScreen(
                                 HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                     Text("القيمة المخصومة", style = MaterialTheme.typography.bodyLarge, color = Color(0xFF10B981), fontWeight = FontWeight.Bold)
-                                    Text("JD ${String.format("%.3f", invoice.oldBatteriesValue)}", style = MaterialTheme.typography.bodyLarge, color = Color(0xFF10B981), fontWeight = FontWeight.Bold)
+                                    Text("${String.format("%.3f", invoice.oldBatteriesValue)} JOD", style = MaterialTheme.typography.bodyLarge, color = Color(0xFF10B981), fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
@@ -273,7 +273,7 @@ fun InvoiceDetailScreen(
                             
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text("الإجمالي النهائي", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                                Text("JD ${String.format("%.3f", invoice.totalAmount)}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                                Text("${String.format("%.3f", invoice.totalAmount)} JOD", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                             }
                             
                             SummaryRowItem("المبلغ المدفوع", invoice.paidAmount, color = Color(0xFF10B981))
@@ -353,7 +353,7 @@ fun InvoiceDetailScreen(
             title = { Text("تسجيل دفعة جديدة") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("المبلغ المتبقي: JD ${String.format("%.3f", invoice.remainingAmount)}")
+                    Text("المبلغ المتبقي: ${String.format("%.3f", invoice.remainingAmount)} JOD")
                     
                     CustomKeyboardTextField(
                         value = paymentAmount,
@@ -444,7 +444,7 @@ private fun SummaryRowItem(label: String, value: Double, color: Color? = null) {
     val textColor = color ?: MaterialTheme.colorScheme.onSurface
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(text = label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
-        Text(text = "JD ${String.format("%.3f", value)}", style = MaterialTheme.typography.bodyMedium, color = textColor, fontWeight = FontWeight.Bold)
+        Text(text = "${String.format("%.3f", value)} JOD", style = MaterialTheme.typography.bodyMedium, color = textColor, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -465,7 +465,7 @@ fun PaymentHistoryDialog(
             LazyColumn {
                 items(payments) { payment ->
                     ListItem(
-                        headlineContent = { Text("المبلغ: JD ${String.format("%.3f", payment.amount)}", fontWeight = FontWeight.Bold) },
+                        headlineContent = { Text("المبلغ: ${String.format("%.3f", payment.amount)} JOD", fontWeight = FontWeight.Bold) },
                         supportingContent = {
                             Text(
                                 text = SimpleDateFormat("yyyy/MM/dd hh:mm a", Locale.getDefault()).format(payment.timestamp),

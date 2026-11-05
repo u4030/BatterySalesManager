@@ -25,6 +25,7 @@ class WarehouseViewModel @Inject constructor(
     private val warehouseRepository: WarehouseRepository,
     private val userRepository: UserRepository,
     private val summaryRepository: SummaryRepository,
+    private val persistentSyncManager: com.batterysales.data.local.PersistentSyncManager,
     private val stockEntryRepository: StockEntryRepository
 ) : ViewModel() {
 
@@ -154,10 +155,27 @@ class WarehouseViewModel @Inject constructor(
     }
 
     fun addWarehouse(name: String, location: String, isMain: Boolean = false) {
+        val tempId = "wh_${System.currentTimeMillis()}"
+        val optimisticWh = Warehouse(id = tempId, name = name, location = location, isMain = isMain, isActive = true)
+        // حقن تفاؤلي فوري في الـ TabRow والقائمة الحية بـ (0ms)
+        _uiState.update { it.copy(warehouses = it.warehouses + optimisticWh, isSubmitting = true) }
+
         viewModelScope.launch {
-            _uiState.update { it.copy(isSubmitting = true) }
+            val opId = "wh_add_${System.currentTimeMillis()}"
             try {
+                persistentSyncManager.recordPendingOperation(
+                    com.batterysales.data.local.PendingSyncOperation(
+                        operationId = opId,
+                        type = "WAREHOUSE_ADD",
+                        relatedId = name,
+                        status = "PENDING_SYNC"
+                    )
+                )
+
                 warehouseRepository.addWarehouse(Warehouse(name = name, location = location, isMain = isMain))
+                persistentSyncManager.removePendingOperation(opId)
+            } catch (e: Exception) {
+                persistentSyncManager.removePendingOperation(opId)
             } finally {
                 _uiState.update { it.copy(isSubmitting = false) }
             }

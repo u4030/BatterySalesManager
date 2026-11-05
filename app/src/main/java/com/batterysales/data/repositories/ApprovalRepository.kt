@@ -22,7 +22,7 @@ class ApprovalRepository @Inject constructor(
     fun getPendingRequestsFlow(): Flow<List<ApprovalRequest>> = callbackFlow {
         val listenerRegistration = firestore.collection(ApprovalRequest.COLLECTION_NAME)
             .whereEqualTo("status", ApprovalRequest.STATUS_PENDING)
-            .addSnapshotListener { snapshot, error ->
+            .addSnapshotListener(com.google.firebase.firestore.MetadataChanges.INCLUDE) { snapshot, error ->
                 if (error != null) {
                     trySend(emptyList())
                     return@addSnapshotListener

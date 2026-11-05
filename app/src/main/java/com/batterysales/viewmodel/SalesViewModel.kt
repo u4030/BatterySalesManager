@@ -45,6 +45,7 @@ class SalesViewModel @Inject constructor(
     private val invoiceRepository: InvoiceRepository,
     private val salesRepository: SalesRepository,
     private val userRepository: UserRepository,
+    private val persistentSyncManager: com.batterysales.data.local.PersistentSyncManager,
     private val oldBatteryRepository: OldBatteryRepository,
     private val networkHelper: com.batterysales.utils.NetworkHelper
 ) : ViewModel() {
@@ -297,8 +298,15 @@ class SalesViewModel @Inject constructor(
             return
         }
 
+        // --- قفل المخزون التفاؤلي الاستباقي (Optimistic Stock Lock - 0ms) ---
+        val newStockMap = state.stockLevels.toMutableMap()
+        val updatedAvailable = (available - qty).coerceAtLeast(0)
+        newStockMap[Pair(variant.id, warehouse.id)] = updatedAvailable
+        _uiState.update { it.copy(stockLevels = newStockMap, isSubmitting = true) }
+
         viewModelScope.launch {
-            _uiState.update { it.copy(isSubmitting = true) }
+            // تحديث الكاش المركزي تفاؤلياً فوراً (0ms) لتراه جميع الشاشات والتقارير المفتوحة
+            summaryRepository.updateCacheOptimisticStock(variant.id, warehouse.id, -qty)
 
             try {
                 if (!warehouse.isActive) {
@@ -391,7 +399,18 @@ class SalesViewModel @Inject constructor(
                     )
                 } else null
 
-                invoiceRepository.createFullSale(
+                // توطين العملية في كاش القرص الصلب (PENDING_SYNC) لحماية الفاتورة ضد الموت المفاجئ للهاتف
+                val opId = "sale_${System.currentTimeMillis()}_${variant.id}"
+                persistentSyncManager.recordPendingOperation(
+                    com.batterysales.data.local.PendingSyncOperation(
+                        operationId = opId,
+                        type = "SALE",
+                        relatedId = newInvoice.id.ifEmpty { opId },
+                        status = "PENDING_SYNC"
+                    )
+                )
+
+                val createdInvoiceId = invoiceRepository.createFullSale(
                     invoice = newInvoice,
                     stockEntry = stockEntry,
                     payment = payment,
@@ -399,12 +418,19 @@ class SalesViewModel @Inject constructor(
                     oldBatteryTransaction = oldBatteryTransaction
                 )
 
+                // تطهير المعلقة فور نجاح الكتابة واستقرارها
+                persistentSyncManager.removePendingOperation(opId)
+
                 _uiState.update { it.copy(successMessage = "تم الحفظ والمزامنة بنجاح ✅", isSubmitting = false) }
                 kotlinx.coroutines.delay(1500)
                 _uiState.update { it.copy(isFinished = true) }
             } catch (e: Exception) {
                 Log.e("SalesViewModel", "Error creating sale", e)
-                _uiState.update { it.copy(errorMessage = "Failed to create sale: ${e.message}", isSubmitting = false) }
+                // في حال الارتداد العكسي أو الفشل، نعيد المخزون لحالته السابقة
+                summaryRepository.updateCacheOptimisticStock(variant.id, warehouse.id, qty)
+                val rollbackMap = _uiState.value.stockLevels.toMutableMap()
+                rollbackMap[Pair(variant.id, warehouse.id)] = available
+                _uiState.update { it.copy(stockLevels = rollbackMap, errorMessage = "Failed to create sale: ${e.message}", isSubmitting = false) }
             }
         }
     }

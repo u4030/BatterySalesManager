@@ -25,7 +25,8 @@ class BankViewModel @Inject constructor(
     private val summaryRepository: SummaryRepository,
     private val accountingRepository: AccountingRepository,
     private val userRepository: UserRepository,
-    private val warehouseRepository: WarehouseRepository
+    private val warehouseRepository: WarehouseRepository,
+    private val persistentSyncManager: com.batterysales.data.local.PersistentSyncManager
 ) : ViewModel() {
 
     private val _balance = MutableStateFlow(0.0)
@@ -204,11 +205,26 @@ class BankViewModel @Inject constructor(
     }
 
     fun addManualTransaction(type: BankTransactionType, amount: Double, description: String, referenceNumber: String = "", supplierName: String = "", fromTreasury: Boolean = false, warehouseId: String? = null) {
+        // --- تعديل تفاؤلي فوري لرصيد البنك بـ (0ms) بالدينار الأردني JOD ---
+        val delta = if (type == BankTransactionType.DEPOSIT) amount else -amount
+        _balance.update { (it + delta).coerceAtLeast(0.0) }
+
         viewModelScope.launch {
             _isSubmitting.value = true
+            val opId = "bank_tx_${System.currentTimeMillis()}"
             try {
+                persistentSyncManager.recordPendingOperation(
+                    com.batterysales.data.local.PendingSyncOperation(
+                        operationId = opId,
+                        type = "BANK_TRANSACTION",
+                        relatedId = referenceNumber.ifEmpty { opId },
+                        status = "PENDING_SYNC"
+                    )
+                )
+
                 val transaction = BankTransaction(type = type, amount = amount, description = description, referenceNumber = referenceNumber, supplierName = supplierName, date = Date())
                 val transId = repository.addTransaction(transaction)
+                persistentSyncManager.removePendingOperation(opId)
 
                 if (type == BankTransactionType.DEPOSIT && fromTreasury) {
                     val mainWhId = warehouseRepository.getWarehousesOnce().find { it.isMain }?.id
@@ -229,19 +245,37 @@ class BankViewModel @Inject constructor(
         }
     }
 
-    fun deleteTransaction(id: String) {
+    fun deleteBankTransaction(transactionId: String, amount: Double, isDeposit: Boolean) {
+        val currentBalance = _balance.value
+        // تعديل الفارق الصافي (Delta) تفاؤلياً في 0ms بالدينار الأردني JOD
+        val newBalance = if (isDeposit) currentBalance - amount else currentBalance + amount
+        _balance.value = newBalance.coerceAtLeast(0.0)
+
         viewModelScope.launch {
-            _isSubmitting.value = true
+            val opId = "bank_del_${System.currentTimeMillis()}_$transactionId"
+            persistentSyncManager.recordPendingOperation(
+                com.batterysales.data.local.PendingSyncOperation(
+                    operationId = opId,
+                    type = "BANK_DELETE",
+                    relatedId = transactionId,
+                    status = "PENDING_SYNC"
+                )
+            )
             try {
-                repository.deleteTransaction(id)
-                accountingRepository.deleteTransactionsByRelatedId(id)
+                repository.deleteTransaction(transactionId)
+                accountingRepository.deleteTransactionsByRelatedId(transactionId)
+                persistentSyncManager.removePendingOperation(opId)
                 loadData()
             } catch (e: Exception) {
+                _balance.value = currentBalance // Rollback Guard عند الفشل
+                persistentSyncManager.removePendingOperation(opId)
                 _errorMessage.value = e.message
-            } finally {
-                _isSubmitting.value = false
             }
         }
+    }
+
+    fun deleteTransaction(id: String) {
+        deleteBankTransaction(id, 0.0, false)
     }
 }
  

@@ -18,7 +18,7 @@ class ProductRepository @Inject constructor(
     fun getProducts(limit: Long = 1000): Flow<List<Product>> = callbackFlow {
         val listenerRegistration = firestore.collection(Product.COLLECTION_NAME)
             .limit(limit)
-            .addSnapshotListener { snapshot, error ->
+            .addSnapshotListener(com.google.firebase.firestore.MetadataChanges.INCLUDE) { snapshot, error ->
                 if (error != null) {
                     close(error)
                     return@addSnapshotListener
@@ -32,13 +32,25 @@ class ProductRepository @Inject constructor(
     }
 
     suspend fun getProductsOnce(limit: Long = 1000): List<Product> {
-        val snapshot = firestore.collection(Product.COLLECTION_NAME).limit(limit).get().await()
-        return snapshot.documents.mapNotNull { it.toObject(Product::class.java)?.copy(id = it.id) }
+        return try {
+            val snapshot = firestore.collection(Product.COLLECTION_NAME)
+                .limit(limit)
+                .get(com.google.firebase.firestore.Source.CACHE)
+                .await()
+            if (!snapshot.isEmpty) {
+                snapshot.documents.mapNotNull { it.toObject(Product::class.java)?.copy(id = it.id) }
+            } else {
+                val serverSnap = firestore.collection(Product.COLLECTION_NAME).limit(limit).get(com.google.firebase.firestore.Source.SERVER).await()
+                serverSnap.documents.mapNotNull { it.toObject(Product::class.java)?.copy(id = it.id) }
+            }
+        } catch (e: Exception) {
+            val snapshot = firestore.collection(Product.COLLECTION_NAME).limit(limit).get().await()
+            snapshot.documents.mapNotNull { it.toObject(Product::class.java)?.copy(id = it.id) }
+        }
     }
 
     suspend fun getAllProducts(limit: Long = 1000): List<Product> {
-        val snapshot = firestore.collection(Product.COLLECTION_NAME).limit(limit).get().await()
-        return snapshot.documents.mapNotNull { it.toObject(Product::class.java)?.copy(id = it.id) }
+        return getProductsOnce(limit)
     }
 
     suspend fun getProduct(productId: String): Product? {

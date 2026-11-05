@@ -24,20 +24,39 @@ class BillRepository @Inject constructor(
 ) {
 
     suspend fun getAllBills(): List<Bill> {
-        val snapshot = firestore.collection(Bill.COLLECTION_NAME)
-            .get()
-            .await()
-        return snapshot.documents.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) }
+        return try {
+            val snapshot = firestore.collection(Bill.COLLECTION_NAME)
+                .get(com.google.firebase.firestore.Source.CACHE)
+                .await()
+            if (!snapshot.isEmpty) {
+                snapshot.documents.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) }
+            } else {
+                val serverSnap = firestore.collection(Bill.COLLECTION_NAME).get(com.google.firebase.firestore.Source.SERVER).await()
+                serverSnap.documents.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) }
+            }
+        } catch (e: Exception) {
+            val snapshot = firestore.collection(Bill.COLLECTION_NAME).get().await()
+            snapshot.documents.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) }
+        }
     }
 
     suspend fun getBill(id: String): Bill? {
-        val snapshot = firestore.collection(Bill.COLLECTION_NAME).document(id).get().await()
-        return snapshot.toObject(Bill::class.java)?.copy(id = snapshot.id)
+        return try {
+            val snapshot = firestore.collection(Bill.COLLECTION_NAME).document(id)
+                .get(com.google.firebase.firestore.Source.CACHE).await()
+            snapshot.toObject(Bill::class.java)?.copy(id = snapshot.id)
+                ?: firestore.collection(Bill.COLLECTION_NAME).document(id)
+                    .get(com.google.firebase.firestore.Source.SERVER).await()
+                    .toObject(Bill::class.java)?.copy(id = snapshot.id)
+        } catch (e: Exception) {
+            val snapshot = firestore.collection(Bill.COLLECTION_NAME).document(id).get().await()
+            snapshot.toObject(Bill::class.java)?.copy(id = snapshot.id)
+        }
     }
 
     fun getAllBillsFlow(): Flow<List<Bill>> = callbackFlow {
         val listenerRegistration = firestore.collection(Bill.COLLECTION_NAME)
-            .addSnapshotListener { snapshot, error ->
+            .addSnapshotListener(com.google.firebase.firestore.MetadataChanges.INCLUDE) { snapshot, error ->
                 if (error != null) {
                     close(error)
                     return@addSnapshotListener
@@ -600,7 +619,16 @@ class BillRepository @Inject constructor(
             query = query.startAfter(lastDocument)
         }
 
-        val snapshot = query.limit(limit).get().await()
+        val snapshot = try {
+            if (lastDocument == null) {
+                val cacheSnap = query.limit(limit).get(com.google.firebase.firestore.Source.CACHE).await()
+                if (!cacheSnap.isEmpty) cacheSnap else query.limit(limit).get(com.google.firebase.firestore.Source.SERVER).await()
+            } else {
+                query.limit(limit).get().await()
+            }
+        } catch (e: Exception) {
+            query.limit(limit).get().await()
+        }
         val bills = snapshot.documents.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) }
         val lastDoc = snapshot.documents.lastOrNull()
 

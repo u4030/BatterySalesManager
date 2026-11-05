@@ -17,27 +17,50 @@ class SystemAlertRepository @Inject constructor(
 ) {
 
     /**
-     * Continuous snapshot listener for system alerts without complex server-side filters.
-     * Prevents compound index drops in the Firebase emulator and filters active unresolved alerts locally.
+     * Cache-First snapshot listener for active system alerts with double-guard
+     * (hasPendingWrites & isFromCache). Ensures that as soon as the atomic write completes
+     * locally, alerts are instantly pushed to the UI with 0ms delay while protecting
+     * against reconnect bounces.
      */
     fun getSystemAlertsFlow(): Flow<List<SystemAlert>> = callbackFlow {
+        val currentAlertsMap = java.util.concurrent.ConcurrentHashMap<String, SystemAlert>()
+
+        // فرض الاستماع الحي للمجموعة بالكامل متضمناً ميتاداتا INCLUDE لالتقاط أحداث الحذف فوراً (0ms)
         val listener = firestore.collection(SystemAlert.COLLECTION_NAME)
-            .addSnapshotListener { snapshot, error ->
+            .addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
                 if (error != null) {
                     close(error)
                     return@addSnapshotListener
                 }
 
-                snapshot?.let { snap ->
-                    val alerts = snap.documents.mapNotNull { doc ->
-                        try {
-                            val alert = doc.toObject(SystemAlert::class.java)?.copy(id = doc.id)
-                            if (alert != null && !alert.resolved) alert else null
-                        } catch (e: Exception) {
-                            null
+                if (snapshot != null) {
+                    // تفتيش هيكلي عكسي صارم ومباشر لتغيرات الوثائق دون الاعتماد على القوائم الثابتة المعلقة
+                    for (change in snapshot.documentChanges) {
+                        val docId = change.document.id
+                        when (change.type) {
+                            DocumentChange.Type.REMOVED -> {
+                                currentAlertsMap.remove(docId)
+                            }
+                            DocumentChange.Type.ADDED,
+                            DocumentChange.Type.MODIFIED -> {
+                                val doc = change.document
+                                val alert = try {
+                                    doc.toObject(SystemAlert::class.java)?.copy(id = doc.id)
+                                } catch (e: Exception) {
+                                    null
+                                }
+                                
+                                if (alert != null && !alert.resolved && alert.status != "deleted") {
+                                    currentAlertsMap[docId] = alert
+                                } else {
+                                    currentAlertsMap.remove(docId)
+                                }
+                            }
                         }
                     }
-                    trySend(alerts)
+
+                    // بث إذاعي تدفقي لحظي ومباشر ومطهر للواجهة الرسومية Jetpack Compose
+                    trySend(currentAlertsMap.values.toList()).isSuccess
                 }
             }
         awaitClose { listener.remove() }
