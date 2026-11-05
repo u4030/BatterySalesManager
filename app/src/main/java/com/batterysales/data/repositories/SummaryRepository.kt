@@ -649,4 +649,33 @@ class SummaryRepository @Inject constructor(
     }
 
     suspend fun getSyncRegistry(): SyncRegistry? = fetchSyncRegistry()
+
+    /**
+     * Optimistically update in-memory cache of variant stock for immediate 0ms reflection across open screens.
+     */
+    fun updateCacheOptimisticStock(variantId: String, warehouseId: String, deltaQty: Int) {
+        val keys = listOfNotNull(warehouseId.ifBlank { null }, "global")
+        val newCache = cachedInventorySummary.toMutableMap()
+
+        keys.forEach { key ->
+            val summary = newCache[key]
+            if (summary != null) {
+                val updatedItems = summary.items.toMutableMap()
+                val currentItem = updatedItems[variantId]
+                if (currentItem != null) {
+                    val updatedItem = currentItem.copy(
+                        currentStock = (currentItem.currentStock + deltaQty).coerceAtLeast(0),
+                        updatedAt = Date()
+                    )
+                    updatedItems[variantId] = updatedItem
+                    newCache[key] = summary.copy(
+                        items = updatedItems,
+                        totalItemsCount = (summary.totalItemsCount + deltaQty).coerceAtLeast(0),
+                        lastUpdated = Date()
+                    )
+                }
+            }
+        }
+        cachedInventorySummary = newCache
+    }
 }

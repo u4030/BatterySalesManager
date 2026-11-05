@@ -302,10 +302,11 @@ class SalesViewModel @Inject constructor(
         val newStockMap = state.stockLevels.toMutableMap()
         val updatedAvailable = (available - qty).coerceAtLeast(0)
         newStockMap[Pair(variant.id, warehouse.id)] = updatedAvailable
-        _uiState.update { it.copy(stockLevels = newStockMap) }
+        _uiState.update { it.copy(stockLevels = newStockMap, isSubmitting = true) }
 
         viewModelScope.launch {
-            _uiState.update { it.copy(isSubmitting = true) }
+            // تحديث الكاش المركزي تفاؤلياً فوراً (0ms) لتراه جميع الشاشات والتقارير المفتوحة
+            summaryRepository.updateCacheOptimisticStock(variant.id, warehouse.id, -qty)
 
             try {
                 if (!warehouse.isActive) {
@@ -426,6 +427,7 @@ class SalesViewModel @Inject constructor(
             } catch (e: Exception) {
                 Log.e("SalesViewModel", "Error creating sale", e)
                 // في حال الارتداد العكسي أو الفشل، نعيد المخزون لحالته السابقة
+                summaryRepository.updateCacheOptimisticStock(variant.id, warehouse.id, qty)
                 val rollbackMap = _uiState.value.stockLevels.toMutableMap()
                 rollbackMap[Pair(variant.id, warehouse.id)] = available
                 _uiState.update { it.copy(stockLevels = rollbackMap, errorMessage = "Failed to create sale: ${e.message}", isSubmitting = false) }
