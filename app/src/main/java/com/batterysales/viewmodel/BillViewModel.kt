@@ -259,6 +259,10 @@ class BillViewModel @Inject constructor(
         }
     }
 
+    fun tagBillForAdjustment(billId: String, warningNote: String = "تنبيه: تم إرجاع مواد من الطلبية") {
+        handlePurchaseReturnFlags(billId, warningNote)
+    }
+
     fun tagBillNeedsAdjustment(billId: String, warningNote: String) {
         handlePurchaseReturnFlags(billId, warningNote)
     }

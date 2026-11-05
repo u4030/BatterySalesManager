@@ -344,6 +344,15 @@ class OldBatteryViewModel @Inject constructor(
         }
     }
 
+    fun sellScrapBatteries(amount: Double, warehouseId: String = "") {
+        sellBatteries(
+            quantity = 1,
+            totalAmperes = amount,
+            amount = amount,
+            warehouseId = warehouseId.ifEmpty { _userWarehouseId.value ?: _selectedWarehouseId.value ?: "" }
+        )
+    }
+
     fun sellBatteries(quantity: Int, totalAmperes: Double, amount: Double, warehouseId: String) {
         val finalWarehouseId = if (_isSeller.value) _userWarehouseId.value ?: warehouseId else warehouseId
         // المقاصة التفاؤلية الفورية لبيع السكراب لحمايته من البيع المزدوج (0ms)
