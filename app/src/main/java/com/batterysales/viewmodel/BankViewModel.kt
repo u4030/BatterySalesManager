@@ -245,31 +245,37 @@ class BankViewModel @Inject constructor(
         }
     }
 
-    fun deleteTransaction(id: String) {
-        viewModelScope.launch {
-            _isSubmitting.value = true
-            val opId = "bank_del_${System.currentTimeMillis()}_$id"
-            try {
-                persistentSyncManager.recordPendingOperation(
-                    com.batterysales.data.local.PendingSyncOperation(
-                        operationId = opId,
-                        type = "BANK_DELETE",
-                        relatedId = id,
-                        status = "PENDING_SYNC"
-                    )
-                )
+    fun deleteBankTransaction(transactionId: String, amount: Double, isDeposit: Boolean) {
+        val currentBalance = _balance.value
+        // تعديل الفارق الصافي (Delta) تفاؤلياً في 0ms بالدينار الأردني JOD
+        val newBalance = if (isDeposit) currentBalance - amount else currentBalance + amount
+        _balance.value = newBalance.coerceAtLeast(0.0)
 
-                repository.deleteTransaction(id)
-                accountingRepository.deleteTransactionsByRelatedId(id)
+        viewModelScope.launch {
+            val opId = "bank_del_${System.currentTimeMillis()}_$transactionId"
+            persistentSyncManager.recordPendingOperation(
+                com.batterysales.data.local.PendingSyncOperation(
+                    operationId = opId,
+                    type = "BANK_DELETE",
+                    relatedId = transactionId,
+                    status = "PENDING_SYNC"
+                )
+            )
+            try {
+                repository.deleteTransaction(transactionId)
+                accountingRepository.deleteTransactionsByRelatedId(transactionId)
                 persistentSyncManager.removePendingOperation(opId)
                 loadData()
             } catch (e: Exception) {
+                _balance.value = currentBalance // Rollback Guard عند الفشل
                 persistentSyncManager.removePendingOperation(opId)
                 _errorMessage.value = e.message
-            } finally {
-                _isSubmitting.value = false
             }
         }
+    }
+
+    fun deleteTransaction(id: String) {
+        deleteBankTransaction(id, 0.0, false)
     }
 }
  

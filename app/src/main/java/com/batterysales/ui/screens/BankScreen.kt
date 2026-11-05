@@ -411,7 +411,12 @@ fun BankScreen(
                 } else {
                     Button(
                         onClick = {
-                            viewModel.deleteTransaction(showDeleteConfirm!!.id)
+                            val tx = showDeleteConfirm!!
+                            viewModel.deleteBankTransaction(
+                                transactionId = tx.id,
+                                amount = tx.amount,
+                                isDeposit = tx.type == BankTransactionType.DEPOSIT
+                            )
                             showDeleteConfirm = null
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
