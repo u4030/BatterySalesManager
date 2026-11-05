@@ -164,9 +164,31 @@ class BillViewModel @Inject constructor(
     fun updateBill(bill: Bill) {
         viewModelScope.launch {
             _isSubmitting.value = true
+            val opId = "bill_update_${System.currentTimeMillis()}_${bill.id}"
+            val prevBill = repository.getBill(bill.id)
+            val delta = (bill.amount - (prevBill?.amount ?: bill.amount))
             try {
+                if (bill.supplierId.isNotEmpty()) {
+                    persistentSyncManager.recordPendingOperation(
+                        com.batterysales.data.local.PendingSyncOperation(
+                            operationId = opId,
+                            type = "BILL_UPDATE",
+                            relatedId = bill.supplierId,
+                            amountDelta = delta,
+                            status = "PENDING_SYNC"
+                        )
+                    )
+                }
+
                 repository.updateBill(bill)
+                if (bill.supplierId.isNotEmpty()) {
+                    persistentSyncManager.removePendingOperation(opId)
+                }
                 loadData()
+            } catch (e: Exception) {
+                if (bill.supplierId.isNotEmpty()) {
+                    persistentSyncManager.removePendingOperation(opId)
+                }
             } finally { _isSubmitting.value = false }
         }
     }
@@ -267,11 +289,35 @@ class BillViewModel @Inject constructor(
     fun deleteBill(billId: String) {
         viewModelScope.launch {
             _isSubmitting.value = true
+            val opId = "bill_delete_${System.currentTimeMillis()}_$billId"
+            val bill = repository.getBill(billId)
+            val supplierId = bill?.supplierId ?: ""
+            val delta = -(bill?.amount ?: 0.0)
+
             try {
+                if (supplierId.isNotEmpty()) {
+                    persistentSyncManager.recordPendingOperation(
+                        com.batterysales.data.local.PendingSyncOperation(
+                            operationId = opId,
+                            type = "BILL_DELETE",
+                            relatedId = supplierId,
+                            amountDelta = delta,
+                            status = "PENDING_SYNC"
+                        )
+                    )
+                }
+
                 repository.deleteBill(billId)
                 accountingRepository.deleteTransactionsByRelatedId(billId)
                 bankRepository.deleteTransactionsByBillId(billId)
+                if (supplierId.isNotEmpty()) {
+                    persistentSyncManager.removePendingOperation(opId)
+                }
                 loadData()
+            } catch (e: Exception) {
+                if (supplierId.isNotEmpty()) {
+                    persistentSyncManager.removePendingOperation(opId)
+                }
             } finally { _isSubmitting.value = false }
         }
     }

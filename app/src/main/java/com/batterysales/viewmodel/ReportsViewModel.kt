@@ -31,6 +31,7 @@ class ReportsViewModel @Inject constructor(
     private val scrapWarehouseRepository: ScrapWarehouseRepository,
     private val userRepository: UserRepository,
     private val settingsManager: com.batterysales.utils.SettingsManager,
+    private val persistentSyncManager: com.batterysales.data.local.PersistentSyncManager,
     private val firestore: FirebaseFirestore
 ) : ViewModel() {
 
@@ -71,8 +72,30 @@ class ReportsViewModel @Inject constructor(
     private val _selectedSupplierId = MutableStateFlow<String?>(null)
     val selectedSupplierId = _selectedSupplierId.asStateFlow()
 
-    private val _selectedSupplierReport = MutableStateFlow<SupplierReportItem?>(null)
-    val selectedSupplierReport = _selectedSupplierReport.asStateFlow()
+    private val _rawSupplierReport = MutableStateFlow<SupplierReportItem?>(null)
+
+    val selectedSupplierReport: StateFlow<SupplierReportItem?> = combine(
+        _rawSupplierReport,
+        persistentSyncManager.pendingOperationsFlow
+    ) { baseReport, pendingOps ->
+        if (baseReport == null) return@combine null
+
+        var delta = 0.0
+        pendingOps.filter { it.relatedId == baseReport.supplier.id && it.status == "PENDING_SYNC" }
+            .forEach { op -> delta += op.amountDelta }
+
+        val finalDebit = cleanDouble(baseReport.totalDebit)
+        val finalCredit = cleanDouble(baseReport.totalCredit + delta)
+        val finalBalance = cleanDouble(finalDebit - finalCredit)
+        val overpayment = cleanDouble((finalCredit - finalDebit).coerceAtLeast(0.0))
+
+        baseReport.copy(
+            totalDebit = finalDebit,
+            totalCredit = finalCredit,
+            balance = finalBalance,
+            overpayment = overpayment
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     private val _suppliersOverviewList = MutableStateFlow<List<SupplierSummaryItem>>(emptyList())
     val suppliersOverviewList = _suppliersOverviewList.asStateFlow()
@@ -296,14 +319,14 @@ class ReportsViewModel @Inject constructor(
             summaryRepository.getSuppliersOverviewFlow().collect { overview ->
                 val supplierSummary = overview.suppliers[supplierId]
                 if (supplierSummary != null) {
-                    val current = _selectedSupplierReport.value
+                    val current = _rawSupplierReport.value
                     if (current != null) {
                         val freshSupplier = current.supplier.copy(
                             totalDebit = supplierSummary.totalDebit,
                             totalCredit = supplierSummary.totalCredit,
                             currentBalance = supplierSummary.currentBalance
                         )
-                        _selectedSupplierReport.value = current.copy(supplier = freshSupplier)
+                        _rawSupplierReport.value = current.copy(supplier = freshSupplier)
                     }
                 }
             }
@@ -317,7 +340,7 @@ class ReportsViewModel @Inject constructor(
             observeSelectedSupplierRealtime(supplierId)
         } else {
             selectedSupplierObserverJob?.cancel()
-            _selectedSupplierReport.value = null
+            _rawSupplierReport.value = null
         }
     }
 
@@ -339,14 +362,15 @@ class ReportsViewModel @Inject constructor(
                         val cacheMatches = Math.abs(cachedReport.totalDebit - supplier.totalDebit) < 0.01 &&
                                            Math.abs(cachedReport.totalCredit - supplier.totalCredit) < 0.01
                         if (cacheMatches) {
-                            _selectedSupplierReport.value = SupplierReportItem(
+                            _rawSupplierReport.value = SupplierReportItem(
                                 supplier = supplier,
                                 totalDebit = cleanDouble(Math.max(0.0, cachedReport.totalDebit)),
                                 totalCredit = cleanDouble(Math.max(0.0, cachedReport.totalCredit)),
                                 balance = cleanDouble(cachedReport.balance),
                                 targetProgress = if (supplier.yearlyTarget > 0) cachedReport.totalDebit / supplier.yearlyTarget else 0.0,
                                 regularOrders = cachedReport.regularOrders.map { it.toOrderItem() },
-                                obligatedOrders = cachedReport.obligatedOrders.map { it.toOrderItem() }
+                                obligatedOrders = cachedReport.obligatedOrders.map { it.toOrderItem() },
+                                overpayment = cleanDouble((cachedReport.totalCredit - cachedReport.totalDebit).coerceAtLeast(0.0))
                             )
                             _isSupplierLoading.value = false
                             
@@ -527,6 +551,7 @@ class ReportsViewModel @Inject constructor(
                     po.totalLinkedAmount >= po.entry.totalCost - 0.001
                 }
 
+                val overpayment = cleanDouble((totalCredit - totalDebit).coerceAtLeast(0.0))
                 val finalReportItem = SupplierReportItem(
                     supplier = supplier,
                     totalDebit = totalDebit,
@@ -534,7 +559,8 @@ class ReportsViewModel @Inject constructor(
                     balance = balance,
                     targetProgress = if (supplier.yearlyTarget > 0) totalDebit / supplier.yearlyTarget else 0.0,
                     regularOrders = partitionedResult.second,
-                    obligatedOrders = partitionedResult.first
+                    obligatedOrders = partitionedResult.first,
+                    overpayment = overpayment
                 )
 
                 if (start == null && end == null) {
@@ -543,7 +569,7 @@ class ReportsViewModel @Inject constructor(
                     }.await()
                 }
 
-                _selectedSupplierReport.value = finalReportItem
+                _rawSupplierReport.value = finalReportItem
             } catch (e: Exception) {
                 Log.e("ReportsViewModel", "Error loading supplier report", e)
             } finally {

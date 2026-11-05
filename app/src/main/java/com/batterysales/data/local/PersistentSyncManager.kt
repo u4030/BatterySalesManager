@@ -19,10 +19,11 @@ private val Context.syncDataStore: DataStore<Preferences> by preferencesDataStor
 
 data class PendingSyncOperation(
     val operationId: String,
-    val type: String, // SALE, STOCK_TRANSFER, PAYMENT_DELETE, STOCK_ENTRY
+    val type: String, // SALE, STOCK_TRANSFER, PAYMENT_DELETE, STOCK_ENTRY, BILL_UPDATE, BILL_DELETE
     val relatedId: String,
     val timestamp: Long = System.currentTimeMillis(),
     val payloadJson: String = "",
+    val amountDelta: Double = 0.0,
     val status: String = "PENDING_SYNC"
 )
 

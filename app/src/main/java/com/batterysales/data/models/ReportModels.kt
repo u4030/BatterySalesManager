@@ -18,7 +18,8 @@ data class SupplierReportItem(
     val balance: Double, // Debit - Credit
     val targetProgress: Double,
     val regularOrders: List<PurchaseOrderItem>, // Orders NOT linked to checks/bills
-    val obligatedOrders: List<PurchaseOrderItem> // Orders linked to checks/bills
+    val obligatedOrders: List<PurchaseOrderItem>, // Orders linked to checks/bills
+    val overpayment: Double = 0.0 // Excess paid credit (JOD)
 )
 
 data class SettlementNoteItem(
