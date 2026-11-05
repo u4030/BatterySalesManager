@@ -107,8 +107,27 @@ class ReportsViewModel @Inject constructor(
     private val _grandTotalInventoryQuantity = MutableStateFlow(0)
     val grandTotalInventoryQuantity = _grandTotalInventoryQuantity.asStateFlow()
 
-    private val _grandTotalInventoryValue = MutableStateFlow(0.0)
-    val grandTotalInventoryValue = _grandTotalInventoryValue.asStateFlow()
+    private val _rawGrandTotalInventoryValue = MutableStateFlow(0.0)
+
+    val grandTotalInventoryValue: StateFlow<Double> = combine(
+        summaryRepository.getInventorySummaryFlow(null).map { it.totalValue },
+        _rawGrandTotalInventoryValue,
+        persistentSyncManager.pendingOperationsFlow
+    ) { serverVal, rawVal, pendingOps ->
+        val baseVal = if (rawVal > 0.0) rawVal else serverVal
+        var deltaValue = 0.0
+
+        // تجميع الفروقات المالية (Deltas) للعمليات المعلقة في الـ DataStore محلياً فوراً (0ms)
+        pendingOps.filter { it.status == "PENDING_SYNC" }.forEach { op ->
+            deltaValue += op.amountDelta
+        }
+
+        cleanDouble((baseVal + deltaValue).coerceAtLeast(0.0))
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = 0.0
+    )
 
     private val _selectedTab = MutableStateFlow(0)
     val selectedTab = _selectedTab.asStateFlow()
@@ -253,7 +272,7 @@ class ReportsViewModel @Inject constructor(
                         val finalItems = items.sortedWith(compareByDescending<InventoryReportItem> { it.product.name }.thenByDescending { it.variant.capacity })
                         _inventoryReportItems.value = finalItems
                         _grandTotalInventoryQuantity.value = finalItems.sumOf { it.totalQuantity }
-                        _grandTotalInventoryValue.value = finalItems.sumOf { it.totalCostValue }
+                        _rawGrandTotalInventoryValue.value = finalItems.sumOf { it.totalCostValue }
                         _allInventoryItemNames.value = finalItems.map { it.product.name }.distinct()
                         _isInventoryLoading.value = false
                     }
