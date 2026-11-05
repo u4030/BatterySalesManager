@@ -38,6 +38,33 @@ fun WarehouseScreen(
     var warehouseToEdit by remember { mutableStateOf<Warehouse?>(null) }
     var showDeleteConfirm by remember { mutableStateOf<Warehouse?>(null) }
 
+    if (uiState.blockingConflictError != null) {
+        AlertDialog(
+            onDismissRequest = { /* يمنع الإغلاق باللمس العشوائي للخلفية */ },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFEF4444))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("تنبيه مزامنة حرج (Conflict Lock)", color = Color(0xFFEF4444), fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Text(
+                    text = uiState.blockingConflictError ?: "",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.dismissBlockingConflict() },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
+                ) {
+                    Text("تأكيد القراءة", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             SharedHeader(

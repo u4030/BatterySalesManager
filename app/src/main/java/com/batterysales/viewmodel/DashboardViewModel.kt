@@ -76,6 +76,24 @@ class DashboardViewModel @Inject constructor(
 
     fun dismissBlockingConflict() {
         _blockingConflictError.value = null
+        viewModelScope.launch {
+            persistentSyncManager.removePendingOperation("CRITICAL_CONFLICT_LOCK")
+        }
+    }
+
+    fun setBlockingConflict(msg: String) {
+        _blockingConflictError.value = msg
+        viewModelScope.launch {
+            persistentSyncManager.recordPendingOperation(
+                com.batterysales.data.local.PendingSyncOperation(
+                    operationId = "CRITICAL_CONFLICT_LOCK",
+                    type = "CONFLICT_LOCK",
+                    relatedId = "CRITICAL_CONFLICT",
+                    payloadJson = msg,
+                    status = "PENDING_SYNC"
+                )
+            )
+        }
     }
 
     fun suppressAlertLocally(variantId: String, warehouseId: String) {

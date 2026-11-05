@@ -47,6 +47,7 @@ fun ProductManagementScreen(
     printQueueViewModel: PrintQueueViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val blockingConflictError by viewModel.blockingConflictError.collectAsState()
     val keyboardController = com.batterysales.ui.components.LocalCustomKeyboardController.current
     val printQueue by printQueueViewModel.queue.collectAsState()
 
@@ -62,6 +63,33 @@ fun ProductManagementScreen(
     var showPrintQueueDialog by remember { mutableStateOf(false) }
 
     // Dialogs
+    if (blockingConflictError != null) {
+        AlertDialog(
+            onDismissRequest = { /* يمنع الإغلاق باللمس العشوائي للخلفية */ },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFEF4444))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("تنبيه مزامنة حرج (Conflict Lock)", color = Color(0xFFEF4444), fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Text(
+                    text = blockingConflictError ?: "",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.dismissBlockingConflict() },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
+                ) {
+                    Text("تأكيد القراءة", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+    }
+
     if (showAddProductDialog) {
         AddProductDialog(
             suppliers = uiState.suppliers,

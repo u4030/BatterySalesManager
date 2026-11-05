@@ -17,13 +17,15 @@ data class UserManagementUiState(
     val isLoading: Boolean = true,
     val isSubmitting: Boolean = false,
     val successMessage: String? = null,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val blockingConflictError: String? = null
 )
 
 @HiltViewModel
 class UserManagementViewModel @Inject constructor(
     private val userRepository: UserRepository,
-    private val warehouseRepository: WarehouseRepository
+    private val warehouseRepository: WarehouseRepository,
+    private val persistentSyncManager: com.batterysales.data.local.PersistentSyncManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(UserManagementUiState())
@@ -31,7 +33,23 @@ class UserManagementViewModel @Inject constructor(
 
     private val refreshTrigger = MutableStateFlow(0)
 
+    fun dismissBlockingConflict() {
+        _uiState.update { it.copy(blockingConflictError = null) }
+        viewModelScope.launch {
+            persistentSyncManager.removePendingOperation("CRITICAL_USER_CONFLICT")
+        }
+    }
+
     init {
+        viewModelScope.launch {
+            persistentSyncManager.pendingOperationsFlow.collect { ops ->
+                val conflictOp = ops.find { it.operationId == "CRITICAL_USER_CONFLICT" && it.status == "PENDING_SYNC" }
+                if (conflictOp != null && _uiState.value.blockingConflictError == null) {
+                    _uiState.update { it.copy(blockingConflictError = conflictOp.payloadJson) }
+                }
+            }
+        }
+
         refreshTrigger.onEach {
             loadData()
         }.launchIn(viewModelScope)
@@ -142,24 +160,72 @@ class UserManagementViewModel @Inject constructor(
         }
     }
 
+    fun addUserOptimistic(email: String, displayName: String, role: String, warehouseId: String?) {
+        val tempUser = User(
+            id = "temp_${System.currentTimeMillis()}",
+            email = email,
+            displayName = displayName,
+            role = role,
+            warehouseId = warehouseId,
+            isActive = true
+        )
+        _uiState.update { it.copy(users = listOf(tempUser) + it.users.filter { u -> u.id != tempUser.id }) }
+    }
+
     fun createUser(email: String, password: String, displayName: String, role: String, warehouseId: String?) {
+        if (email.isBlank() || password.length < 6 || displayName.isBlank()) {
+            _uiState.update { it.copy(errorMessage = "الرجاء التأكد من صحة البيانات (كلمة المرور 6 أحرف على الأقل)") }
+            return
+        }
+
+        val tempUser = User(
+            id = "temp_${System.currentTimeMillis()}",
+            email = email,
+            displayName = displayName,
+            role = role,
+            warehouseId = warehouseId,
+            isActive = true
+        )
+        val previousUsers = _uiState.value.users
+
+        // الحقن التفاؤلي الفوري للمستخدم الجديد في القوائم المنسدلة والـ LazyColumn بـ (0ms)
+        _uiState.update { it.copy(users = listOf(tempUser) + it.users, isSubmitting = true) }
+
         viewModelScope.launch {
-            if (email.isBlank() || password.length < 6 || displayName.isBlank()) {
-                _uiState.update { it.copy(errorMessage = "الرجاء التأكد من صحة البيانات (كلمة المرور 6 أحرف على الأقل)") }
-                return@launch
-            }
-            _uiState.update { it.copy(isSubmitting = true) }
+            val opId = "user_add_${System.currentTimeMillis()}"
             try {
+                persistentSyncManager.recordPendingOperation(
+                    com.batterysales.data.local.PendingSyncOperation(
+                        operationId = opId,
+                        type = "USER_ADD",
+                        relatedId = email,
+                        status = "PENDING_SYNC"
+                    )
+                )
+
                 userRepository.registerUser(email, password, displayName, role, warehouseId)
+                persistentSyncManager.removePendingOperation(opId)
                 _uiState.update { it.copy(
                     isSubmitting = false,
                     successMessage = "تم إنشاء المستخدم بنجاح"
                 ) }
             } catch (e: Exception) {
+                persistentSyncManager.removePendingOperation(opId)
                 _uiState.update { it.copy(
-                    isSubmitting = false,
-                    errorMessage = "فشل إنشاء المستخدم: ${e.message}"
+                    users = previousUsers,
+                    isSubmitting = false
                 ) }
+                val errorMsg = "تنبيه مزامنة حرج: فشل اعتماد إضافة المستخدم [$displayName] في السيرفر بسبب تعارض في البيانات أثناء انقطاع اتصالك. تم إعادة فهارس الكاش لحالتها الحقيقية تلقائياً، يرجى النقر لتأكيد الاطلاع وتوقيع التسوية يدوياً."
+                _uiState.update { it.copy(blockingConflictError = errorMsg) }
+                persistentSyncManager.recordPendingOperation(
+                    com.batterysales.data.local.PendingSyncOperation(
+                        operationId = "CRITICAL_USER_CONFLICT",
+                        type = "CONFLICT_LOCK",
+                        relatedId = email,
+                        payloadJson = errorMsg,
+                        status = "PENDING_SYNC"
+                    )
+                )
             }
         }
     }
