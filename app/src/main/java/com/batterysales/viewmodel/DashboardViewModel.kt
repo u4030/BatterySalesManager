@@ -81,6 +81,24 @@ class DashboardViewModel @Inject constructor(
     fun suppressAlertLocally(variantId: String, warehouseId: String) {
         val compositeId = "low_stock_${variantId}_${warehouseId}"
         _locallySuppressedAlertIds.update { it + compositeId + "bill_$variantId" }
+        viewModelScope.launch {
+            persistentSyncManager.recordPendingOperation(
+                com.batterysales.data.local.PendingSyncOperation(
+                    operationId = "suppress_${System.currentTimeMillis()}_$compositeId",
+                    type = "ALERT_SUPPRESS",
+                    relatedId = compositeId,
+                    status = "PENDING_SYNC"
+                )
+            )
+        }
+    }
+
+    fun triggerOptimisticAlert(variantId: String, warehouseId: String, threshold: Int = 0) {
+        val compositeId = "low_stock_${variantId}_${warehouseId}"
+        _locallySuppressedAlertIds.update { it - compositeId }
+        viewModelScope.launch {
+            persistentSyncManager.removePendingOperation("suppress_${System.currentTimeMillis()}_$compositeId")
+        }
     }
 
     data class AlertStreamContext(

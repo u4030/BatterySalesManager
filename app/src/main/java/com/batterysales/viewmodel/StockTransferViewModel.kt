@@ -192,10 +192,14 @@ class StockTransferViewModel @Inject constructor(
 
             // --- المقاصة التفاؤلية المزدوجة الفورية (0ms) ---
             val newStockMap = state.stockLevels.toMutableMap()
-            newStockMap[Pair(variant.id, source.id)] = (available - qty).coerceAtLeast(0)
+        val newSrcStock = (available - qty).coerceAtLeast(0)
+        newStockMap[Pair(variant.id, source.id)] = newSrcStock
             val destStock = state.stockLevels[Pair(variant.id, dest.id)] ?: 0
-            newStockMap[Pair(variant.id, dest.id)] = destStock + qty
+        val newDestStock = destStock + qty
+        newStockMap[Pair(variant.id, dest.id)] = newDestStock
             _uiState.update { it.copy(stockLevels = newStockMap) }
+
+        executeTransferOptimistic(variant.id, source.id, dest.id, qty)
 
             val opId = "transfer_${System.currentTimeMillis()}_${variant.id}"
             try {
@@ -248,6 +252,44 @@ class StockTransferViewModel @Inject constructor(
                 Log.e("StockTransferVM", "Transfer error", e)
                 persistentSyncManager.removePendingOperation(opId)
                 _uiState.update { it.copy(errorMessage = "فشل النقل: ${e.message}", isSubmitting = false) }
+            }
+        }
+    }
+
+    private fun checkIfUnderThreshold(warehouseId: String, variantId: String, deltaQty: Int): Boolean {
+        val currentStock = uiState.value.stockLevels[Pair(variantId, warehouseId)] ?: 0
+        val resultingStock = currentStock + deltaQty
+        val minQty = uiState.value.selectedVariant?.minQuantity ?: 5
+        return resultingStock <= minQty
+    }
+
+    private fun checkIfAboveThreshold(warehouseId: String, variantId: String, deltaQty: Int): Boolean {
+        val currentStock = uiState.value.stockLevels[Pair(variantId, warehouseId)] ?: 0
+        val resultingStock = currentStock + deltaQty
+        val minQty = uiState.value.selectedVariant?.minQuantity ?: 5
+        return resultingStock > minQty
+    }
+
+    fun executeTransferOptimistic(variantId: String, srcWh: String, destWh: String, qty: Int) {
+        viewModelScope.launch {
+            val srcComposite = "low_stock_${variantId}_${srcWh}"
+            val destComposite = "low_stock_${variantId}_${destWh}"
+
+            // 1. مستودع المصدر: إذا كسر حد الأمان، بث تنبيه متفائل فورا
+            if (checkIfUnderThreshold(srcWh, variantId, -qty)) {
+                persistentSyncManager.removePendingOperation("suppress_${srcComposite}")
+            }
+
+            // 2. مستودع الهدف: إذا حل العجز، اطرد التنبيه فوراً
+            if (checkIfAboveThreshold(destWh, variantId, qty)) {
+                persistentSyncManager.recordPendingOperation(
+                    com.batterysales.data.local.PendingSyncOperation(
+                        operationId = "suppress_${System.currentTimeMillis()}_$destComposite",
+                        type = "ALERT_SUPPRESS",
+                        relatedId = destComposite,
+                        status = "PENDING_SYNC"
+                    )
+                )
             }
         }
     }
