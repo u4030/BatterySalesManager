@@ -10,6 +10,7 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -88,6 +89,15 @@ class PersistentSyncManager @Inject constructor(
     suspend fun clearAllPendingOperations() {
         context.syncDataStore.edit { prefs ->
             prefs.remove(PENDING_OPS_KEY)
+        }
+    }
+
+    suspend fun hasLocalPendingOperations(): Boolean {
+        return try {
+            val ops = pendingOperationsFlow.first()
+            ops.any { it.status == "PENDING_SYNC" }
+        } catch (e: Exception) {
+            false
         }
     }
 }
