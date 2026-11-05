@@ -30,6 +30,7 @@ class InvoiceDetailViewModel @Inject constructor(
     private val invoiceRepository: InvoiceRepository,
     private val paymentRepository: PaymentRepository,
     private val accountingRepository: AccountingRepository,
+    private val summaryRepository: com.batterysales.data.repositories.SummaryRepository,
     private val persistentSyncManager: com.batterysales.data.local.PersistentSyncManager,
     private val stockEntryRepository: com.batterysales.data.repositories.StockEntryRepository,
     savedStateHandle: SavedStateHandle
@@ -180,6 +181,41 @@ class InvoiceDetailViewModel @Inject constructor(
 
     fun onDismissError() {
         _uiState.update { it.copy(errorMessage = null) }
+    }
+
+    /**
+     * Reverses an invoice fully, restoring stock immediately to SummaryRepository cache
+     * and suppressing phantom low-stock alerts locally in 0ms.
+     */
+    fun reverseInvoiceFully(invoiceId: String, warehouseId: String, items: List<com.batterysales.data.models.InvoiceItem>) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSubmitting = true) }
+            try {
+                items.forEach { item ->
+                    val variantId = item.productId
+                    val compositeAlertId = "low_stock_${variantId}_${warehouseId}"
+
+                    // Record ALERT_SUPPRESS in persistent sync manager for instant 0ms eviction
+                    persistentSyncManager.recordPendingOperation(
+                        com.batterysales.data.local.PendingSyncOperation(
+                            operationId = "suppress_${System.currentTimeMillis()}_$variantId",
+                            type = "ALERT_SUPPRESS",
+                            relatedId = compositeAlertId,
+                            status = "PENDING_SYNC"
+                        )
+                    )
+
+                    // Optimistically restore stock to the central SummaryRepository cache
+                    summaryRepository.updateCacheOptimisticStock(variantId, warehouseId, item.quantity)
+                }
+
+                invoiceRepository.cancelInvoiceAtomic(invoiceId)
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "فشل إلغاء الفاتورة: ${e.message}") }
+            } finally {
+                _uiState.update { it.copy(isSubmitting = false) }
+            }
+        }
     }
 }
  

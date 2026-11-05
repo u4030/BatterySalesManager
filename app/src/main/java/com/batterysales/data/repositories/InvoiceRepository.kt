@@ -394,6 +394,10 @@ class InvoiceRepository @Inject constructor(
         }.await()
     }
 
+    suspend fun cancelInvoiceAtomic(invoiceId: String) {
+        deleteInvoice(invoiceId)
+    }
+
     suspend fun createFullSale(
         invoice: Invoice,
         stockEntry: com.batterysales.data.models.StockEntry,
