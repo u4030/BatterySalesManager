@@ -322,7 +322,6 @@ class OldBatteryViewModel @Inject constructor(
                 
                 persistentSyncManager.removePendingOperation(opId)
                 refreshTrigger.value++
-                loadTransactions()
             } catch (e: Exception) {
                 persistentSyncManager.removePendingOperation(opId)
                 Log.e("OldBatteryViewModel", "Error adding manual intake", e)
@@ -380,7 +379,6 @@ class OldBatteryViewModel @Inject constructor(
                 
                 persistentSyncManager.removePendingOperation(opId)
                 refreshTrigger.value++
-                loadTransactions()
             } catch (e: Exception) {
                 persistentSyncManager.removePendingOperation(opId)
                 Log.e("OldBatteryViewModel", "Error selling batteries", e)

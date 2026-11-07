@@ -50,18 +50,25 @@ fun InvoiceDetailScreen(
     var selectedPaymentMethod by remember { mutableStateOf("cash") }
 
     if (uiState.errorMessage != null) {
+        val errText = uiState.errorMessage ?: ""
+        val isCriticalAccountingLock = errText.contains("LOCK", ignoreCase = true) || errText.contains("VIOLATION", ignoreCase = true)
+
         AlertDialog(
             onDismissRequest = { /* حظر الإغلاق العشوائي باللمس الخارجي أو زر العودة */ },
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Warning, contentDescription = null, tint = Color.Red)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("تنبيه مزامنة حرج وتعارض محاسبي!", color = Color.Red, fontWeight = FontWeight.Bold)
+                    Text(
+                        if (isCriticalAccountingLock) "تنبيه قفل المحاسبة والسيرفر (GATEWAY LOCK)!" else "تنبيه مزامنة حرج وتعارض محاسبي!",
+                        color = Color.Red,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             },
             text = {
                 Text(
-                    text = uiState.errorMessage ?: "",
+                    text = errText,
                     style = MaterialTheme.typography.bodyMedium
                 )
             },

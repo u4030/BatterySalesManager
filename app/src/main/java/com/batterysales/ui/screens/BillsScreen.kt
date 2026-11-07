@@ -100,7 +100,10 @@ fun BillsScreen(
             },
             confirmButton = {
                 Button(
-                    onClick = { blockingConflictError = null },
+                    onClick = {
+                        blockingConflictError = null
+                        viewModel.loadData()
+                    },
                     colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
                 ) {
                     Text("تأكيد الاطلاع وتوقيع التسوية المحاسبية", color = Color.White, fontWeight = FontWeight.Bold)
