@@ -78,14 +78,13 @@ fun UserManagementScreen(
                     onClick = { viewModel.clearCollisionError() },
                     colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
                 ) {
-                    Text("تأكيد الاطلاع والتسوية", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text("تأكيد الاطلاع وتوقيع التسوية المحاسبية", color = Color.White, fontWeight = FontWeight.Bold)
                 }
             }
         )
     }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         containerColor = bgColor,
         floatingActionButton = {
             FloatingActionButton(

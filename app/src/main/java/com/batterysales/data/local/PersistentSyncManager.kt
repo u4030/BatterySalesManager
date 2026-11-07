@@ -78,7 +78,12 @@ class PersistentSyncManager @Inject constructor(
                     val currentList = gson.fromJson<List<PendingSyncOperation>>(json, type)?.toMutableList() ?: mutableListOf()
                     val removed = currentList.removeAll { it.operationId == operationId }
                     if (removed) {
-                        prefs[PENDING_OPS_KEY] = gson.toJson(currentList)
+                        // تفريغ كامل وبتر للمفتاح عند انتهاء المعلقات لتحقيق استهداف الـ 0 MB دوماً
+                        if (currentList.isEmpty()) {
+                            prefs.remove(PENDING_OPS_KEY)
+                        } else {
+                            prefs[PENDING_OPS_KEY] = gson.toJson(currentList)
+                        }
                     }
                 } catch (e: Exception) {
                     // Ignore parse error on removal

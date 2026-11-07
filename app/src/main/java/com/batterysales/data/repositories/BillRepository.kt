@@ -573,9 +573,6 @@ class BillRepository @Inject constructor(
             }
 
             if (creditToRemove > 0) {
-                // Adjust totalSupplierDebt in SystemStats
-                transaction.set(statsRef, mapOf("totalSupplierDebt" to com.google.firebase.firestore.FieldValue.increment(creditToRemove)), com.google.firebase.firestore.SetOptions.merge())
-
                 // Update Supplier Denormalized Totals
                 if (bill.supplierId.isNotEmpty()) {
                     summaryRepository.invalidateSupplierReportCache(transaction, bill.supplierId)
@@ -597,26 +594,14 @@ class BillRepository @Inject constructor(
             // These totals represent actual money spent (paidAmount)
             bankTransactions.documents.forEach { doc ->
                 val amt = doc.getDouble("amount") ?: 0.0
-                transaction.set(statsRef, mapOf("totalBankBalance" to com.google.firebase.firestore.FieldValue.increment(amt)), com.google.firebase.firestore.SetOptions.merge())
                 summaryRepository.applyFinancialUpdate(transaction, snapshots, targetWhId, bankChange = amt)
                 transaction.delete(doc.reference)
             }
             
             treasuryTransactions.documents.forEach { doc ->
                 val amt = doc.getDouble("amount") ?: 0.0
-                transaction.set(statsRef, mapOf("totalCashBalance" to com.google.firebase.firestore.FieldValue.increment(amt)), com.google.firebase.firestore.SetOptions.merge())
                 summaryRepository.applyFinancialUpdate(transaction, snapshots, targetWhId, cashChange = amt)
                 transaction.delete(doc.reference)
-            }
-
-            // --- Reverse Unpaid Commitments in stats ---
-            val remainingCommitment = bill.amount - bill.paidAmount
-            if (remainingCommitment > 0.001) {
-                if (bill.billType == BillType.CHECK) {
-                    transaction.set(statsRef, mapOf("totalUnpaidChecks" to com.google.firebase.firestore.FieldValue.increment(-remainingCommitment)), com.google.firebase.firestore.SetOptions.merge())
-                } else if (bill.billType == BillType.BILL) {
-                    transaction.set(statsRef, mapOf("totalUnpaidBills" to com.google.firebase.firestore.FieldValue.increment(-remainingCommitment)), com.google.firebase.firestore.SetOptions.merge())
-                }
             }
         }.await()
 

@@ -49,12 +49,31 @@ fun InvoiceDetailScreen(
     var paymentAmount by remember { mutableStateOf("") }
     var selectedPaymentMethod by remember { mutableStateOf("cash") }
 
-    val snackbarHostState = remember { SnackbarHostState() }
-    uiState.errorMessage?.let {
-        LaunchedEffect(it) {
-            snackbarHostState.showSnackbar(it)
-            viewModel.onDismissError()
-        }
+    if (uiState.errorMessage != null) {
+        AlertDialog(
+            onDismissRequest = { /* حظر الإغلاق العشوائي باللمس الخارجي أو زر العودة */ },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Warning, contentDescription = null, tint = Color.Red)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("فشل اعتماد البيانات والعملية العكسية!", color = Color.Red, fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Text(
+                    text = uiState.errorMessage ?: "",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.onDismissError() },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                ) {
+                    Text("تأكيد الاطلاع وتوقيع التسوية المحاسبية", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            }
+        )
     }
 
     val bgColor = MaterialTheme.colorScheme.background
@@ -66,8 +85,7 @@ fun InvoiceDetailScreen(
 
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
-            containerColor = bgColor,
-            snackbarHost = { SnackbarHost(snackbarHostState) }
+            containerColor = bgColor
         ) { paddingValues ->
         if (uiState.isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
