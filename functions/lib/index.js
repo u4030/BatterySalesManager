@@ -52,4 +52,5 @@ __exportStar(require("./triggers/alerts"), exports);
 __exportStar(require("./triggers/oldBatteries"), exports);
 __exportStar(require("./triggers/warehouses"), exports);
 __exportStar(require("./triggers/suppliers"), exports);
+__exportStar(require("./triggers/vaultTransfers"), exports);
 //# sourceMappingURL=index.js.map

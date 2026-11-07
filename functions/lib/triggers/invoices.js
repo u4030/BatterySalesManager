@@ -38,160 +38,154 @@ const firestore_1 = require("firebase-functions/v2/firestore");
 const admin = __importStar(require("firebase-admin"));
 const firestore_2 = require("firebase-admin/firestore");
 const dashboardHub_1 = require("../aggregators/dashboardHub");
-const processedEvents = new Set();
+const idempotency_1 = require("../utils/idempotency");
 exports.onInvoiceCreated = (0, firestore_1.onDocumentCreated)("invoices/{invoiceId}", async (event) => {
     if (!event.data)
         return;
+    const invoiceId = event.params.invoiceId;
     const eventId = event.id;
-    // Idempotency Guardrail
-    if (processedEvents.has(eventId)) {
-        console.log(`[IdempotencyGuard] Event ${eventId} for invoice ${event.params.invoiceId} already processed. Skipping.`);
-        return;
-    }
-    processedEvents.add(eventId);
-    if (processedEvents.size > 1000) {
-        const firstKey = processedEvents.values().next().value;
-        if (firstKey)
-            processedEvents.delete(firstKey);
-    }
-    console.time("onInvoiceCreated_executionTime");
-    const db = admin.firestore();
-    const invoice = event.data.data();
-    if (!invoice)
-        return;
-    const warehouseId = invoice.warehouseId || "";
-    const items = (invoice.items || []);
-    const totalAmount = Number(invoice.totalAmount || invoice.finalAmount || 0);
-    const paidAmount = Number(invoice.paidAmount || 0);
-    const initialDebt = Math.max(0, totalAmount - paidAmount);
-    const paymentMethod = invoice.paymentMethod || "cash";
-    const scrapAmps = Number(invoice.oldBatteriesTotalAmperes || 0);
-    const scrapVal = Number(invoice.oldBatteriesValue || 0);
-    const isBank = paymentMethod === "bank";
-    const now = firestore_2.FieldValue.serverTimestamp();
-    const batch = db.batch();
-    // 1. Decrement variant stock on product_variants & summaries using FieldValue.increment
-    items.forEach((item) => {
-        const variantId = item.productId;
-        const qty = Number(item.quantity || 0);
-        if (variantId && qty > 0) {
-            // Decrement variant currentStock map
-            if (warehouseId) {
-                batch.set(db.doc(`product_variants/${variantId}`), {
-                    currentStock: {
-                        [warehouseId]: firestore_2.FieldValue.increment(-qty),
-                    },
-                }, { merge: true });
-                // Decrement warehouse summary item
-                batch.set(db.doc(`summaries/inventory_wh_${warehouseId}`), {
+    console.time(`onInvoiceCreated_${invoiceId}`);
+    await (0, idempotency_1.runWithIdempotencyGuard)(eventId, `invoice_created_${invoiceId}`, async (transaction) => {
+        const db = admin.firestore();
+        const invoice = event.data?.data();
+        if (!invoice)
+            return;
+        const warehouseId = invoice.warehouseId || "";
+        const items = (invoice.items || []);
+        const totalAmount = Number(invoice.totalAmount || invoice.finalAmount || 0);
+        const paidAmount = Number(invoice.paidAmount || 0);
+        const initialDebt = Math.max(0, totalAmount - paidAmount);
+        const paymentMethod = invoice.paymentMethod || "cash";
+        const isBank = paymentMethod === "bank";
+        const now = firestore_2.FieldValue.serverTimestamp();
+        // 1. Decrement variant stock on product_variants & summaries using atomic FieldValue.increment
+        items.forEach((item) => {
+            const variantId = item.productId;
+            const qty = Number(item.quantity || 0);
+            if (variantId && qty > 0) {
+                if (warehouseId) {
+                    transaction.set(db.doc(`product_variants/${variantId}`), {
+                        currentStock: {
+                            [warehouseId]: firestore_2.FieldValue.increment(-qty),
+                        },
+                    }, { merge: true });
+                    transaction.set(db.doc(`summaries/inventory_wh_${warehouseId}`), {
+                        [`items.${variantId}.currentStock`]: firestore_2.FieldValue.increment(-qty),
+                        lastUpdated: now,
+                        version: firestore_2.FieldValue.increment(1),
+                    }, { merge: true });
+                }
+                transaction.set(db.doc("summaries/inventory_global"), {
                     [`items.${variantId}.currentStock`]: firestore_2.FieldValue.increment(-qty),
                     lastUpdated: now,
                     version: firestore_2.FieldValue.increment(1),
                 }, { merge: true });
             }
-            // Decrement global summary item
-            batch.set(db.doc("summaries/inventory_global"), {
-                [`items.${variantId}.currentStock`]: firestore_2.FieldValue.increment(-qty),
+        });
+        // Calculate localized date string in Asia/Amman (UTC+3) to ensure temporal consistency
+        const todayDateStr = new Intl.DateTimeFormat("en-CA", {
+            timeZone: "Asia/Amman",
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+        }).format(new Date());
+        const whBalanceUpdate = {
+            cashBalance: firestore_2.FieldValue.increment(!isBank ? paidAmount : 0),
+            bankBalance: firestore_2.FieldValue.increment(isBank ? paidAmount : 0),
+            todayCollection: firestore_2.FieldValue.increment(paidAmount),
+            todayCollectionCount: firestore_2.FieldValue.increment(paidAmount > 0 ? 1 : 0),
+            lastInvoiceDate: todayDateStr,
+        };
+        if (initialDebt > 0) {
+            whBalanceUpdate.pendingCollection = firestore_2.FieldValue.increment(initialDebt);
+            whBalanceUpdate.totalReceivables = firestore_2.FieldValue.increment(initialDebt);
+        }
+        if (warehouseId) {
+            transaction.set(db.doc("summaries/financial_status"), {
+                warehouseBalances: {
+                    [warehouseId]: whBalanceUpdate,
+                },
+                todayCollection: firestore_2.FieldValue.increment(paidAmount),
+                todayCollectionCount: firestore_2.FieldValue.increment(paidAmount > 0 ? 1 : 0),
+                totalCustomerDebt: firestore_2.FieldValue.increment(initialDebt),
+                totalReceivables: firestore_2.FieldValue.increment(initialDebt),
                 lastUpdated: now,
                 version: firestore_2.FieldValue.increment(1),
             }, { merge: true });
+            transaction.set(db.doc("summaries/dashboard_hub"), {
+                version: firestore_2.FieldValue.increment(1),
+                lastUpdated: now,
+            }, { merge: true });
+            // Compound document for isolated daily sales aggregation: summaries/daily_${warehouseId}_${todayDateStr}
+            transaction.set(db.doc(`summaries/daily_${warehouseId}_${todayDateStr}`), {
+                warehouseId: warehouseId,
+                date: todayDateStr,
+                totalSales: firestore_2.FieldValue.increment(totalAmount),
+                totalInvoices: firestore_2.FieldValue.increment(1),
+                totalPaid: firestore_2.FieldValue.increment(paidAmount),
+                totalDebt: firestore_2.FieldValue.increment(initialDebt),
+                unsettledCashBalance: firestore_2.FieldValue.increment(!isBank ? paidAmount : 0),
+                isSettled: false,
+                lastUpdated: now,
+            }, { merge: true });
         }
     });
-    // 2. Commit batch
-    await batch.commit();
-    // 3. Update Dashboard Hub delta & per-warehouse daily collection stats with atomic debt receivables
-    const subWarehouseDeltas = {};
-    if (warehouseId) {
-        subWarehouseDeltas[warehouseId] = !isBank ? paidAmount : 0;
+    const invoice = event.data?.data();
+    if (invoice) {
+        const warehouseId = invoice.warehouseId || "";
+        const paidAmount = Number(invoice.paidAmount || 0);
+        const isBank = (invoice.paymentMethod || "cash") === "bank";
+        const scrapAmps = Number(invoice.oldBatteriesTotalAmperes || 0);
+        const scrapVal = Number(invoice.oldBatteriesValue || 0);
+        const subWarehouseDeltas = {};
+        if (warehouseId) {
+            subWarehouseDeltas[warehouseId] = !isBank ? paidAmount : 0;
+        }
+        await (0, dashboardHub_1.applyDashboardHubDelta)({
+            cashDelta: !isBank ? paidAmount : 0,
+            bankDelta: isBank ? paidAmount : 0,
+            scrapAmperesDelta: scrapAmps,
+            scrapValueDelta: scrapVal,
+            subWarehouseDeltas: Object.keys(subWarehouseDeltas).length > 0 ? subWarehouseDeltas : undefined,
+            updatedDomains: ["inventory", "financial"],
+        });
     }
-    // Calculate localized date string in Asia/Amman (UTC+3) to ensure temporal consistency
-    const todayDateStr = new Intl.DateTimeFormat("en-CA", {
-        timeZone: "Asia/Amman",
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-    }).format(new Date()); // Outputs YYYY-MM-DD in Asia/Amman
-    const whBalanceUpdate = {
-        cashBalance: firestore_2.FieldValue.increment(!isBank ? paidAmount : 0),
-        bankBalance: firestore_2.FieldValue.increment(isBank ? paidAmount : 0),
-        todayCollection: firestore_2.FieldValue.increment(paidAmount),
-        todayCollectionCount: firestore_2.FieldValue.increment(paidAmount > 0 ? 1 : 0),
-        lastInvoiceDate: todayDateStr,
-    };
-    if (initialDebt > 0) {
-        whBalanceUpdate.pendingCollection = firestore_2.FieldValue.increment(initialDebt);
-        whBalanceUpdate.totalReceivables = firestore_2.FieldValue.increment(initialDebt);
-    }
-    if (warehouseId) {
-        const summaryBatch = db.batch();
-        summaryBatch.set(db.doc(`summaries/financial_status`), {
-            warehouseBalances: {
-                [warehouseId]: whBalanceUpdate,
-            },
-            todayCollection: firestore_2.FieldValue.increment(paidAmount),
-            todayCollectionCount: firestore_2.FieldValue.increment(paidAmount > 0 ? 1 : 0),
-            totalCustomerDebt: firestore_2.FieldValue.increment(initialDebt),
-            totalReceivables: firestore_2.FieldValue.increment(initialDebt),
-            lastUpdated: now,
-            version: firestore_2.FieldValue.increment(1),
-        }, { merge: true });
-        // Parallel atomic bump on summaries/dashboard_hub to force immediate client hub listener redraw
-        summaryBatch.set(db.doc(`summaries/dashboard_hub`), {
-            version: firestore_2.FieldValue.increment(1),
-            lastUpdated: now,
-        }, { merge: true });
-        // Compound document for isolated daily sales aggregation: summaries/daily_${warehouseId}_${todayDateStr}
-        summaryBatch.set(db.doc(`summaries/daily_${warehouseId}_${todayDateStr}`), {
-            warehouseId: warehouseId,
-            date: todayDateStr,
-            totalSales: firestore_2.FieldValue.increment(totalAmount),
-            totalInvoices: firestore_2.FieldValue.increment(1),
-            totalPaid: firestore_2.FieldValue.increment(paidAmount),
-            totalDebt: firestore_2.FieldValue.increment(initialDebt),
-            lastUpdated: now,
-        }, { merge: true });
-        await summaryBatch.commit();
-    }
-    await (0, dashboardHub_1.applyDashboardHubDelta)({
-        cashDelta: !isBank ? paidAmount : 0,
-        bankDelta: isBank ? paidAmount : 0,
-        scrapAmperesDelta: scrapAmps,
-        scrapValueDelta: scrapVal,
-        subWarehouseDeltas: Object.keys(subWarehouseDeltas).length > 0 ? subWarehouseDeltas : undefined,
-        updatedDomains: ["inventory", "financial"],
-    });
-    console.timeEnd("onInvoiceCreated_executionTime");
+    console.timeEnd(`onInvoiceCreated_${invoiceId}`);
 });
 exports.onInvoiceUpdated = (0, firestore_1.onDocumentUpdated)("invoices/{invoiceId}", async (event) => {
     if (!event.data)
         return;
+    const invoiceId = event.params.invoiceId;
+    const eventId = event.id;
     const b = event.data.before.data() || {};
     const a = event.data.after.data() || {};
     if (b.paidAmount === a.paidAmount &&
         b.remainingAmount === a.remainingAmount &&
         b.status === a.status) {
-        console.log(`[IdempotencyGuard] Invoice ${event.params.invoiceId} update had no domain changes. Skipping.`);
         return;
     }
-    await (0, dashboardHub_1.applyDashboardHubDelta)({
-        updatedDomains: ["inventory", "financial"],
+    await (0, idempotency_1.runWithIdempotencyGuard)(eventId, `invoice_updated_${invoiceId}`, async () => {
+        await (0, dashboardHub_1.applyDashboardHubDelta)({
+            updatedDomains: ["inventory", "financial"],
+        });
     });
 });
 exports.onInvoiceDeleted = (0, firestore_1.onDocumentDeleted)("invoices/{invoiceId}", async (event) => {
     if (!event.data)
         return;
+    const invoiceId = event.params.invoiceId;
+    const eventId = event.id;
     const db = admin.firestore();
     const invoice = event.data.data() || {};
     const warehouseId = invoice.warehouseId || "";
     const items = (invoice.items || []);
     const now = firestore_2.FieldValue.serverTimestamp();
-    if (items.length > 0 && warehouseId) {
-        await db.runTransaction(async (transaction) => {
-            // Read phase: inspect safety stock threshold and current stock for each variant
-            const variantRefs = items.map(item => db.doc(`product_variants/${item.productId}`));
-            const alertRefs = items.map(item => db.doc(`system_alerts/low_stock_${item.productId}_${warehouseId}`));
-            const variantSnaps = await Promise.all(variantRefs.map(ref => transaction.get(ref)));
-            const alertSnaps = await Promise.all(alertRefs.map(ref => transaction.get(ref)));
+    await (0, idempotency_1.runWithIdempotencyGuard)(eventId, `invoice_deleted_${invoiceId}`, async (transaction) => {
+        if (items.length > 0 && warehouseId) {
+            const variantRefs = items.map((item) => db.doc(`product_variants/${item.productId}`));
+            const alertRefs = items.map((item) => db.doc(`system_alerts/low_stock_${item.productId}_${warehouseId}`));
+            const variantSnaps = await Promise.all(variantRefs.map((ref) => transaction.get(ref)));
+            const alertSnaps = await Promise.all(alertRefs.map((ref) => transaction.get(ref)));
             let alertDeletionsCount = 0;
             items.forEach((item, index) => {
                 const variantSnap = variantSnaps[index];
@@ -203,25 +197,21 @@ exports.onInvoiceDeleted = (0, firestore_1.onDocumentDeleted)("invoices/{invoice
                     const currentWhStock = Number(currentStockMap[warehouseId] || 0);
                     const restoredStock = currentWhStock + qty;
                     const minQty = Number((variantData.minQuantities || {})[warehouseId] ?? variantData.minQuantity ?? 0);
-                    // If restored stock is strictly greater than safety threshold, delete alert atomically
                     if (restoredStock > minQty && alertSnap.exists) {
                         transaction.delete(alertRefs[index]);
                         alertDeletionsCount++;
                     }
-                    // Restore variant currentStock
                     transaction.set(variantRefs[index], {
                         currentStock: {
                             [warehouseId]: firestore_2.FieldValue.increment(qty),
                         },
                         updatedAt: now,
                     }, { merge: true });
-                    // Restore warehouse summary currentStock
                     transaction.set(db.doc(`summaries/inventory_wh_${warehouseId}`), {
                         [`items.${item.productId}.currentStock`]: firestore_2.FieldValue.increment(qty),
                         lastUpdated: now,
                         version: firestore_2.FieldValue.increment(1),
                     }, { merge: true });
-                    // Restore global summary currentStock
                     transaction.set(db.doc("summaries/inventory_global"), {
                         [`items.${item.productId}.currentStock`]: firestore_2.FieldValue.increment(qty),
                         lastUpdated: now,
@@ -230,20 +220,18 @@ exports.onInvoiceDeleted = (0, firestore_1.onDocumentDeleted)("invoices/{invoice
                 }
             });
             if (alertDeletionsCount > 0) {
-                // بث إشارة إذاعية شاملة لتنبيه مستمع التنبيهات في الكلاينت بطرد العناصر المحذوفة فورا
                 transaction.set(db.doc("summaries/dashboard_hub"), {
                     "scrapAndAlertsSummary.activeLowStockAlertsCount": firestore_2.FieldValue.increment(-alertDeletionsCount),
-                    version: firestore_2.FieldValue.increment(1), // 💡 تضمن استجابة 0ms لمستمع الموبايل
+                    version: firestore_2.FieldValue.increment(1),
                     lastUpdated: now,
                 }, { merge: true });
             }
-            // إجبار الكاش الموحد محليا على طرد التحديث العكسي للمخزون بلحظتها
             transaction.set(db.doc("summaries/financial_status"), {
                 version: firestore_2.FieldValue.increment(1),
                 lastUpdated: now,
             }, { merge: true });
-        });
-    }
+        }
+    });
     await (0, dashboardHub_1.applyDashboardHubDelta)({
         updatedDomains: ["inventory", "financial", "alerts"],
     });

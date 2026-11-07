@@ -16,3 +16,4 @@ export * from "./triggers/alerts";
 export * from "./triggers/oldBatteries";
 export * from "./triggers/warehouses";
 export * from "./triggers/suppliers";
+export * from "./triggers/vaultTransfers";
