@@ -56,7 +56,7 @@ fun InvoiceDetailScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Warning, contentDescription = null, tint = Color.Red)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("فشل اعتماد البيانات والعملية العكسية!", color = Color.Red, fontWeight = FontWeight.Bold)
+                    Text("تنبيه مزامنة حرج وتعارض محاسبي!", color = Color.Red, fontWeight = FontWeight.Bold)
                 }
             },
             text = {

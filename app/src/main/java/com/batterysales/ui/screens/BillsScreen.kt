@@ -79,7 +79,35 @@ fun BillsScreen(
     val isSubmitting by viewModel.isSubmitting.collectAsState()
     val highlightBillId by viewModel.highlightBillId.collectAsState()
     val flaggedBills by viewModel.flaggedBills.collectAsState()
+    var blockingConflictError by remember { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
+
+    if (blockingConflictError != null) {
+        AlertDialog(
+            onDismissRequest = { /* حظر الإغلاق العشوائي باللمس الخارجي أو زر العودة */ },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Warning, contentDescription = null, tint = Color.Red)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("تنبيه مزامنة حرج وتعارض محاسبي!", color = Color.Red, fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Text(
+                    text = blockingConflictError ?: "",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = { blockingConflictError = null },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                ) {
+                    Text("تأكيد الاطلاع وتوقيع التسوية المحاسبية", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+    }
 
     val rawBills = remember(pagingItems.itemSnapshotList, highlightBillId, suppliers) {
         val list = pagingItems.itemSnapshotList.items.filterNotNull()

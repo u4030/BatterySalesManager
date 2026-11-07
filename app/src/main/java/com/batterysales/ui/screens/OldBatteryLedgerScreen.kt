@@ -88,11 +88,24 @@ fun OldBatteryLedgerScreen(
     ) { paddingValues ->
         errorMessage?.let { error ->
             AlertDialog(
-                onDismissRequest = { /* Handle if needed */ },
-                title = { Text("خطأ") },
-                text = { Text(error) },
+                onDismissRequest = { /* حظر الإغلاق العشوائي باللمس الخارجي أو زر العودة */ },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Warning, contentDescription = null, tint = Color.Red)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("تنبيه مزامنة حرج وتعارض محاسبي!", color = Color.Red, fontWeight = FontWeight.Bold)
+                    }
+                },
+                text = {
+                    Text(text = error, style = MaterialTheme.typography.bodyMedium)
+                },
                 confirmButton = {
-                    Button(onClick = { viewModel.clearError() }) { Text("موافق") }
+                    Button(
+                        onClick = { viewModel.clearError() },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                    ) {
+                        Text("تأكيد الاطلاع وتوقيع التسوية المحاسبية", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
                 }
             )
         }
