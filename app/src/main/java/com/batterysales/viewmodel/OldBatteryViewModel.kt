@@ -49,18 +49,6 @@ class OldBatteryViewModel @Inject constructor(
 
     fun recordScrapTransaction(variantId: String, amperes: Int, isIncoming: Boolean) {
         val factor = if (isIncoming) 1 else -1
-        _scrapUiState.update {
-            it.copy(
-                totalAmperes = (it.totalAmperes + (amperes * factor)).coerceAtLeast(0.0),
-                totalCount = (it.totalCount + factor).coerceAtLeast(0)
-            )
-        }
-        _summary.update { current ->
-            Pair(
-                (current.first + factor).coerceAtLeast(0),
-                (current.second + (amperes * factor)).coerceAtLeast(0.0)
-            )
-        }
         // حقن التحديث التفاؤلي مباشرة داخل كاش المستودع المشترك ليتدفق لحظياً في 0ms
         summaryRepository.updateCacheOptimisticStock(variantId, variantId, factor)
     }
@@ -292,12 +280,11 @@ class OldBatteryViewModel @Inject constructor(
 
     fun addManualIntake(quantity: Int, totalAmperes: Double, amount: Double, notes: String, warehouseId: String) {
         val finalWarehouseId = if (_isSeller.value) _userWarehouseId.value ?: warehouseId else warehouseId
-        // المقاصة التفاؤلية الفورية لجرد السكراب والأمبيرات (0ms)
-        recordScrapTransaction(finalWarehouseId, totalAmperes.toInt(), isIncoming = true)
 
         viewModelScope.launch {
             val opId = "scrap_in_${System.currentTimeMillis()}_$finalWarehouseId"
             try {
+                // Record pure delta in PersistentSyncManager; total stock & balances flow from server summary
                 persistentSyncManager.recordPendingOperation(
                     com.batterysales.data.local.PendingSyncOperation(
                         operationId = opId,
@@ -338,7 +325,6 @@ class OldBatteryViewModel @Inject constructor(
                 loadTransactions()
             } catch (e: Exception) {
                 persistentSyncManager.removePendingOperation(opId)
-                recordScrapTransaction(finalWarehouseId, totalAmperes.toInt(), isIncoming = false)
                 Log.e("OldBatteryViewModel", "Error adding manual intake", e)
             }
         }
@@ -355,12 +341,11 @@ class OldBatteryViewModel @Inject constructor(
 
     fun sellBatteries(quantity: Int, totalAmperes: Double, amount: Double, warehouseId: String) {
         val finalWarehouseId = if (_isSeller.value) _userWarehouseId.value ?: warehouseId else warehouseId
-        // المقاصة التفاؤلية الفورية لبيع السكراب لحمايته من البيع المزدوج (0ms)
-        recordScrapTransaction(finalWarehouseId, totalAmperes.toInt(), isIncoming = false)
 
         viewModelScope.launch {
             val opId = "scrap_out_${System.currentTimeMillis()}_$finalWarehouseId"
             try {
+                // Record pure delta in PersistentSyncManager without client-side cumulative updates
                 persistentSyncManager.recordPendingOperation(
                     com.batterysales.data.local.PendingSyncOperation(
                         operationId = opId,
@@ -398,7 +383,6 @@ class OldBatteryViewModel @Inject constructor(
                 loadTransactions()
             } catch (e: Exception) {
                 persistentSyncManager.removePendingOperation(opId)
-                recordScrapTransaction(finalWarehouseId, totalAmperes.toInt(), isIncoming = true)
                 Log.e("OldBatteryViewModel", "Error selling batteries", e)
             }
         }

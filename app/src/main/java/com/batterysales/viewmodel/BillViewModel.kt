@@ -204,9 +204,6 @@ class BillViewModel @Inject constructor(
     }
 
     fun recordPayment(bill: Bill, amount: Double, method: String, warehouseId: String, notes: String) {
-        // --- تعديل تفاؤلي فوري لإجمالي غير المسدد بالدينار الأردني JOD (0ms) ---
-        _totalUnpaid.update { (it - amount).coerceAtLeast(0.0) }
-
         viewModelScope.launch {
             _isSubmitting.value = true
             val opId = "bill_pay_${System.currentTimeMillis()}_${bill.id}"
@@ -216,6 +213,7 @@ class BillViewModel @Inject constructor(
                         operationId = opId,
                         type = "BILL_PAYMENT",
                         relatedId = bill.id,
+                        amountDelta = -amount,
                         status = "PENDING_SYNC"
                     )
                 )
@@ -225,7 +223,6 @@ class BillViewModel @Inject constructor(
                 loadData()
             } catch (e: Exception) {
                 persistentSyncManager.removePendingOperation(opId)
-                _totalUnpaid.update { it + amount }
             } finally { _isSubmitting.value = false }
         }
     }

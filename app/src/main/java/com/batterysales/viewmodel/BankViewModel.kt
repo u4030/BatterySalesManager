@@ -205,20 +205,20 @@ class BankViewModel @Inject constructor(
     }
 
     fun addManualTransaction(type: BankTransactionType, amount: Double, description: String, referenceNumber: String = "", supplierName: String = "", fromTreasury: Boolean = false, warehouseId: String? = null) {
-        // --- تعديل تفاؤلي فوري لرصيد البنك بـ (0ms) بالدينار الأردني JOD ---
         val delta = if (type == BankTransactionType.DEPOSIT) amount else -amount
-        _balance.update { (it + delta).coerceAtLeast(0.0) }
 
         viewModelScope.launch {
             _isSubmitting.value = true
             val opId = "bank_tx_${System.currentTimeMillis()}"
             try {
+                // Pass pure delta directly to PersistentSyncManager without modifying cumulative _balance locally
                 persistentSyncManager.recordPendingOperation(
                     com.batterysales.data.local.PendingSyncOperation(
                         operationId = opId,
                         type = "BANK_TRANSACTION",
                         relatedId = referenceNumber.ifEmpty { opId },
-                        status = "PENDING_SYNC"
+                        status = "PENDING_SYNC",
+                        amountDelta = delta
                     )
                 )
 
@@ -246,20 +246,18 @@ class BankViewModel @Inject constructor(
     }
 
     fun deleteBankTransaction(transactionId: String, amount: Double, isDeposit: Boolean) {
-        val currentBalance = _balance.value
-        // تعديل الفارق الصافي (Delta) تفاؤلياً في 0ms بالدينار الأردني JOD
-        val newBalance = if (isDeposit) currentBalance - amount else currentBalance + amount
-        _balance.value = newBalance.coerceAtLeast(0.0)
+        val delta = if (isDeposit) -amount else amount
 
         viewModelScope.launch {
             val opId = "bank_del_${System.currentTimeMillis()}_$transactionId"
+            // Record pure delta in PersistentSyncManager; total balance is updated strictly via summaryRepository flow
             persistentSyncManager.recordPendingOperation(
                 com.batterysales.data.local.PendingSyncOperation(
                     operationId = opId,
                     type = "BANK_DELETE",
                     relatedId = transactionId,
                     status = "PENDING_SYNC",
-                    amountDelta = if (isDeposit) -amount else amount
+                    amountDelta = delta
                 )
             )
             try {
@@ -268,7 +266,6 @@ class BankViewModel @Inject constructor(
                 persistentSyncManager.removePendingOperation(opId)
                 loadData()
             } catch (e: Exception) {
-                _balance.value = currentBalance // Rollback Guard عند الفشل
                 persistentSyncManager.removePendingOperation(opId)
                 _errorMessage.value = e.message
             }
