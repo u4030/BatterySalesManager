@@ -102,7 +102,7 @@ class DashboardViewModel @Inject constructor(
 
     fun suppressAlertLocally(variantId: String, warehouseId: String) {
         val compositeId = "low_stock_${variantId}_${warehouseId}"
-        _locallySuppressedAlertIds.update { it + compositeId + "bill_$variantId" }
+        _locallySuppressedAlertIds.update { it + compositeId + variantId + "bill_$variantId" }
         viewModelScope.launch {
             // التوطين الصلب لمنع التنبيهات الوهمية حتى لو انطفأ الهاتف
             persistentSyncManager.recordPendingOperation(
@@ -118,7 +118,7 @@ class DashboardViewModel @Inject constructor(
 
     fun triggerOptimisticAlert(variantId: String, warehouseId: String, threshold: Int = 0) {
         val compositeId = "low_stock_${variantId}_${warehouseId}"
-        _locallySuppressedAlertIds.update { it - compositeId }
+        _locallySuppressedAlertIds.update { it - compositeId - variantId }
         viewModelScope.launch {
             persistentSyncManager.removePendingOperation("suppress_${System.currentTimeMillis()}_$compositeId")
         }
@@ -212,14 +212,24 @@ class DashboardViewModel @Inject constructor(
             }
 
             // ربط قسري لتدفق التنبيهات مع رمز النسخة version وطرد المعزول محلياً بـ 0ms
+            // حظر وبتر حتمي ضد Dual-Stage Metadata Influx
             alertsSourceFlow.map { list ->
                 list.filter { alert ->
-                    val compositeId = "low_stock_${alert.relatedId.ifEmpty { alert.variantId }}_${alert.warehouseId ?: ""}"
+                    val vId = alert.variantId.ifEmpty { alert.relatedId }
+                    val rId = alert.relatedId.ifEmpty { alert.variantId }
+                    val compositeId = "low_stock_${rId}_${alert.warehouseId ?: ""}"
+                    val variantCompositeId = "low_stock_${vId}_${alert.warehouseId ?: ""}"
+
+                    val isLocallySuppressed = allSuppressed.contains(alert.id) ||
+                            allSuppressed.contains(compositeId) ||
+                            allSuppressed.contains(variantCompositeId) ||
+                            (vId.isNotBlank() && allSuppressed.contains(vId)) ||
+                            (rId.isNotBlank() && allSuppressed.contains(rId))
+
+                    !isLocallySuppressed &&
                     !alert.resolved && 
                     alert.status != "resolved" && 
-                    alert.status != "deleted" &&
-                    !allSuppressed.contains(alert.id) &&
-                    !allSuppressed.contains(compositeId)
+                    alert.status != "deleted"
                 }
             }
         }
@@ -315,12 +325,12 @@ class DashboardViewModel @Inject constructor(
             if (!cachedName.isNullOrBlank() && cachedName != whId) {
                 return cachedName
             }
-            if (!candidateName.isNullOrBlank() && candidateName != whId) {
-                return candidateName
-            }
             val matchingWh = warehouses.find { it.id == whId }
             if (matchingWh != null && matchingWh.name.isNotBlank() && matchingWh.name != whId) {
                 return matchingWh.name
+            }
+            if (!candidateName.isNullOrBlank() && candidateName != whId && !candidateName.equals("مستودع غير معرف", ignoreCase = true)) {
+                return candidateName
             }
             return if (whId.contains("main", ignoreCase = true) || whId == "main_treasury") "الخزينة الرئيسية" else "مستودع فرعي"
         }
@@ -357,7 +367,20 @@ class DashboardViewModel @Inject constructor(
         val broadcastVersion = financialStatus.version // بث إشاري حاسم لالتقاط البرودكاست
 
         val lowStockItems = alerts.filter { alert ->
-            // قراءة المستندات النشطة فقط والتي لم يتم حذفها هيكلياً من السيرفر والكاش محلياً
+            // فحص صارم ومزدوج لمنع Dual-Stage Metadata Influx من إعادة إحياء التنبيهات الميتة
+            val targetVariantId = alert.variantId.ifEmpty { alert.relatedId }
+            val targetRelatedId = alert.relatedId.ifEmpty { alert.variantId }
+            val cId = "low_stock_${targetRelatedId}_${alert.warehouseId ?: ""}"
+            val vcId = "low_stock_${targetVariantId}_${alert.warehouseId ?: ""}"
+            val suppressedSet = _locallySuppressedAlertIds.value
+
+            val isSuppressed = suppressedSet.contains(alert.id) ||
+                    suppressedSet.contains(cId) ||
+                    suppressedSet.contains(vcId) ||
+                    (targetVariantId.isNotBlank() && suppressedSet.contains(targetVariantId)) ||
+                    (targetRelatedId.isNotBlank() && suppressedSet.contains(targetRelatedId))
+
+            !isSuppressed &&
             !alert.resolved && alert.status != "resolved" && alert.status != "deleted" &&
             (isAdmin || alert.warehouseId == userWarehouseId)
         }.map { alert ->
@@ -389,7 +412,7 @@ class DashboardViewModel @Inject constructor(
                 specification = specification,
                 currentQuantity = currentQty,
                 minQuantity = minQty,
-                warehouseName = warehouses.find { it.id == alert.warehouseId }?.name ?: alert.warehouseName ?: "مستودع غير معرف",
+                warehouseName = resolveWarehouseName(alert.warehouseId ?: "", alert.warehouseName),
                 warehouseId = alert.warehouseId ?: ""
             )
         }
