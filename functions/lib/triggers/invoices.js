@@ -63,9 +63,7 @@ exports.onInvoiceCreated = (0, firestore_1.onDocumentCreated)("invoices/{invoice
         let correctWarehouseName = "مستودع غير معرف";
         if (currentWarehouseId) {
             const whSnap = await transaction.get(db.collection("warehouses").doc(currentWarehouseId));
-            if (whSnap.exists && whSnap.data()?.name) {
-                correctWarehouseName = String(whSnap.data()?.name).trim();
-            }
+            correctWarehouseName = whSnap.exists ? (whSnap.data()?.name || "مستودع") : "مستودع غير معرف";
         }
         // Write Phase:
         // 1. Decrement variant stock on product_variants & summaries using atomic FieldValue.increment

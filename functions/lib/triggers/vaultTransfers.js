@@ -125,9 +125,9 @@ exports.onVaultTransferCreated = (0, firestore_1.onDocumentCreated)("vault_trans
             console.warn(`[VaultTransfer] Invalid warehouseId or amount for transfer ${transferId}.`);
             return;
         }
-        // Read Phase: Fetch warehouse details synchronously to retrieve Arabic warehouse name
-        const whSnap = await transaction.get(db.doc(`warehouses/${warehouseId}`));
-        const warehouseName = whSnap.exists ? (whSnap.data()?.name || "المستودع") : "المستودع";
+        // Read Phase: Fetch warehouse details synchronously to retrieve Arabic warehouse name with scoped block variable
+        const whSnap = await transaction.get(db.collection("warehouses").doc(warehouseId));
+        const correctWarehouseName = whSnap.exists ? (whSnap.data()?.name || "مستودع") : "مستودع غير معرف";
         // 1. Server Gateway Lock Check
         const hasUnstable = await checkUnstableInvoices(warehouseId);
         if (hasUnstable) {
@@ -161,8 +161,8 @@ exports.onVaultTransferCreated = (0, firestore_1.onDocumentCreated)("vault_trans
         transaction.set(dailyDocRef, {
             warehouseId: warehouseId,
             warehouse_id: warehouseId,
-            warehouseName: warehouseName,
-            warehouse_name: warehouseName,
+            warehouseName: correctWarehouseName,
+            warehouse_name: correctWarehouseName,
             isSettled: true,
             settledAt: now,
             unsettledCashBalance: 0,
