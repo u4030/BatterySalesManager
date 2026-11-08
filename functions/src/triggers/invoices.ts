@@ -128,12 +128,14 @@ export const onInvoiceCreated = onDocumentCreated(
         );
 
         // Compound document for isolated daily sales aggregation: summaries/daily_${warehouseId}_${todayDateStr}
-        // Write both warehouseId and human-readable warehouseName to eliminate UI alphanumeric leaks
+        // Write both warehouseId, warehouse_id, warehouseName, and warehouse_name to satisfy all client deserializers
         transaction.set(
           db.doc(`summaries/daily_${warehouseId}_${todayDateStr}`),
           {
             warehouseId: warehouseId,
+            warehouse_id: warehouseId,
             warehouseName: warehouseName,
+            warehouse_name: warehouseName,
             date: todayDateStr,
             totalSales: FieldValue.increment(totalAmount),
             totalInvoices: FieldValue.increment(1),

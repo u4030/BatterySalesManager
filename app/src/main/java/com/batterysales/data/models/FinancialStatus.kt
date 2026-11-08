@@ -26,6 +26,8 @@ data class FinancialStatus(
 
 data class WarehouseBalance(
     @get:PropertyName("warehouseId") @set:PropertyName("warehouseId") var warehouseId: String = "",
+    @get:PropertyName("warehouseName") @set:PropertyName("warehouseName") var warehouseName: String = "",
+    @get:PropertyName("warehouse_name") @set:PropertyName("warehouse_name") var warehouseNameSnake: String = "",
     @get:PropertyName("cashBalance") @set:PropertyName("cashBalance") var cashBalance: Double = 0.0,
     @get:PropertyName("bankBalance") @set:PropertyName("bankBalance") var bankBalance: Double = 0.0,
     @get:PropertyName("pendingCollection") @set:PropertyName("pendingCollection") var pendingCollection: Double = 0.0,

@@ -126,10 +126,12 @@ exports.onInvoiceCreated = (0, firestore_1.onDocumentCreated)("invoices/{invoice
                 lastUpdated: now,
             }, { merge: true });
             // Compound document for isolated daily sales aggregation: summaries/daily_${warehouseId}_${todayDateStr}
-            // Write both warehouseId and human-readable warehouseName to eliminate UI alphanumeric leaks
+            // Write both warehouseId, warehouse_id, warehouseName, and warehouse_name to satisfy all client deserializers
             transaction.set(db.doc(`summaries/daily_${warehouseId}_${todayDateStr}`), {
                 warehouseId: warehouseId,
+                warehouse_id: warehouseId,
                 warehouseName: warehouseName,
+                warehouse_name: warehouseName,
                 date: todayDateStr,
                 totalSales: firestore_2.FieldValue.increment(totalAmount),
                 totalInvoices: firestore_2.FieldValue.increment(1),

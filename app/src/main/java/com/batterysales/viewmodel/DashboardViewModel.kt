@@ -124,6 +124,25 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Optimistically prunes a low-stock alert immediately from local UI state in 0ms,
+     * annihilating delayed viewport gaps without waiting for remote Firestore snapshot round-trips.
+     */
+    fun evictAlertImmediately(variantId: String, warehouseId: String = "") {
+        val compositeId = if (warehouseId.isNotEmpty()) "low_stock_${variantId}_${warehouseId}" else "low_stock_$variantId"
+        _locallySuppressedAlertIds.update { it + compositeId + variantId }
+        viewModelScope.launch {
+            persistentSyncManager.recordPendingOperation(
+                com.batterysales.data.local.PendingSyncOperation(
+                    operationId = "suppress_${System.currentTimeMillis()}_$compositeId",
+                    type = "ALERT_SUPPRESS",
+                    relatedId = compositeId,
+                    status = "PENDING_SYNC"
+                )
+            )
+        }
+    }
+
     data class AlertStreamContext(
         val user: User?,
         val versionToken: Long,

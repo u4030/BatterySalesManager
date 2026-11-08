@@ -157,7 +157,9 @@ export const onVaultTransferCreated = onDocumentCreated(
         dailyDocRef,
         {
           warehouseId: warehouseId,
+          warehouse_id: warehouseId,
           warehouseName: warehouseName,
+          warehouse_name: warehouseName,
           isSettled: true,
           settledAt: now,
           unsettledCashBalance: 0,

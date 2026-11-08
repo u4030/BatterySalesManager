@@ -443,6 +443,23 @@ class SalesViewModel @Inject constructor(
         _uiState.update { it.copy(errorMessage = null) }
     }
 
+    /**
+     * Suppresses any phantom alert for the given variant immediately in 0ms on the local client
+     */
+    fun pruneAlertOptimistic(variantId: String, warehouseId: String) {
+        val compositeId = "low_stock_${variantId}_${warehouseId}"
+        viewModelScope.launch {
+            persistentSyncManager.recordPendingOperation(
+                com.batterysales.data.local.PendingSyncOperation(
+                    operationId = "suppress_${System.currentTimeMillis()}_$compositeId",
+                    type = "ALERT_SUPPRESS",
+                    relatedId = compositeId,
+                    status = "PENDING_SYNC"
+                )
+            )
+        }
+    }
+
     fun findProductByBarcode(barcode: String) {
         viewModelScope.launch {
             val item = cachedInventorySummary?.items?.values?.find { it.barcode == barcode }

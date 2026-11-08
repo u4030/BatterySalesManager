@@ -160,7 +160,9 @@ exports.onVaultTransferCreated = (0, firestore_1.onDocumentCreated)("vault_trans
         const now = firestore_2.FieldValue.serverTimestamp();
         transaction.set(dailyDocRef, {
             warehouseId: warehouseId,
+            warehouse_id: warehouseId,
             warehouseName: warehouseName,
+            warehouse_name: warehouseName,
             isSettled: true,
             settledAt: now,
             unsettledCashBalance: 0,
