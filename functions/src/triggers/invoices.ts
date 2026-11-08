@@ -33,10 +33,10 @@ export const onInvoiceCreated = onDocumentCreated(
       const now = FieldValue.serverTimestamp();
 
       // Read Phase: Fetch isolated warehouse document directly in current scope
-      let correctWarehouseName = "مستودع غير معرف";
+      let correctWarehouseName = "مستودع غير معروف";
       if (currentWarehouseId) {
         const whSnap = await transaction.get(db.collection("warehouses").doc(currentWarehouseId));
-        correctWarehouseName = whSnap.exists ? (whSnap.data()?.name || "مستودع") : "مستودع غير معرف";
+        correctWarehouseName = whSnap.exists ? (whSnap.data()?.name || "المستودع") : "مستودع غير معروف";
       }
 
       // Write Phase:

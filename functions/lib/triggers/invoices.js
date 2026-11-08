@@ -60,10 +60,10 @@ exports.onInvoiceCreated = (0, firestore_1.onDocumentCreated)("invoices/{invoice
         const isBank = paymentMethod === "bank";
         const now = firestore_2.FieldValue.serverTimestamp();
         // Read Phase: Fetch isolated warehouse document directly in current scope
-        let correctWarehouseName = "مستودع غير معرف";
+        let correctWarehouseName = "مستودع غير معروف";
         if (currentWarehouseId) {
             const whSnap = await transaction.get(db.collection("warehouses").doc(currentWarehouseId));
-            correctWarehouseName = whSnap.exists ? (whSnap.data()?.name || "مستودع") : "مستودع غير معرف";
+            correctWarehouseName = whSnap.exists ? (whSnap.data()?.name || "المستودع") : "مستودع غير معروف";
         }
         // Write Phase:
         // 1. Decrement variant stock on product_variants & summaries using atomic FieldValue.increment
