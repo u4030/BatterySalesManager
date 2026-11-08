@@ -8,8 +8,10 @@ import java.util.Date
  * Enforces bidirectional @get:PropertyName and @set:PropertyName for snake_case and camelCase.
  */
 data class DailyLedger(
-    @get:PropertyName("warehouse_id") @set:PropertyName("warehouse_id") var warehouseId: String = "",
     @get:PropertyName("warehouse_name") @set:PropertyName("warehouse_name") var warehouseName: String = "",
+    @get:PropertyName("warehouse_id") @set:PropertyName("warehouse_id") var warehouseId: String = "",
+    @get:PropertyName("warehouseName") @set:PropertyName("warehouseName") var warehouseNameCamel: String = "",
+    @get:PropertyName("warehouseId") @set:PropertyName("warehouseId") var warehouseIdCamel: String = "",
     @get:PropertyName("date") @set:PropertyName("date") var date: String = "",
     @get:PropertyName("totalSales") @set:PropertyName("totalSales") var totalSales: Double = 0.0,
     @get:PropertyName("totalInvoices") @set:PropertyName("totalInvoices") var totalInvoices: Int = 0,
@@ -18,4 +20,10 @@ data class DailyLedger(
     @get:PropertyName("unsettledCashBalance") @set:PropertyName("unsettledCashBalance") var unsettledCashBalance: Double = 0.0,
     @get:PropertyName("isSettled") @set:PropertyName("isSettled") var isSettled: Boolean = false,
     @get:PropertyName("lastUpdated") @set:PropertyName("lastUpdated") var lastUpdated: Date = Date()
-)
+) {
+    val resolvedWarehouseId: String
+        get() = warehouseId.ifBlank { warehouseIdCamel }
+
+    val resolvedWarehouseName: String
+        get() = warehouseName.ifBlank { warehouseNameCamel }
+}
