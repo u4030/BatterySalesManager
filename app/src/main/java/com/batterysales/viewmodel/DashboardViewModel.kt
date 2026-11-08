@@ -79,7 +79,7 @@ class DashboardViewModel @Inject constructor(
      * Programmatic barrier call: Prunes any variant or composite alert immediately in 0ms,
      * ignoring remote Firestore sync states and dual-stage metadata transitions.
      */
-    fun clearAlertInstantly(variantId: String) {
+    fun evictAlertInstantly(variantId: String) {
         suppressedAlertIds.update { it + variantId }
         viewModelScope.launch {
             persistentSyncManager.recordPendingOperation(
@@ -91,6 +91,10 @@ class DashboardViewModel @Inject constructor(
                 )
             )
         }
+    }
+
+    fun clearAlertInstantly(variantId: String) {
+        evictAlertInstantly(variantId)
     }
 
     fun acknowledgeConflictResolution() {
