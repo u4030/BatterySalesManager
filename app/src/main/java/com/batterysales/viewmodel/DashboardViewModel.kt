@@ -70,9 +70,28 @@ class DashboardViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val _warehouses = MutableStateFlow<List<Warehouse>>(emptyList())
-    // حارس التنبيهات المطرودة محلياً في الذاكرة الحية (0ms) لمنع الـ Phantom Alerts
-    private val _locallySuppressedAlertIds = MutableStateFlow<Set<String>>(emptySet())
+    // حارس التنبيهات المطرودة محلياً في الذاكرة الحية (0ms) لمنع الـ Phantom Alerts والـ Metadata Influx
+    private val suppressedAlertIds = MutableStateFlow<Set<String>>(emptySet())
+    private val _locallySuppressedAlertIds = suppressedAlertIds
     private val _blockingConflictError = MutableStateFlow<String?>(null)
+
+    /**
+     * Programmatic barrier call: Prunes any variant or composite alert immediately in 0ms,
+     * ignoring remote Firestore sync states and dual-stage metadata transitions.
+     */
+    fun clearAlertInstantly(variantId: String) {
+        suppressedAlertIds.update { it + variantId }
+        viewModelScope.launch {
+            persistentSyncManager.recordPendingOperation(
+                com.batterysales.data.local.PendingSyncOperation(
+                    operationId = "suppress_${System.currentTimeMillis()}_$variantId",
+                    type = "ALERT_SUPPRESS",
+                    relatedId = variantId,
+                    status = "PENDING_SYNC"
+                )
+            )
+        }
+    }
 
     fun acknowledgeConflictResolution() {
         _blockingConflictError.value = null
@@ -322,17 +341,28 @@ class DashboardViewModel @Inject constructor(
         // Local Join Resolver: حل فوري ومتزامن لاسم المستودع العربي من الكاش المحلي لمنع تسريب الـ ID
         fun resolveWarehouseName(whId: String, candidateName: String? = null): String {
             val cachedName = warehouseMap[whId]?.name
-            if (!cachedName.isNullOrBlank() && cachedName != whId) {
+            if (!cachedName.isNullOrBlank() && cachedName != whId && !cachedName.equals("مستودع غير معرف", ignoreCase = true)) {
                 return cachedName
             }
             val matchingWh = warehouses.find { it.id == whId }
-            if (matchingWh != null && matchingWh.name.isNotBlank() && matchingWh.name != whId) {
+            if (matchingWh != null && matchingWh.name.isNotBlank() && matchingWh.name != whId && !matchingWh.name.equals("مستودع غير معرف", ignoreCase = true)) {
                 return matchingWh.name
             }
             if (!candidateName.isNullOrBlank() && candidateName != whId && !candidateName.equals("مستودع غير معرف", ignoreCase = true)) {
                 return candidateName
             }
             return if (whId.contains("main", ignoreCase = true) || whId == "main_treasury") "الخزينة الرئيسية" else "مستودع فرعي"
+        }
+
+        // Rigid Local Join Resolver for Daily Ledgers:
+        // Synchronously compares ledger's warehouseId against clean local cached warehouse list and re-stamps true Arabic name
+        fun resolveDailyLedgerName(ledger: DailyLedger): DailyLedger {
+            val targetWhId = ledger.resolvedWarehouseId
+            val cleanArabicName = resolveWarehouseName(targetWhId, ledger.resolvedWarehouseName)
+            return ledger.copy(
+                warehouseName = cleanArabicName,
+                warehouseNameCamel = cleanArabicName
+            )
         }
         
         // بناء بطاقات المستودعات بالاعتماد النشط على مفاتيح warehouseBalances الحية لكسر جمود التدفق تماماً
