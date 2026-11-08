@@ -235,21 +235,25 @@ class DashboardViewModel @Inject constructor(
             }
 
             // ربط قسري لتدفق التنبيهات مع رمز النسخة version وطرد المعزول محلياً بـ 0ms
-            // حظر وبتر حتمي ضد Dual-Stage Metadata Influx
+            // حظر وبتر حتمي ضد Dual-Stage Metadata Influx: فحص قاطع للوثيقة والمعرفات بغض النظر عن ميتاداتا السيرفر
             alertsSourceFlow.map { list ->
                 list.filter { alert ->
+                    val docId = alert.id
                     val vId = alert.variantId.ifEmpty { alert.relatedId }
                     val rId = alert.relatedId.ifEmpty { alert.variantId }
                     val compositeId = "low_stock_${rId}_${alert.warehouseId ?: ""}"
                     val variantCompositeId = "low_stock_${vId}_${alert.warehouseId ?: ""}"
 
-                    val isLocallySuppressed = allSuppressed.contains(alert.id) ||
-                            allSuppressed.contains(compositeId) ||
-                            allSuppressed.contains(variantCompositeId) ||
+                    val isLocallySuppressed = (docId.isNotBlank() && allSuppressed.contains(docId)) ||
                             (vId.isNotBlank() && allSuppressed.contains(vId)) ||
-                            (rId.isNotBlank() && allSuppressed.contains(rId))
+                            (rId.isNotBlank() && allSuppressed.contains(rId)) ||
+                            allSuppressed.contains(compositeId) ||
+                            allSuppressed.contains(variantCompositeId)
 
-                    !isLocallySuppressed &&
+                    if (isLocallySuppressed) {
+                        return@filter false
+                    }
+
                     !alert.resolved && 
                     alert.status != "resolved" && 
                     alert.status != "deleted"
@@ -342,18 +346,16 @@ class DashboardViewModel @Inject constructor(
 
         val warehouseMap = warehouses.associateBy { it.id }.toMutableMap()
 
-        // Local Join Resolver: حل فوري ومتزامن لاسم المستودع العربي من الكاش المحلي لمنع تسريب الـ ID
+        // Local Join Resolver: حل فوري ومتزامن لاسم المستودع العربي من الكاش المحلي حصراً لمنع تسريب الـ ID أو الأسماء الملوثة
         fun resolveWarehouseName(whId: String, candidateName: String? = null): String {
-            val cachedName = warehouseMap[whId]?.name
-            if (!cachedName.isNullOrBlank() && cachedName != whId && !cachedName.equals("مستودع غير معرف", ignoreCase = true)) {
-                return cachedName
-            }
+            // Priority 1: Match directly and strictly against trusted local warehouse cache
             val matchingWh = warehouses.find { it.id == whId }
             if (matchingWh != null && matchingWh.name.isNotBlank() && matchingWh.name != whId && !matchingWh.name.equals("مستودع غير معرف", ignoreCase = true)) {
                 return matchingWh.name
             }
-            if (!candidateName.isNullOrBlank() && candidateName != whId && !candidateName.equals("مستودع غير معرف", ignoreCase = true)) {
-                return candidateName
+            val cachedName = warehouseMap[whId]?.name
+            if (!cachedName.isNullOrBlank() && cachedName != whId && !cachedName.equals("مستودع غير معرف", ignoreCase = true)) {
+                return cachedName
             }
             return if (whId.contains("main", ignoreCase = true) || whId == "main_treasury") "الخزينة الرئيسية" else "مستودع فرعي"
         }
@@ -362,7 +364,7 @@ class DashboardViewModel @Inject constructor(
         // Synchronously compares ledger's warehouseId against clean local cached warehouse list and re-stamps true Arabic name
         fun resolveDailyLedgerName(ledger: DailyLedger): DailyLedger {
             val targetWhId = ledger.resolvedWarehouseId
-            val cleanArabicName = resolveWarehouseName(targetWhId, ledger.resolvedWarehouseName)
+            val cleanArabicName = resolveWarehouseName(targetWhId)
             return ledger.copy(
                 warehouseName = cleanArabicName,
                 warehouseNameCamel = cleanArabicName
