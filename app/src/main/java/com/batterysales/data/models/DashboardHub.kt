@@ -1,47 +1,48 @@
 package com.batterysales.data.models
 
+import com.google.firebase.firestore.PropertyName
 import java.util.Date
 
 data class FinancialStatusSummary(
-    val totalCashBalance: Double = 0.0,
-    val mainTreasuryBalance: Double = 0.0,
-    val subWarehouseBalances: Map<String, Double> = emptyMap(),
-    val updatedAt: Date = Date()
+    @get:PropertyName("totalCashBalance") @set:PropertyName("totalCashBalance") var totalCashBalance: Double = 0.0,
+    @get:PropertyName("mainTreasuryBalance") @set:PropertyName("mainTreasuryBalance") var mainTreasuryBalance: Double = 0.0,
+    @get:PropertyName("subWarehouseBalances") @set:PropertyName("subWarehouseBalances") var subWarehouseBalances: Map<String, Double> = emptyMap(),
+    @get:PropertyName("updatedAt") @set:PropertyName("updatedAt") var updatedAt: Date = Date()
 )
 
 data class BankSummary(
-    val globalBankBalance: Double = 0.0,
-    val totalUnpaidChecks: Double = 0.0,
-    val totalUnpaidBills: Double = 0.0,
-    val updatedAt: Date = Date()
+    @get:PropertyName("globalBankBalance") @set:PropertyName("globalBankBalance") var globalBankBalance: Double = 0.0,
+    @get:PropertyName("totalUnpaidChecks") @set:PropertyName("totalUnpaidChecks") var totalUnpaidChecks: Double = 0.0,
+    @get:PropertyName("totalUnpaidBills") @set:PropertyName("totalUnpaidBills") var totalUnpaidBills: Double = 0.0,
+    @get:PropertyName("updatedAt") @set:PropertyName("updatedAt") var updatedAt: Date = Date()
 )
 
 data class SupplierSummary(
-    val totalSupplierDebt: Double = 0.0,
-    val totalSuppliersCount: Int = 0,
-    val updatedAt: Date = Date()
+    @get:PropertyName("totalSupplierDebt") @set:PropertyName("totalSupplierDebt") var totalSupplierDebt: Double = 0.0,
+    @get:PropertyName("totalSuppliersCount") @set:PropertyName("totalSuppliersCount") var totalSuppliersCount: Int = 0,
+    @get:PropertyName("updatedAt") @set:PropertyName("updatedAt") var updatedAt: Date = Date()
 )
 
 data class InventorySummaryData(
-    val totalValue: Double = 0.0,
-    val totalItemsCount: Int = 0,
-    val updatedAt: Date = Date()
+    @get:PropertyName("totalValue") @set:PropertyName("totalValue") var totalValue: Double = 0.0,
+    @get:PropertyName("totalItemsCount") @set:PropertyName("totalItemsCount") var totalItemsCount: Int = 0,
+    @get:PropertyName("updatedAt") @set:PropertyName("updatedAt") var updatedAt: Date = Date()
 )
 
 data class ScrapAndAlertsSummary(
-    val totalScrapAmperes: Double = 0.0,
-    val totalScrapValue: Double = 0.0,
-    val activeLowStockAlertsCount: Int = 0,
-    val updatedAt: Date = Date()
+    @get:PropertyName("totalScrapAmperes") @set:PropertyName("totalScrapAmperes") var totalScrapAmperes: Double = 0.0,
+    @get:PropertyName("totalScrapValue") @set:PropertyName("totalScrapValue") var totalScrapValue: Double = 0.0,
+    @get:PropertyName("activeLowStockAlertsCount") @set:PropertyName("activeLowStockAlertsCount") var activeLowStockAlertsCount: Int = 0,
+    @get:PropertyName("updatedAt") @set:PropertyName("updatedAt") var updatedAt: Date = Date()
 )
 
 data class DashboardHub(
-    val id: String = "dashboard_hub",
-    val lastUpdated: Date = Date(),
-    val financialStatus: FinancialStatusSummary = FinancialStatusSummary(),
-    val bankSummary: BankSummary = BankSummary(),
-    val supplierSummary: SupplierSummary = SupplierSummary(),
-    val inventorySummary: InventorySummaryData = InventorySummaryData(),
-    val scrapAndAlertsSummary: ScrapAndAlertsSummary = ScrapAndAlertsSummary(),
-    val syncRegistry: SyncRegistry = SyncRegistry()
+    @get:PropertyName("id") @set:PropertyName("id") var id: String = "dashboard_hub",
+    @get:PropertyName("lastUpdated") @set:PropertyName("lastUpdated") var lastUpdated: Date = Date(),
+    @get:PropertyName("financialStatus") @set:PropertyName("financialStatus") var financialStatus: FinancialStatusSummary = FinancialStatusSummary(),
+    @get:PropertyName("bankSummary") @set:PropertyName("bankSummary") var bankSummary: BankSummary = BankSummary(),
+    @get:PropertyName("supplierSummary") @set:PropertyName("supplierSummary") var supplierSummary: SupplierSummary = SupplierSummary(),
+    @get:PropertyName("inventorySummary") @set:PropertyName("inventorySummary") var inventorySummary: InventorySummaryData = InventorySummaryData(),
+    @get:PropertyName("scrapAndAlertsSummary") @set:PropertyName("scrapAndAlertsSummary") var scrapAndAlertsSummary: ScrapAndAlertsSummary = ScrapAndAlertsSummary(),
+    @get:PropertyName("syncRegistry") @set:PropertyName("syncRegistry") var syncRegistry: SyncRegistry = SyncRegistry()
 )

@@ -283,48 +283,50 @@ class OldBatteryViewModel @Inject constructor(
 
         viewModelScope.launch {
             val opId = "scrap_in_${System.currentTimeMillis()}_$finalWarehouseId"
-            try {
-                // Record pure delta in PersistentSyncManager; total stock & balances flow from server summary
-                persistentSyncManager.recordPendingOperation(
-                    com.batterysales.data.local.PendingSyncOperation(
-                        operationId = opId,
-                        type = "SCRAP_INTAKE",
-                        relatedId = finalWarehouseId,
-                        amountDelta = totalAmperes,
-                        status = "PENDING_SYNC"
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                try {
+                    // Record pure delta in PersistentSyncManager; total stock & balances flow from server summary
+                    persistentSyncManager.recordPendingOperation(
+                        com.batterysales.data.local.PendingSyncOperation(
+                            operationId = opId,
+                            type = "SCRAP_INTAKE",
+                            relatedId = finalWarehouseId,
+                            amountDelta = totalAmperes,
+                            status = "PENDING_SYNC"
+                        )
                     )
-                )
 
-                val transaction = com.batterysales.data.models.OldBatteryTransaction(
-                    quantity = quantity,
-                    warehouseId = finalWarehouseId,
-                    totalAmperes = totalAmperes,
-                    amount = amount,
-                    type = com.batterysales.data.models.OldBatteryTransactionType.INTAKE,
-                    date = java.util.Date(),
-                    notes = notes,
-                    createdByUserName = currentUser?.displayName ?: ""
-                )
-                val transId = repository.addTransaction(transaction)
-
-                // Add to Treasury as EXPENSE if amount > 0
-                if (amount > 0.001) {
-                    val treasuryTransaction = Transaction(
-                        type = TransactionType.EXPENSE,
-                        amount = amount,
-                        description = "شراء بطاريات قديمة (سكراب): $quantity حبة",
+                    val transaction = com.batterysales.data.models.OldBatteryTransaction(
+                        quantity = quantity,
                         warehouseId = finalWarehouseId,
-                        relatedId = transId,
-                        paymentMethod = "cash"
+                        totalAmperes = totalAmperes,
+                        amount = amount,
+                        type = com.batterysales.data.models.OldBatteryTransactionType.INTAKE,
+                        date = java.util.Date(),
+                        notes = notes,
+                        createdByUserName = currentUser?.displayName ?: ""
                     )
-                    accountingRepository.addTransaction(treasuryTransaction)
+                    val transId = repository.addTransaction(transaction)
+
+                    // Add to Treasury as EXPENSE if amount > 0
+                    if (amount > 0.001) {
+                        val treasuryTransaction = Transaction(
+                            type = TransactionType.EXPENSE,
+                            amount = amount,
+                            description = "شراء بطاريات قديمة (سكراب): $quantity حبة",
+                            warehouseId = finalWarehouseId,
+                            relatedId = transId,
+                            paymentMethod = "cash"
+                        )
+                        accountingRepository.addTransaction(treasuryTransaction)
+                    }
+
+                    persistentSyncManager.removePendingOperation(opId)
+                    refreshTrigger.value++
+                } catch (e: Exception) {
+                    persistentSyncManager.removePendingOperation(opId)
+                    Log.e("OldBatteryViewModel", "Error adding manual intake", e)
                 }
-                
-                persistentSyncManager.removePendingOperation(opId)
-                refreshTrigger.value++
-            } catch (e: Exception) {
-                persistentSyncManager.removePendingOperation(opId)
-                Log.e("OldBatteryViewModel", "Error adding manual intake", e)
             }
         }
     }
@@ -343,45 +345,47 @@ class OldBatteryViewModel @Inject constructor(
 
         viewModelScope.launch {
             val opId = "scrap_out_${System.currentTimeMillis()}_$finalWarehouseId"
-            try {
-                // Record pure delta in PersistentSyncManager without client-side cumulative updates
-                persistentSyncManager.recordPendingOperation(
-                    com.batterysales.data.local.PendingSyncOperation(
-                        operationId = opId,
-                        type = "SCRAP_SALE",
-                        relatedId = finalWarehouseId,
-                        amountDelta = -totalAmperes,
-                        status = "PENDING_SYNC"
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                try {
+                    // Record pure delta in PersistentSyncManager without client-side cumulative updates
+                    persistentSyncManager.recordPendingOperation(
+                        com.batterysales.data.local.PendingSyncOperation(
+                            operationId = opId,
+                            type = "SCRAP_SALE",
+                            relatedId = finalWarehouseId,
+                            amountDelta = -totalAmperes,
+                            status = "PENDING_SYNC"
+                        )
                     )
-                )
 
-                val transaction = OldBatteryTransaction(
-                    quantity = quantity,
-                    warehouseId = finalWarehouseId,
-                    totalAmperes = totalAmperes,
-                    amount = amount,
-                    type = OldBatteryTransactionType.SALE,
-                    date = Date(),
-                    notes = "بيع بطاريات قديمة",
-                    createdByUserName = currentUser?.displayName ?: ""
-                )
-                val transId = repository.addTransaction(transaction)
+                    val transaction = OldBatteryTransaction(
+                        quantity = quantity,
+                        warehouseId = finalWarehouseId,
+                        totalAmperes = totalAmperes,
+                        amount = amount,
+                        type = OldBatteryTransactionType.SALE,
+                        date = Date(),
+                        notes = "بيع بطاريات قديمة",
+                        createdByUserName = currentUser?.displayName ?: ""
+                    )
+                    val transId = repository.addTransaction(transaction)
 
-                // Add to Treasury
-                val treasuryTransaction = Transaction(
-                    type = TransactionType.INCOME,
-                    amount = amount,
-                    description = "بيع بطاريات قديمة (سكراب): $quantity حبة",
-                    warehouseId = finalWarehouseId,
-                    relatedId = transId
-                )
-                accountingRepository.addTransaction(treasuryTransaction)
-                
-                persistentSyncManager.removePendingOperation(opId)
-                refreshTrigger.value++
-            } catch (e: Exception) {
-                persistentSyncManager.removePendingOperation(opId)
-                Log.e("OldBatteryViewModel", "Error selling batteries", e)
+                    // Add to Treasury
+                    val treasuryTransaction = Transaction(
+                        type = TransactionType.INCOME,
+                        amount = amount,
+                        description = "بيع بطاريات قديمة (سكراب): $quantity حبة",
+                        warehouseId = finalWarehouseId,
+                        relatedId = transId
+                    )
+                    accountingRepository.addTransaction(treasuryTransaction)
+
+                    persistentSyncManager.removePendingOperation(opId)
+                    refreshTrigger.value++
+                } catch (e: Exception) {
+                    persistentSyncManager.removePendingOperation(opId)
+                    Log.e("OldBatteryViewModel", "Error selling batteries", e)
+                }
             }
         }
     }

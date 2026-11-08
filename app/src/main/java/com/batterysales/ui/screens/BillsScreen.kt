@@ -44,6 +44,7 @@ import com.batterysales.ui.components.HeaderIconButton
 import com.batterysales.ui.components.CustomKeyboardTextField
 import com.batterysales.ui.components.AppDialog
 import com.batterysales.ui.components.ConnectivityBanner
+import androidx.activity.compose.BackHandler
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -81,6 +82,11 @@ fun BillsScreen(
     val flaggedBills by viewModel.flaggedBills.collectAsState()
     var blockingConflictError by remember { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
+
+    // حظر الرجوع أثناء معالجة وتسجيل القيود على القرص والسيرفر لمنع تجميد الشاشة
+    BackHandler(enabled = isSubmitting || blockingConflictError != null) {
+        /* Hard lock: block back-press during active submission */
+    }
 
     if (blockingConflictError != null) {
         AlertDialog(

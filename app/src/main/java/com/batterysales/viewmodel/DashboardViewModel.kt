@@ -289,12 +289,28 @@ class DashboardViewModel @Inject constructor(
         val currentJordanDateStr = jordanDateFormat.format(Date())
 
         val warehouseMap = warehouses.associateBy { it.id }.toMutableMap()
+
+        // Local Join Resolver: حل فوري ومتزامن لاسم المستودع العربي من الكاش المحلي لمنع تسريب الـ ID
+        fun resolveWarehouseName(whId: String, candidateName: String? = null): String {
+            val cachedName = warehouseMap[whId]?.name
+            if (!cachedName.isNullOrBlank() && cachedName != whId) {
+                return cachedName
+            }
+            if (!candidateName.isNullOrBlank() && candidateName != whId) {
+                return candidateName
+            }
+            val matchingWh = warehouses.find { it.id == whId }
+            if (matchingWh != null && matchingWh.name.isNotBlank() && matchingWh.name != whId) {
+                return matchingWh.name
+            }
+            return if (whId.contains("main", ignoreCase = true) || whId == "main_treasury") "الخزينة الرئيسية" else "مستودع فرعي"
+        }
         
         // بناء بطاقات المستودعات بالاعتماد النشط على مفاتيح warehouseBalances الحية لكسر جمود التدفق تماماً
         val whStats = if (isAdmin) {
             val allWhIds = (financialStatus.warehouseBalances.keys + warehouses.map { it.id }).distinct()
             allWhIds.map { whId ->
-                val name = warehouseMap[whId]?.name ?: "مخزن $whId"
+                val name = resolveWarehouseName(whId)
                 val whFinancial = financialStatus.warehouseBalances[whId]
                 
                 // حارس التوقيت التزامني: إذا مر المبيع الأول، نجبر قنوات الواجهة على الإطلاق فورا
@@ -307,7 +323,7 @@ class DashboardViewModel @Inject constructor(
             }
         } else {
             val targetWhId = userWarehouseId ?: ""
-            val name = warehouseMap[targetWhId]?.name ?: warehouses.find { it.id == targetWhId }?.name ?: "مخزن"
+            val name = resolveWarehouseName(targetWhId)
             val whFinancial = financialStatus.warehouseBalances[targetWhId]
             
             val hasTodayActivity = whFinancial?.lastInvoiceDate == currentJordanDateStr || 

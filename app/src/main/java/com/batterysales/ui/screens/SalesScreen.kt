@@ -33,6 +33,7 @@ import com.batterysales.ui.components.KeyboardLanguage
 import com.batterysales.ui.theme.LocalInputTextStyle
 import com.batterysales.ui.components.SharedHeader
 import com.batterysales.ui.components.HeaderIconButton
+import androidx.activity.compose.BackHandler
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -47,6 +48,11 @@ fun SalesScreen(navController: NavController, viewModel: SalesViewModel = hiltVi
     var customerPhone by remember { mutableStateOf("") }
     var paidAmount by remember { mutableStateOf("") }
     var showScanner by remember { mutableStateOf(false) }
+
+    // حظر الرجوع بالزر العتادي تماماً أثناء تسجيل المعاملة لمنع الـ JobCancellationException والتجميد
+    BackHandler(enabled = uiState.isSubmitting) {
+        /* Hard lock: block back-press during active submission */
+    }
 
     LaunchedEffect(uiState.isFinished) {
         if (uiState.isFinished) {

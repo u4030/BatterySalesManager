@@ -33,6 +33,7 @@ import com.batterysales.ui.components.CustomKeyboardTextField
 import com.batterysales.ui.components.KeyboardLanguage
 import java.text.SimpleDateFormat
 import java.util.*
+import androidx.activity.compose.BackHandler
 
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.shape.CircleShape
@@ -48,6 +49,11 @@ fun InvoiceDetailScreen(
     var showPaymentHistoryDialog by remember { mutableStateOf(false) }
     var paymentAmount by remember { mutableStateOf("") }
     var selectedPaymentMethod by remember { mutableStateOf("cash") }
+
+    // حظر زر الرجوع العتادي أثناء المعالجة أو وجود نافذة القفل الحرجة
+    BackHandler(enabled = uiState.isSubmitting || uiState.errorMessage != null) {
+        /* Hard lock enforced */
+    }
 
     if (uiState.errorMessage != null) {
         val errText = uiState.errorMessage ?: ""

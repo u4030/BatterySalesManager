@@ -211,34 +211,36 @@ class BankViewModel @Inject constructor(
             _isSubmitting.value = true
             val opId = "bank_tx_${System.currentTimeMillis()}"
             try {
-                // Pass pure delta directly to PersistentSyncManager without modifying cumulative _balance locally
-                persistentSyncManager.recordPendingOperation(
-                    com.batterysales.data.local.PendingSyncOperation(
-                        operationId = opId,
-                        type = "BANK_TRANSACTION",
-                        relatedId = referenceNumber.ifEmpty { opId },
-                        status = "PENDING_SYNC",
-                        amountDelta = delta
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    // Pass pure delta directly to PersistentSyncManager without modifying cumulative _balance locally
+                    persistentSyncManager.recordPendingOperation(
+                        com.batterysales.data.local.PendingSyncOperation(
+                            operationId = opId,
+                            type = "BANK_TRANSACTION",
+                            relatedId = referenceNumber.ifEmpty { opId },
+                            status = "PENDING_SYNC",
+                            amountDelta = delta
+                        )
                     )
-                )
 
-                val transaction = BankTransaction(type = type, amount = amount, description = description, referenceNumber = referenceNumber, supplierName = supplierName, date = Date())
-                val transId = repository.addTransaction(transaction)
-                persistentSyncManager.removePendingOperation(opId)
+                    val transaction = BankTransaction(type = type, amount = amount, description = description, referenceNumber = referenceNumber, supplierName = supplierName, date = Date())
+                    val transId = repository.addTransaction(transaction)
+                    persistentSyncManager.removePendingOperation(opId)
 
-                if (type == BankTransactionType.DEPOSIT && fromTreasury) {
-                    val mainWhId = warehouseRepository.getWarehousesOnce().find { it.isMain }?.id
-                    val targetWhId = mainWhId ?: warehouseId ?: userRepository.getCurrentUser()?.warehouseId
-                    
-                    if (targetWhId != null) {
-                        accountingRepository.addTransaction(Transaction(
-                            type = TransactionType.EXPENSE, amount = amount, description = "تغذية رصيد بنك: $description", 
-                            referenceNumber = referenceNumber, warehouseId = targetWhId, relatedId = transId, paymentMethod = "cash",
-                            isSystemManaged = true
-                        ))
+                    if (type == BankTransactionType.DEPOSIT && fromTreasury) {
+                        val mainWhId = warehouseRepository.getWarehousesOnce().find { it.isMain }?.id
+                        val targetWhId = mainWhId ?: warehouseId ?: userRepository.getCurrentUser()?.warehouseId
+
+                        if (targetWhId != null) {
+                            accountingRepository.addTransaction(Transaction(
+                                type = TransactionType.EXPENSE, amount = amount, description = "تغذية رصيد بنك: $description",
+                                referenceNumber = referenceNumber, warehouseId = targetWhId, relatedId = transId, paymentMethod = "cash",
+                                isSystemManaged = true
+                            ))
+                        }
                     }
+                    loadData()
                 }
-                loadData()
             } finally {
                 _isSubmitting.value = false
             }
@@ -250,24 +252,26 @@ class BankViewModel @Inject constructor(
 
         viewModelScope.launch {
             val opId = "bank_del_${System.currentTimeMillis()}_$transactionId"
-            // Record pure delta in PersistentSyncManager; total balance is updated strictly via summaryRepository flow
-            persistentSyncManager.recordPendingOperation(
-                com.batterysales.data.local.PendingSyncOperation(
-                    operationId = opId,
-                    type = "BANK_DELETE",
-                    relatedId = transactionId,
-                    status = "PENDING_SYNC",
-                    amountDelta = delta
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                // Record pure delta in PersistentSyncManager; total balance is updated strictly via summaryRepository flow
+                persistentSyncManager.recordPendingOperation(
+                    com.batterysales.data.local.PendingSyncOperation(
+                        operationId = opId,
+                        type = "BANK_DELETE",
+                        relatedId = transactionId,
+                        status = "PENDING_SYNC",
+                        amountDelta = delta
+                    )
                 )
-            )
-            try {
-                repository.deleteTransaction(transactionId)
-                accountingRepository.deleteTransactionsByRelatedId(transactionId)
-                persistentSyncManager.removePendingOperation(opId)
-                loadData()
-            } catch (e: Exception) {
-                persistentSyncManager.removePendingOperation(opId)
-                _errorMessage.value = e.message
+                try {
+                    repository.deleteTransaction(transactionId)
+                    accountingRepository.deleteTransactionsByRelatedId(transactionId)
+                    persistentSyncManager.removePendingOperation(opId)
+                    loadData()
+                } catch (e: Exception) {
+                    persistentSyncManager.removePendingOperation(opId)
+                    _errorMessage.value = e.message
+                }
             }
         }
     }
