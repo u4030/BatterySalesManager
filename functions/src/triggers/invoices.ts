@@ -22,7 +22,8 @@ export const onInvoiceCreated = onDocumentCreated(
       const invoice = event.data?.data();
       if (!invoice) return;
 
-      const warehouseId = invoice.warehouseId || "";
+      // Scoped Block Variables: Isolation to prevent shared reference pollution
+      const currentWarehouseId = String(invoice.warehouseId || "").trim();
       const items = (invoice.items || []) as Array<{ productId: string; quantity: number; total: number }>;
       const totalAmount = Number(invoice.totalAmount || invoice.finalAmount || 0);
       const paidAmount = Number(invoice.paidAmount || 0);
@@ -31,12 +32,12 @@ export const onInvoiceCreated = onDocumentCreated(
       const isBank = paymentMethod === "bank";
       const now = FieldValue.serverTimestamp();
 
-      // Read Phase: Fetch warehouse details synchronously to retrieve Arabic warehouse name
-      let warehouseName = "المستودع";
-      if (warehouseId) {
-        const whSnap = await transaction.get(db.doc(`warehouses/${warehouseId}`));
+      // Read Phase: Fetch isolated warehouse document directly in current scope
+      let freshFetchedCorrectName = "المستودع";
+      if (currentWarehouseId) {
+        const whSnap = await transaction.get(db.doc(`warehouses/${currentWarehouseId}`));
         if (whSnap.exists) {
-          warehouseName = whSnap.data()?.name || warehouseName;
+          freshFetchedCorrectName = String(whSnap.data()?.name || "المستودع").trim();
         }
       }
 
@@ -46,19 +47,19 @@ export const onInvoiceCreated = onDocumentCreated(
         const variantId = item.productId;
         const qty = Number(item.quantity || 0);
         if (variantId && qty > 0) {
-          if (warehouseId) {
+          if (currentWarehouseId) {
             transaction.set(
               db.doc(`product_variants/${variantId}`),
               {
                 currentStock: {
-                  [warehouseId]: FieldValue.increment(-qty),
+                  [currentWarehouseId]: FieldValue.increment(-qty),
                 },
               },
               { merge: true }
             );
 
             transaction.set(
-              db.doc(`summaries/inventory_wh_${warehouseId}`),
+              db.doc(`summaries/inventory_wh_${currentWarehouseId}`),
               {
                 [`items.${variantId}.currentStock`]: FieldValue.increment(-qty),
                 lastUpdated: now,
@@ -101,12 +102,12 @@ export const onInvoiceCreated = onDocumentCreated(
         whBalanceUpdate.totalReceivables = FieldValue.increment(initialDebt);
       }
 
-      if (warehouseId) {
+      if (currentWarehouseId) {
         transaction.set(
           db.doc("summaries/financial_status"),
           {
             warehouseBalances: {
-              [warehouseId]: whBalanceUpdate,
+              [currentWarehouseId]: whBalanceUpdate,
             },
             todayCollection: FieldValue.increment(paidAmount),
             todayCollectionCount: FieldValue.increment(paidAmount > 0 ? 1 : 0),
@@ -127,15 +128,15 @@ export const onInvoiceCreated = onDocumentCreated(
           { merge: true }
         );
 
-        // Compound document for isolated daily sales aggregation: summaries/daily_${warehouseId}_${todayDateStr}
-        // Write both warehouseId, warehouse_id, warehouseName, and warehouse_name to satisfy all client deserializers
+        // Compound document for isolated daily sales aggregation: summaries/daily_${currentWarehouseId}_${todayDateStr}
+        // Write both currentWarehouseId and freshFetchedCorrectName in both naming conventions to guarantee zero pollution
         transaction.set(
-          db.doc(`summaries/daily_${warehouseId}_${todayDateStr}`),
+          db.doc(`summaries/daily_${currentWarehouseId}_${todayDateStr}`),
           {
-            warehouseId: warehouseId,
-            warehouse_id: warehouseId,
-            warehouseName: warehouseName,
-            warehouse_name: warehouseName,
+            warehouseId: currentWarehouseId,
+            warehouse_id: currentWarehouseId,
+            warehouseName: freshFetchedCorrectName,
+            warehouse_name: freshFetchedCorrectName,
             date: todayDateStr,
             totalSales: FieldValue.increment(totalAmount),
             totalInvoices: FieldValue.increment(1),

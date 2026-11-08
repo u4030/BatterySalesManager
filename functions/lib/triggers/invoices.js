@@ -50,7 +50,8 @@ exports.onInvoiceCreated = (0, firestore_1.onDocumentCreated)("invoices/{invoice
         const invoice = event.data?.data();
         if (!invoice)
             return;
-        const warehouseId = invoice.warehouseId || "";
+        // Scoped Block Variables: Isolation to prevent shared reference pollution
+        const currentWarehouseId = String(invoice.warehouseId || "").trim();
         const items = (invoice.items || []);
         const totalAmount = Number(invoice.totalAmount || invoice.finalAmount || 0);
         const paidAmount = Number(invoice.paidAmount || 0);
@@ -58,12 +59,12 @@ exports.onInvoiceCreated = (0, firestore_1.onDocumentCreated)("invoices/{invoice
         const paymentMethod = invoice.paymentMethod || "cash";
         const isBank = paymentMethod === "bank";
         const now = firestore_2.FieldValue.serverTimestamp();
-        // Read Phase: Fetch warehouse details synchronously to retrieve Arabic warehouse name
-        let warehouseName = "المستودع";
-        if (warehouseId) {
-            const whSnap = await transaction.get(db.doc(`warehouses/${warehouseId}`));
+        // Read Phase: Fetch isolated warehouse document directly in current scope
+        let freshFetchedCorrectName = "المستودع";
+        if (currentWarehouseId) {
+            const whSnap = await transaction.get(db.doc(`warehouses/${currentWarehouseId}`));
             if (whSnap.exists) {
-                warehouseName = whSnap.data()?.name || warehouseName;
+                freshFetchedCorrectName = String(whSnap.data()?.name || "المستودع").trim();
             }
         }
         // Write Phase:
@@ -72,13 +73,13 @@ exports.onInvoiceCreated = (0, firestore_1.onDocumentCreated)("invoices/{invoice
             const variantId = item.productId;
             const qty = Number(item.quantity || 0);
             if (variantId && qty > 0) {
-                if (warehouseId) {
+                if (currentWarehouseId) {
                     transaction.set(db.doc(`product_variants/${variantId}`), {
                         currentStock: {
-                            [warehouseId]: firestore_2.FieldValue.increment(-qty),
+                            [currentWarehouseId]: firestore_2.FieldValue.increment(-qty),
                         },
                     }, { merge: true });
-                    transaction.set(db.doc(`summaries/inventory_wh_${warehouseId}`), {
+                    transaction.set(db.doc(`summaries/inventory_wh_${currentWarehouseId}`), {
                         [`items.${variantId}.currentStock`]: firestore_2.FieldValue.increment(-qty),
                         lastUpdated: now,
                         version: firestore_2.FieldValue.increment(1),
@@ -109,10 +110,10 @@ exports.onInvoiceCreated = (0, firestore_1.onDocumentCreated)("invoices/{invoice
             whBalanceUpdate.pendingCollection = firestore_2.FieldValue.increment(initialDebt);
             whBalanceUpdate.totalReceivables = firestore_2.FieldValue.increment(initialDebt);
         }
-        if (warehouseId) {
+        if (currentWarehouseId) {
             transaction.set(db.doc("summaries/financial_status"), {
                 warehouseBalances: {
-                    [warehouseId]: whBalanceUpdate,
+                    [currentWarehouseId]: whBalanceUpdate,
                 },
                 todayCollection: firestore_2.FieldValue.increment(paidAmount),
                 todayCollectionCount: firestore_2.FieldValue.increment(paidAmount > 0 ? 1 : 0),
@@ -125,13 +126,13 @@ exports.onInvoiceCreated = (0, firestore_1.onDocumentCreated)("invoices/{invoice
                 version: firestore_2.FieldValue.increment(1),
                 lastUpdated: now,
             }, { merge: true });
-            // Compound document for isolated daily sales aggregation: summaries/daily_${warehouseId}_${todayDateStr}
-            // Write both warehouseId, warehouse_id, warehouseName, and warehouse_name to satisfy all client deserializers
-            transaction.set(db.doc(`summaries/daily_${warehouseId}_${todayDateStr}`), {
-                warehouseId: warehouseId,
-                warehouse_id: warehouseId,
-                warehouseName: warehouseName,
-                warehouse_name: warehouseName,
+            // Compound document for isolated daily sales aggregation: summaries/daily_${currentWarehouseId}_${todayDateStr}
+            // Write both currentWarehouseId and freshFetchedCorrectName in both naming conventions to guarantee zero pollution
+            transaction.set(db.doc(`summaries/daily_${currentWarehouseId}_${todayDateStr}`), {
+                warehouseId: currentWarehouseId,
+                warehouse_id: currentWarehouseId,
+                warehouseName: freshFetchedCorrectName,
+                warehouse_name: freshFetchedCorrectName,
                 date: todayDateStr,
                 totalSales: firestore_2.FieldValue.increment(totalAmount),
                 totalInvoices: firestore_2.FieldValue.increment(1),
