@@ -60,11 +60,11 @@ exports.onInvoiceCreated = (0, firestore_1.onDocumentCreated)("invoices/{invoice
         const isBank = paymentMethod === "bank";
         const now = firestore_2.FieldValue.serverTimestamp();
         // Read Phase: Fetch isolated warehouse document directly in current scope
-        let freshFetchedCorrectName = "المستودع";
+        let correctWarehouseName = "مستودع غير معرف";
         if (currentWarehouseId) {
-            const whSnap = await transaction.get(db.doc(`warehouses/${currentWarehouseId}`));
-            if (whSnap.exists) {
-                freshFetchedCorrectName = String(whSnap.data()?.name || "المستودع").trim();
+            const whSnap = await transaction.get(db.collection("warehouses").doc(currentWarehouseId));
+            if (whSnap.exists && whSnap.data()?.name) {
+                correctWarehouseName = String(whSnap.data()?.name).trim();
             }
         }
         // Write Phase:
@@ -127,12 +127,12 @@ exports.onInvoiceCreated = (0, firestore_1.onDocumentCreated)("invoices/{invoice
                 lastUpdated: now,
             }, { merge: true });
             // Compound document for isolated daily sales aggregation: summaries/daily_${currentWarehouseId}_${todayDateStr}
-            // Write both currentWarehouseId and freshFetchedCorrectName in both naming conventions to guarantee zero pollution
+            // Write both currentWarehouseId and correctWarehouseName in both naming conventions to guarantee zero pollution
             transaction.set(db.doc(`summaries/daily_${currentWarehouseId}_${todayDateStr}`), {
                 warehouseId: currentWarehouseId,
                 warehouse_id: currentWarehouseId,
-                warehouseName: freshFetchedCorrectName,
-                warehouse_name: freshFetchedCorrectName,
+                warehouseName: correctWarehouseName,
+                warehouse_name: correctWarehouseName,
                 date: todayDateStr,
                 totalSales: firestore_2.FieldValue.increment(totalAmount),
                 totalInvoices: firestore_2.FieldValue.increment(1),
