@@ -283,19 +283,22 @@ class OldBatteryViewModel @Inject constructor(
 
         viewModelScope.launch {
             val opId = "scrap_in_${System.currentTimeMillis()}_$finalWarehouseId"
+            // 1. Immediate disk record inside NonCancellable
             kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
-                try {
-                    // Record pure delta in PersistentSyncManager; total stock & balances flow from server summary
-                    persistentSyncManager.recordPendingOperation(
-                        com.batterysales.data.local.PendingSyncOperation(
-                            operationId = opId,
-                            type = "SCRAP_INTAKE",
-                            relatedId = finalWarehouseId,
-                            amountDelta = totalAmperes,
-                            status = "PENDING_SYNC"
-                        )
+                persistentSyncManager.recordPendingOperation(
+                    com.batterysales.data.local.PendingSyncOperation(
+                        operationId = opId,
+                        type = "SCRAP_INTAKE",
+                        relatedId = finalWarehouseId,
+                        amountDelta = totalAmperes,
+                        status = "PENDING_SYNC"
                     )
+                )
+            }
 
+            // 2. Network & Firestore writes on Dispatchers.IO
+            try {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                     val transaction = com.batterysales.data.models.OldBatteryTransaction(
                         quantity = quantity,
                         warehouseId = finalWarehouseId,
@@ -308,7 +311,6 @@ class OldBatteryViewModel @Inject constructor(
                     )
                     val transId = repository.addTransaction(transaction)
 
-                    // Add to Treasury as EXPENSE if amount > 0
                     if (amount > 0.001) {
                         val treasuryTransaction = Transaction(
                             type = TransactionType.EXPENSE,
@@ -320,13 +322,15 @@ class OldBatteryViewModel @Inject constructor(
                         )
                         accountingRepository.addTransaction(treasuryTransaction)
                     }
-
-                    persistentSyncManager.removePendingOperation(opId)
-                    refreshTrigger.value++
-                } catch (e: Exception) {
-                    persistentSyncManager.removePendingOperation(opId)
-                    Log.e("OldBatteryViewModel", "Error adding manual intake", e)
                 }
+
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    persistentSyncManager.removePendingOperation(opId)
+                }
+                refreshTrigger.value++
+            } catch (e: Exception) {
+                persistentSyncManager.removePendingOperation(opId)
+                Log.e("OldBatteryViewModel", "Error adding manual intake", e)
             }
         }
     }
@@ -345,19 +349,22 @@ class OldBatteryViewModel @Inject constructor(
 
         viewModelScope.launch {
             val opId = "scrap_out_${System.currentTimeMillis()}_$finalWarehouseId"
+            // 1. Immediate disk record inside NonCancellable
             kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
-                try {
-                    // Record pure delta in PersistentSyncManager without client-side cumulative updates
-                    persistentSyncManager.recordPendingOperation(
-                        com.batterysales.data.local.PendingSyncOperation(
-                            operationId = opId,
-                            type = "SCRAP_SALE",
-                            relatedId = finalWarehouseId,
-                            amountDelta = -totalAmperes,
-                            status = "PENDING_SYNC"
-                        )
+                persistentSyncManager.recordPendingOperation(
+                    com.batterysales.data.local.PendingSyncOperation(
+                        operationId = opId,
+                        type = "SCRAP_SALE",
+                        relatedId = finalWarehouseId,
+                        amountDelta = -totalAmperes,
+                        status = "PENDING_SYNC"
                     )
+                )
+            }
 
+            // 2. Remote execution on Dispatchers.IO
+            try {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                     val transaction = OldBatteryTransaction(
                         quantity = quantity,
                         warehouseId = finalWarehouseId,
@@ -370,7 +377,6 @@ class OldBatteryViewModel @Inject constructor(
                     )
                     val transId = repository.addTransaction(transaction)
 
-                    // Add to Treasury
                     val treasuryTransaction = Transaction(
                         type = TransactionType.INCOME,
                         amount = amount,
@@ -379,13 +385,15 @@ class OldBatteryViewModel @Inject constructor(
                         relatedId = transId
                     )
                     accountingRepository.addTransaction(treasuryTransaction)
-
-                    persistentSyncManager.removePendingOperation(opId)
-                    refreshTrigger.value++
-                } catch (e: Exception) {
-                    persistentSyncManager.removePendingOperation(opId)
-                    Log.e("OldBatteryViewModel", "Error selling batteries", e)
                 }
+
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    persistentSyncManager.removePendingOperation(opId)
+                }
+                refreshTrigger.value++
+            } catch (e: Exception) {
+                persistentSyncManager.removePendingOperation(opId)
+                Log.e("OldBatteryViewModel", "Error selling batteries", e)
             }
         }
     }

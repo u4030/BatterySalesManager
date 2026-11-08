@@ -14,6 +14,8 @@ data class FinancialStatus(
     @get:PropertyName("globalCashBalance") @set:PropertyName("globalCashBalance") var globalCashBalance: Double = 0.0,
     @get:PropertyName("totalUnpaidBills") @set:PropertyName("totalUnpaidBills") var totalUnpaidBills: Double = 0.0,
     @get:PropertyName("totalUnpaidChecks") @set:PropertyName("totalUnpaidChecks") var totalUnpaidChecks: Double = 0.0,
+    @get:PropertyName("totalCustomerDebt") @set:PropertyName("totalCustomerDebt") var totalCustomerDebt: Double = 0.0,
+    @get:PropertyName("totalReceivables") @set:PropertyName("totalReceivables") var totalReceivables: Double = 0.0,
     @get:PropertyName("lastUpdated") @set:PropertyName("lastUpdated") var lastUpdated: Date = Date(),
     @get:PropertyName("version") @set:PropertyName("version") var version: Long = 0,
     
@@ -27,8 +29,8 @@ data class WarehouseBalance(
     @get:PropertyName("cashBalance") @set:PropertyName("cashBalance") var cashBalance: Double = 0.0,
     @get:PropertyName("bankBalance") @set:PropertyName("bankBalance") var bankBalance: Double = 0.0,
     @get:PropertyName("pendingCollection") @set:PropertyName("pendingCollection") var pendingCollection: Double = 0.0,
+    @get:PropertyName("totalReceivables") @set:PropertyName("totalReceivables") var totalReceivables: Double = 0.0,
     @get:PropertyName("todayCollection") @set:PropertyName("todayCollection") var todayCollection: Double = 0.0,
     @get:PropertyName("todayCollectionCount") @set:PropertyName("todayCollectionCount") var todayCollectionCount: Int = 0,
     @get:PropertyName("lastInvoiceDate") @set:PropertyName("lastInvoiceDate") var lastInvoiceDate: String = ""
 )
- 
