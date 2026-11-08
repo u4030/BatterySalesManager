@@ -58,6 +58,15 @@ exports.onInvoiceCreated = (0, firestore_1.onDocumentCreated)("invoices/{invoice
         const paymentMethod = invoice.paymentMethod || "cash";
         const isBank = paymentMethod === "bank";
         const now = firestore_2.FieldValue.serverTimestamp();
+        // Read Phase: Fetch warehouse details synchronously to retrieve Arabic warehouse name
+        let warehouseName = "المستودع";
+        if (warehouseId) {
+            const whSnap = await transaction.get(db.doc(`warehouses/${warehouseId}`));
+            if (whSnap.exists) {
+                warehouseName = whSnap.data()?.name || warehouseName;
+            }
+        }
+        // Write Phase:
         // 1. Decrement variant stock on product_variants & summaries using atomic FieldValue.increment
         items.forEach((item) => {
             const variantId = item.productId;
@@ -117,8 +126,10 @@ exports.onInvoiceCreated = (0, firestore_1.onDocumentCreated)("invoices/{invoice
                 lastUpdated: now,
             }, { merge: true });
             // Compound document for isolated daily sales aggregation: summaries/daily_${warehouseId}_${todayDateStr}
+            // Write both warehouseId and human-readable warehouseName to eliminate UI alphanumeric leaks
             transaction.set(db.doc(`summaries/daily_${warehouseId}_${todayDateStr}`), {
                 warehouseId: warehouseId,
+                warehouseName: warehouseName,
                 date: todayDateStr,
                 totalSales: firestore_2.FieldValue.increment(totalAmount),
                 totalInvoices: firestore_2.FieldValue.increment(1),
@@ -182,11 +193,14 @@ exports.onInvoiceDeleted = (0, firestore_1.onDocumentDeleted)("invoices/{invoice
     const now = firestore_2.FieldValue.serverTimestamp();
     await (0, idempotency_1.runWithIdempotencyGuard)(eventId, `invoice_deleted_${invoiceId}`, async (transaction) => {
         if (items.length > 0 && warehouseId) {
+            // Read Phase: inspect safety stock threshold and current stock for each variant
             const variantRefs = items.map((item) => db.doc(`product_variants/${item.productId}`));
             const alertRefs = items.map((item) => db.doc(`system_alerts/low_stock_${item.productId}_${warehouseId}`));
             const variantSnaps = await Promise.all(variantRefs.map((ref) => transaction.get(ref)));
             const alertSnaps = await Promise.all(alertRefs.map((ref) => transaction.get(ref)));
             let alertDeletionsCount = 0;
+            // Write Phase:
+            // Perform atomic evaluation of the threshold and delete alertRef strictly inside the same transaction block
             items.forEach((item, index) => {
                 const variantSnap = variantSnaps[index];
                 const alertSnap = alertSnaps[index];
@@ -197,6 +211,8 @@ exports.onInvoiceDeleted = (0, firestore_1.onDocumentDeleted)("invoices/{invoice
                     const currentWhStock = Number(currentStockMap[warehouseId] || 0);
                     const restoredStock = currentWhStock + qty;
                     const minQty = Number((variantData.minQuantities || {})[warehouseId] ?? variantData.minQuantity ?? 0);
+                    // Immediate threshold evaluation: if restored stock is strictly greater than safety threshold,
+                    // delete the low-stock alert atomically inside the same transaction block to eliminate timing gaps
                     if (restoredStock > minQty && alertSnap.exists) {
                         transaction.delete(alertRefs[index]);
                         alertDeletionsCount++;

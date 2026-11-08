@@ -31,6 +31,16 @@ export const onInvoiceCreated = onDocumentCreated(
       const isBank = paymentMethod === "bank";
       const now = FieldValue.serverTimestamp();
 
+      // Read Phase: Fetch warehouse details synchronously to retrieve Arabic warehouse name
+      let warehouseName = "المستودع";
+      if (warehouseId) {
+        const whSnap = await transaction.get(db.doc(`warehouses/${warehouseId}`));
+        if (whSnap.exists) {
+          warehouseName = whSnap.data()?.name || warehouseName;
+        }
+      }
+
+      // Write Phase:
       // 1. Decrement variant stock on product_variants & summaries using atomic FieldValue.increment
       items.forEach((item) => {
         const variantId = item.productId;
@@ -118,10 +128,12 @@ export const onInvoiceCreated = onDocumentCreated(
         );
 
         // Compound document for isolated daily sales aggregation: summaries/daily_${warehouseId}_${todayDateStr}
+        // Write both warehouseId and human-readable warehouseName to eliminate UI alphanumeric leaks
         transaction.set(
           db.doc(`summaries/daily_${warehouseId}_${todayDateStr}`),
           {
             warehouseId: warehouseId,
+            warehouseName: warehouseName,
             date: todayDateStr,
             totalSales: FieldValue.increment(totalAmount),
             totalInvoices: FieldValue.increment(1),
@@ -202,6 +214,7 @@ export const onInvoiceDeleted = onDocumentDeleted(
 
     await runWithIdempotencyGuard(eventId, `invoice_deleted_${invoiceId}`, async (transaction) => {
       if (items.length > 0 && warehouseId) {
+        // Read Phase: inspect safety stock threshold and current stock for each variant
         const variantRefs = items.map((item) => db.doc(`product_variants/${item.productId}`));
         const alertRefs = items.map((item) => db.doc(`system_alerts/low_stock_${item.productId}_${warehouseId}`));
 
@@ -210,6 +223,8 @@ export const onInvoiceDeleted = onDocumentDeleted(
 
         let alertDeletionsCount = 0;
 
+        // Write Phase:
+        // Perform atomic evaluation of the threshold and delete alertRef strictly inside the same transaction block
         items.forEach((item, index) => {
           const variantSnap = variantSnaps[index];
           const alertSnap = alertSnaps[index];
@@ -223,6 +238,8 @@ export const onInvoiceDeleted = onDocumentDeleted(
 
             const minQty = Number((variantData.minQuantities || {})[warehouseId] ?? variantData.minQuantity ?? 0);
 
+            // Immediate threshold evaluation: if restored stock is strictly greater than safety threshold,
+            // delete the low-stock alert atomically inside the same transaction block to eliminate timing gaps
             if (restoredStock > minQty && alertSnap.exists) {
               transaction.delete(alertRefs[index]);
               alertDeletionsCount++;

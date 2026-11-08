@@ -125,11 +125,13 @@ exports.onVaultTransferCreated = (0, firestore_1.onDocumentCreated)("vault_trans
             console.warn(`[VaultTransfer] Invalid warehouseId or amount for transfer ${transferId}.`);
             return;
         }
+        // Read Phase: Fetch warehouse details synchronously to retrieve Arabic warehouse name
+        const whSnap = await transaction.get(db.doc(`warehouses/${warehouseId}`));
+        const warehouseName = whSnap.exists ? (whSnap.data()?.name || "المستودع") : "المستودع";
         // 1. Server Gateway Lock Check
         const hasUnstable = await checkUnstableInvoices(warehouseId);
         if (hasUnstable) {
             console.error(`[SERVER_GATEWAY_LOCK] Warehouse ${warehouseId} has pending/unstable invoices. Aborting transfer ${transferId}.`);
-            // Rollback / Mark transfer document as rejected due to SERVER_GATEWAY_LOCK
             transaction.set(transferRef, {
                 status: "REJECTED",
                 error: "SERVER_GATEWAY_LOCK",
@@ -152,11 +154,13 @@ exports.onVaultTransferCreated = (0, firestore_1.onDocumentCreated)("vault_trans
             }, { merge: true });
             throw fifoErr;
         }
-        // 3. Update daily document and warehouse balances atomically
+        // 3. Write Phase: Update daily document and warehouse balances atomically
         const dailyDocRef = db.doc(`summaries/daily_${warehouseId}_${dateStr}`);
         const financialStatusRef = db.doc("summaries/financial_status");
         const now = firestore_2.FieldValue.serverTimestamp();
         transaction.set(dailyDocRef, {
+            warehouseId: warehouseId,
+            warehouseName: warehouseName,
             isSettled: true,
             settledAt: now,
             unsettledCashBalance: 0,
