@@ -350,7 +350,7 @@ class DashboardViewModel @Inject constructor(
 
         // Local Join Resolver: حل فوري ومتزامن لاسم المستودع العربي من الكاش المحلي حصراً لمنع تسريب الـ ID أو الأسماء الملوثة
         fun resolveWarehouseName(whId: String, candidateName: String? = null): String {
-            // Priority 1: Match directly and strictly against trusted local warehouse cache
+            // حل حصري ومطلق من كاش المستودعات المحلي النظيف فقط، مع إسقاط أي candidateName ممرر من السيرفر
             val matchingWh = warehouses.find { it.id == whId }
             if (matchingWh != null && matchingWh.name.isNotBlank() && matchingWh.name != whId && !matchingWh.name.equals("مستودع غير معرف", ignoreCase = true)) {
                 return matchingWh.name
