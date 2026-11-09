@@ -348,17 +348,24 @@ class DashboardViewModel @Inject constructor(
 
         val warehouseMap = warehouses.associateBy { it.id }.toMutableMap()
 
-        // Local Join Resolver: حل فوري ومتزامن لاسم المستودع العربي من الكاش المحلي حصراً لمنع تسريب الـ ID أو الأسماء الملوثة
+        // Local Join Resolver: إعطاء الأولوية المطلقة والكاملة لكاش المستودعات المحلي النظيف
         fun resolveWarehouseName(whId: String, candidateName: String? = null): String {
-            // حل حصري ومطلق من كاش المستودعات المحلي النظيف فقط، مع إسقاط أي candidateName ممرر من السيرفر
-            val matchingWh = warehouses.find { it.id == whId }
-            if (matchingWh != null && matchingWh.name.isNotBlank() && matchingWh.name != whId && !matchingWh.name.equals("مستودع غير معرف", ignoreCase = true)) {
-                return matchingWh.name
+            // بحث مباشر وصارم في كاش المستودعات المحلي أولاً
+            val localCachedName = warehouses.find { it.id == whId }?.name
+                ?.takeIf { it.isNotBlank() && it != whId && !it.equals("مستودع غير معرف", ignoreCase = true) }
+                ?: warehouseMap[whId]?.name
+                ?.takeIf { it.isNotBlank() && it != whId && !it.equals("مستودع غير معرف", ignoreCase = true) }
+
+            // إذا وُجد الاسم محلياً في الكاش (مثل "مستودع الحوت")، قم بحقنه فوراً وتخطّي أي سلسلة نصية قادمة من السيرفر
+            if (!localCachedName.isNullOrBlank()) {
+                return localCachedName
             }
-            val cachedName = warehouseMap[whId]?.name
-            if (!cachedName.isNullOrBlank() && cachedName != whId && !cachedName.equals("مستودع غير معرف", ignoreCase = true)) {
-                return cachedName
+
+            // لا يُستخدم candidateName إلا كـ Fallback أخير إذا كان الكاش فارغاً تماماً
+            if (!candidateName.isNullOrBlank() && candidateName != whId && !candidateName.equals("مستودع غير معرف", ignoreCase = true)) {
+                return candidateName
             }
+
             return if (whId.contains("main", ignoreCase = true) || whId == "main_treasury") "الخزينة الرئيسية" else "مستودع فرعي"
         }
 
