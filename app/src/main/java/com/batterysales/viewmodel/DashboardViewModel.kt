@@ -364,34 +364,36 @@ class DashboardViewModel @Inject constructor(
 
         // Local Join Resolver: إعطاء الأولوية المطلقة والكاملة لكاش المستودعات المحلي النظيف
         fun resolveWarehouseName(whId: String, candidateName: String? = null): String {
-            // بحث مباشر وصارم في كاش المستودعات المحلي المدمج أولاً: warehouses أو warehouseRepository.getWarehouseByIdCached
-            val localCachedName = warehouses.find { it.id == whId }?.name
+            // 1. Check reactive flow list
+            val flowName = _warehouses.value.find { it.id == whId }?.name
+                ?.takeIf { it.isNotBlank() && it != whId && !it.equals("مستودع غير معرف", ignoreCase = true) }
+                ?: warehouses.find { it.id == whId }?.name
                 ?.takeIf { it.isNotBlank() && it != whId && !it.equals("مستودع غير معرف", ignoreCase = true) }
                 ?: combinedWarehouses.find { it.id == whId }?.name
                 ?.takeIf { it.isNotBlank() && it != whId && !it.equals("مستودع غير معرف", ignoreCase = true) }
-                ?: warehouseMap[whId]?.name
-                ?.takeIf { it.isNotBlank() && it != whId && !it.equals("مستودع غير معرف", ignoreCase = true) }
-                ?: warehouseRepository.getWarehouseByIdCached(whId)?.name
-                ?.takeIf { it.isNotBlank() && it != whId && !it.equals("مستودع غير معرف", ignoreCase = true) }
-                ?: try {
-                    kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
-                        warehouseRepository.getWarehouse(whId)?.name
-                    }?.takeIf { it.isNotBlank() && it != whId && !it.equals("مستودع غير معرف", ignoreCase = true) }
-                } catch (e: Exception) {
-                    null
-                }
-
-            // إذا وُجد الاسم محلياً في الكاش (مثل "مستودع الحوت")، قم بحقنه فوراً وتخطّي أي سلسلة نصية قادمة من السيرفر
-            if (!localCachedName.isNullOrBlank()) {
-                return localCachedName
+            if (!flowName.isNullOrBlank()) {
+                return flowName
             }
 
-            // لا يُستخدم candidateName إلا كـ Fallback أخير إذا كان الكاش فارغاً تماماً
+            // 2. FORCE immediate synchronous fallback to the repository's core local hardware memory cache
+            val repoCacheName = warehouseRepository.getWarehouseByIdCached(whId)?.name
+                ?.takeIf { it.isNotBlank() && it != whId && !it.equals("مستودع غير معرف", ignoreCase = true) }
+            if (!repoCacheName.isNullOrBlank()) {
+                return repoCacheName
+            }
+
+            // 3. Fallback to candidate name from server if available
             if (!candidateName.isNullOrBlank() && candidateName != whId && !candidateName.equals("مستودع غير معرف", ignoreCase = true)) {
                 return candidateName
             }
 
-            return if (whId.contains("main", ignoreCase = true) || whId == "main_treasury") "الخزينة الرئيسية" else "مستودع فرعي"
+            // 4. Structural safe guards
+            if (whId.contains("main", ignoreCase = true) || whId == "main_treasury") {
+                return "الخزينة الرئيسية"
+            }
+
+            // Return the actual warehouse Id as a unique key descriptor rather than printing a false generic text
+            return whId.ifBlank { "مستودع فرعي" }
         }
 
         // Rigid Local Join Resolver for Daily Ledgers:
