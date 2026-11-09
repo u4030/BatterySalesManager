@@ -521,17 +521,7 @@ class InvoiceRepository @Inject constructor(
                 todayCollectionCountChange = countChange
             )
 
-            val statsUpdates = mutableMapOf<String, Any>(
-                "totalCustomerDebt" to com.google.firebase.firestore.FieldValue.increment(-finalPayment.amount)
-            )
-
-            if (finalPayment.paymentMethod == "bank") {
-                statsUpdates["totalBankBalance"] = com.google.firebase.firestore.FieldValue.increment(finalPayment.amount)
-            } else {
-                statsUpdates["totalCashBalance"] = com.google.firebase.firestore.FieldValue.increment(finalPayment.amount)
-            }
-
-            transaction.set(statsRef, statsUpdates, com.google.firebase.firestore.SetOptions.merge())
+            // CQRS: تم إلغاء تعديل statsRef تراكمياً من الموبايل وتركها لدوال السيرفر الخلفية
         }.await()
     }
 

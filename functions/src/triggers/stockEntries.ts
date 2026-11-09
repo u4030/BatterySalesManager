@@ -4,7 +4,7 @@ import {
   onDocumentDeleted,
 } from "firebase-functions/v2/firestore";
 import { applyDashboardHubDelta } from "../aggregators/dashboardHub";
-
+import { runWithIdempotencyGuard } from "../utils/idempotency";
 import * as admin from "firebase-admin";
 import { FieldValue } from "firebase-admin/firestore";
 
@@ -13,6 +13,7 @@ export const onStockEntryCreated = onDocumentCreated(
   async (event) => {
     if (!event.data) return;
     const entryId = event.params.entryId;
+    const eventId = event.id;
     console.time(`onStockEntryCreated_${entryId}`);
 
     const db = admin.firestore();
@@ -29,26 +30,18 @@ export const onStockEntryCreated = onDocumentCreated(
     const costPrice = Number(entry.costPrice || 0);
     const now = FieldValue.serverTimestamp();
 
-    const processedRef = db.doc(`processed_transactions/${entryId}`);
     const variantRef = db.doc(`product_variants/${productVariantId}`);
     const whSummaryRef = db.doc(`summaries/inventory_wh_${warehouseId}`);
     const globalSummaryRef = db.doc("summaries/inventory_global");
     const warehouseRef = db.doc(`warehouses/${warehouseId}`);
-    // 🛠️ المعايرة الدستورية: ربط التنبيه بالـ variant والـ warehouse معاً من جوليس
     const alertId = `low_stock_${productVariantId}_${warehouseId}`;
     const alertRef = db.collection("system_alerts").doc(alertId);
     const syncRegistryRef = db.doc("summaries/sync_registry");
     const dashboardHubRef = db.doc("summaries/dashboard_hub");
 
     try {
-      await db.runTransaction(async (transaction) => {
-        // --- READ PHASE ---
-        const processedSnap = await transaction.get(processedRef);
-        if (processedSnap.exists) {
-          console.log(`[IdempotencyGuard] StockEntry ${entryId} already processed. Skipping execution.`);
-          return;
-        }
-
+      await runWithIdempotencyGuard(eventId, `stock_entry_created_${entryId}`, async (transaction) => {
+        // --- READ PHASE (under 60ms) ---
         const [variantSnap, whSummarySnap, globalSummarySnap, alertSnap] = await Promise.all([
           transaction.get(variantRef),
           transaction.get(whSummaryRef),
@@ -61,7 +54,7 @@ export const onStockEntryCreated = onDocumentCreated(
         const currentStockMap = (variant.currentStock || {}) as Record<string, number>;
         const oldTotalStock = Object.values(currentStockMap).reduce((acc: number, val: any) => acc + Number(val || 0), 0);
 
-        // Weighted Average Cost calculation:
+        // Server-Side Weighted Average Cost (WAC) Calculation:
         let newWac = oldWac;
         if (costPrice > 0 && netQty > 0) {
           const totalExistingValue = Math.max(0, oldTotalStock) * oldWac;
@@ -138,23 +131,22 @@ export const onStockEntryCreated = onDocumentCreated(
           0
         );
 
-        // Low Stock Check & Flattened Pure JSON Payload (Strictly no byte buffers)
+        // Low Stock Check & Alert Handling
         let alertDelta = 0;
-
         const isTransfer = entry.orderId && String(entry.orderId).startsWith("transfer_");
         const alertMessage = isTransfer
-          ? `الصنف شارف على النفاد في المستودع بعد عملية النقل`
-          : `الكمية المتوفرة حرجة في المستودع`;
+          ? "الصنف شارف على النفاد في المستودع بعد عملية النقل"
+          : "الكمية المتوفرة حرجة في المستودع";
 
         if (newWhStock <= minQty && minQty > 0) {
           const alertPayload = {
             id: alertId,
             type: "low_stock",
-            title: `مخزون منخفض حرج`,
+            title: "مخزون منخفض حرج",
             message: alertMessage,
             variantId: productVariantId,
             warehouseId: warehouseId,
-            resolved: false, // فلترة Kotlin الصارمة
+            resolved: false,
             status: "active",
             timestamp: now,
             currentStock: newWhStock,
@@ -173,7 +165,6 @@ export const onStockEntryCreated = onDocumentCreated(
             alertDelta = 1;
           }
         } else if (newWhStock > minQty) {
-          // إذا كان المخزون آمناً أو تم ترحيل كمية كافية، يُمسح التنبيه ذرياً
           if (alertSnap.exists) {
             transaction.delete(alertRef);
             if (alertSnap.data()?.resolved !== true) {
@@ -183,15 +174,7 @@ export const onStockEntryCreated = onDocumentCreated(
         }
 
         // --- WRITE PHASE ---
-        // 1. Mark as processed (Idempotency Guard)
-        transaction.set(processedRef, {
-          entryId: entryId,
-          variantId: productVariantId,
-          warehouseId: warehouseId,
-          processedAt: now,
-        });
-
-        // 2. Update product_variants/${productVariantId}
+        // 1. Update product_variants/${productVariantId}
         transaction.set(
           variantRef,
           {
@@ -204,7 +187,7 @@ export const onStockEntryCreated = onDocumentCreated(
           { merge: true }
         );
 
-        // 3. Update summaries/inventory_wh_${warehouseId}
+        // 2. Update summaries/inventory_wh_${warehouseId}
         transaction.set(
           whSummaryRef,
           {
@@ -219,7 +202,7 @@ export const onStockEntryCreated = onDocumentCreated(
           { merge: true }
         );
 
-        // 4. Update warehouses/${warehouseId} stocks and updatedAt
+        // 3. Update warehouses/${warehouseId} stocks and updatedAt
         transaction.set(
           warehouseRef,
           {
@@ -231,7 +214,7 @@ export const onStockEntryCreated = onDocumentCreated(
           { merge: true }
         );
 
-        // 5. Update summaries/inventory_global
+        // 4. Update summaries/inventory_global
         transaction.set(
           globalSummaryRef,
           {
@@ -246,7 +229,7 @@ export const onStockEntryCreated = onDocumentCreated(
           { merge: true }
         );
 
-        // 6. Update Sync Registry & Dashboard Hub
+        // 5. Update Sync Registry & Dashboard Hub
         transaction.set(
           syncRegistryRef,
           {
@@ -288,6 +271,8 @@ export const onStockEntryUpdated = onDocumentUpdated(
   "stock_entries/{entryId}",
   async (event) => {
     if (!event.data) return;
+    const entryId = event.params.entryId;
+    const eventId = event.id;
     const b = event.data.before.data() || {};
     const a = event.data.after.data() || {};
 
@@ -299,15 +284,14 @@ export const onStockEntryUpdated = onDocumentUpdated(
       b.status === a.status &&
       b.remainingBalance === a.remainingBalance
     ) {
-      console.log(`[IdempotencyGuard] StockEntry ${event.params.entryId} update had no domain changes. Skipping execution.`);
       return;
     }
 
-    console.time("onStockEntryUpdated_executionTime");
-    await applyDashboardHubDelta({
-      updatedDomains: ["inventory", "suppliers", "financial"],
+    await runWithIdempotencyGuard(eventId, `stock_entry_updated_${entryId}`, async () => {
+      await applyDashboardHubDelta({
+        updatedDomains: ["inventory", "suppliers", "financial"],
+      });
     });
-    console.timeEnd("onStockEntryUpdated_executionTime");
   }
 );
 
@@ -315,10 +299,13 @@ export const onStockEntryDeleted = onDocumentDeleted(
   "stock_entries/{entryId}",
   async (event) => {
     if (!event.data) return;
-    console.time("onStockEntryDeleted_executionTime");
-    await applyDashboardHubDelta({
-      updatedDomains: ["inventory", "suppliers", "financial"],
+    const entryId = event.params.entryId;
+    const eventId = event.id;
+
+    await runWithIdempotencyGuard(eventId, `stock_entry_deleted_${entryId}`, async () => {
+      await applyDashboardHubDelta({
+        updatedDomains: ["inventory", "suppliers", "financial"],
+      });
     });
-    console.timeEnd("onStockEntryDeleted_executionTime");
   }
 );

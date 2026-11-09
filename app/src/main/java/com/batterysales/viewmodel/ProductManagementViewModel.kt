@@ -52,10 +52,34 @@ class ProductManagementViewModel @Inject constructor(
     private var currentUser: com.batterysales.data.models.User? = null
     private val _products = MutableStateFlow<List<Product>>(emptyList())
 
+    private val _blockingConflictError = MutableStateFlow<String?>(null)
+    val blockingConflictError = _blockingConflictError.asStateFlow()
+    val errorWithCollision = blockingConflictError
+
+    fun clearCollisionError() {
+        _blockingConflictError.value = null
+        viewModelScope.launch {
+            persistentSyncManager.removePendingOperation("CRITICAL_PRODUCT_CONFLICT")
+        }
+    }
+
+    fun dismissBlockingConflict() {
+        clearCollisionError()
+    }
+
     init {
         userRepository.getCurrentUserFlow().onEach {
             currentUser = it
         }.launchIn(viewModelScope)
+
+        viewModelScope.launch {
+            persistentSyncManager.pendingOperationsFlow.collect { ops ->
+                val conflictOp = ops.find { it.operationId == "CRITICAL_PRODUCT_CONFLICT" && it.status == "PENDING_SYNC" }
+                if (conflictOp != null && _blockingConflictError.value == null) {
+                    _blockingConflictError.value = conflictOp.payloadJson
+                }
+            }
+        }
 
         loadProducts()
     }
@@ -153,21 +177,51 @@ class ProductManagementViewModel @Inject constructor(
         }
     }
 
+    fun addProductOptimistic(name: String, brand: String = "", supplierId: String = "") {
+        val tempProduct = Product(
+            id = "temp_${System.currentTimeMillis()}",
+            name = name,
+            specification = brand,
+            supplierId = supplierId
+        )
+        // الحقن التفاؤلي الفوري للمنتج في القائمة الحية والـ Dropdowns فوراً بـ 0ms
+        _products.update { listOf(tempProduct) + it.filter { p -> p.id != tempProduct.id } }
+    }
+
     fun addProduct(name: String, supplierId: String) {
+        val tempProduct = Product(
+            id = "temp_${System.currentTimeMillis()}",
+            name = name,
+            supplierId = supplierId
+        )
+        val previousProducts = _products.value
+
+        // الحقن التفاؤلي الفوري للمنتج الجديد في القوائم المنسدلة والـ LazyColumn (0ms)
+        _products.update { listOf(tempProduct) + it }
+
         viewModelScope.launch {
             _isSubmitting.value = true
+            val opId = "prod_add_${System.currentTimeMillis()}"
             try {
                 val existing = productRepository.getProductsOnce()
                 if (existing.any { it.name.equals(name, ignoreCase = true) && !it.archived }) {
-                    _errorMessage.value = "هذا المنتج موجود مسبقاً"
+                    _products.value = previousProducts
+                    val errorMsg = "تنبيه مزامنة حرج: فشل اعتماد إضافة المنتج [$name] في السيرفر بسبب تعارض في البيانات أثناء انقطاع اتصالك. تم إعادة فهارس الكاش لحالتها الحقيقية تلقائياً، يرجى النقر لتأكيد الاطلاع وتوقيع التسوية يدوياً."
+                    _blockingConflictError.value = errorMsg
+                    persistentSyncManager.recordPendingOperation(
+                        com.batterysales.data.local.PendingSyncOperation(
+                            operationId = "CRITICAL_PRODUCT_CONFLICT",
+                            type = "CONFLICT_LOCK",
+                            relatedId = name,
+                            payloadJson = errorMsg,
+                            status = "PENDING_SYNC"
+                        )
+                    )
                     return@launch
                 }
 
                 val product = Product(name = name, supplierId = supplierId)
                 if (product.isValid()) {
-                    // حقن تفاؤلي فوري في القائمة الحية بـ (0ms)
-                    _products.update { it + product }
-                    val opId = "prod_add_${System.currentTimeMillis()}"
                     persistentSyncManager.recordPendingOperation(
                         com.batterysales.data.local.PendingSyncOperation(
                             operationId = opId,
@@ -180,11 +234,24 @@ class ProductManagementViewModel @Inject constructor(
                     persistentSyncManager.removePendingOperation(opId)
                     loadProducts()
                 } else {
+                    _products.value = previousProducts
                     _errorMessage.value = product.getValidationError()
                 }
             } catch (e: Exception) {
                 Log.e("ProductMgmtVM", "Error adding product", e)
-                _errorMessage.value = "Failed to add product: ${e.message}"
+                persistentSyncManager.removePendingOperation(opId)
+                _products.value = previousProducts
+                val errorMsg = "تنبيه مزامنة حرج: فشل اعتماد إضافة المنتج [$name] في السيرفر بسبب تعارض في البيانات أثناء انقطاع اتصالك. تم إعادة فهارس الكاش لحالتها الحقيقية تلقائياً، يرجى النقر لتأكيد الاطلاع وتوقيع التسوية يدوياً."
+                _blockingConflictError.value = errorMsg
+                persistentSyncManager.recordPendingOperation(
+                    com.batterysales.data.local.PendingSyncOperation(
+                        operationId = "CRITICAL_PRODUCT_CONFLICT",
+                        type = "CONFLICT_LOCK",
+                        relatedId = name,
+                        payloadJson = errorMsg,
+                        status = "PENDING_SYNC"
+                    )
+                )
             } finally {
                 _isSubmitting.value = false
             }

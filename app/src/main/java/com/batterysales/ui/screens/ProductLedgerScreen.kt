@@ -48,6 +48,7 @@ fun ProductLedgerScreen(
     viewModel: ProductLedgerViewModel = hiltViewModel()
 ) {
     val pagingItems = viewModel.ledgerItems.collectAsLazyPagingItems()
+    val optimisticEntries by viewModel.optimisticEntries.collectAsState()
     val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
 
     DisposableEffect(lifecycleOwner) {
@@ -199,6 +200,21 @@ fun ProductLedgerScreen(
         }
     }
 
+    LaunchedEffect(rawLedgerItems) {
+        if (rawLedgerItems.isNotEmpty()) {
+            viewModel.updateKnownStableEntries(rawLedgerItems.map { it.entry })
+        }
+    }
+
+    // Filter out optimistic items that already arrived in pagingItems (Deduplication Guard)
+    val displayOptimisticEntries = remember(optimisticEntries, rawLedgerItems) {
+        val stableIds = rawLedgerItems.flatMap { listOfNotNull(it.entry.id.ifEmpty { null }, it.entry.orderId.ifEmpty { null }, it.entry.invoiceId, it.entry.invoiceNumber.ifEmpty { null }) }.toSet()
+        optimisticEntries.filter { opt ->
+            !stableIds.contains(opt.entry.id) &&
+            !stableIds.contains(opt.entry.orderId)
+        }
+    }
+
     Scaffold(
         containerColor = bgColor,
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -264,14 +280,40 @@ fun ProductLedgerScreen(
                 }
             }
 
-            if (pagingItems.loadState.refresh is androidx.paging.LoadState.Loading) {
+            // Optimistic Entries Influx (0ms)
+            if (displayOptimisticEntries.isNotEmpty()) {
+                items(
+                    count = displayOptimisticEntries.size,
+                    key = { "opt_${displayOptimisticEntries[it].entry.id.ifEmpty { "item_$it" }}" }
+                ) { index ->
+                    val it = displayOptimisticEntries[index]
+                    Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                        LedgerItemCard(
+                            item = it,
+                            isAdmin = isAdmin,
+                            productName = viewModel.productName,
+                            variantCapacity = viewModel.variantCapacity,
+                            variantSpecification = viewModel.variantSpecification,
+                            isHighlighted = false,
+                            onEdit = { },
+                            onDelete = { },
+                            onReturn = { }
+                        )
+                    }
+                }
+            }
+
+            if (pagingItems.loadState.refresh is androidx.paging.LoadState.Loading && displayOptimisticEntries.isEmpty()) {
                 item {
                     Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = accentColor)
                     }
                 }
             } else {
-                items(rawLedgerItems.size) { index ->
+                items(
+                    count = rawLedgerItems.size,
+                    key = { rawLedgerItems[it].entry.id.ifEmpty { "stable_$it" } }
+                ) { index ->
                     val it = rawLedgerItems[index]
                     Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                         LedgerItemCard(
@@ -375,13 +417,13 @@ fun LedgerItemCard(
                 }
                 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (entry.status == "pending") {
+                    if (entry.status == "pending" || item.isOptimistic) {
                         Surface(
                             color = Color(0xFF2E1505),
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Text(
-                                text = "معلق",
+                                text = if (item.isOptimistic) "معلق مؤقت" else "معلق",
                                 color = accentColor,
                                 fontSize = 11.sp,
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),

@@ -205,40 +205,51 @@ class BankViewModel @Inject constructor(
     }
 
     fun addManualTransaction(type: BankTransactionType, amount: Double, description: String, referenceNumber: String = "", supplierName: String = "", fromTreasury: Boolean = false, warehouseId: String? = null) {
-        // --- تعديل تفاؤلي فوري لرصيد البنك بـ (0ms) بالدينار الأردني JOD ---
         val delta = if (type == BankTransactionType.DEPOSIT) amount else -amount
-        _balance.update { (it + delta).coerceAtLeast(0.0) }
 
         viewModelScope.launch {
             _isSubmitting.value = true
             val opId = "bank_tx_${System.currentTimeMillis()}"
-            try {
+            // 1. Immediate disk record inside NonCancellable
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
                 persistentSyncManager.recordPendingOperation(
                     com.batterysales.data.local.PendingSyncOperation(
                         operationId = opId,
                         type = "BANK_TRANSACTION",
                         relatedId = referenceNumber.ifEmpty { opId },
-                        status = "PENDING_SYNC"
+                        status = "PENDING_SYNC",
+                        amountDelta = delta
                     )
                 )
+            }
 
-                val transaction = BankTransaction(type = type, amount = amount, description = description, referenceNumber = referenceNumber, supplierName = supplierName, date = Date())
-                val transId = repository.addTransaction(transaction)
-                persistentSyncManager.removePendingOperation(opId)
+            // 2. Dispatch network & DB work to Dispatchers.IO
+            try {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val transaction = BankTransaction(type = type, amount = amount, description = description, referenceNumber = referenceNumber, supplierName = supplierName, date = Date())
+                    val transId = repository.addTransaction(transaction)
 
-                if (type == BankTransactionType.DEPOSIT && fromTreasury) {
-                    val mainWhId = warehouseRepository.getWarehousesOnce().find { it.isMain }?.id
-                    val targetWhId = mainWhId ?: warehouseId ?: userRepository.getCurrentUser()?.warehouseId
-                    
-                    if (targetWhId != null) {
-                        accountingRepository.addTransaction(Transaction(
-                            type = TransactionType.EXPENSE, amount = amount, description = "تغذية رصيد بنك: $description", 
-                            referenceNumber = referenceNumber, warehouseId = targetWhId, relatedId = transId, paymentMethod = "cash",
-                            isSystemManaged = true
-                        ))
+                    if (type == BankTransactionType.DEPOSIT && fromTreasury) {
+                        val mainWhId = warehouseRepository.getWarehousesOnce().find { it.isMain }?.id
+                        val targetWhId = mainWhId ?: warehouseId ?: userRepository.getCurrentUser()?.warehouseId
+
+                        if (targetWhId != null) {
+                            accountingRepository.addTransaction(Transaction(
+                                type = TransactionType.EXPENSE, amount = amount, description = "تغذية رصيد بنك: $description",
+                                referenceNumber = referenceNumber, warehouseId = targetWhId, relatedId = transId, paymentMethod = "cash",
+                                isSystemManaged = true
+                            ))
+                        }
                     }
                 }
+
+                // 3. Clean up pending operation
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    persistentSyncManager.removePendingOperation(opId)
+                }
                 loadData()
+            } catch (e: Exception) {
+                _errorMessage.value = e.message
             } finally {
                 _isSubmitting.value = false
             }
@@ -246,28 +257,34 @@ class BankViewModel @Inject constructor(
     }
 
     fun deleteBankTransaction(transactionId: String, amount: Double, isDeposit: Boolean) {
-        val currentBalance = _balance.value
-        // تعديل الفارق الصافي (Delta) تفاؤلياً في 0ms بالدينار الأردني JOD
-        val newBalance = if (isDeposit) currentBalance - amount else currentBalance + amount
-        _balance.value = newBalance.coerceAtLeast(0.0)
+        val delta = if (isDeposit) -amount else amount
 
         viewModelScope.launch {
             val opId = "bank_del_${System.currentTimeMillis()}_$transactionId"
-            persistentSyncManager.recordPendingOperation(
-                com.batterysales.data.local.PendingSyncOperation(
-                    operationId = opId,
-                    type = "BANK_DELETE",
-                    relatedId = transactionId,
-                    status = "PENDING_SYNC"
+            // 1. Immediate disk record inside NonCancellable
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                persistentSyncManager.recordPendingOperation(
+                    com.batterysales.data.local.PendingSyncOperation(
+                        operationId = opId,
+                        type = "BANK_DELETE",
+                        relatedId = transactionId,
+                        status = "PENDING_SYNC",
+                        amountDelta = delta
+                    )
                 )
-            )
+            }
+
+            // 2. Network deletion on Dispatchers.IO
             try {
-                repository.deleteTransaction(transactionId)
-                accountingRepository.deleteTransactionsByRelatedId(transactionId)
-                persistentSyncManager.removePendingOperation(opId)
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    repository.deleteTransaction(transactionId)
+                    accountingRepository.deleteTransactionsByRelatedId(transactionId)
+                }
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    persistentSyncManager.removePendingOperation(opId)
+                }
                 loadData()
             } catch (e: Exception) {
-                _balance.value = currentBalance // Rollback Guard عند الفشل
                 persistentSyncManager.removePendingOperation(opId)
                 _errorMessage.value = e.message
             }

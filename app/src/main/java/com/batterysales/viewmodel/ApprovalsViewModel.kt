@@ -151,6 +151,24 @@ class ApprovalsViewModel @Inject constructor(
         }
     }
 
+    fun rejectEntryWithRollback(requestId: String) {
+        val previousList = _approvalItems.value
+        _approvalItems.update { it.filter { item -> item.entry?.id != requestId && item.request?.id != requestId } }
+        viewModelScope.launch {
+            try {
+                val target = previousList.find { it.entry?.id == requestId || it.request?.id == requestId }
+                if (target?.entry != null) {
+                    stockEntryRepository.deleteStockEntry(requestId)
+                } else {
+                    approvalRepository.updateRequestStatus(requestId, ApprovalRequest.STATUS_REJECTED, currentUser?.id)
+                }
+            } catch (e: Exception) {
+                _approvalItems.value = previousList // حارس الارتداد عند الفشل
+                Log.e("ApprovalsViewModel", "Error in rejectEntryWithRollback", e)
+            }
+        }
+    }
+
     fun rejectEntry(entryId: String) {
         val previousItems = _approvalItems.value
         _approvalItems.update { it.filter { item -> item.entry?.id != entryId } }
@@ -180,10 +198,33 @@ class ApprovalsViewModel @Inject constructor(
         }
     }
 
+    fun approveRequestOptimistic(requestId: String) {
+        val targetItem = _approvalItems.value.find { it.request?.id == requestId || it.entry?.id == requestId }
+        if (targetItem?.entry != null) {
+            approveEntry(targetItem.entry.id)
+        } else if (targetItem?.request != null) {
+            approveRequest(targetItem.request)
+        }
+    }
+
     fun approveRequest(request: ApprovalRequest) {
+        // --- طرد تفاؤلي فوري للطلب من القائمة بـ (0ms) مع Rollback Guard ---
+        val previousItems = _approvalItems.value
+        _approvalItems.update { it.filter { item -> item.request?.id != request.id } }
+
         viewModelScope.launch {
             _isSubmitting.value = true
+            val opId = "appr_req_${System.currentTimeMillis()}_${request.id}"
             try {
+                persistentSyncManager.recordPendingOperation(
+                    com.batterysales.data.local.PendingSyncOperation(
+                        operationId = opId,
+                        type = "APPROVAL_REQUEST",
+                        relatedId = request.id,
+                        status = "PENDING_SYNC"
+                    )
+                )
+
                 when (request.targetType) {
                     ApprovalRequest.TARGET_PRODUCT -> {
                         if (request.actionType == ApprovalRequest.ACTION_EDIT) {
@@ -203,7 +244,10 @@ class ApprovalsViewModel @Inject constructor(
                     }
                 }
                 approvalRepository.updateRequestStatus(request.id, ApprovalRequest.STATUS_APPROVED, currentUser?.id)
+                persistentSyncManager.removePendingOperation(opId)
             } catch (e: Exception) {
+                persistentSyncManager.removePendingOperation(opId)
+                _approvalItems.value = previousItems
                 Log.e("ApprovalsViewModel", "Error approving request", e)
             } finally {
                 _isSubmitting.value = false
@@ -212,11 +256,27 @@ class ApprovalsViewModel @Inject constructor(
     }
 
     fun rejectRequest(requestId: String) {
+        val previousItems = _approvalItems.value
+        _approvalItems.update { it.filter { item -> item.request?.id != requestId } }
+
         viewModelScope.launch {
             _isSubmitting.value = true
+            val opId = "rej_req_${System.currentTimeMillis()}_$requestId"
             try {
+                persistentSyncManager.recordPendingOperation(
+                    com.batterysales.data.local.PendingSyncOperation(
+                        operationId = opId,
+                        type = "REJECT_REQUEST",
+                        relatedId = requestId,
+                        status = "PENDING_SYNC"
+                    )
+                )
+
                 approvalRepository.updateRequestStatus(requestId, ApprovalRequest.STATUS_REJECTED, currentUser?.id)
+                persistentSyncManager.removePendingOperation(opId)
             } catch (e: Exception) {
+                persistentSyncManager.removePendingOperation(opId)
+                _approvalItems.value = previousItems
                 Log.e("ApprovalsViewModel", "Error rejecting request", e)
             } finally {
                 _isSubmitting.value = false

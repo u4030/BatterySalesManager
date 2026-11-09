@@ -24,6 +24,11 @@ import kotlinx.coroutines.tasks.await
 import java.util.*
 import javax.inject.Inject
 
+data class ScrapUiState(
+    val totalAmperes: Double = 0.0,
+    val totalCount: Int = 0
+)
+
 @HiltViewModel
 class OldBatteryViewModel @Inject constructor(
     private val repository: OldBatteryRepository,
@@ -31,11 +36,22 @@ class OldBatteryViewModel @Inject constructor(
     private val accountingRepository: AccountingRepository,
     private val invoiceRepository: InvoiceRepository,
     private val userRepository: com.batterysales.data.repositories.UserRepository,
-    private val warehouseRepository: com.batterysales.data.repositories.WarehouseRepository
+    private val warehouseRepository: com.batterysales.data.repositories.WarehouseRepository,
+    private val persistentSyncManager: com.batterysales.data.local.PersistentSyncManager,
+    private val summaryRepository: com.batterysales.data.repositories.SummaryRepository
 ) : ViewModel() {
+
+    private val _scrapUiState = MutableStateFlow(ScrapUiState())
+    val scrapUiState = _scrapUiState.asStateFlow()
 
     private val _summary = MutableStateFlow(Pair(0, 0.0))
     val summary = _summary.asStateFlow()
+
+    fun recordScrapTransaction(variantId: String, amperes: Int, isIncoming: Boolean) {
+        val factor = if (isIncoming) 1 else -1
+        // حقن التحديث التفاؤلي مباشرة داخل كاش المستودع المشترك ليتدفق لحظياً في 0ms
+        summaryRepository.updateCacheOptimisticStock(variantId, variantId, factor)
+    }
 
     private val _warehouseSummary = MutableStateFlow<Map<String, Pair<Int, Double>>>(emptyMap())
     val warehouseSummary = _warehouseSummary.asStateFlow()
@@ -263,75 +279,120 @@ class OldBatteryViewModel @Inject constructor(
     }
 
     fun addManualIntake(quantity: Int, totalAmperes: Double, amount: Double, notes: String, warehouseId: String) {
-        viewModelScope.launch {
-            try {
-                // Enforce seller warehouse if applicable
-                val finalWarehouseId = if (_isSeller.value) _userWarehouseId.value ?: warehouseId else warehouseId
-                
-                val transaction = com.batterysales.data.models.OldBatteryTransaction(
-                    quantity = quantity,
-                    warehouseId = finalWarehouseId,
-                    totalAmperes = totalAmperes,
-                    amount = amount,
-                    type = com.batterysales.data.models.OldBatteryTransactionType.INTAKE,
-                    date = java.util.Date(),
-                    notes = notes,
-                    createdByUserName = currentUser?.displayName ?: ""
-                )
-                val transId = repository.addTransaction(transaction)
+        val finalWarehouseId = if (_isSeller.value) _userWarehouseId.value ?: warehouseId else warehouseId
 
-                // Add to Treasury as EXPENSE if amount > 0
-                if (amount > 0.001) {
-                    val treasuryTransaction = Transaction(
-                        type = TransactionType.EXPENSE,
-                        amount = amount,
-                        description = "شراء بطاريات قديمة (سكراب): $quantity حبة",
-                        warehouseId = finalWarehouseId,
-                        relatedId = transId,
-                        paymentMethod = "cash"
+        viewModelScope.launch {
+            val opId = "scrap_in_${System.currentTimeMillis()}_$finalWarehouseId"
+            // 1. Immediate disk record inside NonCancellable
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                persistentSyncManager.recordPendingOperation(
+                    com.batterysales.data.local.PendingSyncOperation(
+                        operationId = opId,
+                        type = "SCRAP_INTAKE",
+                        relatedId = finalWarehouseId,
+                        amountDelta = totalAmperes,
+                        status = "PENDING_SYNC"
                     )
-                    accountingRepository.addTransaction(treasuryTransaction)
+                )
+            }
+
+            // 2. Network & Firestore writes on Dispatchers.IO
+            try {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val transaction = com.batterysales.data.models.OldBatteryTransaction(
+                        quantity = quantity,
+                        warehouseId = finalWarehouseId,
+                        totalAmperes = totalAmperes,
+                        amount = amount,
+                        type = com.batterysales.data.models.OldBatteryTransactionType.INTAKE,
+                        date = java.util.Date(),
+                        notes = notes,
+                        createdByUserName = currentUser?.displayName ?: ""
+                    )
+                    val transId = repository.addTransaction(transaction)
+
+                    if (amount > 0.001) {
+                        val treasuryTransaction = Transaction(
+                            type = TransactionType.EXPENSE,
+                            amount = amount,
+                            description = "شراء بطاريات قديمة (سكراب): $quantity حبة",
+                            warehouseId = finalWarehouseId,
+                            relatedId = transId,
+                            paymentMethod = "cash"
+                        )
+                        accountingRepository.addTransaction(treasuryTransaction)
+                    }
                 }
-                
+
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    persistentSyncManager.removePendingOperation(opId)
+                }
                 refreshTrigger.value++
-                loadTransactions()
             } catch (e: Exception) {
+                persistentSyncManager.removePendingOperation(opId)
                 Log.e("OldBatteryViewModel", "Error adding manual intake", e)
             }
         }
     }
 
+    fun sellScrapBatteries(amount: Double, warehouseId: String = "") {
+        sellBatteries(
+            quantity = 1,
+            totalAmperes = amount,
+            amount = amount,
+            warehouseId = warehouseId.ifEmpty { _userWarehouseId.value ?: _selectedWarehouseId.value ?: "" }
+        )
+    }
+
     fun sellBatteries(quantity: Int, totalAmperes: Double, amount: Double, warehouseId: String) {
+        val finalWarehouseId = if (_isSeller.value) _userWarehouseId.value ?: warehouseId else warehouseId
+
         viewModelScope.launch {
+            val opId = "scrap_out_${System.currentTimeMillis()}_$finalWarehouseId"
+            // 1. Immediate disk record inside NonCancellable
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                persistentSyncManager.recordPendingOperation(
+                    com.batterysales.data.local.PendingSyncOperation(
+                        operationId = opId,
+                        type = "SCRAP_SALE",
+                        relatedId = finalWarehouseId,
+                        amountDelta = -totalAmperes,
+                        status = "PENDING_SYNC"
+                    )
+                )
+            }
+
+            // 2. Remote execution on Dispatchers.IO
             try {
-                // Enforce seller warehouse if applicable
-                val finalWarehouseId = if (_isSeller.value) _userWarehouseId.value ?: warehouseId else warehouseId
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val transaction = OldBatteryTransaction(
+                        quantity = quantity,
+                        warehouseId = finalWarehouseId,
+                        totalAmperes = totalAmperes,
+                        amount = amount,
+                        type = OldBatteryTransactionType.SALE,
+                        date = Date(),
+                        notes = "بيع بطاريات قديمة",
+                        createdByUserName = currentUser?.displayName ?: ""
+                    )
+                    val transId = repository.addTransaction(transaction)
 
-                val transaction = OldBatteryTransaction(
-                    quantity = quantity,
-                    warehouseId = finalWarehouseId,
-                    totalAmperes = totalAmperes,
-                    amount = amount,
-                    type = OldBatteryTransactionType.SALE,
-                    date = Date(),
-                    notes = "بيع بطاريات قديمة",
-                    createdByUserName = currentUser?.displayName ?: ""
-                )
-                val transId = repository.addTransaction(transaction)
+                    val treasuryTransaction = Transaction(
+                        type = TransactionType.INCOME,
+                        amount = amount,
+                        description = "بيع بطاريات قديمة (سكراب): $quantity حبة",
+                        warehouseId = finalWarehouseId,
+                        relatedId = transId
+                    )
+                    accountingRepository.addTransaction(treasuryTransaction)
+                }
 
-                // Add to Treasury
-                val treasuryTransaction = Transaction(
-                    type = TransactionType.INCOME,
-                    amount = amount,
-                    description = "بيع بطاريات قديمة (سكراب): $quantity حبة",
-                    warehouseId = finalWarehouseId,
-                    relatedId = transId
-                )
-                accountingRepository.addTransaction(treasuryTransaction)
-                
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    persistentSyncManager.removePendingOperation(opId)
+                }
                 refreshTrigger.value++
-                loadTransactions()
             } catch (e: Exception) {
+                persistentSyncManager.removePendingOperation(opId)
                 Log.e("OldBatteryViewModel", "Error selling batteries", e)
             }
         }

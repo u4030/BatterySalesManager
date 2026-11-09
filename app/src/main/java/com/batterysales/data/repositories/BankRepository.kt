@@ -56,8 +56,7 @@ class BankRepository @Inject constructor(
             
             summaryRepository.applyFinancialUpdate(transactionOp, snapshots, warehouseId = "global", bankChange = change)
             
-            // Update Global Stats
-            transactionOp.set(statsRef, mapOf("totalBankBalance" to com.google.firebase.firestore.FieldValue.increment(change)), com.google.firebase.firestore.SetOptions.merge())
+            // CQRS: تم بتر التحديث التراكمي المباشر لـ statsRef من الموبايل وتركها للسيرفر
         }.await()
 
         return docRef.id
@@ -126,10 +125,8 @@ class BankRepository @Inject constructor(
 
                     if (oldBill.billType == com.batterysales.data.models.BillType.CHECK) {
                         checkChangeDelta = -amountDiff
-                        transactionOp.set(statsRef, mapOf("totalUnpaidChecks" to com.google.firebase.firestore.FieldValue.increment(-amountDiff)), com.google.firebase.firestore.SetOptions.merge())
                     } else if (oldBill.billType == com.batterysales.data.models.BillType.BILL) {
                         billChangeDelta = -amountDiff
-                        transactionOp.set(statsRef, mapOf("totalUnpaidBills" to com.google.firebase.firestore.FieldValue.increment(-amountDiff)), com.google.firebase.firestore.SetOptions.merge())
                     }
                 }
             }
@@ -153,7 +150,6 @@ class BankRepository @Inject constructor(
                         "updatedAt" to java.util.Date()
                     ))
                 }
-                transactionOp.set(statsRef, mapOf("totalCustomerDebt" to com.google.firebase.firestore.FieldValue.increment(-amountDiff)), com.google.firebase.firestore.SetOptions.merge())
             }
 
             val financialDeltas = mutableMapOf<String, SummaryRepository.FinancialDelta>()
@@ -162,9 +158,6 @@ class BankRepository @Inject constructor(
                 checkChange = checkChangeDelta,
                 billChange = billChangeDelta
             )
-
-            // Update Global Stats for bank balance
-            transactionOp.set(statsRef, mapOf("totalBankBalance" to com.google.firebase.firestore.FieldValue.increment(totalBankChange)), com.google.firebase.firestore.SetOptions.merge())
 
             // Sync linked treasury transaction if exists
             linkedTreasurySnap.documents.forEach { doc ->
@@ -326,10 +319,8 @@ class BankRepository @Inject constructor(
 
                         if (oldBill.billType == com.batterysales.data.models.BillType.CHECK) {
                             checkChangeDelta = amountToRevert
-                            transactionOp.set(statsRef, mapOf("totalUnpaidChecks" to com.google.firebase.firestore.FieldValue.increment(amountToRevert)), com.google.firebase.firestore.SetOptions.merge())
                         } else if (oldBill.billType == com.batterysales.data.models.BillType.BILL) {
                             billChangeDelta = amountToRevert
-                            transactionOp.set(statsRef, mapOf("totalUnpaidBills" to com.google.firebase.firestore.FieldValue.increment(amountToRevert)), com.google.firebase.firestore.SetOptions.merge())
                         }
                     }
                 }
@@ -352,7 +343,6 @@ class BankRepository @Inject constructor(
                                 "updatedAt" to java.util.Date()
                             ))
                         }
-                        transactionOp.set(statsRef, mapOf("totalCustomerDebt" to com.google.firebase.firestore.FieldValue.increment(oldPayment.amount)), com.google.firebase.firestore.SetOptions.merge())
                     }
                 }
 
@@ -364,9 +354,6 @@ class BankRepository @Inject constructor(
                     checkChange = checkChangeDelta,
                     billChange = billChangeDelta
                 )
-                
-                // Update Global Stats
-                transactionOp.set(statsRef, mapOf("totalBankBalance" to com.google.firebase.firestore.FieldValue.increment(bankChange)), com.google.firebase.firestore.SetOptions.merge())
             }
         }.await()
     }

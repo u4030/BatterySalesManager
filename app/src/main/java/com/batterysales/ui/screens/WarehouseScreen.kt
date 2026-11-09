@@ -38,6 +38,34 @@ fun WarehouseScreen(
     var warehouseToEdit by remember { mutableStateOf<Warehouse?>(null) }
     var showDeleteConfirm by remember { mutableStateOf<Warehouse?>(null) }
 
+    val errorWithCollision = uiState.errorWithCollision ?: uiState.blockingConflictError
+    if (errorWithCollision != null) {
+        AlertDialog(
+            onDismissRequest = { /* حظر الإغلاق العشوائي باللمس الخارجي */ },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Warning, contentDescription = null, tint = Color.Red)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("فشل اعتماد البيانات الرئيسية!", color = Color.Red, fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Text(
+                    text = errorWithCollision,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.clearCollisionError() },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                ) {
+                    Text("تأكيد الاطلاع وتوقيع التسوية المحاسبية", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             SharedHeader(

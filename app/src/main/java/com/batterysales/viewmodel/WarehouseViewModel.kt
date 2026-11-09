@@ -16,7 +16,9 @@ data class WarehouseUiState(
     val searchQuery: String = "",
     val isLoading: Boolean = false,
     val isSubmitting: Boolean = false,
-    val inventoryItems: List<InventoryReportItem> = emptyList() // Nuclear: Full list
+    val inventoryItems: List<InventoryReportItem> = emptyList(), // Nuclear: Full list
+    val blockingConflictError: String? = null,
+    val errorWithCollision: String? = blockingConflictError
 )
 
 @HiltViewModel
@@ -34,7 +36,27 @@ class WarehouseViewModel @Inject constructor(
 
     private var cachedSummary: InventorySummary? = null
 
+    fun clearCollisionError() {
+        _uiState.update { it.copy(blockingConflictError = null, errorWithCollision = null) }
+        viewModelScope.launch {
+            persistentSyncManager.removePendingOperation("CRITICAL_WAREHOUSE_CONFLICT")
+        }
+    }
+
+    fun dismissBlockingConflict() {
+        clearCollisionError()
+    }
+
     init {
+        viewModelScope.launch {
+            persistentSyncManager.pendingOperationsFlow.collect { ops ->
+                val conflictOp = ops.find { it.operationId == "CRITICAL_WAREHOUSE_CONFLICT" && it.status == "PENDING_SYNC" }
+                if (conflictOp != null && _uiState.value.blockingConflictError == null) {
+                    _uiState.update { it.copy(blockingConflictError = conflictOp.payloadJson, errorWithCollision = conflictOp.payloadJson) }
+                }
+            }
+        }
+
         observeWarehousesAndUser()
     }
 
@@ -154,11 +176,20 @@ class WarehouseViewModel @Inject constructor(
         filterAndSetItems(query)
     }
 
+    fun addWarehouseOptimistic(name: String, location: String, isMain: Boolean = false) {
+        val tempId = "wh_${System.currentTimeMillis()}"
+        val optimisticWh = Warehouse(id = tempId, name = name, location = location, isMain = isMain, isActive = true)
+        // الحقن التفاؤلي الفوري للمستودع الجديد في القوائم المنسدلة والـ TabRow بـ (0ms)
+        _uiState.update { it.copy(warehouses = listOf(optimisticWh) + it.warehouses.filter { w -> w.id != tempId }) }
+    }
+
     fun addWarehouse(name: String, location: String, isMain: Boolean = false) {
         val tempId = "wh_${System.currentTimeMillis()}"
         val optimisticWh = Warehouse(id = tempId, name = name, location = location, isMain = isMain, isActive = true)
+        val previousWarehouses = _uiState.value.warehouses
+
         // حقن تفاؤلي فوري في الـ TabRow والقائمة الحية بـ (0ms)
-        _uiState.update { it.copy(warehouses = it.warehouses + optimisticWh, isSubmitting = true) }
+        _uiState.update { it.copy(warehouses = listOf(optimisticWh) + it.warehouses, isSubmitting = true) }
 
         viewModelScope.launch {
             val opId = "wh_add_${System.currentTimeMillis()}"
@@ -176,6 +207,18 @@ class WarehouseViewModel @Inject constructor(
                 persistentSyncManager.removePendingOperation(opId)
             } catch (e: Exception) {
                 persistentSyncManager.removePendingOperation(opId)
+                _uiState.update { it.copy(warehouses = previousWarehouses) }
+                val errorMsg = "تنبيه مزامنة حرج: فشل اعتماد إضافة المستودع [$name] في السيرفر بسبب تعارض في البيانات أثناء انقطاع اتصالك. تم إعادة فهارس الكاش لحالتها الحقيقية تلقائياً، يرجى النقر لتأكيد الاطلاع وتوقيع التسوية يدوياً."
+                _uiState.update { it.copy(blockingConflictError = errorMsg, errorWithCollision = errorMsg) }
+                persistentSyncManager.recordPendingOperation(
+                    com.batterysales.data.local.PendingSyncOperation(
+                        operationId = "CRITICAL_WAREHOUSE_CONFLICT",
+                        type = "CONFLICT_LOCK",
+                        relatedId = name,
+                        payloadJson = errorMsg,
+                        status = "PENDING_SYNC"
+                    )
+                )
             } finally {
                 _uiState.update { it.copy(isSubmitting = false) }
             }
