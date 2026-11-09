@@ -69,9 +69,26 @@ class AccountingViewModel @Inject constructor(
     private val refreshTrigger = MutableStateFlow(0)
     private val _isDataLoaded = MutableStateFlow(false)
 
+    // حارس المعاملات المحذوفة أو المعكوسة تفاؤلياً في الذاكرة الحية (0ms) لمنع وميض وتأخر الميتاداتا
+    private val suppressedTransactionIds = MutableStateFlow<Set<String>>(emptySet())
+
+    fun suppressTransactionInstantly(txId: String) {
+        suppressedTransactionIds.update { it + txId }
+        viewModelScope.launch {
+            persistentSyncManager.recordPendingOperation(
+                com.batterysales.data.local.PendingSyncOperation(
+                    operationId = "suppress_tx_${System.currentTimeMillis()}_$txId",
+                    type = "TREASURY_SUPPRESS",
+                    relatedId = txId,
+                    status = "PENDING_SYNC"
+                )
+            )
+        }
+    }
+
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val transactions: Flow<PagingData<Transaction>> = combine(
-        _selectedWarehouseId, _selectedTab, _selectedPaymentMethod, _startDate, _endDate, refreshTrigger, _isDataLoaded, _searchQuery
+        _selectedWarehouseId, _selectedTab, _selectedPaymentMethod, _startDate, _endDate, refreshTrigger, _isDataLoaded, _searchQuery, suppressedTransactionIds
     ) { args ->
         if (!(args[6] as Boolean)) return@combine null
         Filters(
@@ -93,9 +110,10 @@ class AccountingViewModel @Inject constructor(
             )
         }.flow.map { pagingData ->
             val query = _searchQuery.value
-            if (query.isBlank()) pagingData
-            else pagingData.filter { trans ->
-                trans.description.contains(query, ignoreCase = true) || trans.referenceNumber.contains(query, ignoreCase = true)
+            val suppressed = suppressedTransactionIds.value
+            pagingData.filter { trans ->
+                !suppressed.contains(trans.id) &&
+                (query.isBlank() || trans.description.contains(query, ignoreCase = true) || trans.referenceNumber.contains(query, ignoreCase = true))
             }
         }.cachedIn(viewModelScope)
     }
@@ -349,6 +367,9 @@ class AccountingViewModel @Inject constructor(
     }
 
     fun deleteTransaction(id: String) {
+        // حجب المعاملة فوراً محلياً بـ 0ms وتجاوز ميتاداتا الفايرستور المزدوجة
+        suppressTransactionInstantly(id)
+
         viewModelScope.launch {
             _isSubmitting.value = true
             try {
@@ -357,6 +378,7 @@ class AccountingViewModel @Inject constructor(
                 repository.deleteTransaction(id, forceSystemUpdate = isAdmin)
                 loadData(reset = true)
             } catch (e: Exception) {
+                suppressedTransactionIds.update { it - id }
                 _errorMessage.value = e.message
             } finally {
                 _isSubmitting.value = false
