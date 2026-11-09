@@ -72,7 +72,7 @@ class AccountingViewModel @Inject constructor(
     // حارس المعاملات المحذوفة أو المعكوسة تفاؤلياً في الذاكرة الحية (0ms) لمنع وميض وتأخر الميتاداتا
     private val suppressedTransactionIds = MutableStateFlow<Set<String>>(emptySet())
 
-    fun suppressTransactionInstantly(txId: String) {
+    fun evictTransactionInstantly(txId: String) {
         suppressedTransactionIds.update { it + txId }
         viewModelScope.launch {
             persistentSyncManager.recordPendingOperation(
@@ -84,6 +84,10 @@ class AccountingViewModel @Inject constructor(
                 )
             )
         }
+    }
+
+    fun suppressTransactionInstantly(txId: String) {
+        evictTransactionInstantly(txId)
     }
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -111,8 +115,11 @@ class AccountingViewModel @Inject constructor(
         }.flow.map { pagingData ->
             val query = _searchQuery.value
             val suppressed = suppressedTransactionIds.value
+            // بتر فوري للمعاملات المحذوفة بنسبة 0ms بغض النظر عن حالة الميتاداتا وسواء كانت hasPendingWrites تساوي true أو false
             pagingData.filter { trans ->
-                !suppressed.contains(trans.id) &&
+                val isSuppressed = suppressed.contains(trans.id) ||
+                        (trans.referenceNumber.isNotBlank() && suppressed.contains(trans.referenceNumber))
+                !isSuppressed &&
                 (query.isBlank() || trans.description.contains(query, ignoreCase = true) || trans.referenceNumber.contains(query, ignoreCase = true))
             }
         }.cachedIn(viewModelScope)
@@ -367,8 +374,8 @@ class AccountingViewModel @Inject constructor(
     }
 
     fun deleteTransaction(id: String) {
-        // حجب المعاملة فوراً محلياً بـ 0ms وتجاوز ميتاداتا الفايرستور المزدوجة
-        suppressTransactionInstantly(id)
+        // حجب المعاملة فوراً محلياً بـ 0ms في أول ميكروثانية وتجاوز ميتاداتا الفايرستور المزدوجة
+        evictTransactionInstantly(id)
 
         viewModelScope.launch {
             _isSubmitting.value = true
