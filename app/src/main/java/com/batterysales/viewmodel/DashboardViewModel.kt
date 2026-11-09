@@ -248,7 +248,9 @@ class DashboardViewModel @Inject constructor(
                             (vId.isNotBlank() && allSuppressed.contains(vId)) ||
                             (rId.isNotBlank() && allSuppressed.contains(rId)) ||
                             allSuppressed.contains(compositeId) ||
-                            allSuppressed.contains(variantCompositeId)
+                            allSuppressed.contains(variantCompositeId) ||
+                            (alert.variantId.isNotBlank() && allSuppressed.contains(alert.variantId)) ||
+                            (alert.relatedId.isNotBlank() && allSuppressed.contains(alert.relatedId))
 
                     if (isLocallySuppressed) {
                         return@filter false
@@ -364,7 +366,12 @@ class DashboardViewModel @Inject constructor(
         // Synchronously compares ledger's warehouseId against clean local cached warehouse list and re-stamps true Arabic name
         fun resolveDailyLedgerName(ledger: DailyLedger): DailyLedger {
             val targetWhId = ledger.resolvedWarehouseId
-            val cleanArabicName = resolveWarehouseName(targetWhId)
+            val cleanArabicName = warehouses.find { it.id == targetWhId }?.name
+                ?.takeIf { it.isNotBlank() && it != targetWhId && !it.equals("مستودع غير معرف", ignoreCase = true) }
+                ?: warehouseMap[targetWhId]?.name
+                ?.takeIf { it.isNotBlank() && it != targetWhId && !it.equals("مستودع غير معرف", ignoreCase = true) }
+                ?: if (targetWhId.contains("main", ignoreCase = true) || targetWhId == "main_treasury") "الخزينة الرئيسية" else "مستودع فرعي"
+
             return ledger.copy(
                 warehouseName = cleanArabicName,
                 warehouseNameCamel = cleanArabicName

@@ -32,11 +32,11 @@ export const onInvoiceCreated = onDocumentCreated(
       const isBank = paymentMethod === "bank";
       const now = FieldValue.serverTimestamp();
 
-      // Read Phase: Fetch isolated warehouse document directly in current scope
-      let freshFetchedCorrectName = "مستودع غير معروف";
+      // Read Phase: Fetch warehouse document strictly within local scope when currentWarehouseId is present
+      let correctWarehouseName = "مستودع غير معروف";
       if (currentWarehouseId) {
         const whSnap = await transaction.get(db.doc(`warehouses/${currentWarehouseId}`));
-        freshFetchedCorrectName = whSnap.exists ? (whSnap.data()?.name || "المستودع") : "مستودع غير معروف";
+        correctWarehouseName = whSnap.exists ? (whSnap.data()?.name || "المستودع") : "مستودع غير معروف";
       }
 
       // Write Phase:
@@ -127,14 +127,14 @@ export const onInvoiceCreated = onDocumentCreated(
         );
 
         // Compound document for isolated daily sales aggregation: summaries/daily_${currentWarehouseId}_${todayDateStr}
-        // Write both currentWarehouseId and freshFetchedCorrectName in both naming conventions to guarantee zero pollution
+        // Write both currentWarehouseId and correctWarehouseName in both naming conventions to guarantee zero pollution
         transaction.set(
           db.doc(`summaries/daily_${currentWarehouseId}_${todayDateStr}`),
           {
             warehouseId: currentWarehouseId,
             warehouse_id: currentWarehouseId,
-            warehouseName: freshFetchedCorrectName,
-            warehouse_name: freshFetchedCorrectName,
+            warehouseName: correctWarehouseName,
+            warehouse_name: correctWarehouseName,
             date: todayDateStr,
             totalSales: FieldValue.increment(totalAmount),
             totalInvoices: FieldValue.increment(1),
