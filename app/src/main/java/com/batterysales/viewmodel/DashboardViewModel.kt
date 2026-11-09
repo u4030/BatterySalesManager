@@ -403,20 +403,22 @@ class DashboardViewModel @Inject constructor(
         val broadcastVersion = financialStatus.version // بث إشاري حاسم لالتقاط البرودكاست
 
         val lowStockItems = alerts.filter { alert ->
-            // فحص صارم ومزدوج لمنع Dual-Stage Metadata Influx من إعادة إحياء التنبيهات الميتة
+            // فحص صارم ومزدوج ومحكم ضد Dual-Stage Metadata Influx
+            val docId = alert.id
             val targetVariantId = alert.variantId.ifEmpty { alert.relatedId }
             val targetRelatedId = alert.relatedId.ifEmpty { alert.variantId }
             val cId = "low_stock_${targetRelatedId}_${alert.warehouseId ?: ""}"
             val vcId = "low_stock_${targetVariantId}_${alert.warehouseId ?: ""}"
             val suppressedSet = _locallySuppressedAlertIds.value
 
-            val isSuppressed = suppressedSet.contains(alert.id) ||
-                    suppressedSet.contains(cId) ||
-                    suppressedSet.contains(vcId) ||
+            val isSuppressed = (docId.isNotBlank() && suppressedSet.contains(docId)) ||
                     (targetVariantId.isNotBlank() && suppressedSet.contains(targetVariantId)) ||
-                    (targetRelatedId.isNotBlank() && suppressedSet.contains(targetRelatedId))
+                    (targetRelatedId.isNotBlank() && suppressedSet.contains(targetRelatedId)) ||
+                    suppressedSet.contains(cId) ||
+                    suppressedSet.contains(vcId)
 
-            !isSuppressed &&
+            if (isSuppressed) return@filter false
+
             !alert.resolved && alert.status != "resolved" && alert.status != "deleted" &&
             (isAdmin || alert.warehouseId == userWarehouseId)
         }.map { alert ->
