@@ -364,10 +364,12 @@ class DashboardViewModel @Inject constructor(
 
         // Local Join Resolver: إعطاء الأولوية المطلقة والكاملة لكاش المستودعات المحلي النظيف
         fun resolveWarehouseName(whId: String, candidateName: String? = null): String {
-            // 1. Check reactive flow list
-            val flowName = _warehouses.value.find { it.id == whId }?.name
+            if (whId.isBlank()) return "مستودع فرعي"
+
+            // 1. Prioritize reactive flow state memory list
+            val flowName = warehouses.find { it.id == whId }?.name
                 ?.takeIf { it.isNotBlank() && it != whId && !it.equals("مستودع غير معرف", ignoreCase = true) }
-                ?: warehouses.find { it.id == whId }?.name
+                ?: _warehouses.value.find { it.id == whId }?.name
                 ?.takeIf { it.isNotBlank() && it != whId && !it.equals("مستودع غير معرف", ignoreCase = true) }
                 ?: combinedWarehouses.find { it.id == whId }?.name
                 ?.takeIf { it.isNotBlank() && it != whId && !it.equals("مستودع غير معرف", ignoreCase = true) }
@@ -375,7 +377,7 @@ class DashboardViewModel @Inject constructor(
                 return flowName
             }
 
-            // 2. FORCE immediate synchronous fallback to the repository's core local hardware memory cache
+            // 2. FORCE immediate synchronous hit to the repository's core local hardware memory cache
             val repoCacheName = warehouseRepository.getWarehouseByIdCached(whId)?.name
                 ?.takeIf { it.isNotBlank() && it != whId && !it.equals("مستودع غير معرف", ignoreCase = true) }
             if (!repoCacheName.isNullOrBlank()) {
@@ -387,13 +389,13 @@ class DashboardViewModel @Inject constructor(
                 return candidateName
             }
 
-            // 4. Structural safe guards
+            // 4. Structural safe guards for core treasury
             if (whId.contains("main", ignoreCase = true) || whId == "main_treasury") {
                 return "الخزينة الرئيسية"
             }
 
             // Return the actual warehouse Id as a unique key descriptor rather than printing a false generic text
-            return whId.ifBlank { "مستودع فرعي" }
+            return whId
         }
 
         // Rigid Local Join Resolver for Daily Ledgers:
