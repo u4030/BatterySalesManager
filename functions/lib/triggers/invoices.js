@@ -62,7 +62,7 @@ exports.onInvoiceCreated = (0, firestore_1.onDocumentCreated)("invoices/{invoice
         // Read Phase: Fetch warehouse document strictly within local scope when currentWarehouseId is present
         let correctWarehouseName = "مستودع غير معروف";
         if (currentWarehouseId) {
-            const whSnap = await transaction.get(db.doc(`warehouses/${currentWarehouseId}`));
+            const whSnap = await transaction.get(db.collection("warehouses").doc(currentWarehouseId));
             correctWarehouseName = whSnap.exists ? (whSnap.data()?.name || "المستودع") : "مستودع غير معروف";
         }
         // Write Phase:
