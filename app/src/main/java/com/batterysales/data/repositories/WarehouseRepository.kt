@@ -18,6 +18,12 @@ class WarehouseRepository @Inject constructor(
 
     private var cachedWarehouses: List<Warehouse> = emptyList()
 
+    fun getCachedWarehousesSnapshot(): List<Warehouse> = cachedWarehouses
+
+    fun getWarehouseByIdCached(warehouseId: String): Warehouse? {
+        return cachedWarehouses.find { it.id == warehouseId }
+    }
+
     /**
      * Continuous snapshot listener streaming warehouses locally from cache.
      * Adheres to the Listen-Only protocol with MetadataChanges.INCLUDE.

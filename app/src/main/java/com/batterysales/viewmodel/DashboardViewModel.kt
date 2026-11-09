@@ -346,15 +346,35 @@ class DashboardViewModel @Inject constructor(
         }
         val currentJordanDateStr = jordanDateFormat.format(Date())
 
-        val warehouseMap = warehouses.associateBy { it.id }.toMutableMap()
+        // Fallback snapshot directly from the repository's internal disk/memory cache to annihilate microsecond race conditions
+        val repoCachedWarehouses = warehouseRepository.getCachedWarehousesSnapshot().ifEmpty {
+            try {
+                kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+                    warehouseRepository.getWarehousesOnce()
+                }
+            } catch (e: Exception) {
+                emptyList()
+            }
+        }
+        val combinedWarehouses = if (warehouses.isNotEmpty()) warehouses else repoCachedWarehouses
+        val warehouseMap = combinedWarehouses.associateBy { it.id }.toMutableMap()
 
         // Local Join Resolver: إعطاء الأولوية المطلقة والكاملة لكاش المستودعات المحلي النظيف
         fun resolveWarehouseName(whId: String, candidateName: String? = null): String {
-            // بحث مباشر وصارم في كاش المستودعات المحلي أولاً
-            val localCachedName = warehouses.find { it.id == whId }?.name
+            // بحث مباشر وصارم في كاش المستودعات المحلي المدمج أولاً
+            val localCachedName = combinedWarehouses.find { it.id == whId }?.name
                 ?.takeIf { it.isNotBlank() && it != whId && !it.equals("مستودع غير معرف", ignoreCase = true) }
                 ?: warehouseMap[whId]?.name
                 ?.takeIf { it.isNotBlank() && it != whId && !it.equals("مستودع غير معرف", ignoreCase = true) }
+                ?: warehouseRepository.getWarehouseByIdCached(whId)?.name
+                ?.takeIf { it.isNotBlank() && it != whId && !it.equals("مستودع غير معرف", ignoreCase = true) }
+                ?: try {
+                    kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+                        warehouseRepository.getWarehouse(whId)?.name
+                    }?.takeIf { it.isNotBlank() && it != whId && !it.equals("مستودع غير معرف", ignoreCase = true) }
+                } catch (e: Exception) {
+                    null
+                }
 
             // إذا وُجد الاسم محلياً في الكاش (مثل "مستودع الحوت")، قم بحقنه فوراً وتخطّي أي سلسلة نصية قادمة من السيرفر
             if (!localCachedName.isNullOrBlank()) {
