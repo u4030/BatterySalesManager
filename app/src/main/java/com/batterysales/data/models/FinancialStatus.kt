@@ -1,5 +1,6 @@
 package com.batterysales.data.models
 
+import com.google.firebase.firestore.PropertyName
 import java.util.Date
 
 /**
@@ -7,27 +8,26 @@ import java.util.Date
  * Path: summaries/financial_status
  */
 data class FinancialStatus(
-    val id: String = "financial_status",
-    val warehouseBalances: Map<String, WarehouseBalance> = emptyMap(), // warehouseId to balances
-    val globalBankBalance: Double = 0.0,
-    val globalCashBalance: Double = 0.0,
-    val totalUnpaidBills: Double = 0.0,
-    val totalUnpaidChecks: Double = 0.0,
-    val lastUpdated: Date = Date(),
-    val version: Long = 0,
+    @get:PropertyName("id") @set:PropertyName("id") var id: String = "financial_status",
+    @get:PropertyName("warehouseBalances") @set:PropertyName("warehouseBalances") var warehouseBalances: Map<String, WarehouseBalance> = emptyMap(),
+    @get:PropertyName("globalBankBalance") @set:PropertyName("globalBankBalance") var globalBankBalance: Double = 0.0,
+    @get:PropertyName("globalCashBalance") @set:PropertyName("globalCashBalance") var globalCashBalance: Double = 0.0,
+    @get:PropertyName("totalUnpaidBills") @set:PropertyName("totalUnpaidBills") var totalUnpaidBills: Double = 0.0,
+    @get:PropertyName("totalUnpaidChecks") @set:PropertyName("totalUnpaidChecks") var totalUnpaidChecks: Double = 0.0,
+    @get:PropertyName("totalCustomerDebt") @set:PropertyName("totalCustomerDebt") var totalCustomerDebt: Double = 0.0,
+    @get:PropertyName("total_customer_debt") @set:PropertyName("total_customer_debt") var totalCustomerDebtSnake: Double = 0.0,
+    @get:PropertyName("totalReceivables") @set:PropertyName("totalReceivables") var totalReceivables: Double = 0.0,
+    @get:PropertyName("total_receivables") @set:PropertyName("total_receivables") var totalReceivablesSnake: Double = 0.0,
+    @get:PropertyName("lastUpdated") @set:PropertyName("lastUpdated") var lastUpdated: Date = Date(),
+    @get:PropertyName("last_updated") @set:PropertyName("last_updated") var lastUpdatedSnake: Date? = null,
+    @get:PropertyName("version") @set:PropertyName("version") var version: Long = 0,
     
     // Aggregate collections for Dashboard
-    val todayCollection: Double = 0.0,
-    val todayCollectionCount: Int = 0
-)
-
-data class WarehouseBalance(
-    val warehouseId: String = "",
-    val cashBalance: Double = 0.0,
-    val bankBalance: Double = 0.0,
-    val pendingCollection: Double = 0.0, // Total unpaid customer invoices
-    val todayCollection: Double = 0.0,
-    val todayCollectionCount: Int = 0,
-    val lastInvoiceDate: String = ""
-)
- 
+    @get:PropertyName("todayCollection") @set:PropertyName("todayCollection") var todayCollection: Double = 0.0,
+    @get:PropertyName("today_collection") @set:PropertyName("today_collection") var todayCollectionSnake: Double = 0.0,
+    @get:PropertyName("todayCollectionCount") @set:PropertyName("todayCollectionCount") var todayCollectionCount: Int = 0,
+    @get:PropertyName("today_collection_count") @set:PropertyName("today_collection_count") var todayCollectionCountSnake: Int = 0
+) {
+    val resolvedCustomerDebt: Double
+        get() = if (totalCustomerDebt != 0.0) totalCustomerDebt else totalCustomerDebtSnake
+}

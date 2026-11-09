@@ -45,7 +45,8 @@ class InvoiceViewModel @Inject constructor(
     private val paymentRepository: PaymentRepository,
     private val accountingRepository: AccountingRepository,
     private val summaryRepository: SummaryRepository,
-    private val userRepository: UserRepository
+    private val userRepository: UserRepository,
+    private val persistentSyncManager: com.batterysales.data.local.PersistentSyncManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(InvoiceUiState())
@@ -166,6 +167,21 @@ class InvoiceViewModel @Inject constructor(
             _uiState.value.invoiceToDelete?.let { invoice ->
                 _uiState.update { it.copy(isSubmitting = true) }
                 try {
+                    // Optimistically suppress alerts for deleted invoice items in 0ms
+                    invoice.items.forEach { item ->
+                        val variantId = item.productId
+                        val compositeId = "low_stock_${variantId}_${invoice.warehouseId}"
+                        persistentSyncManager.recordPendingOperation(
+                            com.batterysales.data.local.PendingSyncOperation(
+                                operationId = "suppress_${System.currentTimeMillis()}_$variantId",
+                                type = "ALERT_SUPPRESS",
+                                relatedId = compositeId,
+                                status = "PENDING_SYNC"
+                            )
+                        )
+                        summaryRepository.updateCacheOptimisticStock(variantId, invoice.warehouseId, item.quantity)
+                    }
+
                     // NUCLEAR STRATEGY: deleteInvoice now handles all payments and ledger entries atomically
                     invoiceRepository.deleteInvoice(invoice.id)
                     loadInvoices(reset = true)

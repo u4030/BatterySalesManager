@@ -200,11 +200,12 @@ fun SupplierDetailsScreen(
                                     }
                                 }
                                 Spacer(modifier = Modifier.height(12.dp))
-                                val settledOverpayment = maxOf(0.0, item.totalCredit - item.totalDebit)
+                                val settledOverpayment = if (item.overpayment > 0.001) item.overpayment else maxOf(0.0, item.totalCredit - item.totalDebit)
                                 val isExcess = settledOverpayment > 0.001
                                 val uncoveredDebt = maxOf(0.0, item.totalDebit - item.supplier.totalCredit)
 
-                                val displayColor = if (isExcess) Color(0xFF0284C7) else if (uncoveredDebt > 0.001) Color(0xFFEF4444) else Color(0xFF10B981)
+                                // استخدام اللون الأخضر/الأزرق المميز للرصيد الفائض تفاؤلياً بـ 0ms
+                                val displayColor = if (isExcess) Color(0xFF10B981) else if (uncoveredDebt > 0.001) Color(0xFFEF4444) else Color(0xFF10B981)
                                 val labelText = if (isExcess) "رصيد فائض مسدد للمورد:" else "المتبقي بذمة المورد:"
                                 val displayValue = if (isExcess) settledOverpayment else uncoveredDebt
 

@@ -88,6 +88,9 @@ class BillViewModel @Inject constructor(
     private val _highlightBillId = MutableStateFlow<String?>(null)
     val highlightBillId = _highlightBillId.asStateFlow()
 
+    private val _flaggedBills = MutableStateFlow<Map<String, String>>(emptyMap())
+    val flaggedBills = _flaggedBills.asStateFlow()
+
     init {
         val highlightId = savedStateHandle.get<String>("highlightBillId")
         if (highlightId != null) {
@@ -161,9 +164,31 @@ class BillViewModel @Inject constructor(
     fun updateBill(bill: Bill) {
         viewModelScope.launch {
             _isSubmitting.value = true
+            val opId = "bill_update_${System.currentTimeMillis()}_${bill.id}"
+            val prevBill = repository.getBill(bill.id)
+            val delta = (bill.amount - (prevBill?.amount ?: bill.amount))
             try {
+                if (bill.supplierId.isNotEmpty()) {
+                    persistentSyncManager.recordPendingOperation(
+                        com.batterysales.data.local.PendingSyncOperation(
+                            operationId = opId,
+                            type = "BILL_UPDATE",
+                            relatedId = bill.supplierId,
+                            amountDelta = delta,
+                            status = "PENDING_SYNC"
+                        )
+                    )
+                }
+
                 repository.updateBill(bill)
+                if (bill.supplierId.isNotEmpty()) {
+                    persistentSyncManager.removePendingOperation(opId)
+                }
                 loadData()
+            } catch (e: Exception) {
+                if (bill.supplierId.isNotEmpty()) {
+                    persistentSyncManager.removePendingOperation(opId)
+                }
             } finally { _isSubmitting.value = false }
         }
     }
@@ -179,9 +204,6 @@ class BillViewModel @Inject constructor(
     }
 
     fun recordPayment(bill: Bill, amount: Double, method: String, warehouseId: String, notes: String) {
-        // --- تعديل تفاؤلي فوري لإجمالي غير المسدد بالدينار الأردني JOD (0ms) ---
-        _totalUnpaid.update { (it - amount).coerceAtLeast(0.0) }
-
         viewModelScope.launch {
             _isSubmitting.value = true
             val opId = "bill_pay_${System.currentTimeMillis()}_${bill.id}"
@@ -191,6 +213,7 @@ class BillViewModel @Inject constructor(
                         operationId = opId,
                         type = "BILL_PAYMENT",
                         relatedId = bill.id,
+                        amountDelta = -amount,
                         status = "PENDING_SYNC"
                     )
                 )
@@ -200,12 +223,14 @@ class BillViewModel @Inject constructor(
                 loadData()
             } catch (e: Exception) {
                 persistentSyncManager.removePendingOperation(opId)
-                _totalUnpaid.update { it + amount }
             } finally { _isSubmitting.value = false }
         }
     }
 
-    fun tagBillNeedsAdjustment(billId: String, warningNote: String) {
+    fun handlePurchaseReturnFlags(billId: String, warningNote: String = "تنبيه: تم إرجاع مواد من هذه الطلبية") {
+        // --- تحديث تفاؤلي فوري في الذاكرة بـ (0ms) لمنع وميض الشاشة ---
+        _flaggedBills.update { it + (billId to warningNote) }
+
         viewModelScope.launch {
             val opId = "bill_adj_${System.currentTimeMillis()}_$billId"
             try {
@@ -229,6 +254,14 @@ class BillViewModel @Inject constructor(
                 persistentSyncManager.removePendingOperation(opId)
             }
         }
+    }
+
+    fun tagBillForAdjustment(billId: String, warningNote: String = "تنبيه: تم إرجاع مواد من الطلبية") {
+        handlePurchaseReturnFlags(billId, warningNote)
+    }
+
+    fun tagBillNeedsAdjustment(billId: String, warningNote: String) {
+        handlePurchaseReturnFlags(billId, warningNote)
     }
 
     fun addBill(description: String, amount: Double, dueDate: Date, billType: BillType, referenceNumber: String = "", supplierId: String = "", relatedEntryId: String? = null, warehouseId: String? = null, payImmediately: Boolean = false) {
@@ -257,11 +290,35 @@ class BillViewModel @Inject constructor(
     fun deleteBill(billId: String) {
         viewModelScope.launch {
             _isSubmitting.value = true
+            val opId = "bill_delete_${System.currentTimeMillis()}_$billId"
+            val bill = repository.getBill(billId)
+            val supplierId = bill?.supplierId ?: ""
+            val delta = -(bill?.amount ?: 0.0)
+
             try {
+                if (supplierId.isNotEmpty()) {
+                    persistentSyncManager.recordPendingOperation(
+                        com.batterysales.data.local.PendingSyncOperation(
+                            operationId = opId,
+                            type = "BILL_DELETE",
+                            relatedId = supplierId,
+                            amountDelta = delta,
+                            status = "PENDING_SYNC"
+                        )
+                    )
+                }
+
                 repository.deleteBill(billId)
                 accountingRepository.deleteTransactionsByRelatedId(billId)
                 bankRepository.deleteTransactionsByBillId(billId)
+                if (supplierId.isNotEmpty()) {
+                    persistentSyncManager.removePendingOperation(opId)
+                }
                 loadData()
+            } catch (e: Exception) {
+                if (supplierId.isNotEmpty()) {
+                    persistentSyncManager.removePendingOperation(opId)
+                }
             } finally { _isSubmitting.value = false }
         }
     }

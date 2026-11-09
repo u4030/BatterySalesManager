@@ -443,13 +443,13 @@ class AccountingRepository @Inject constructor(
         batch.commit().await()
     }
 
-    suspend fun checkRemotePendingOperationsOnce(warehouseId: String, dateStr: String? = null): Boolean {
+    suspend fun checkGlobalSyncRegistryClear(warehouseId: String, dateStr: String? = null): Boolean {
         return try {
             // Check central sync registry or active pending transactions collection
             val registrySnap = firestore.collection("summaries").document("sync_registry").get().await()
             val pendingWhs = registrySnap.get("pendingWarehouses") as? List<*>
             if (pendingWhs != null && pendingWhs.contains(warehouseId)) {
-                return true
+                return false
             }
 
             // Check if there are any pending payment/sales commands for this warehouse
@@ -460,7 +460,7 @@ class AccountingRepository @Inject constructor(
                 .get()
                 .await()
 
-            if (!pendingSales.isEmpty) return true
+            if (!pendingSales.isEmpty) return false
 
             val pendingInvoices = firestore.collection("invoices")
                 .whereEqualTo("warehouseId", warehouseId)
@@ -469,10 +469,14 @@ class AccountingRepository @Inject constructor(
                 .get()
                 .await()
 
-            !pendingInvoices.isEmpty
+            pendingInvoices.isEmpty
         } catch (e: Exception) {
-            false
+            true
         }
+    }
+
+    suspend fun checkRemotePendingOperationsOnce(warehouseId: String, dateStr: String? = null): Boolean {
+        return !checkGlobalSyncRegistryClear(warehouseId, dateStr)
     }
 
     suspend fun executeDailyTransferAtomic(warehouseId: String, dateStr: String? = null) {

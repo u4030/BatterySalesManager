@@ -305,102 +305,100 @@ class SalesViewModel @Inject constructor(
         _uiState.update { it.copy(stockLevels = newStockMap, isSubmitting = true) }
 
         viewModelScope.launch {
-            // تحديث الكاش المركزي تفاؤلياً فوراً (0ms) لتراه جميع الشاشات والتقارير المفتوحة
-            summaryRepository.updateCacheOptimisticStock(variant.id, warehouse.id, -qty)
+            val opId = "sale_${System.currentTimeMillis()}_${variant.id}"
+            val weightedAverageCost = variant.weightedAverageCost
+            val total = qty * price
+            val oldBatteriesVal = state.oldBatteriesValue.toDoubleOrNull() ?: 0.0
+            val finalTotal = (total - oldBatteriesVal).coerceAtLeast(0.0)
 
-            try {
-                if (!warehouse.isActive) {
-                    _uiState.update { it.copy(errorMessage = "عذراً، هذا المستودع متوقف حالياً ولا يمكن إجراء عمليات عليه.", isSubmitting = false) }
-                    return@launch
-                }
+            if (!warehouse.isActive) {
+                _uiState.update { it.copy(errorMessage = "عذراً، هذا المستودع متوقف حالياً ولا يمكن إجراء عمليات عليه.", isSubmitting = false) }
+                return@launch
+            }
 
-                if (!networkHelper.isNetworkConnected()) {
-                    _uiState.update { it.copy(errorMessage = "لا يوجد اتصال بالإنترنت. يرجى المحاولة لاحقاً.", isSubmitting = false) }
-                    return@launch
-                }
+            if (!networkHelper.isNetworkConnected()) {
+                _uiState.update { it.copy(errorMessage = "لا يوجد اتصال بالإنترنت. يرجى المحاولة لاحقاً.", isSubmitting = false) }
+                return@launch
+            }
 
-                val weightedAverageCost = variant.weightedAverageCost
-                val total = qty * price
-                val oldBatteriesVal = state.oldBatteriesValue.toDoubleOrNull() ?: 0.0
-                val finalTotal = (total - oldBatteriesVal).coerceAtLeast(0.0)
+            if (paidAmount > finalTotal) {
+                _uiState.update { it.copy(errorMessage = "المبلغ المدفوع (JD $paidAmount) لا يمكن أن يتجاوز صافي الإجمالي (JD $finalTotal)", isSubmitting = false) }
+                return@launch
+            }
 
-                if (paidAmount > finalTotal) {
-                    _uiState.update { it.copy(errorMessage = "المبلغ المدفوع (JD $paidAmount) لا يمكن أن يتجاوز صافي الإجمالي (JD $finalTotal)", isSubmitting = false) }
-                    return@launch
-                }
+            val newInvoice = Invoice(
+                customerName = customerName,
+                customerPhone = customerPhone,
+                items = listOf(InvoiceItem(
+                    productId = variant.id,
+                    productName = "${product.name}${if(product.specification.isNotEmpty()) " (${product.specification})" else ""} - ${variant.capacity}A${if(variant.specification.isNotEmpty()) " (${variant.specification})" else ""}",
+                    quantity = qty,
+                    price = price,
+                    total = total,
+                    unitPrice = price,
+                    totalPrice = total
+                )),
+                subtotal = total,
+                oldBatteriesValue = oldBatteriesVal,
+                oldBatteriesQuantity = state.oldBatteriesQuantity.toIntOrNull() ?: 0,
+                oldBatteriesTotalAmperes = state.oldBatteriesTotalAmps.toDoubleOrNull() ?: 0.0,
+                totalAmount = finalTotal,
+                finalAmount = finalTotal,
+                paidAmount = paidAmount,
+                remainingAmount = finalTotal - paidAmount,
+                status = if (paidAmount >= finalTotal) "paid" else "pending",
+                paymentMethod = state.paymentMethod,
+                warehouseId = warehouse.id,
+                invoiceDate = Date()
+            )
 
-                val newInvoice = Invoice(
-                    customerName = customerName,
-                    customerPhone = customerPhone,
-                    items = listOf(InvoiceItem(
-                        productId = variant.id,
-                        productName = "${product.name}${if(product.specification.isNotEmpty()) " (${product.specification})" else ""} - ${variant.capacity}A${if(variant.specification.isNotEmpty()) " (${variant.specification})" else ""}",
-                        quantity = qty,
-                        price = price,
-                        total = total,
-                        unitPrice = price,
-                        totalPrice = total
-                    )),
-                    subtotal = total,
-                    oldBatteriesValue = oldBatteriesVal,
-                    oldBatteriesQuantity = state.oldBatteriesQuantity.toIntOrNull() ?: 0,
-                    oldBatteriesTotalAmperes = state.oldBatteriesTotalAmps.toDoubleOrNull() ?: 0.0,
-                    totalAmount = finalTotal,
-                    finalAmount = finalTotal,
-                    paidAmount = paidAmount,
-                    remainingAmount = finalTotal - paidAmount,
-                    status = if (paidAmount >= finalTotal) "paid" else "pending",
-                    paymentMethod = state.paymentMethod,
+            val stockEntry = StockEntry(
+                productVariantId = variant.id,
+                productName = product.name,
+                capacity = variant.capacity,
+                warehouseId = warehouse.id,
+                quantity = -qty,
+                costPrice = weightedAverageCost,
+                supplier = "Sale",
+                timestamp = Date(),
+                status = "approved",
+                createdBy = currentUser?.id ?: ""
+            )
+
+            val payment = if (paidAmount > 0) {
+                Payment(
                     warehouseId = warehouse.id,
-                    invoiceDate = Date()
-                )
-
-                val stockEntry = StockEntry(
-                    productVariantId = variant.id,
-                    productName = product.name,
-                    capacity = variant.capacity,
-                    warehouseId = warehouse.id,
-                    quantity = -qty,
-                    costPrice = weightedAverageCost,
-                    supplier = "Sale",
+                    amount = paidAmount,
                     timestamp = Date(),
-                    status = "approved",
-                    createdBy = currentUser?.id ?: ""
+                    paymentMethod = state.paymentMethod,
+                    notes = "الدفعة الأولى عند البيع"
                 )
+            } else null
 
-                val payment = if (paidAmount > 0) {
-                    Payment(
-                        warehouseId = warehouse.id,
-                        amount = paidAmount,
-                        timestamp = Date(),
-                        paymentMethod = state.paymentMethod,
-                        notes = "الدفعة الأولى عند البيع"
-                    )
-                } else null
+            val treasuryTransaction = if (paidAmount > 0) {
+                Transaction(
+                    type = TransactionType.INCOME,
+                    amount = paidAmount,
+                    description = "دفعة مبيعات: $customerName",
+                    warehouseId = warehouse.id,
+                    paymentMethod = state.paymentMethod
+                )
+            } else null
 
-                val treasuryTransaction = if (paidAmount > 0) {
-                    Transaction(
-                        type = TransactionType.INCOME,
-                        amount = paidAmount,
-                        description = "دفعة مبيعات: $customerName",
-                        warehouseId = warehouse.id,
-                        paymentMethod = state.paymentMethod
-                    )
-                } else null
+            val oldBatteryTransaction = if (newInvoice.oldBatteriesQuantity > 0) {
+                OldBatteryTransaction(
+                    quantity = newInvoice.oldBatteriesQuantity,
+                    warehouseId = warehouse.id,
+                    totalAmperes = newInvoice.oldBatteriesTotalAmperes,
+                    type = OldBatteryTransactionType.INTAKE,
+                    notes = "مستلم من فاتورة: $customerName",
+                    createdByUserName = currentUser?.displayName ?: ""
+                )
+            } else null
 
-                val oldBatteryTransaction = if (newInvoice.oldBatteriesQuantity > 0) {
-                    OldBatteryTransaction(
-                        quantity = newInvoice.oldBatteriesQuantity,
-                        warehouseId = warehouse.id,
-                        totalAmperes = newInvoice.oldBatteriesTotalAmperes,
-                        type = OldBatteryTransactionType.INTAKE,
-                        notes = "مستلم من فاتورة: $customerName",
-                        createdByUserName = currentUser?.displayName ?: ""
-                    )
-                } else null
-
-                // توطين العملية في كاش القرص الصلب (PENDING_SYNC) لحماية الفاتورة ضد الموت المفاجئ للهاتف
-                val opId = "sale_${System.currentTimeMillis()}_${variant.id}"
+            // 1. تسجيل قيد المزامنة في الـ DataStore على القرص فوراً داخل NonCancellable
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                summaryRepository.updateCacheOptimisticStock(variant.id, warehouse.id, -qty)
                 persistentSyncManager.recordPendingOperation(
                     com.batterysales.data.local.PendingSyncOperation(
                         operationId = opId,
@@ -409,24 +407,30 @@ class SalesViewModel @Inject constructor(
                         status = "PENDING_SYNC"
                     )
                 )
+            }
 
-                val createdInvoiceId = invoiceRepository.createFullSale(
-                    invoice = newInvoice,
-                    stockEntry = stockEntry,
-                    payment = payment,
-                    treasuryTransaction = treasuryTransaction,
-                    oldBatteryTransaction = oldBatteryTransaction
-                )
+            // 2. ترحيل الطلب للشبكة والسيرفر على Dispatchers.IO لتفريغ الـ Main Thread
+            try {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    invoiceRepository.createFullSale(
+                        invoice = newInvoice,
+                        stockEntry = stockEntry,
+                        payment = payment,
+                        treasuryTransaction = treasuryTransaction,
+                        oldBatteryTransaction = oldBatteryTransaction
+                    )
+                }
 
-                // تطهير المعلقة فور نجاح الكتابة واستقرارها
-                persistentSyncManager.removePendingOperation(opId)
+                // 3. تطهير المعلقة بعد تأكيد السيرفر
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    persistentSyncManager.removePendingOperation(opId)
+                }
 
                 _uiState.update { it.copy(successMessage = "تم الحفظ والمزامنة بنجاح ✅", isSubmitting = false) }
-                kotlinx.coroutines.delay(1500)
+                kotlinx.coroutines.delay(1000)
                 _uiState.update { it.copy(isFinished = true) }
             } catch (e: Exception) {
                 Log.e("SalesViewModel", "Error creating sale", e)
-                // في حال الارتداد العكسي أو الفشل، نعيد المخزون لحالته السابقة
                 summaryRepository.updateCacheOptimisticStock(variant.id, warehouse.id, qty)
                 val rollbackMap = _uiState.value.stockLevels.toMutableMap()
                 rollbackMap[Pair(variant.id, warehouse.id)] = available
@@ -437,6 +441,23 @@ class SalesViewModel @Inject constructor(
 
     fun onDismissError() {
         _uiState.update { it.copy(errorMessage = null) }
+    }
+
+    /**
+     * Suppresses any phantom alert for the given variant immediately in 0ms on the local client
+     */
+    fun pruneAlertOptimistic(variantId: String, warehouseId: String) {
+        val compositeId = "low_stock_${variantId}_${warehouseId}"
+        viewModelScope.launch {
+            persistentSyncManager.recordPendingOperation(
+                com.batterysales.data.local.PendingSyncOperation(
+                    operationId = "suppress_${System.currentTimeMillis()}_$compositeId",
+                    type = "ALERT_SUPPRESS",
+                    relatedId = compositeId,
+                    status = "PENDING_SYNC"
+                )
+            )
+        }
     }
 
     fun findProductByBarcode(barcode: String) {

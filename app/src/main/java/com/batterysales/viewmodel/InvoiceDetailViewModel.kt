@@ -187,6 +187,36 @@ class InvoiceDetailViewModel @Inject constructor(
      * Reverses an invoice fully, restoring stock immediately to SummaryRepository cache
      * and suppressing phantom low-stock alerts locally in 0ms.
      */
+    fun cancelInvoiceFully(invoiceId: String, warehouseId: String, variantId: String) {
+        val compositeId = "low_stock_${variantId}_${warehouseId}"
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSubmitting = true) }
+            val opId = "suppress_${System.currentTimeMillis()}_$variantId"
+            try {
+                // طهر الـ Phantom Alert محلياً وفوراً في 0ms
+                persistentSyncManager.recordPendingOperation(
+                    com.batterysales.data.local.PendingSyncOperation(
+                        operationId = opId,
+                        type = "ALERT_SUPPRESS",
+                        relatedId = compositeId,
+                        status = "PENDING_SYNC"
+                    )
+                )
+
+                // استعادة المخزون تفاؤلياً في الكاش المركزي المشترك
+                val invoice = invoiceRepository.getInvoice(invoiceId)
+                val itemQty = invoice?.items?.find { it.productId == variantId }?.quantity ?: 1
+                summaryRepository.updateCacheOptimisticStock(variantId, warehouseId, itemQty)
+
+                invoiceRepository.cancelInvoiceAtomic(invoiceId)
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "فشل إلغاء الفاتورة: ${e.message}") }
+            } finally {
+                _uiState.update { it.copy(isSubmitting = false) }
+            }
+        }
+    }
+
     fun reverseInvoiceFully(invoiceId: String, warehouseId: String, items: List<com.batterysales.data.models.InvoiceItem>) {
         viewModelScope.launch {
             _uiState.update { it.copy(isSubmitting = true) }

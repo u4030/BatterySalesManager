@@ -19,10 +19,11 @@ private val Context.syncDataStore: DataStore<Preferences> by preferencesDataStor
 
 data class PendingSyncOperation(
     val operationId: String,
-    val type: String, // SALE, STOCK_TRANSFER, PAYMENT_DELETE, STOCK_ENTRY
+    val type: String, // SALE, STOCK_TRANSFER, PAYMENT_DELETE, STOCK_ENTRY, BILL_UPDATE, BILL_DELETE
     val relatedId: String,
     val timestamp: Long = System.currentTimeMillis(),
     val payloadJson: String = "",
+    val amountDelta: Double = 0.0,
     val status: String = "PENDING_SYNC"
 )
 
@@ -77,7 +78,12 @@ class PersistentSyncManager @Inject constructor(
                     val currentList = gson.fromJson<List<PendingSyncOperation>>(json, type)?.toMutableList() ?: mutableListOf()
                     val removed = currentList.removeAll { it.operationId == operationId }
                     if (removed) {
-                        prefs[PENDING_OPS_KEY] = gson.toJson(currentList)
+                        // تفريغ كامل وبتر للمفتاح عند انتهاء المعلقات لتحقيق استهداف الـ 0 MB دوماً
+                        if (currentList.isEmpty()) {
+                            prefs.remove(PENDING_OPS_KEY)
+                        } else {
+                            prefs[PENDING_OPS_KEY] = gson.toJson(currentList)
+                        }
                     }
                 } catch (e: Exception) {
                     // Ignore parse error on removal

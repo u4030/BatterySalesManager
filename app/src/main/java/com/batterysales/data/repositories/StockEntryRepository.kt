@@ -142,15 +142,7 @@ class StockEntryRepository @Inject constructor(
             }
         }
 
-        if (totalCostChange != 0.0 || totalQtyChange != 0L) {
-            batch.set(statsRef, mapOf(
-                "totalInventoryQuantity" to FieldValue.increment(totalQtyChange),
-                "totalInventoryValue" to FieldValue.increment(totalCostChange),
-                "totalSupplierDebt" to FieldValue.increment(totalCostChange),
-                "updatedAt" to now
-            ), SetOptions.merge())
-        }
-
+        // CQRS: ترك التحديثات التراكمية في statsRef لسيرفر Cloud Functions (onStockEntryCreated)
         batch.commit().await()
     }
 

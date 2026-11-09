@@ -69,9 +69,30 @@ class AccountingViewModel @Inject constructor(
     private val refreshTrigger = MutableStateFlow(0)
     private val _isDataLoaded = MutableStateFlow(false)
 
+    // حارس المعاملات المحذوفة أو المعكوسة تفاؤلياً في الذاكرة الحية (0ms) لمنع وميض وتأخر الميتاداتا
+    private val suppressedTransactionIds = MutableStateFlow<Set<String>>(emptySet())
+
+    fun evictTransactionInstantly(txId: String) {
+        suppressedTransactionIds.update { it + txId }
+        viewModelScope.launch {
+            persistentSyncManager.recordPendingOperation(
+                com.batterysales.data.local.PendingSyncOperation(
+                    operationId = "suppress_tx_${System.currentTimeMillis()}_$txId",
+                    type = "TREASURY_SUPPRESS",
+                    relatedId = txId,
+                    status = "PENDING_SYNC"
+                )
+            )
+        }
+    }
+
+    fun suppressTransactionInstantly(txId: String) {
+        evictTransactionInstantly(txId)
+    }
+
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val transactions: Flow<PagingData<Transaction>> = combine(
-        _selectedWarehouseId, _selectedTab, _selectedPaymentMethod, _startDate, _endDate, refreshTrigger, _isDataLoaded, _searchQuery
+        _selectedWarehouseId, _selectedTab, _selectedPaymentMethod, _startDate, _endDate, refreshTrigger, _isDataLoaded, _searchQuery, suppressedTransactionIds
     ) { args ->
         if (!(args[6] as Boolean)) return@combine null
         Filters(
@@ -93,9 +114,13 @@ class AccountingViewModel @Inject constructor(
             )
         }.flow.map { pagingData ->
             val query = _searchQuery.value
-            if (query.isBlank()) pagingData
-            else pagingData.filter { trans ->
-                trans.description.contains(query, ignoreCase = true) || trans.referenceNumber.contains(query, ignoreCase = true)
+            val suppressed = suppressedTransactionIds.value
+            // بتر فوري للمعاملات المحذوفة بنسبة 0ms بغض النظر عن حالة الميتاداتا وسواء كانت hasPendingWrites تساوي true أو false
+            pagingData.filter { trans ->
+                val isSuppressed = suppressed.contains(trans.id) ||
+                        (trans.referenceNumber.isNotBlank() && suppressed.contains(trans.referenceNumber))
+                !isSuppressed &&
+                (query.isBlank() || trans.description.contains(query, ignoreCase = true) || trans.referenceNumber.contains(query, ignoreCase = true))
             }
         }.cachedIn(viewModelScope)
     }
@@ -271,10 +296,11 @@ class AccountingViewModel @Inject constructor(
                     return@launch
                 }
 
-                // 1. فحص محلي + فحص سيرفر عبر مستند المزامنة المركزي المشترك (Multi-Device Gateway Lock)
-                val hasRemotePending = repository.checkRemotePendingOperationsOnce(targetWhId, dateStr)
-                if (hasRemotePending || persistentSyncManager.hasLocalPendingOperations()) {
-                    _errorMessage.value = "يُحظر الترحيل! توجد مبيعات معلقة لم تُستكمل مزامنتها من أجهزة البائعين في هذا المستودع."
+                // 1. فحص مركزي عبر السيرفر للتأكد من اتساق كافة أجهزة البائعين (Server-Driven Gateway Lock)
+                val isSyncRegistryClear = repository.checkGlobalSyncRegistryClear(targetWhId, dateStr)
+                if (!isSyncRegistryClear || persistentSyncManager.hasLocalPendingOperations()) {
+                    _errorMessage.value = "يُحظر الترحيل! توجد عمليات معلقة لدى أجهزة البائعين في هذا المستودع."
+                    _isSubmitting.value = false
                     return@launch
                 }
 
@@ -348,6 +374,9 @@ class AccountingViewModel @Inject constructor(
     }
 
     fun deleteTransaction(id: String) {
+        // حجب المعاملة فوراً محلياً بـ 0ms في أول ميكروثانية وتجاوز ميتاداتا الفايرستور المزدوجة
+        evictTransactionInstantly(id)
+
         viewModelScope.launch {
             _isSubmitting.value = true
             try {
@@ -356,6 +385,7 @@ class AccountingViewModel @Inject constructor(
                 repository.deleteTransaction(id, forceSystemUpdate = isAdmin)
                 loadData(reset = true)
             } catch (e: Exception) {
+                suppressedTransactionIds.update { it - id }
                 _errorMessage.value = e.message
             } finally {
                 _isSubmitting.value = false

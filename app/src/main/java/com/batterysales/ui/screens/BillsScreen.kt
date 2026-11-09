@@ -44,6 +44,7 @@ import com.batterysales.ui.components.HeaderIconButton
 import com.batterysales.ui.components.CustomKeyboardTextField
 import com.batterysales.ui.components.AppDialog
 import com.batterysales.ui.components.ConnectivityBanner
+import androidx.activity.compose.BackHandler
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -78,7 +79,44 @@ fun BillsScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val isSubmitting by viewModel.isSubmitting.collectAsState()
     val highlightBillId by viewModel.highlightBillId.collectAsState()
+    val flaggedBills by viewModel.flaggedBills.collectAsState()
+    var blockingConflictError by remember { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
+
+    // حظر الرجوع أثناء معالجة وتسجيل القيود على القرص والسيرفر لمنع تجميد الشاشة
+    BackHandler(enabled = isSubmitting || blockingConflictError != null) {
+        /* Hard lock: block back-press during active submission */
+    }
+
+    if (blockingConflictError != null) {
+        AlertDialog(
+            onDismissRequest = { /* حظر الإغلاق العشوائي باللمس الخارجي أو زر العودة */ },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Warning, contentDescription = null, tint = Color.Red)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("تنبيه مزامنة حرج وتعارض محاسبي!", color = Color.Red, fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Text(
+                    text = blockingConflictError ?: "",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        blockingConflictError = null
+                        viewModel.loadData()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                ) {
+                    Text("تأكيد الاطلاع وتوقيع التسوية المحاسبية", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+    }
 
     val rawBills = remember(pagingItems.itemSnapshotList, highlightBillId, suppliers) {
         val list = pagingItems.itemSnapshotList.items.filterNotNull()
@@ -318,8 +356,11 @@ fun BillsScreen(
                 val supplier = suppliers.find { it.id == b.supplierId }
                 val isHighlighted = b.id == highlightBillId
 
-                val (needsAdj, warnMsg) = remember(b, supplier?.totalDebit, rawBills) {
-                    if (supplier != null && b.status != BillStatus.PAID && supplier.totalDebit > 0) {
+                val (needsAdj, warnMsg) = remember(b, supplier?.totalDebit, rawBills, flaggedBills) {
+                    val localFlagNote = flaggedBills[b.id]
+                    if (localFlagNote != null) {
+                        Pair(true, localFlagNote)
+                    } else if (supplier != null && b.status != BillStatus.PAID && supplier.totalDebit > 0) {
                         val unpaidSupplierBills = rawBills
                             .filter { it.supplierId == supplier.id && it.status != BillStatus.PAID }
                             .sortedBy { it.createdAt ?: Date(0) }

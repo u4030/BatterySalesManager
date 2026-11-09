@@ -33,6 +33,7 @@ import com.batterysales.ui.components.CustomKeyboardTextField
 import com.batterysales.ui.components.KeyboardLanguage
 import java.text.SimpleDateFormat
 import java.util.*
+import androidx.activity.compose.BackHandler
 
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.shape.CircleShape
@@ -49,12 +50,43 @@ fun InvoiceDetailScreen(
     var paymentAmount by remember { mutableStateOf("") }
     var selectedPaymentMethod by remember { mutableStateOf("cash") }
 
-    val snackbarHostState = remember { SnackbarHostState() }
-    uiState.errorMessage?.let {
-        LaunchedEffect(it) {
-            snackbarHostState.showSnackbar(it)
-            viewModel.onDismissError()
-        }
+    // حظر زر الرجوع العتادي أثناء المعالجة أو وجود نافذة القفل الحرجة
+    BackHandler(enabled = uiState.isSubmitting || uiState.errorMessage != null) {
+        /* Hard lock enforced */
+    }
+
+    if (uiState.errorMessage != null) {
+        val errText = uiState.errorMessage ?: ""
+        val isCriticalAccountingLock = errText.contains("LOCK", ignoreCase = true) || errText.contains("VIOLATION", ignoreCase = true)
+        
+        AlertDialog(
+            onDismissRequest = { /* حظر الإغلاق العشوائي باللمس الخارجي أو زر العودة */ },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Warning, contentDescription = null, tint = Color.Red)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        if (isCriticalAccountingLock) "تنبيه قفل المحاسبة والسيرفر (GATEWAY LOCK)!" else "تنبيه مزامنة حرج وتعارض محاسبي!",
+                        color = Color.Red,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            text = {
+                Text(
+                    text = errText,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.onDismissError() },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                ) {
+                    Text("تأكيد الاطلاع وتوقيع التسوية المحاسبية", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            }
+        )
     }
 
     val bgColor = MaterialTheme.colorScheme.background
@@ -66,8 +98,7 @@ fun InvoiceDetailScreen(
 
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
-            containerColor = bgColor,
-            snackbarHost = { SnackbarHost(snackbarHostState) }
+            containerColor = bgColor
         ) { paddingValues ->
         if (uiState.isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

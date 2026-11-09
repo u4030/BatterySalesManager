@@ -1,5 +1,6 @@
 package com.batterysales.data.repositories
 
+import android.util.Log
 import com.batterysales.data.models.Bill
 import com.batterysales.data.models.BillStatus
 import com.batterysales.data.models.BillType
@@ -37,6 +38,39 @@ class BillRepository @Inject constructor(
         } catch (e: Exception) {
             val snapshot = firestore.collection(Bill.COLLECTION_NAME).get().await()
             snapshot.documents.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) }
+        }
+    }
+
+    suspend fun tagBillsForPurchaseReturn(entryId: String, orderId: String, invoiceNumber: String, warningNote: String = "تنبيه: تم إرجاع مواد من هذه الطلبية - يرجى تعديل قيمة الكمبيالة أو إلغاؤها يدوياً") {
+        try {
+            val trimmedEntryId = entryId.trim()
+            val trimmedOrderId = orderId.trim()
+            val trimmedInvNum = invoiceNumber.trim()
+
+            if (trimmedEntryId.isEmpty() && trimmedOrderId.isEmpty() && trimmedInvNum.isEmpty()) return
+
+            val allBillsSnap = firestore.collection(Bill.COLLECTION_NAME).get().await()
+            val billsToTag = allBillsSnap.documents.mapNotNull { it.toObject(Bill::class.java)?.copy(id = it.id) }
+                .filter { bill ->
+                    ((trimmedEntryId.isNotEmpty() && bill.relatedEntryId == trimmedEntryId) ||
+                     (trimmedOrderId.isNotEmpty() && (bill.referenceNumber.contains(trimmedOrderId) || bill.description.contains(trimmedOrderId))) ||
+                     (trimmedInvNum.isNotEmpty() && (bill.referenceNumber.contains(trimmedInvNum) || bill.description.contains(trimmedInvNum)))) &&
+                    !bill.needsAdjustment
+                }
+
+            if (billsToTag.isNotEmpty()) {
+                val batch = firestore.batch()
+                billsToTag.forEach { b ->
+                    val ref = firestore.collection(Bill.COLLECTION_NAME).document(b.id)
+                    batch.update(ref, mapOf(
+                        "needsAdjustment" to true,
+                        "warningNote" to warningNote
+                    ))
+                }
+                batch.commit().await()
+            }
+        } catch (e: Exception) {
+            Log.e("BillRepository", "Error tagging bills for purchase return", e)
         }
     }
 
@@ -539,9 +573,6 @@ class BillRepository @Inject constructor(
             }
 
             if (creditToRemove > 0) {
-                // Adjust totalSupplierDebt in SystemStats
-                transaction.set(statsRef, mapOf("totalSupplierDebt" to com.google.firebase.firestore.FieldValue.increment(creditToRemove)), com.google.firebase.firestore.SetOptions.merge())
-
                 // Update Supplier Denormalized Totals
                 if (bill.supplierId.isNotEmpty()) {
                     summaryRepository.invalidateSupplierReportCache(transaction, bill.supplierId)
@@ -563,26 +594,14 @@ class BillRepository @Inject constructor(
             // These totals represent actual money spent (paidAmount)
             bankTransactions.documents.forEach { doc ->
                 val amt = doc.getDouble("amount") ?: 0.0
-                transaction.set(statsRef, mapOf("totalBankBalance" to com.google.firebase.firestore.FieldValue.increment(amt)), com.google.firebase.firestore.SetOptions.merge())
                 summaryRepository.applyFinancialUpdate(transaction, snapshots, targetWhId, bankChange = amt)
                 transaction.delete(doc.reference)
             }
             
             treasuryTransactions.documents.forEach { doc ->
                 val amt = doc.getDouble("amount") ?: 0.0
-                transaction.set(statsRef, mapOf("totalCashBalance" to com.google.firebase.firestore.FieldValue.increment(amt)), com.google.firebase.firestore.SetOptions.merge())
                 summaryRepository.applyFinancialUpdate(transaction, snapshots, targetWhId, cashChange = amt)
                 transaction.delete(doc.reference)
-            }
-
-            // --- Reverse Unpaid Commitments in stats ---
-            val remainingCommitment = bill.amount - bill.paidAmount
-            if (remainingCommitment > 0.001) {
-                if (bill.billType == BillType.CHECK) {
-                    transaction.set(statsRef, mapOf("totalUnpaidChecks" to com.google.firebase.firestore.FieldValue.increment(-remainingCommitment)), com.google.firebase.firestore.SetOptions.merge())
-                } else if (bill.billType == BillType.BILL) {
-                    transaction.set(statsRef, mapOf("totalUnpaidBills" to com.google.firebase.firestore.FieldValue.increment(-remainingCommitment)), com.google.firebase.firestore.SetOptions.merge())
-                }
             }
         }.await()
 

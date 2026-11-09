@@ -47,6 +47,7 @@ fun ProductManagementScreen(
     printQueueViewModel: PrintQueueViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val blockingConflictError by viewModel.blockingConflictError.collectAsState()
     val keyboardController = com.batterysales.ui.components.LocalCustomKeyboardController.current
     val printQueue by printQueueViewModel.queue.collectAsState()
 
@@ -62,6 +63,34 @@ fun ProductManagementScreen(
     var showPrintQueueDialog by remember { mutableStateOf(false) }
 
     // Dialogs
+    val errorWithCollision by viewModel.errorWithCollision.collectAsState()
+    if (errorWithCollision != null) {
+        AlertDialog(
+            onDismissRequest = { /* حظر الإغلاق العشوائي باللمس الخارجي */ },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Warning, contentDescription = null, tint = Color.Red)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("فشل اعتماد البيانات الرئيسية!", color = Color.Red, fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Text(
+                    text = errorWithCollision ?: "",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.clearCollisionError() },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                ) {
+                    Text("تأكيد الاطلاع وتوقيع التسوية المحاسبية", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+    }
+
     if (showAddProductDialog) {
         AddProductDialog(
             suppliers = uiState.suppliers,

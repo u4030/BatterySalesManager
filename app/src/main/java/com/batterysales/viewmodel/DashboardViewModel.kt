@@ -70,18 +70,64 @@ class DashboardViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val _warehouses = MutableStateFlow<List<Warehouse>>(emptyList())
-    // حارس التنبيهات المطرودة محلياً في الذاكرة الحية (0ms) لمنع الـ Phantom Alerts
-    private val _locallySuppressedAlertIds = MutableStateFlow<Set<String>>(emptySet())
+    // حارس التنبيهات المطرودة محلياً في الذاكرة الحية (0ms) لمنع الـ Phantom Alerts والـ Metadata Influx
+    private val suppressedAlertIds = MutableStateFlow<Set<String>>(emptySet())
+    private val _locallySuppressedAlertIds = suppressedAlertIds
     private val _blockingConflictError = MutableStateFlow<String?>(null)
 
-    fun dismissBlockingConflict() {
+    /**
+     * Programmatic barrier call: Prunes any variant or composite alert immediately in 0ms,
+     * ignoring remote Firestore sync states and dual-stage metadata transitions.
+     */
+    fun evictAlertInstantly(variantId: String) {
+        suppressedAlertIds.update { it + variantId }
+        viewModelScope.launch {
+            persistentSyncManager.recordPendingOperation(
+                com.batterysales.data.local.PendingSyncOperation(
+                    operationId = "suppress_${System.currentTimeMillis()}_$variantId",
+                    type = "ALERT_SUPPRESS",
+                    relatedId = variantId,
+                    status = "PENDING_SYNC"
+                )
+            )
+        }
+    }
+
+    fun clearAlertInstantly(variantId: String) {
+        evictAlertInstantly(variantId)
+    }
+
+    fun acknowledgeConflictResolution() {
         _blockingConflictError.value = null
+        viewModelScope.launch {
+            persistentSyncManager.removePendingOperation("CRITICAL_CONFLICT_LOCK")
+        }
+    }
+
+    fun dismissBlockingConflict() {
+        acknowledgeConflictResolution()
+    }
+
+    fun setBlockingConflict(msg: String) {
+        _blockingConflictError.value = msg
+        viewModelScope.launch {
+            persistentSyncManager.recordPendingOperation(
+                com.batterysales.data.local.PendingSyncOperation(
+                    operationId = "CRITICAL_CONFLICT_LOCK",
+                    type = "CONFLICT_LOCK",
+                    relatedId = "CRITICAL_CONFLICT",
+                    payloadJson = msg,
+                    status = "PENDING_SYNC"
+                )
+            )
+        }
     }
 
     fun suppressAlertLocally(variantId: String, warehouseId: String) {
         val compositeId = "low_stock_${variantId}_${warehouseId}"
-        _locallySuppressedAlertIds.update { it + compositeId + "bill_$variantId" }
+        _locallySuppressedAlertIds.update { it + compositeId + variantId + "bill_$variantId" }
         viewModelScope.launch {
+            // التوطين الصلب لمنع التنبيهات الوهمية حتى لو انطفأ الهاتف
             persistentSyncManager.recordPendingOperation(
                 com.batterysales.data.local.PendingSyncOperation(
                     operationId = "suppress_${System.currentTimeMillis()}_$compositeId",
@@ -95,9 +141,28 @@ class DashboardViewModel @Inject constructor(
 
     fun triggerOptimisticAlert(variantId: String, warehouseId: String, threshold: Int = 0) {
         val compositeId = "low_stock_${variantId}_${warehouseId}"
-        _locallySuppressedAlertIds.update { it - compositeId }
+        _locallySuppressedAlertIds.update { it - compositeId - variantId }
         viewModelScope.launch {
             persistentSyncManager.removePendingOperation("suppress_${System.currentTimeMillis()}_$compositeId")
+        }
+    }
+
+    /**
+     * Optimistically prunes a low-stock alert immediately from local UI state in 0ms,
+     * annihilating delayed viewport gaps without waiting for remote Firestore snapshot round-trips.
+     */
+    fun evictAlertImmediately(variantId: String, warehouseId: String = "") {
+        val compositeId = if (warehouseId.isNotEmpty()) "low_stock_${variantId}_${warehouseId}" else "low_stock_$variantId"
+        _locallySuppressedAlertIds.update { it + compositeId + variantId }
+        viewModelScope.launch {
+            persistentSyncManager.recordPendingOperation(
+                com.batterysales.data.local.PendingSyncOperation(
+                    operationId = "suppress_${System.currentTimeMillis()}_$compositeId",
+                    type = "ALERT_SUPPRESS",
+                    relatedId = compositeId,
+                    status = "PENDING_SYNC"
+                )
+            )
         }
     }
 
@@ -170,14 +235,33 @@ class DashboardViewModel @Inject constructor(
             }
 
             // ربط قسري لتدفق التنبيهات مع رمز النسخة version وطرد المعزول محلياً بـ 0ms
+            // حظر وبتر حتمي ضد Dual-Stage Metadata Influx: فحص قاطع للوثيقة والمعرفات بغض النظر عن ميتاداتا السيرفر وحالة hasPendingWrites
             alertsSourceFlow.map { list ->
                 list.filter { alert ->
-                    val compositeId = "low_stock_${alert.relatedId.ifEmpty { alert.variantId }}_${alert.warehouseId ?: ""}"
+                    val docId = alert.id
+                    val vId = alert.variantId.ifEmpty { alert.relatedId }
+                    val rId = alert.relatedId.ifEmpty { alert.variantId }
+                    val compositeId = "low_stock_${alert.relatedId}_${alert.warehouseId ?: ""}"
+                    val fallbackCompositeId = "low_stock_${rId}_${alert.warehouseId ?: ""}"
+                    val variantCompositeId = "low_stock_${vId}_${alert.warehouseId ?: ""}"
+                    
+                    val isLocallySuppressed = (docId.isNotBlank() && allSuppressed.contains(docId)) ||
+                            (alert.id.isNotBlank() && allSuppressed.contains(alert.id)) ||
+                            (alert.variantId.isNotBlank() && allSuppressed.contains(alert.variantId)) ||
+                            (alert.relatedId.isNotBlank() && allSuppressed.contains(alert.relatedId)) ||
+                            (vId.isNotBlank() && allSuppressed.contains(vId)) ||
+                            (rId.isNotBlank() && allSuppressed.contains(rId)) ||
+                            allSuppressed.contains(compositeId) ||
+                            allSuppressed.contains(fallbackCompositeId) ||
+                            allSuppressed.contains(variantCompositeId)
+
+                    if (isLocallySuppressed) {
+                        return@filter false
+                    }
+
                     !alert.resolved && 
                     alert.status != "resolved" && 
-                    alert.status != "deleted" &&
-                    !allSuppressed.contains(alert.id) &&
-                    !allSuppressed.contains(compositeId)
+                    alert.status != "deleted"
                 }
             }
         }
@@ -201,11 +285,24 @@ class DashboardViewModel @Inject constructor(
         awaitClose { listener.remove() }
     }
 
+    private val _optimisticApprovalDelta = MutableStateFlow(0)
+    val optimisticApprovalDelta = _optimisticApprovalDelta.asStateFlow()
+
+    fun decrementApprovalCount() {
+        _optimisticApprovalDelta.update { it - 1 }
+    }
+
+    fun incrementApprovalCount() {
+        _optimisticApprovalDelta.update { it + 1 }
+    }
+
     private val pendingCountFlow: Flow<Int> = combine(
         stockEntryRepository.getPendingEntriesFlow().catch { emit(emptyList()) },
-        approvalRepository.getPendingRequestsFlow().catch { emit(emptyList()) }
-    ) { entries, reqs ->
-        entries.size + reqs.size
+        approvalRepository.getPendingRequestsFlow().catch { emit(emptyList()) },
+        _optimisticApprovalDelta
+    ) { entries, reqs, delta ->
+        val actualCount = entries.size + reqs.size
+        (actualCount + delta).coerceAtLeast(0)
     }
 
     val uiState: StateFlow<DashboardUiState> = combine(
@@ -252,13 +349,76 @@ class DashboardViewModel @Inject constructor(
         }
         val currentJordanDateStr = jordanDateFormat.format(Date())
 
-        val warehouseMap = warehouses.associateBy { it.id }.toMutableMap()
+        // Fallback snapshot directly from the repository's internal disk/memory cache to annihilate microsecond race conditions
+        val repoCachedWarehouses = warehouseRepository.getCachedWarehousesSnapshot().ifEmpty {
+            try {
+                kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+                    warehouseRepository.getWarehousesOnce()
+                }
+            } catch (e: Exception) {
+                emptyList()
+            }
+        }
+        val combinedWarehouses = if (warehouses.isNotEmpty()) warehouses else repoCachedWarehouses
+        val warehouseMap = combinedWarehouses.associateBy { it.id }.toMutableMap()
+
+        // Local Join Resolver: إعطاء الأولوية المطلقة والكاملة لكاش المستودعات المحلي النظيف
+        fun resolveWarehouseName(whId: String, candidateName: String? = null): String {
+            if (whId.isBlank()) return "مستودع فرعي"
+
+            // 1. Prioritize reactive flow state memory list
+            val flowName = warehouses.find { it.id == whId }?.name
+                ?.takeIf { it.isNotBlank() && it != whId && !it.equals("مستودع غير معرف", ignoreCase = true) }
+                ?: _warehouses.value.find { it.id == whId }?.name
+                ?.takeIf { it.isNotBlank() && it != whId && !it.equals("مستودع غير معرف", ignoreCase = true) }
+                ?: combinedWarehouses.find { it.id == whId }?.name
+                ?.takeIf { it.isNotBlank() && it != whId && !it.equals("مستودع غير معرف", ignoreCase = true) }
+            if (!flowName.isNullOrBlank()) {
+                return flowName
+            }
+
+            // 2. FORCE immediate synchronous hit to the repository's core local hardware memory cache
+            val repoCacheName = warehouseRepository.getWarehouseByIdCached(whId)?.name
+                ?.takeIf { it.isNotBlank() && it != whId && !it.equals("مستودع غير معرف", ignoreCase = true) }
+            if (!repoCacheName.isNullOrBlank()) {
+                return repoCacheName
+            }
+
+            // 3. Fallback to candidate name from server if available
+            if (!candidateName.isNullOrBlank() && candidateName != whId && !candidateName.equals("مستودع غير معرف", ignoreCase = true)) {
+                return candidateName
+            }
+
+            // 4. Structural safe guards for core treasury
+            if (whId.contains("main", ignoreCase = true) || whId == "main_treasury") {
+                return "الخزينة الرئيسية"
+            }
+
+            // Return the actual warehouse Id as a unique key descriptor rather than printing a false generic text
+            return whId
+        }
+
+        // Rigid Local Join Resolver for Daily Ledgers:
+        // Synchronously compares ledger's warehouseId against clean local cached warehouse list and re-stamps true Arabic name
+        fun resolveDailyLedgerName(ledger: DailyLedger): DailyLedger {
+            val targetWhId = ledger.resolvedWarehouseId
+            val cleanArabicName = warehouses.find { it.id == targetWhId }?.name
+                ?.takeIf { it.isNotBlank() && it != targetWhId && !it.equals("مستودع غير معرف", ignoreCase = true) }
+                ?: warehouseMap[targetWhId]?.name
+                ?.takeIf { it.isNotBlank() && it != targetWhId && !it.equals("مستودع غير معرف", ignoreCase = true) }
+                ?: if (targetWhId.contains("main", ignoreCase = true) || targetWhId == "main_treasury") "الخزينة الرئيسية" else "مستودع فرعي"
+
+            return ledger.copy(
+                warehouseName = cleanArabicName,
+                warehouseNameCamel = cleanArabicName
+            )
+        }
         
         // بناء بطاقات المستودعات بالاعتماد النشط على مفاتيح warehouseBalances الحية لكسر جمود التدفق تماماً
         val whStats = if (isAdmin) {
             val allWhIds = (financialStatus.warehouseBalances.keys + warehouses.map { it.id }).distinct()
             allWhIds.map { whId ->
-                val name = warehouseMap[whId]?.name ?: "مخزن $whId"
+                val name = resolveWarehouseName(whId)
                 val whFinancial = financialStatus.warehouseBalances[whId]
                 
                 // حارس التوقيت التزامني: إذا مر المبيع الأول، نجبر قنوات الواجهة على الإطلاق فورا
@@ -271,7 +431,7 @@ class DashboardViewModel @Inject constructor(
             }
         } else {
             val targetWhId = userWarehouseId ?: ""
-            val name = warehouseMap[targetWhId]?.name ?: warehouses.find { it.id == targetWhId }?.name ?: "مخزن"
+            val name = resolveWarehouseName(targetWhId)
             val whFinancial = financialStatus.warehouseBalances[targetWhId]
             
             val hasTodayActivity = whFinancial?.lastInvoiceDate == currentJordanDateStr || 
@@ -286,7 +446,22 @@ class DashboardViewModel @Inject constructor(
         val broadcastVersion = financialStatus.version // بث إشاري حاسم لالتقاط البرودكاست
 
         val lowStockItems = alerts.filter { alert ->
-            // قراءة المستندات النشطة فقط والتي لم يتم حذفها هيكلياً من السيرفر والكاش محلياً
+            // فحص صارم ومزدوج ومحكم ضد Dual-Stage Metadata Influx
+            val docId = alert.id
+            val targetVariantId = alert.variantId.ifEmpty { alert.relatedId }
+            val targetRelatedId = alert.relatedId.ifEmpty { alert.variantId }
+            val cId = "low_stock_${targetRelatedId}_${alert.warehouseId ?: ""}"
+            val vcId = "low_stock_${targetVariantId}_${alert.warehouseId ?: ""}"
+            val suppressedSet = _locallySuppressedAlertIds.value
+
+            val isSuppressed = (docId.isNotBlank() && suppressedSet.contains(docId)) ||
+                    (targetVariantId.isNotBlank() && suppressedSet.contains(targetVariantId)) ||
+                    (targetRelatedId.isNotBlank() && suppressedSet.contains(targetRelatedId)) ||
+                    suppressedSet.contains(cId) ||
+                    suppressedSet.contains(vcId)
+
+            if (isSuppressed) return@filter false
+
             !alert.resolved && alert.status != "resolved" && alert.status != "deleted" &&
             (isAdmin || alert.warehouseId == userWarehouseId)
         }.map { alert ->
@@ -318,7 +493,7 @@ class DashboardViewModel @Inject constructor(
                 specification = specification,
                 currentQuantity = currentQty,
                 minQuantity = minQty,
-                warehouseName = warehouses.find { it.id == alert.warehouseId }?.name ?: alert.warehouseName ?: "مستودع غير معرف",
+                warehouseName = resolveWarehouseName(alert.warehouseId ?: "", alert.warehouseName),
                 warehouseId = alert.warehouseId ?: ""
             )
         }
