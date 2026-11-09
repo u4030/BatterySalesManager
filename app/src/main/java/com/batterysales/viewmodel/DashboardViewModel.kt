@@ -235,22 +235,25 @@ class DashboardViewModel @Inject constructor(
             }
 
             // ربط قسري لتدفق التنبيهات مع رمز النسخة version وطرد المعزول محلياً بـ 0ms
-            // حظر وبتر حتمي ضد Dual-Stage Metadata Influx: فحص قاطع للوثيقة والمعرفات بغض النظر عن ميتاداتا السيرفر
+            // حظر وبتر حتمي ضد Dual-Stage Metadata Influx: فحص قاطع للوثيقة والمعرفات بغض النظر عن ميتاداتا السيرفر وحالة hasPendingWrites
             alertsSourceFlow.map { list ->
                 list.filter { alert ->
                     val docId = alert.id
                     val vId = alert.variantId.ifEmpty { alert.relatedId }
                     val rId = alert.relatedId.ifEmpty { alert.variantId }
-                    val compositeId = "low_stock_${rId}_${alert.warehouseId ?: ""}"
+                    val compositeId = "low_stock_${alert.relatedId}_${alert.warehouseId ?: ""}"
+                    val fallbackCompositeId = "low_stock_${rId}_${alert.warehouseId ?: ""}"
                     val variantCompositeId = "low_stock_${vId}_${alert.warehouseId ?: ""}"
 
                     val isLocallySuppressed = (docId.isNotBlank() && allSuppressed.contains(docId)) ||
+                            (alert.id.isNotBlank() && allSuppressed.contains(alert.id)) ||
+                            (alert.variantId.isNotBlank() && allSuppressed.contains(alert.variantId)) ||
+                            (alert.relatedId.isNotBlank() && allSuppressed.contains(alert.relatedId)) ||
                             (vId.isNotBlank() && allSuppressed.contains(vId)) ||
                             (rId.isNotBlank() && allSuppressed.contains(rId)) ||
                             allSuppressed.contains(compositeId) ||
-                            allSuppressed.contains(variantCompositeId) ||
-                            (alert.variantId.isNotBlank() && allSuppressed.contains(alert.variantId)) ||
-                            (alert.relatedId.isNotBlank() && allSuppressed.contains(alert.relatedId))
+                            allSuppressed.contains(fallbackCompositeId) ||
+                            allSuppressed.contains(variantCompositeId)
 
                     if (isLocallySuppressed) {
                         return@filter false
@@ -361,8 +364,10 @@ class DashboardViewModel @Inject constructor(
 
         // Local Join Resolver: إعطاء الأولوية المطلقة والكاملة لكاش المستودعات المحلي النظيف
         fun resolveWarehouseName(whId: String, candidateName: String? = null): String {
-            // بحث مباشر وصارم في كاش المستودعات المحلي المدمج أولاً
-            val localCachedName = combinedWarehouses.find { it.id == whId }?.name
+            // بحث مباشر وصارم في كاش المستودعات المحلي المدمج أولاً: warehouses أو warehouseRepository.getWarehouseByIdCached
+            val localCachedName = warehouses.find { it.id == whId }?.name
+                ?.takeIf { it.isNotBlank() && it != whId && !it.equals("مستودع غير معرف", ignoreCase = true) }
+                ?: combinedWarehouses.find { it.id == whId }?.name
                 ?.takeIf { it.isNotBlank() && it != whId && !it.equals("مستودع غير معرف", ignoreCase = true) }
                 ?: warehouseMap[whId]?.name
                 ?.takeIf { it.isNotBlank() && it != whId && !it.equals("مستودع غير معرف", ignoreCase = true) }
