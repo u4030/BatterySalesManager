@@ -118,7 +118,8 @@ class AccountingViewModel @Inject constructor(
             // بتر فوري للمعاملات المحذوفة بنسبة 0ms بغض النظر عن حالة الميتاداتا وسواء كانت hasPendingWrites تساوي true أو false
             pagingData.filter { trans ->
                 val isSuppressed = suppressed.contains(trans.id) ||
-                        (trans.referenceNumber.isNotBlank() && suppressed.contains(trans.referenceNumber))
+                        (trans.referenceNumber.isNotBlank() && suppressed.contains(trans.referenceNumber)) ||
+                        (!trans.relatedId.isNullOrBlank() && suppressed.contains(trans.relatedId))
                 !isSuppressed &&
                 (query.isBlank() || trans.description.contains(query, ignoreCase = true) || trans.referenceNumber.contains(query, ignoreCase = true))
             }
@@ -373,9 +374,12 @@ class AccountingViewModel @Inject constructor(
         }
     }
 
-    fun deleteTransaction(id: String) {
+    fun deleteTransaction(id: String, relatedId: String? = null) {
         // حجب المعاملة فوراً محلياً بـ 0ms في أول ميكروثانية وتجاوز ميتاداتا الفايرستور المزدوجة
         evictTransactionInstantly(id)
+        if (!relatedId.isNullOrBlank()) {
+            evictTransactionInstantly(relatedId)
+        }
 
         viewModelScope.launch {
             _isSubmitting.value = true
@@ -385,7 +389,7 @@ class AccountingViewModel @Inject constructor(
                 repository.deleteTransaction(id, forceSystemUpdate = isAdmin)
                 loadData(reset = true)
             } catch (e: Exception) {
-                suppressedTransactionIds.update { it - id }
+                suppressedTransactionIds.update { it - id - (relatedId ?: "") }
                 _errorMessage.value = e.message
             } finally {
                 _isSubmitting.value = false

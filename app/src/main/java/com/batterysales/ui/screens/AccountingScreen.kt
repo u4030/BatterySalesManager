@@ -558,7 +558,7 @@ fun AccountingScreen(
                 } else {
                     Button(
                         onClick = {
-                            viewModel.deleteTransaction(trans.id)
+                            viewModel.deleteTransaction(trans.id, trans.relatedId)
                             showDeleteConfirm = null
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)

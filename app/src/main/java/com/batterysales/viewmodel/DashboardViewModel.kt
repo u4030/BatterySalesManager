@@ -70,6 +70,7 @@ class DashboardViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val _warehouses = MutableStateFlow<List<Warehouse>>(emptyList())
+    val warehouses = _warehouses.asStateFlow()
     // حارس التنبيهات المطرودة محلياً في الذاكرة الحية (0ms) لمنع الـ Phantom Alerts والـ Metadata Influx
     private val suppressedAlertIds = MutableStateFlow<Set<String>>(emptySet())
     private val _locallySuppressedAlertIds = suppressedAlertIds
@@ -362,42 +363,6 @@ class DashboardViewModel @Inject constructor(
         val combinedWarehouses = if (warehouses.isNotEmpty()) warehouses else repoCachedWarehouses
         val warehouseMap = combinedWarehouses.associateBy { it.id }.toMutableMap()
 
-        // Local Join Resolver: إعطاء الأولوية المطلقة والكاملة لكاش المستودعات المحلي النظيف
-        fun resolveWarehouseName(whId: String, candidateName: String? = null): String {
-            if (whId.isBlank()) return "مستودع فرعي"
-
-            // 1. Prioritize reactive flow state memory list
-            val flowName = warehouses.find { it.id == whId }?.name
-                ?.takeIf { it.isNotBlank() && it != whId && !it.equals("مستودع غير معرف", ignoreCase = true) }
-                ?: _warehouses.value.find { it.id == whId }?.name
-                ?.takeIf { it.isNotBlank() && it != whId && !it.equals("مستودع غير معرف", ignoreCase = true) }
-                ?: combinedWarehouses.find { it.id == whId }?.name
-                ?.takeIf { it.isNotBlank() && it != whId && !it.equals("مستودع غير معرف", ignoreCase = true) }
-            if (!flowName.isNullOrBlank()) {
-                return flowName
-            }
-
-            // 2. FORCE immediate synchronous hit to the repository's core local hardware memory cache
-            val repoCacheName = warehouseRepository.getWarehouseByIdCached(whId)?.name
-                ?.takeIf { it.isNotBlank() && it != whId && !it.equals("مستودع غير معرف", ignoreCase = true) }
-            if (!repoCacheName.isNullOrBlank()) {
-                return repoCacheName
-            }
-
-            // 3. Fallback to candidate name from server if available
-            if (!candidateName.isNullOrBlank() && candidateName != whId && !candidateName.equals("مستودع غير معرف", ignoreCase = true)) {
-                return candidateName
-            }
-
-            // 4. Structural safe guards for core treasury
-            if (whId.contains("main", ignoreCase = true) || whId == "main_treasury") {
-                return "الخزينة الرئيسية"
-            }
-
-            // Return the actual warehouse Id as a unique key descriptor rather than printing a false generic text
-            return whId
-        }
-
         // Rigid Local Join Resolver for Daily Ledgers:
         // Synchronously compares ledger's warehouseId against clean local cached warehouse list and re-stamps true Arabic name
         fun resolveDailyLedgerName(ledger: DailyLedger): DailyLedger {
@@ -509,6 +474,25 @@ class DashboardViewModel @Inject constructor(
             isLoading = false
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DashboardUiState())
+
+    fun resolveWarehouseName(whId: String, candidateName: String? = null): String {
+        if (whId.isBlank()) return "مستودع فرعي"
+        val flowName = warehouses.value.find { it.id == whId }?.name
+        if (!flowName.isNullOrBlank() && flowName != whId && !flowName.equals("مستودع غير معرف", ignoreCase = true)) {
+            return flowName
+        }
+        val repoCacheName = warehouseRepository.getWarehouseByIdCached(whId)?.name
+        if (!repoCacheName.isNullOrBlank() && repoCacheName != whId && !repoCacheName.equals("مستودع غير معرف", ignoreCase = true)) {
+            return repoCacheName
+        }
+        if (!candidateName.isNullOrBlank() && candidateName != whId && !candidateName.equals("مستودع غير معرف", ignoreCase = true)) {
+            return candidateName
+        }
+        if (whId.contains("main", ignoreCase = true) || whId == "main_treasury") {
+            return "الخزينة الرئيسية"
+        }
+        return whId
+    }
 
     init {
         loadWarehouses()

@@ -1,5 +1,6 @@
 package com.batterysales.data.models
 
+import com.google.firebase.firestore.Exclude
 import com.google.firebase.firestore.PropertyName
 import java.util.Date
 
@@ -22,6 +23,7 @@ data class SyncRegistry(
     @get:PropertyName("lastAlertUpdate") @set:PropertyName("lastAlertUpdate") var lastAlertUpdateCamel: Date? = null,
     @get:PropertyName("last_alert_update") @set:PropertyName("last_alert_update") var lastAlertUpdate: Date? = null
 ) {
+    @get:Exclude
     val resolvedLastModified: Date
         get() = lastModifiedSnake ?: lastModified
 }
