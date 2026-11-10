@@ -86,6 +86,7 @@ class InvoiceDetailViewModel @Inject constructor(
         viewModelScope.launch {
             if (amount <= 0) return@launch
             _uiState.update { it.copy(isSubmitting = true) }
+            val opId = "pay_add_${System.currentTimeMillis()}"
             try {
                 val currentInvoice = _uiState.value.invoice
                 val payment = Payment(
@@ -96,8 +97,22 @@ class InvoiceDetailViewModel @Inject constructor(
                     paymentDate = Date(),
                     timestamp = Date()
                 )
+
+                // تسجيل فوري كـ PENDING_SYNC مع amountDelta لدعم الظهور الفوري في قيود الخزينة (0ms)
+                persistentSyncManager.recordPendingOperation(
+                    com.batterysales.data.local.PendingSyncOperation(
+                        operationId = opId,
+                        type = "TREASURY_TRANSACTION",
+                        relatedId = invoiceId,
+                        amountDelta = amount,
+                        status = "PENDING_SYNC"
+                    )
+                )
+
                 invoiceRepository.addPayment(invoiceId, payment)
+                persistentSyncManager.removePendingOperation(opId)
             } catch (e: Exception) {
+                persistentSyncManager.removePendingOperation(opId)
                 _uiState.update { it.copy(errorMessage = "فشل إضافة الدفعة: ${e.message}") }
             } finally {
                 _uiState.update { it.copy(isSubmitting = false) }
@@ -189,24 +204,26 @@ class InvoiceDetailViewModel @Inject constructor(
      */
     fun cancelInvoiceFully(invoiceId: String, warehouseId: String, variantId: String) {
         val compositeId = "low_stock_${variantId}_${warehouseId}"
+        val opId = "suppress_alert_${variantId}_${warehouseId}"
         viewModelScope.launch {
             _uiState.update { it.copy(isSubmitting = true) }
-            val opId = "suppress_${System.currentTimeMillis()}_$variantId"
             try {
-                // طهر الـ Phantom Alert محلياً وفوراً في 0ms
-                persistentSyncManager.recordPendingOperation(
-                    com.batterysales.data.local.PendingSyncOperation(
-                        operationId = opId,
-                        type = "ALERT_SUPPRESS",
-                        relatedId = compositeId,
-                        status = "PENDING_SYNC"
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    // طهر الـ Phantom Alert محلياً وفوراً في 0ms
+                    persistentSyncManager.recordPendingOperation(
+                        com.batterysales.data.local.PendingSyncOperation(
+                            operationId = opId,
+                            type = "ALERT_SUPPRESS",
+                            relatedId = compositeId,
+                            status = "PENDING_SYNC"
+                        )
                     )
-                )
 
-                // استعادة المخزون تفاؤلياً في الكاش المركزي المشترك
-                val invoice = invoiceRepository.getInvoice(invoiceId)
-                val itemQty = invoice?.items?.find { it.productId == variantId }?.quantity ?: 1
-                summaryRepository.updateCacheOptimisticStock(variantId, warehouseId, itemQty)
+                    // استعادة المخزون تفاؤلياً في الكاش المركزي المشترك
+                    val invoice = invoiceRepository.getInvoice(invoiceId)
+                    val itemQty = invoice?.items?.find { it.productId == variantId }?.quantity ?: 1
+                    summaryRepository.updateCacheOptimisticStock(variantId, warehouseId, itemQty)
+                }
 
                 invoiceRepository.cancelInvoiceAtomic(invoiceId)
             } catch (e: Exception) {
@@ -221,22 +238,25 @@ class InvoiceDetailViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isSubmitting = true) }
             try {
-                items.forEach { item ->
-                    val variantId = item.productId
-                    val compositeAlertId = "low_stock_${variantId}_${warehouseId}"
-                    
-                    // Record ALERT_SUPPRESS in persistent sync manager for instant 0ms eviction
-                    persistentSyncManager.recordPendingOperation(
-                        com.batterysales.data.local.PendingSyncOperation(
-                            operationId = "suppress_${System.currentTimeMillis()}_$variantId",
-                            type = "ALERT_SUPPRESS",
-                            relatedId = compositeAlertId,
-                            status = "PENDING_SYNC"
-                        )
-                    )
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    items.forEach { item ->
+                        val variantId = item.productId
+                        val compositeAlertId = "low_stock_${variantId}_${warehouseId}"
+                        val opId = "suppress_alert_${variantId}_${warehouseId}"
 
-                    // Optimistically restore stock to the central SummaryRepository cache
-                    summaryRepository.updateCacheOptimisticStock(variantId, warehouseId, item.quantity)
+                        // Record ALERT_SUPPRESS in persistent sync manager for instant 0ms eviction
+                        persistentSyncManager.recordPendingOperation(
+                            com.batterysales.data.local.PendingSyncOperation(
+                                operationId = opId,
+                                type = "ALERT_SUPPRESS",
+                                relatedId = compositeAlertId,
+                                status = "PENDING_SYNC"
+                            )
+                        )
+
+                        // Optimistically restore stock to the central SummaryRepository cache
+                        summaryRepository.updateCacheOptimisticStock(variantId, warehouseId, item.quantity)
+                    }
                 }
 
                 invoiceRepository.cancelInvoiceAtomic(invoiceId)

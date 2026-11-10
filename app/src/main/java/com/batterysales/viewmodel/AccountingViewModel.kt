@@ -72,12 +72,16 @@ class AccountingViewModel @Inject constructor(
     // حارس المعاملات المحذوفة أو المعكوسة تفاؤلياً في الذاكرة الحية (0ms) لمنع وميض وتأخر الميتاداتا
     private val suppressedTransactionIds = MutableStateFlow<Set<String>>(emptySet())
 
+    // مخزن المعاملات التفاؤلية الفورية (0ms) لدفعات الفواتير الإضافية والقيود السريعة
+    val optimisticTransactions: MutableStateFlow<List<Transaction>> = MutableStateFlow(emptyList())
+
     fun evictTransactionInstantly(txId: String) {
         suppressedTransactionIds.update { it + txId }
+        val opId = "suppress_tx_$txId"
         viewModelScope.launch {
             persistentSyncManager.recordPendingOperation(
                 com.batterysales.data.local.PendingSyncOperation(
-                    operationId = "suppress_tx_${System.currentTimeMillis()}_$txId",
+                    operationId = opId,
                     type = "TREASURY_SUPPRESS",
                     relatedId = txId,
                     status = "PENDING_SYNC"
@@ -92,7 +96,7 @@ class AccountingViewModel @Inject constructor(
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val transactions: Flow<PagingData<Transaction>> = combine(
-        _selectedWarehouseId, _selectedTab, _selectedPaymentMethod, _startDate, _endDate, refreshTrigger, _isDataLoaded, _searchQuery, suppressedTransactionIds
+        _selectedWarehouseId, _selectedTab, _selectedPaymentMethod, _startDate, _endDate, refreshTrigger, _isDataLoaded, _searchQuery, suppressedTransactionIds, persistentSyncManager.pendingOperationsFlow
     ) { args ->
         if (!(args[6] as Boolean)) return@combine null
         Filters(
