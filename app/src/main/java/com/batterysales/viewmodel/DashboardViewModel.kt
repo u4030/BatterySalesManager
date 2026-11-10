@@ -500,6 +500,8 @@ class DashboardViewModel @Inject constructor(
                 else -> 0
             }
             val displayName = alert.title.removePrefix("تنبيه: ").ifBlank { "بطارية صنف" }
+            val resolvedWh = resolveWarehouseName(alert.warehouseId ?: "", alert.warehouseName)
+            val finalWhName = if (resolvedWh == "حرج" || resolvedWh.isBlank()) "مستودع غير محدد" else resolvedWh
             
             LowStockItem(
                 variantId = alert.relatedId,
@@ -508,7 +510,7 @@ class DashboardViewModel @Inject constructor(
                 specification = specification,
                 currentQuantity = currentQty,
                 minQuantity = minQty,
-                warehouseName = resolveWarehouseName(alert.warehouseId ?: "", alert.warehouseName),
+                warehouseName = finalWhName,
                 warehouseId = alert.warehouseId ?: ""
             )
         }

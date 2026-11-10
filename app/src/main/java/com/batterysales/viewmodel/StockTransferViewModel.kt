@@ -289,6 +289,9 @@ class StockTransferViewModel @Inject constructor(
             val destMinQty = (uiState.value.selectedVariant?.minQuantities?.get(destWh) as? Number)?.toInt()
                 ?: uiState.value.selectedVariant?.minQuantity ?: 5
 
+            val srcWhName = uiState.value.sourceWarehouse?.name ?: "المستودع"
+            val destWhName = uiState.value.destinationWarehouse?.name ?: "المستودع"
+
             // 1. تقييم مستقل صارم لمستودع المصدر:
             if (srcMinQty > 0 && newSrcStock <= srcMinQty) {
                 persistentSyncManager.removePendingOperation(srcOpId)
@@ -303,7 +306,7 @@ class StockTransferViewModel @Inject constructor(
                         "capacity" to (uiState.value.selectedVariant?.capacity ?: 0),
                         "specification" to (uiState.value.selectedVariant?.specification ?: ""),
                         "warehouseId" to srcWh,
-                        "warehouseName" to (uiState.value.sourceWarehouse?.name ?: "المستودع"),
+                        "warehouseName" to srcWhName,
                         "currentStock" to newSrcStock,
                         "minQuantity" to srcMinQty
                     )
@@ -336,7 +339,7 @@ class StockTransferViewModel @Inject constructor(
                         "capacity" to (uiState.value.selectedVariant?.capacity ?: 0),
                         "specification" to (uiState.value.selectedVariant?.specification ?: ""),
                         "warehouseId" to destWh,
-                        "warehouseName" to (uiState.value.destinationWarehouse?.name ?: "المستودع"),
+                        "warehouseName" to destWhName,
                         "currentStock" to newDestStock,
                         "minQuantity" to destMinQty
                     )

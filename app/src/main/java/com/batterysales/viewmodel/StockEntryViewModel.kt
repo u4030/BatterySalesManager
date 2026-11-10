@@ -505,7 +505,7 @@ class StockEntryViewModel @Inject constructor(
                                         "productName" to entry.productName,
                                         "capacity" to (variant?.capacity ?: 0),
                                         "specification" to (variant?.specification ?: ""),
-                                        "warehouseId" to entry.warehouseId,
+                                        "warehouseId" to state.selectedWarehouse.id,
                                         "warehouseName" to state.selectedWarehouse.name,
                                         "currentStock" to resultingStock,
                                         "minQuantity" to effectiveMinQty
