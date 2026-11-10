@@ -269,6 +269,10 @@ class DashboardViewModel @Inject constructor(
                     !alert.resolved && 
                     alert.status != "resolved" && 
                     alert.status != "deleted"
+                }.map { alert ->
+                    // Override and dynamically resolve warehouse name to clean Arabic name
+                    val resolvedWhName = resolveWarehouseName(alert.warehouseId ?: "", alert.warehouseName)
+                    alert.copy(warehouseName = resolvedWhName)
                 }
             }
         }

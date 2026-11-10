@@ -42,12 +42,16 @@ export const onStockEntryCreated = onDocumentCreated(
     try {
       await runWithIdempotencyGuard(eventId, `stock_entry_created_${entryId}`, async (transaction) => {
         // --- READ PHASE (under 60ms) ---
-        const [variantSnap, whSummarySnap, globalSummarySnap, alertSnap] = await Promise.all([
+        const [variantSnap, whSummarySnap, globalSummarySnap, alertSnap, warehouseSnap] = await Promise.all([
           transaction.get(variantRef),
           transaction.get(whSummaryRef),
           transaction.get(globalSummaryRef),
           transaction.get(alertRef),
+          transaction.get(warehouseRef),
         ]);
+
+        const warehouseData = warehouseSnap.exists ? (warehouseSnap.data() || {}) : {};
+        const warehouseArabicName = String(warehouseData.name || entry.warehouseName || "المستودع").trim();
 
         const variant = variantSnap.exists ? (variantSnap.data() || {}) : {};
         const oldWac = Number(variant.weightedAverageCost || 0);
@@ -135,8 +139,8 @@ export const onStockEntryCreated = onDocumentCreated(
         let alertDelta = 0;
         const isTransfer = entry.orderId && String(entry.orderId).startsWith("transfer_");
         const alertMessage = isTransfer
-          ? "الصنف شارف على النفاد في المستودع بعد عملية النقل"
-          : "الكمية المتوفرة حرجة في المستودع";
+          ? `الصنف شارف على النفاد في ${warehouseArabicName} بعد عملية النقل`
+          : `الكمية المتوفرة حرجة في ${warehouseArabicName}`;
 
         if (newWhStock <= minQty && minQty > 0) {
           const alertPayload = {
@@ -146,6 +150,7 @@ export const onStockEntryCreated = onDocumentCreated(
             message: alertMessage,
             variantId: productVariantId,
             warehouseId: warehouseId,
+            warehouseName: warehouseArabicName,
             resolved: false,
             status: "active",
             timestamp: now,
@@ -158,6 +163,7 @@ export const onStockEntryCreated = onDocumentCreated(
               specification: spec,
               currentStock: newWhStock,
               threshold: minQty,
+              warehouseName: warehouseArabicName,
             },
           };
           transaction.set(alertRef, alertPayload, { merge: true });
