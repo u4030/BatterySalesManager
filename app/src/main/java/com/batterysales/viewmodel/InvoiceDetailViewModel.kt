@@ -219,7 +219,8 @@ class InvoiceDetailViewModel @Inject constructor(
                         )
                     )
 
-                    // استعادة المخزون تفاؤلياً في الكاش المركزي المشترك
+                    // استعادة المخزون تفاؤلياً في الكاش المركزي المشترك وإزالة التنبيه التفاؤلي
+                    persistentSyncManager.removePendingOperation("opt_$compositeId")
                     val invoice = invoiceRepository.getInvoice(invoiceId)
                     val itemQty = invoice?.items?.find { it.productId == variantId }?.quantity ?: 1
                     summaryRepository.updateCacheOptimisticStock(variantId, warehouseId, itemQty)
@@ -255,6 +256,7 @@ class InvoiceDetailViewModel @Inject constructor(
                         )
 
                         // Optimistically restore stock to the central SummaryRepository cache
+                        persistentSyncManager.removePendingOperation("opt_$compositeAlertId")
                         summaryRepository.updateCacheOptimisticStock(variantId, warehouseId, item.quantity)
                     }
                 }

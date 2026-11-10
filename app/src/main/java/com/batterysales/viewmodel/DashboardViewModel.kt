@@ -177,7 +177,8 @@ class DashboardViewModel @Inject constructor(
         val user: User?,
         val versionToken: Long,
         val suppressedIds: Set<String>,
-        val pendingSuppressedIds: Set<String>
+        val pendingSuppressedIds: Set<String>,
+        val optimisticAlerts: List<SystemAlert>
     )
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -191,11 +192,41 @@ class DashboardViewModel @Inject constructor(
             .filter { it.type == "ALERT_SUPPRESS" }
             .map { it.relatedId }
             .toSet()
+
+        val optimisticAlerts = pendingOps
+            .filter { it.type == "OPTIMISTIC_LOW_STOCK_ALERT" && it.status == "PENDING_SYNC" }
+            .mapNotNull { op ->
+                try {
+                    val mapType = object : com.google.gson.reflect.TypeToken<Map<String, Any>>() {}.type
+                    val map = com.google.gson.Gson().fromJson<Map<String, Any>>(op.payloadJson, mapType) ?: return@mapNotNull null
+                    val docId = map["id"]?.toString() ?: op.relatedId
+                    SystemAlert(
+                        id = docId,
+                        title = "مخزون منخفض: ${map["productName"] ?: "بطارية"}",
+                        message = "الكمية المتوفرة حرجة",
+                        type = "LOW_STOCK",
+                        relatedId = map["variantId"]?.toString() ?: "",
+                        variantId = map["variantId"]?.toString() ?: "",
+                        warehouseId = map["warehouseId"]?.toString(),
+                        warehouseName = map["warehouseName"]?.toString(),
+                        currentStock = (map["currentStock"] as? Number)?.toInt(),
+                        threshold = (map["minQuantity"] as? Number)?.toInt(),
+                        capacity = (map["capacity"] as? Number)?.toInt(),
+                        specification = map["specification"]?.toString() ?: "",
+                        resolved = false,
+                        status = "active"
+                    )
+                } catch (e: Exception) {
+                    null
+                }
+            }
+
         AlertStreamContext(
             user = user,
             versionToken = financialStatus.version,
             suppressedIds = suppressedIds,
-            pendingSuppressedIds = diskSuppressed
+            pendingSuppressedIds = diskSuppressed,
+            optimisticAlerts = optimisticAlerts
         )
     }.flatMapLatest { ctx ->
         val user = ctx.user
@@ -242,9 +273,9 @@ class DashboardViewModel @Inject constructor(
             }
 
             // ربط قسري لتدفق التنبيهات مع رمز النسخة version وطرد المعزول محلياً بـ 0ms
-            // حظر وبتر حتمي ضد Dual-Stage Metadata Influx: فحص قاطع للوثيقة والمعرفات بغض النظر عن ميتاداتا السيرفر وحالة hasPendingWrites
+            // دمج التنبيهات التفاؤلية مع تنبيهات السيرفر دون تكرار (Deduplicated 0ms projection)
             alertsSourceFlow.map { list ->
-                list.filter { alert ->
+                val serverAlerts = list.filter { alert ->
                     val docId = alert.id
                     val vId = alert.variantId.ifEmpty { alert.relatedId }
                     val rId = alert.relatedId.ifEmpty { alert.variantId }
@@ -269,7 +300,16 @@ class DashboardViewModel @Inject constructor(
                     !alert.resolved && 
                     alert.status != "resolved" && 
                     alert.status != "deleted"
-                }.map { alert ->
+                }
+
+                // دمج التنبيهات التفاؤلية الفورية التي لم تصل وثيقتها من السيرفر بعد
+                val serverKeys = serverAlerts.map { "low_stock_${it.variantId.ifEmpty { it.relatedId }}_${it.warehouseId ?: ""}" }.toSet()
+                val activeOptimistic = ctx.optimisticAlerts.filter { opt ->
+                    val optKey = "low_stock_${opt.variantId}_${opt.warehouseId ?: ""}"
+                    !serverKeys.contains(optKey) && !allSuppressed.contains(optKey) && (isAdmin || opt.warehouseId == user.warehouseId)
+                }
+
+                (activeOptimistic + serverAlerts).map { alert ->
                     // Override and dynamically resolve warehouse name to clean Arabic name
                     val resolvedWhName = resolveWarehouseName(alert.warehouseId ?: "", alert.warehouseName)
                     alert.copy(warehouseName = resolvedWhName)

@@ -147,12 +147,15 @@ exports.onStockEntryCreated = (0, firestore_1.onDocumentCreated)("stock_entries/
             const alertMessage = isTransfer
                 ? `الصنف شارف على النفاد في ${warehouseArabicName} بعد عملية النقل`
                 : `الكمية المتوفرة حرجة في ${warehouseArabicName}`;
+            const productId = String(variant.productId || entry.productId || "");
             if (newWhStock <= minQty && minQty > 0) {
                 const alertPayload = {
                     id: alertId,
                     type: "low_stock",
                     title: "مخزون منخفض حرج",
                     message: alertMessage,
+                    productId: productId,
+                    productName: pName,
                     variantId: productVariantId,
                     warehouseId: warehouseId,
                     warehouseName: warehouseArabicName,
@@ -164,6 +167,8 @@ exports.onStockEntryCreated = (0, firestore_1.onDocumentCreated)("stock_entries/
                     capacity: capacity,
                     specification: spec,
                     data: {
+                        productId: productId,
+                        productName: pName,
                         capacity: capacity,
                         specification: spec,
                         currentStock: newWhStock,

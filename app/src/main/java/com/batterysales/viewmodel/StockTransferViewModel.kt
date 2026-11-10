@@ -281,10 +281,37 @@ class StockTransferViewModel @Inject constructor(
             if (checkIfUnderThreshold(srcWh, variantId, -qty)) {
                 persistentSyncManager.removePendingOperation(srcOpId)
                 persistentSyncManager.removePendingOperation("suppress_${srcComposite}")
+
+                val resultingSrcStock = (uiState.value.stockLevels[Pair(variantId, srcWh)] ?: 0) - qty
+                val minQty = uiState.value.selectedVariant?.minQuantity ?: 5
+                val alertPayload = com.google.gson.Gson().toJson(
+                    mapOf(
+                        "id" to srcComposite,
+                        "variantId" to variantId,
+                        "productId" to (uiState.value.selectedVariant?.productId ?: ""),
+                        "productName" to (uiState.value.selectedProduct?.name ?: "بطارية"),
+                        "capacity" to (uiState.value.selectedVariant?.capacity ?: 0),
+                        "specification" to (uiState.value.selectedVariant?.specification ?: ""),
+                        "warehouseId" to srcWh,
+                        "warehouseName" to (uiState.value.sourceWarehouse?.name ?: "المستودع"),
+                        "currentStock" to resultingSrcStock,
+                        "minQuantity" to minQty
+                    )
+                )
+                persistentSyncManager.recordPendingOperation(
+                    com.batterysales.data.local.PendingSyncOperation(
+                        operationId = "opt_$srcComposite",
+                        type = "OPTIMISTIC_LOW_STOCK_ALERT",
+                        relatedId = srcComposite,
+                        payloadJson = alertPayload,
+                        status = "PENDING_SYNC"
+                    )
+                )
             }
 
             // 2. مستودع الهدف: إذا حل العجز، اطرد التنبيه فوراً
             if (checkIfAboveThreshold(destWh, variantId, qty)) {
+                persistentSyncManager.removePendingOperation("opt_$destComposite")
                 persistentSyncManager.recordPendingOperation(
                     com.batterysales.data.local.PendingSyncOperation(
                         operationId = destOpId,

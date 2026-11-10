@@ -409,6 +409,35 @@ class SalesViewModel @Inject constructor(
                 )
                 // إزالة أي قفل حجب سابق للسماح بظهور تنبيه انخفاض المخزون عند نفاذ الكمية
                 clearSuppressedAlert(variant.id, warehouse.id)
+
+                // إذا وصل المخزون بعد البيع للحد الحرج أو دونه، بث تنبيه تفاؤلي فوري بـ 0ms
+                val minQty = variant.minQuantity
+                if (updatedAvailable <= minQty && minQty > 0) {
+                    val compositeId = "low_stock_${variant.id}_${warehouse.id}"
+                    val alertPayload = com.google.gson.Gson().toJson(
+                        mapOf(
+                            "id" to compositeId,
+                            "variantId" to variant.id,
+                            "productId" to product.id,
+                            "productName" to product.name,
+                            "capacity" to variant.capacity,
+                            "specification" to variant.specification,
+                            "warehouseId" to warehouse.id,
+                            "warehouseName" to warehouse.name,
+                            "currentStock" to updatedAvailable,
+                            "minQuantity" to minQty
+                        )
+                    )
+                    persistentSyncManager.recordPendingOperation(
+                        com.batterysales.data.local.PendingSyncOperation(
+                            operationId = "opt_$compositeId",
+                            type = "OPTIMISTIC_LOW_STOCK_ALERT",
+                            relatedId = compositeId,
+                            payloadJson = alertPayload,
+                            status = "PENDING_SYNC"
+                        )
+                    )
+                }
             }
 
             // 2. ترحيل الطلب للشبكة والسيرفر على Dispatchers.IO لتفريغ الـ Main Thread

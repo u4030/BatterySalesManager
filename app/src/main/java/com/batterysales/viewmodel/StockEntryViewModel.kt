@@ -495,8 +495,34 @@ class StockEntryViewModel @Inject constructor(
                             if (resultingStock <= minQty && minQty > 0) {
                                 // المخزون لا يزال دون أو يساوي حد الأمان: إزالة أي حجب ليظهر التنبيه فوراً
                                 persistentSyncManager.removePendingOperation(suppressOpId)
+                                // بث تنبيه تفاؤلي فوري في الذاكرة بـ 0ms
+                                val optAlertId = "opt_$compositeId"
+                                val alertPayload = com.google.gson.Gson().toJson(
+                                    mapOf(
+                                        "id" to compositeId,
+                                        "variantId" to entry.productVariantId,
+                                        "productId" to (variant?.productId ?: ""),
+                                        "productName" to entry.productName,
+                                        "capacity" to (variant?.capacity ?: 0),
+                                        "specification" to (variant?.specification ?: ""),
+                                        "warehouseId" to entry.warehouseId,
+                                        "warehouseName" to state.selectedWarehouse.name,
+                                        "currentStock" to resultingStock,
+                                        "minQuantity" to minQty
+                                    )
+                                )
+                                persistentSyncManager.recordPendingOperation(
+                                    com.batterysales.data.local.PendingSyncOperation(
+                                        operationId = optAlertId,
+                                        type = "OPTIMISTIC_LOW_STOCK_ALERT",
+                                        relatedId = compositeId,
+                                        payloadJson = alertPayload,
+                                        status = "PENDING_SYNC"
+                                    )
+                                )
                             } else if (resultingStock > minQty) {
-                                // المخزون زاد عن حد الأمان: حجب التنبيه تفاؤلياً في 0ms
+                                // المخزون زاد عن حد الأمان: حجب التنبيه تفاؤلياً في 0ms وإلغاء أي تنبيه تفاؤلي
+                                persistentSyncManager.removePendingOperation("opt_$compositeId")
                                 persistentSyncManager.recordPendingOperation(
                                     com.batterysales.data.local.PendingSyncOperation(
                                         operationId = suppressOpId,

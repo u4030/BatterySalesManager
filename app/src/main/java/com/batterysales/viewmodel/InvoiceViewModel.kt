@@ -173,6 +173,7 @@ class InvoiceViewModel @Inject constructor(
                             val variantId = item.productId
                             val compositeId = "low_stock_${variantId}_${invoice.warehouseId}"
                             val opId = "suppress_alert_${variantId}_${invoice.warehouseId}"
+                            persistentSyncManager.removePendingOperation("opt_$compositeId")
                             persistentSyncManager.recordPendingOperation(
                                 com.batterysales.data.local.PendingSyncOperation(
                                     operationId = opId,
