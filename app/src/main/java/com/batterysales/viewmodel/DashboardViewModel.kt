@@ -473,33 +473,14 @@ class DashboardViewModel @Inject constructor(
             )
         }
 
-        // دمج ومزامنة فورية لتنبيهات المخزون المنخفض مع كلا المصدرين (system_alerts و hub.scrapAndAlertsSummary.activeLowStockAlertsCount)
-        val finalLowStockItems = if (lowStockItems.isEmpty() && hub.scrapAndAlertsSummary.activeLowStockAlertsCount > 0) {
-            // توفير تنبيه تلخيصي مباشر من الـ hub عند عدم اكتمال قائمة العناصر الفردية فوراً
-            listOf(
-                LowStockItem(
-                    variantId = "hub_low_stock_summary",
-                    productName = "منتجات منخفضة المخزون (${hub.scrapAndAlertsSummary.activeLowStockAlertsCount})",
-                    capacity = 0,
-                    specification = "",
-                    currentQuantity = 0,
-                    minQuantity = hub.scrapAndAlertsSummary.activeLowStockAlertsCount,
-                    warehouseName = "المستودع",
-                    warehouseId = userWarehouseId ?: ""
-                )
-            )
-        } else {
-            lowStockItems
-        }
-
         DashboardUiState(
             pendingApprovalsCount = if (isAdmin) pendingCount else 0,
-            lowStockVariants = finalLowStockItems,
+            lowStockVariants = lowStockItems,
             upcomingBills = if (isAdmin) bills else emptyList(),
             warehouseStats = whStats,
             systemStats = systemStats,
             blockingConflictError = _blockingConflictError.value,
-            notifications = constructNotifications(if (isAdmin) bills else emptyList(), if (isAdmin) pendingCount else 0, finalLowStockItems, Date()),
+            notifications = constructNotifications(if (isAdmin) bills else emptyList(), if (isAdmin) pendingCount else 0, lowStockItems, Date()),
             isLoading = false
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DashboardUiState())
@@ -595,7 +576,14 @@ class DashboardViewModel @Inject constructor(
         lowStockItems.forEach { item ->
             val specLabel = if (item.specification.isNotBlank()) "${item.specification}|" else ""
             val message = "(${item.warehouseName}: $specLabel${item.capacity} أمبير) | المتاح: ${item.currentQuantity} | الحد الأدنى: ${item.minQuantity}"
-            val route = "product_ledger/${item.variantId}/${item.productName}/${item.capacity}/${item.specification.ifEmpty { "no_spec" }}"
+
+            // Safe URL encoding to prevent navigation routing crashes
+            val safeVariantId = java.net.URLEncoder.encode(item.variantId.ifBlank { "unknown" }, "UTF-8")
+            val safeProductName = java.net.URLEncoder.encode(item.productName.ifBlank { "بطارية" }, "UTF-8")
+            val safeCapacity = item.capacity.toString()
+            val safeSpec = java.net.URLEncoder.encode(item.specification.ifBlank { "no_spec" }, "UTF-8")
+            val safeWhId = java.net.URLEncoder.encode(item.warehouseId, "UTF-8")
+            val route = "product_ledger/$safeVariantId/$safeProductName/$safeCapacity/$safeSpec?warehouseId=$safeWhId"
 
             allNotifications.add(
                 AppNotification(
