@@ -82,10 +82,11 @@ class DashboardViewModel @Inject constructor(
      */
     fun evictAlertInstantly(variantId: String) {
         suppressedAlertIds.update { it + variantId }
+        val opId = "suppress_alert_$variantId"
         viewModelScope.launch {
             persistentSyncManager.recordPendingOperation(
                 com.batterysales.data.local.PendingSyncOperation(
-                    operationId = "suppress_${System.currentTimeMillis()}_$variantId",
+                    operationId = opId,
                     type = "ALERT_SUPPRESS",
                     relatedId = variantId,
                     status = "PENDING_SYNC"
@@ -126,12 +127,13 @@ class DashboardViewModel @Inject constructor(
 
     fun suppressAlertLocally(variantId: String, warehouseId: String) {
         val compositeId = "low_stock_${variantId}_${warehouseId}"
+        val opId = "suppress_alert_${variantId}_${warehouseId}"
         _locallySuppressedAlertIds.update { it + compositeId + variantId + "bill_$variantId" }
         viewModelScope.launch {
             // التوطين الصلب لمنع التنبيهات الوهمية حتى لو انطفأ الهاتف
             persistentSyncManager.recordPendingOperation(
                 com.batterysales.data.local.PendingSyncOperation(
-                    operationId = "suppress_${System.currentTimeMillis()}_$compositeId",
+                    operationId = opId,
                     type = "ALERT_SUPPRESS",
                     relatedId = compositeId,
                     status = "PENDING_SYNC"
@@ -142,9 +144,12 @@ class DashboardViewModel @Inject constructor(
 
     fun triggerOptimisticAlert(variantId: String, warehouseId: String, threshold: Int = 0) {
         val compositeId = "low_stock_${variantId}_${warehouseId}"
-        _locallySuppressedAlertIds.update { it - compositeId - variantId }
+        val opId = if (warehouseId.isNotEmpty()) "suppress_alert_${variantId}_${warehouseId}" else "suppress_alert_$variantId"
+        _locallySuppressedAlertIds.update { it - compositeId - variantId - "bill_$variantId" }
         viewModelScope.launch {
-            persistentSyncManager.removePendingOperation("suppress_${System.currentTimeMillis()}_$compositeId")
+            persistentSyncManager.removePendingOperation(opId)
+            persistentSyncManager.removePendingOperation("suppress_alert_$variantId")
+            persistentSyncManager.removePendingOperation("suppress_alert_${variantId}_${warehouseId}")
         }
     }
 
@@ -154,11 +159,12 @@ class DashboardViewModel @Inject constructor(
      */
     fun evictAlertImmediately(variantId: String, warehouseId: String = "") {
         val compositeId = if (warehouseId.isNotEmpty()) "low_stock_${variantId}_${warehouseId}" else "low_stock_$variantId"
+        val opId = if (warehouseId.isNotEmpty()) "suppress_alert_${variantId}_${warehouseId}" else "suppress_alert_$variantId"
         _locallySuppressedAlertIds.update { it + compositeId + variantId }
         viewModelScope.launch {
             persistentSyncManager.recordPendingOperation(
                 com.batterysales.data.local.PendingSyncOperation(
-                    operationId = "suppress_${System.currentTimeMillis()}_$compositeId",
+                    operationId = opId,
                     type = "ALERT_SUPPRESS",
                     relatedId = compositeId,
                     status = "PENDING_SYNC"

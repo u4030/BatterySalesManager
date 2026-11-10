@@ -482,6 +482,20 @@ class StockEntryViewModel @Inject constructor(
                             bill = billToCreate
                         )
 
+                        // كتم وحجب فوري لتنبيه انخفاض المخزون تفاؤلياً بـ 0ms لأن البضاعة وصلت وزاد المخزون
+                        entries.forEach { entry ->
+                            val compositeId = "low_stock_${entry.productVariantId}_${entry.warehouseId}"
+                            val suppressOpId = "suppress_alert_${entry.productVariantId}_${entry.warehouseId}"
+                            persistentSyncManager.recordPendingOperation(
+                                com.batterysales.data.local.PendingSyncOperation(
+                                    operationId = suppressOpId,
+                                    type = "ALERT_SUPPRESS",
+                                    relatedId = compositeId,
+                                    status = "PENDING_SYNC"
+                                )
+                            )
+                        }
+
                         persistentSyncManager.removePendingOperation(opId)
                     }
                     true

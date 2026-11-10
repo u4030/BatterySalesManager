@@ -407,6 +407,8 @@ class SalesViewModel @Inject constructor(
                         status = "PENDING_SYNC"
                     )
                 )
+                // إزالة أي قفل حجب سابق للسماح بظهور تنبيه انخفاض المخزون عند نفاذ الكمية
+                clearSuppressedAlert(variant.id, warehouse.id)
             }
 
             // 2. ترحيل الطلب للشبكة والسيرفر على Dispatchers.IO لتفريغ الـ Main Thread
@@ -448,15 +450,29 @@ class SalesViewModel @Inject constructor(
      */
     fun pruneAlertOptimistic(variantId: String, warehouseId: String) {
         val compositeId = "low_stock_${variantId}_${warehouseId}"
+        val opId = "suppress_alert_${variantId}_${warehouseId}"
         viewModelScope.launch {
             persistentSyncManager.recordPendingOperation(
                 com.batterysales.data.local.PendingSyncOperation(
-                    operationId = "suppress_${System.currentTimeMillis()}_$compositeId",
+                    operationId = opId,
                     type = "ALERT_SUPPRESS",
                     relatedId = compositeId,
                     status = "PENDING_SYNC"
                 )
             )
+        }
+    }
+
+    /**
+     * Clears optimistic suppression on sales creation so low-stock alerts reappear at 0ms if stock is depleted
+     */
+    fun clearSuppressedAlert(variantId: String, warehouseId: String) {
+        val compositeId = "low_stock_${variantId}_${warehouseId}"
+        val opId = "suppress_alert_${variantId}_${warehouseId}"
+        viewModelScope.launch {
+            persistentSyncManager.removePendingOperation(opId)
+            persistentSyncManager.removePendingOperation("suppress_alert_$variantId")
+            persistentSyncManager.removePendingOperation(compositeId)
         }
     }
 
