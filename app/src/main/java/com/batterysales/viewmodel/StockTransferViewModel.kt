@@ -277,13 +277,21 @@ class StockTransferViewModel @Inject constructor(
             val srcOpId = "suppress_alert_${variantId}_${srcWh}"
             val destOpId = "suppress_alert_${variantId}_${destWh}"
 
-            // 1. مستودع المصدر: إذا كسر حد الأمان، بث تنبيه متفائل فورا بإزالة أي قفل حجب
-            if (checkIfUnderThreshold(srcWh, variantId, -qty)) {
+            val currentSrcStock = uiState.value.stockLevels[Pair(variantId, srcWh)] ?: 0
+            val newSrcStock = (currentSrcStock - qty).coerceAtLeast(0)
+            val srcMinQty = (uiState.value.selectedVariant?.minQuantities?.get(srcWh) as? Number)?.toInt()
+                ?: uiState.value.selectedVariant?.minQuantity ?: 5
+
+            val currentDestStock = uiState.value.stockLevels[Pair(variantId, destWh)] ?: 0
+            val newDestStock = currentDestStock + qty
+            val destMinQty = (uiState.value.selectedVariant?.minQuantities?.get(destWh) as? Number)?.toInt()
+                ?: uiState.value.selectedVariant?.minQuantity ?: 5
+
+            // 1. تقييم مستقل لمستودع المصدر:
+            if (srcMinQty > 0 && newSrcStock <= srcMinQty) {
                 persistentSyncManager.removePendingOperation(srcOpId)
                 persistentSyncManager.removePendingOperation("suppress_${srcComposite}")
 
-                val resultingSrcStock = (uiState.value.stockLevels[Pair(variantId, srcWh)] ?: 0) - qty
-                val minQty = uiState.value.selectedVariant?.minQuantity ?: 5
                 val alertPayload = com.google.gson.Gson().toJson(
                     mapOf(
                         "id" to srcComposite,
@@ -294,8 +302,8 @@ class StockTransferViewModel @Inject constructor(
                         "specification" to (uiState.value.selectedVariant?.specification ?: ""),
                         "warehouseId" to srcWh,
                         "warehouseName" to (uiState.value.sourceWarehouse?.name ?: "المستودع"),
-                        "currentStock" to resultingSrcStock,
-                        "minQuantity" to minQty
+                        "currentStock" to newSrcStock,
+                        "minQuantity" to srcMinQty
                     )
                 )
                 persistentSyncManager.recordPendingOperation(
@@ -307,10 +315,41 @@ class StockTransferViewModel @Inject constructor(
                         status = "PENDING_SYNC"
                     )
                 )
+            } else if (newSrcStock > srcMinQty) {
+                persistentSyncManager.removePendingOperation("opt_$srcComposite")
             }
 
-            // 2. مستودع الهدف: إذا حل العجز، اطرد التنبيه فوراً
-            if (checkIfAboveThreshold(destWh, variantId, qty)) {
+            // 2. تقييم مستقل لمستودع الهدف:
+            if (destMinQty > 0 && newDestStock <= destMinQty) {
+                // مستودع الهدف لا يزال دون أو يساوي حد الأمان: بث تنبيه تفاؤلي له وإزالة أي حجب
+                persistentSyncManager.removePendingOperation(destOpId)
+                persistentSyncManager.removePendingOperation("suppress_${destComposite}")
+
+                val alertPayload = com.google.gson.Gson().toJson(
+                    mapOf(
+                        "id" to destComposite,
+                        "variantId" to variantId,
+                        "productId" to (uiState.value.selectedVariant?.productId ?: ""),
+                        "productName" to (uiState.value.selectedProduct?.name ?: "بطارية"),
+                        "capacity" to (uiState.value.selectedVariant?.capacity ?: 0),
+                        "specification" to (uiState.value.selectedVariant?.specification ?: ""),
+                        "warehouseId" to destWh,
+                        "warehouseName" to (uiState.value.destinationWarehouse?.name ?: "المستودع"),
+                        "currentStock" to newDestStock,
+                        "minQuantity" to destMinQty
+                    )
+                )
+                persistentSyncManager.recordPendingOperation(
+                    com.batterysales.data.local.PendingSyncOperation(
+                        operationId = "opt_$destComposite",
+                        type = "OPTIMISTIC_LOW_STOCK_ALERT",
+                        relatedId = destComposite,
+                        payloadJson = alertPayload,
+                        status = "PENDING_SYNC"
+                    )
+                )
+            } else if (newDestStock > destMinQty) {
+                // حل العجز وتجاوز حد الأمان تماماً: حجب التنبيه وإلغاء التنبيه التفاؤلي
                 persistentSyncManager.removePendingOperation("opt_$destComposite")
                 persistentSyncManager.recordPendingOperation(
                     com.batterysales.data.local.PendingSyncOperation(

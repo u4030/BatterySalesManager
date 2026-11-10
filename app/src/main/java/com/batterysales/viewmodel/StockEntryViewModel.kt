@@ -488,11 +488,11 @@ class StockEntryViewModel @Inject constructor(
                             val compositeId = "low_stock_${entry.productVariantId}_${entry.warehouseId}"
                             val suppressOpId = "suppress_alert_${entry.productVariantId}_${entry.warehouseId}"
                             val variant = allVariants.find { it.id == entry.productVariantId }
-                            val minQty = variant?.minQuantity ?: 0
+                            val effectiveMinQty = if (entry.minQuantity > 0) entry.minQuantity else ((variant?.minQuantities?.get(entry.warehouseId) as? Number)?.toInt() ?: variant?.minQuantity ?: 0)
                             val currentWhStock = (variant?.currentStock?.get(entry.warehouseId) as? Number)?.toInt() ?: 0
                             val resultingStock = currentWhStock + entry.quantity
 
-                            if (resultingStock <= minQty && minQty > 0) {
+                            if (resultingStock <= effectiveMinQty && effectiveMinQty > 0) {
                                 // المخزون لا يزال دون أو يساوي حد الأمان: إزالة أي حجب ليظهر التنبيه فوراً
                                 persistentSyncManager.removePendingOperation(suppressOpId)
                                 // بث تنبيه تفاؤلي فوري في الذاكرة بـ 0ms
@@ -508,7 +508,7 @@ class StockEntryViewModel @Inject constructor(
                                         "warehouseId" to entry.warehouseId,
                                         "warehouseName" to state.selectedWarehouse.name,
                                         "currentStock" to resultingStock,
-                                        "minQuantity" to minQty
+                                        "minQuantity" to effectiveMinQty
                                     )
                                 )
                                 persistentSyncManager.recordPendingOperation(
@@ -520,7 +520,7 @@ class StockEntryViewModel @Inject constructor(
                                         status = "PENDING_SYNC"
                                     )
                                 )
-                            } else if (resultingStock > minQty) {
+                            } else if (resultingStock > effectiveMinQty) {
                                 // المخزون زاد عن حد الأمان: حجب التنبيه تفاؤلياً في 0ms وإلغاء أي تنبيه تفاؤلي
                                 persistentSyncManager.removePendingOperation("opt_$compositeId")
                                 persistentSyncManager.recordPendingOperation(
