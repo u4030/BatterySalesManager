@@ -137,6 +137,33 @@ class AccountingViewModel @Inject constructor(
         loadData()
         observeFinancialStatus()
         observeSyncRegistryRealtime()
+        observePendingOptimisticTransactions()
+    }
+
+    private fun observePendingOptimisticTransactions() {
+        combine(
+            persistentSyncManager.pendingOperationsFlow,
+            _selectedWarehouseId
+        ) { pendingOps, whId ->
+            pendingOps.filter { it.type == "TREASURY_TRANSACTION" && it.status == "PENDING_SYNC" }
+                .map { op ->
+                    Transaction(
+                        id = op.operationId,
+                        type = if (op.amountDelta >= 0) TransactionType.INCOME else TransactionType.EXPENSE,
+                        amount = Math.abs(op.amountDelta),
+                        description = "دفعة واردة (معلق مؤقتاً)",
+                        relatedId = op.relatedId,
+                        warehouseId = whId ?: "",
+                        paymentMethod = "cash",
+                        createdAt = Date(),
+                        isSystemManaged = true
+                    )
+                }
+        }
+        .onEach { optimisticList ->
+            optimisticTransactions.value = optimisticList
+        }
+        .launchIn(viewModelScope)
     }
 
     private fun observeSyncRegistryRealtime() {

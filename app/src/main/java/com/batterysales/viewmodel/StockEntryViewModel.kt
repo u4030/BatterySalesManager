@@ -482,18 +482,29 @@ class StockEntryViewModel @Inject constructor(
                             bill = billToCreate
                         )
 
-                        // كتم وحجب فوري لتنبيه انخفاض المخزون تفاؤلياً بـ 0ms لأن البضاعة وصلت وزاد المخزون
+                        // تقييم المخزون الناتج بدقة وحصر التعامل مع المفتاح المركب low_stock_${variantId}_${warehouseId}:
                         entries.forEach { entry ->
                             val compositeId = "low_stock_${entry.productVariantId}_${entry.warehouseId}"
                             val suppressOpId = "suppress_alert_${entry.productVariantId}_${entry.warehouseId}"
-                            persistentSyncManager.recordPendingOperation(
-                                com.batterysales.data.local.PendingSyncOperation(
-                                    operationId = suppressOpId,
-                                    type = "ALERT_SUPPRESS",
-                                    relatedId = compositeId,
-                                    status = "PENDING_SYNC"
+                            val variant = allVariants.find { it.id == entry.productVariantId }
+                            val minQty = variant?.minQuantity ?: 0
+                            val currentWhStock = (variant?.currentStock?.get(entry.warehouseId) as? Number)?.toInt() ?: 0
+                            val resultingStock = currentWhStock + entry.quantity
+
+                            if (resultingStock <= minQty && minQty > 0) {
+                                // المخزون لا يزال دون أو يساوي حد الأمان: إزالة أي حجب ليظهر التنبيه فوراً
+                                persistentSyncManager.removePendingOperation(suppressOpId)
+                            } else if (resultingStock > minQty) {
+                                // المخزون زاد عن حد الأمان: حجب التنبيه تفاؤلياً في 0ms
+                                persistentSyncManager.recordPendingOperation(
+                                    com.batterysales.data.local.PendingSyncOperation(
+                                        operationId = suppressOpId,
+                                        type = "ALERT_SUPPRESS",
+                                        relatedId = compositeId,
+                                        status = "PENDING_SYNC"
+                                    )
                                 )
-                            )
+                            }
                         }
 
                         persistentSyncManager.removePendingOperation(opId)
