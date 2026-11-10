@@ -12,6 +12,7 @@ data class StockEntry(
     @PropertyName("specification") var specification: String = "", // Denormalized specification
     @PropertyName("warehouseId") var warehouseId: String = "",
     @PropertyName("quantity") var quantity: Int = 0,
+    @PropertyName("minQuantity") var minQuantity: Int = 0,
     @PropertyName("costPrice") var costPrice: Double = 0.0, // Cost per item
     @PropertyName("costPerAmpere") var costPerAmpere: Double = 0.0,
     @PropertyName("totalAmperes") var totalAmperes: Int = 0,
@@ -46,6 +47,7 @@ data class StockEntry(
         specification = "",
         warehouseId = "",
         quantity = 0,
+        minQuantity = 0,
         costPrice = 0.0,
         costPerAmpere = 0.0,
         totalAmperes = 0,

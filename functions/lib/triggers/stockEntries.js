@@ -100,7 +100,7 @@ exports.onStockEntryCreated = (0, firestore_1.onDocumentCreated)("stock_entries/
             const baseWhStock = oldWhItem.currentStock !== undefined ? Number(oldWhItem.currentStock || 0) : variantWhStock;
             const newWhStock = Math.max(0, baseWhStock + netQty);
             const itemCost = newWac > 0 ? newWac : Number(entry.costPrice || oldWhItem.weightedAverageCost || 0);
-            const minQty = Number((variant.minQuantities || {})[warehouseId] ?? variant.minQuantity ?? oldWhItem.minQuantity ?? 0);
+            const minQty = Number(entry.minQuantity ?? (variant.minQuantities || {})[warehouseId] ?? variant.minQuantity ?? oldWhItem.minQuantity ?? 0);
             const pName = String(entry.productName || variant.productName || oldWhItem.productName || "منتج");
             const capacity = Number(entry.capacity || variant.capacity || oldWhItem.capacity || 0);
             const spec = String(entry.specification || variant.specification || oldWhItem.specification || "");

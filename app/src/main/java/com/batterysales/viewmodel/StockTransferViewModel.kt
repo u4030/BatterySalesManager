@@ -274,9 +274,12 @@ class StockTransferViewModel @Inject constructor(
         viewModelScope.launch {
             val srcComposite = "low_stock_${variantId}_${srcWh}"
             val destComposite = "low_stock_${variantId}_${destWh}"
+            val srcOpId = "suppress_alert_${variantId}_${srcWh}"
+            val destOpId = "suppress_alert_${variantId}_${destWh}"
 
-            // 1. مستودع المصدر: إذا كسر حد الأمان، بث تنبيه متفائل فورا
+            // 1. مستودع المصدر: إذا كسر حد الأمان، بث تنبيه متفائل فورا بإزالة أي قفل حجب
             if (checkIfUnderThreshold(srcWh, variantId, -qty)) {
+                persistentSyncManager.removePendingOperation(srcOpId)
                 persistentSyncManager.removePendingOperation("suppress_${srcComposite}")
             }
 
@@ -284,7 +287,7 @@ class StockTransferViewModel @Inject constructor(
             if (checkIfAboveThreshold(destWh, variantId, qty)) {
                 persistentSyncManager.recordPendingOperation(
                     com.batterysales.data.local.PendingSyncOperation(
-                        operationId = "suppress_${System.currentTimeMillis()}_$destComposite",
+                        operationId = destOpId,
                         type = "ALERT_SUPPRESS",
                         relatedId = destComposite,
                         status = "PENDING_SYNC"

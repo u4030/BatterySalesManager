@@ -81,6 +81,57 @@ exports.onVariantWritten = (0, firestore_1.onDocumentWritten)("product_variants/
         "syncRegistry.lastModified": now,
         lastUpdated: now,
     }, { merge: true });
+    // Threshold check on variant update:
+    // If minQuantity or minQuantities is updated to a value >= currentWhStock, create or update low_stock alerts
+    if (afterSnap.exists) {
+        const variantData = afterSnap.data() || {};
+        const currentStockMap = (variantData.currentStock || {});
+        const minQuantities = (variantData.minQuantities || {});
+        const globalMin = Number(variantData.minQuantity || 0);
+        const variantId = event.params.variantId;
+        const capacity = Number(variantData.capacity || 0);
+        const spec = String(variantData.specification || "");
+        for (const [whId, stockVal] of Object.entries(currentStockMap)) {
+            const whStock = Number(stockVal || 0);
+            const whMin = Number(minQuantities[whId] ?? globalMin);
+            if (whStock <= whMin && whMin > 0) {
+                const alertDocId = `low_stock_${variantId}_${whId}`;
+                const alertRef = db.doc(`system_alerts/${alertDocId}`);
+                let whArabicName = "المستودع";
+                try {
+                    const whSnap = await db.doc(`warehouses/${whId}`).get();
+                    if (whSnap.exists)
+                        whArabicName = whSnap.data()?.name || "المستودع";
+                }
+                catch (e) {
+                    console.error(`Error fetching warehouse ${whId} name:`, e);
+                }
+                batch.set(alertRef, {
+                    id: alertDocId,
+                    type: "low_stock",
+                    title: "مخزون منخفض حرج",
+                    message: `الكمية المتوفرة حرجة في ${whArabicName}`,
+                    variantId: variantId,
+                    warehouseId: whId,
+                    warehouseName: whArabicName,
+                    resolved: false,
+                    status: "active",
+                    timestamp: now,
+                    currentStock: whStock,
+                    threshold: whMin,
+                    capacity: capacity,
+                    specification: spec,
+                    data: {
+                        capacity: capacity,
+                        specification: spec,
+                        currentStock: whStock,
+                        threshold: whMin,
+                        warehouseName: whArabicName,
+                    },
+                }, { merge: true });
+            }
+        }
+    }
     await batch.commit();
     console.timeEnd("onVariantWritten_totalTime");
 });

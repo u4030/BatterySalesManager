@@ -81,6 +81,7 @@ data class StockEntryItem(
             capacity = productVariant.capacity,
             warehouseId = warehouseId,
             quantity = quantity,
+            minQuantity = minQuantity,
             costPrice = costPrice,
             costPerAmpere = costPerAmpere,
             totalAmperes = totalAmperes,
