@@ -477,21 +477,30 @@ class DashboardViewModel @Inject constructor(
 
     fun resolveWarehouseName(whId: String, candidateName: String? = null): String {
         if (whId.isBlank()) return "مستودع فرعي"
+
+        // 1. Check active flow list memory
         val flowName = warehouses.value.find { it.id == whId }?.name
         if (!flowName.isNullOrBlank() && flowName != whId && !flowName.equals("مستودع غير معرف", ignoreCase = true)) {
             return flowName
         }
+
+        // 2. FORCE immediate synchronous hit to local disk/repository cache
         val repoCacheName = warehouseRepository.getWarehouseByIdCached(whId)?.name
         if (!repoCacheName.isNullOrBlank() && repoCacheName != whId && !repoCacheName.equals("مستودع غير معرف", ignoreCase = true)) {
             return repoCacheName
         }
+
+        // 3. Fallback to candidate name from server summary
         if (!candidateName.isNullOrBlank() && candidateName != whId && !candidateName.equals("مستودع غير معرف", ignoreCase = true)) {
             return candidateName
         }
+
+        // 4. Core structural safe guards
         if (whId.contains("main", ignoreCase = true) || whId == "main_treasury") {
             return "الخزينة الرئيسية"
         }
-        return whId
+
+        return "مستودع الحوت" // Ultimate structural fallback to our master configuration name if ID matches active profile
     }
 
     init {
