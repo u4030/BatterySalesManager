@@ -430,7 +430,7 @@ class SalesViewModel @Inject constructor(
                     )
                     persistentSyncManager.recordPendingOperation(
                         com.batterysales.data.local.PendingSyncOperation(
-                            operationId = "opt_$compositeId",
+                            operationId = "opt_alert_${variant.id}_${warehouse.id}",
                             type = "OPTIMISTIC_LOW_STOCK_ALERT",
                             relatedId = compositeId,
                             payloadJson = alertPayload,

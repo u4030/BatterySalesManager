@@ -496,7 +496,7 @@ class StockEntryViewModel @Inject constructor(
                                 // المخزون لا يزال دون أو يساوي حد الأمان: إزالة أي حجب ليظهر التنبيه فوراً
                                 persistentSyncManager.removePendingOperation(suppressOpId)
                                 // بث تنبيه تفاؤلي فوري في الذاكرة بـ 0ms
-                                val optAlertId = "opt_$compositeId"
+                                val optAlertId = "opt_alert_${entry.productVariantId}_${entry.warehouseId}"
                                 val alertPayload = com.google.gson.Gson().toJson(
                                     mapOf(
                                         "id" to compositeId,
@@ -522,7 +522,7 @@ class StockEntryViewModel @Inject constructor(
                                 )
                             } else if (resultingStock > effectiveMinQty) {
                                 // المخزون زاد عن حد الأمان: حجب التنبيه تفاؤلياً في 0ms وإلغاء أي تنبيه تفاؤلي
-                                persistentSyncManager.removePendingOperation("opt_$compositeId")
+                                persistentSyncManager.removePendingOperation("opt_alert_${entry.productVariantId}_${entry.warehouseId}")
                                 persistentSyncManager.recordPendingOperation(
                                     com.batterysales.data.local.PendingSyncOperation(
                                         operationId = suppressOpId,

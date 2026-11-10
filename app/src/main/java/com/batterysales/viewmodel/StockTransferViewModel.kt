@@ -276,6 +276,8 @@ class StockTransferViewModel @Inject constructor(
             val destComposite = "low_stock_${variantId}_${destWh}"
             val srcOpId = "suppress_alert_${variantId}_${srcWh}"
             val destOpId = "suppress_alert_${variantId}_${destWh}"
+            val srcOptOpId = "opt_alert_${variantId}_${srcWh}"
+            val destOptOpId = "opt_alert_${variantId}_${destWh}"
 
             val currentSrcStock = uiState.value.stockLevels[Pair(variantId, srcWh)] ?: 0
             val newSrcStock = (currentSrcStock - qty).coerceAtLeast(0)
@@ -287,7 +289,7 @@ class StockTransferViewModel @Inject constructor(
             val destMinQty = (uiState.value.selectedVariant?.minQuantities?.get(destWh) as? Number)?.toInt()
                 ?: uiState.value.selectedVariant?.minQuantity ?: 5
 
-            // 1. تقييم مستقل لمستودع المصدر:
+            // 1. تقييم مستقل صارم لمستودع المصدر:
             if (srcMinQty > 0 && newSrcStock <= srcMinQty) {
                 persistentSyncManager.removePendingOperation(srcOpId)
                 persistentSyncManager.removePendingOperation("suppress_${srcComposite}")
@@ -308,7 +310,7 @@ class StockTransferViewModel @Inject constructor(
                 )
                 persistentSyncManager.recordPendingOperation(
                     com.batterysales.data.local.PendingSyncOperation(
-                        operationId = "opt_$srcComposite",
+                        operationId = srcOptOpId,
                         type = "OPTIMISTIC_LOW_STOCK_ALERT",
                         relatedId = srcComposite,
                         payloadJson = alertPayload,
@@ -316,10 +318,10 @@ class StockTransferViewModel @Inject constructor(
                     )
                 )
             } else if (newSrcStock > srcMinQty) {
-                persistentSyncManager.removePendingOperation("opt_$srcComposite")
+                persistentSyncManager.removePendingOperation(srcOptOpId)
             }
 
-            // 2. تقييم مستقل لمستودع الهدف:
+            // 2. تقييم مستقل صارم لمستودع الهدف:
             if (destMinQty > 0 && newDestStock <= destMinQty) {
                 // مستودع الهدف لا يزال دون أو يساوي حد الأمان: بث تنبيه تفاؤلي له وإزالة أي حجب
                 persistentSyncManager.removePendingOperation(destOpId)
@@ -341,7 +343,7 @@ class StockTransferViewModel @Inject constructor(
                 )
                 persistentSyncManager.recordPendingOperation(
                     com.batterysales.data.local.PendingSyncOperation(
-                        operationId = "opt_$destComposite",
+                        operationId = destOptOpId,
                         type = "OPTIMISTIC_LOW_STOCK_ALERT",
                         relatedId = destComposite,
                         payloadJson = alertPayload,
@@ -350,7 +352,7 @@ class StockTransferViewModel @Inject constructor(
                 )
             } else if (newDestStock > destMinQty) {
                 // حل العجز وتجاوز حد الأمان تماماً: حجب التنبيه وإلغاء التنبيه التفاؤلي
-                persistentSyncManager.removePendingOperation("opt_$destComposite")
+                persistentSyncManager.removePendingOperation(destOptOpId)
                 persistentSyncManager.recordPendingOperation(
                     com.batterysales.data.local.PendingSyncOperation(
                         operationId = destOpId,
