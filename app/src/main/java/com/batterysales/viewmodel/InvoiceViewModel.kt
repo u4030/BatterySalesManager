@@ -46,6 +46,7 @@ class InvoiceViewModel @Inject constructor(
     private val accountingRepository: AccountingRepository,
     private val summaryRepository: SummaryRepository,
     private val userRepository: UserRepository,
+    private val productVariantRepository: ProductVariantRepository,
     private val persistentSyncManager: com.batterysales.data.local.PersistentSyncManager
 ) : ViewModel() {
 
@@ -167,19 +168,59 @@ class InvoiceViewModel @Inject constructor(
             _uiState.value.invoiceToDelete?.let { invoice ->
                 _uiState.update { it.copy(isSubmitting = true) }
                 try {
-                    // Optimistically suppress alerts for deleted invoice items in 0ms
-                    invoice.items.forEach { item ->
-                        val variantId = item.productId
-                        val compositeId = "low_stock_${variantId}_${invoice.warehouseId}"
-                        persistentSyncManager.recordPendingOperation(
-                            com.batterysales.data.local.PendingSyncOperation(
-                                operationId = "suppress_${System.currentTimeMillis()}_$variantId",
-                                type = "ALERT_SUPPRESS",
-                                relatedId = compositeId,
-                                status = "PENDING_SYNC"
-                            )
-                        )
-                        summaryRepository.updateCacheOptimisticStock(variantId, invoice.warehouseId, item.quantity)
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                        // Optimistically suppress alerts for deleted invoice items in 0ms
+                        invoice.items.forEach { item ->
+                            val variantId = item.productId
+                            val compositeId = "low_stock_${variantId}_${invoice.warehouseId}"
+                            val suppressOpId = "suppress_alert_${variantId}_${invoice.warehouseId}"
+                            val optAlertOpId = "opt_alert_${variantId}_${invoice.warehouseId}"
+
+                            val variant = productVariantRepository.getVariant(variantId)
+                            val currentStock = (variant?.currentStock?.get(invoice.warehouseId) as? Number)?.toInt() ?: 0
+                            val restoredStock = currentStock + item.quantity
+                            val minQty = (variant?.minQuantities?.get(invoice.warehouseId) as? Number)?.toInt()
+                                ?: variant?.minQuantity ?: 0
+
+                            if (minQty > 0 && restoredStock <= minQty) {
+                                // المخزون لا يزال منخفضاً حتى بعد الإرجاع: تحديث التنبيه التفاؤلي بالكمية الحقيقية المسترجعة (وليس 0)
+                                val alertPayload = com.google.gson.Gson().toJson(
+                                    mapOf(
+                                        "id" to compositeId,
+                                        "variantId" to variantId,
+                                        "productId" to (variant?.productId ?: ""),
+                                        "productName" to item.productName,
+                                        "capacity" to (variant?.capacity ?: 0),
+                                        "specification" to (variant?.specification ?: ""),
+                                        "warehouseId" to invoice.warehouseId,
+                                        "warehouseName" to "المستودع",
+                                        "currentStock" to restoredStock,
+                                        "minQuantity" to minQty
+                                    )
+                                )
+                                persistentSyncManager.recordPendingOperation(
+                                    com.batterysales.data.local.PendingSyncOperation(
+                                        operationId = optAlertOpId,
+                                        type = "OPTIMISTIC_LOW_STOCK_ALERT",
+                                        relatedId = compositeId,
+                                        payloadJson = alertPayload,
+                                        status = "PENDING_SYNC"
+                                    )
+                                )
+                            } else {
+                                // تجاوز حد الأمان: حجب التنبيه وإلغاء أي تنبيه تفاؤلي
+                                persistentSyncManager.removePendingOperation(optAlertOpId)
+                                persistentSyncManager.recordPendingOperation(
+                                    com.batterysales.data.local.PendingSyncOperation(
+                                        operationId = suppressOpId,
+                                        type = "ALERT_SUPPRESS",
+                                        relatedId = compositeId,
+                                        status = "PENDING_SYNC"
+                                    )
+                                )
+                            }
+                            summaryRepository.updateCacheOptimisticStock(variantId, invoice.warehouseId, item.quantity)
+                        }
                     }
 
                     // NUCLEAR STRATEGY: deleteInvoice now handles all payments and ledger entries atomically

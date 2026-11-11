@@ -51,6 +51,7 @@ object FirebaseModule {
         if (USE_EMULATOR && EMULATOR_HOST_IP.isNotBlank()) {
             try {
                 auth.useEmulator(EMULATOR_HOST_IP, 9099)
+                Log.i("FirebaseEmulator", "Connected to Auth Emulator at $EMULATOR_HOST_IP:9099")
             } catch (e: Exception) {
                 // Ignore if emulator already set
             }
@@ -73,6 +74,7 @@ object FirebaseModule {
             runEmulatorConnectivityCheck(EMULATOR_HOST_IP, 8080)
             try {
                 firestore.useEmulator(EMULATOR_HOST_IP, 8080)
+                Log.i("FirebaseEmulator", "Connected to Firestore Emulator at $EMULATOR_HOST_IP:8080")
             } catch (e: Exception) {
                 // Ignore if emulator already set
             }

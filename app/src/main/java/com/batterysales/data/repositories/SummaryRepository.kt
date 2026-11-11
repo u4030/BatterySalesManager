@@ -38,6 +38,17 @@ class SummaryRepository @Inject constructor(
                 }
                 if (snapshot != null) {
                     val hub = snapshot.toObject(DashboardHub::class.java) ?: DashboardHub()
+
+                    // تحصين حاسم: استخراج يدوي مباشر من المستند عند أي dropout في الـ CustomClassMapper
+                    if (hub.scrapAndAlertsSummary.activeLowStockAlertsCount == 0) {
+                        val rawCount = snapshot.getLong("scrapAndAlertsSummary.activeLowStockAlertsCount")
+                            ?: (snapshot.get("scrapAndAlertsSummary") as? Map<*, *>)?.get("activeLowStockAlertsCount") as? Long
+                            ?: (snapshot.get("scrapAndAlertsSummary") as? Map<*, *>)?.get("active_low_stock_alerts_count") as? Long
+                        if (rawCount != null && rawCount.toInt() > 0) {
+                            hub.scrapAndAlertsSummary.activeLowStockAlertsCount = rawCount.toInt()
+                        }
+                    }
+
                     cachedDashboardHub = hub
                     trySend(hub).isSuccess
                 }
@@ -49,6 +60,17 @@ class SummaryRepository @Inject constructor(
         return try {
             val snap = summariesCollection.document("dashboard_hub").get().await()
             val hub = snap.toObject(DashboardHub::class.java) ?: DashboardHub()
+
+            // تحصين حاسم: استخراج يدوي مباشر من المستند عند أي dropout في الـ CustomClassMapper
+            if (hub.scrapAndAlertsSummary.activeLowStockAlertsCount == 0) {
+                val rawCount = snap.getLong("scrapAndAlertsSummary.activeLowStockAlertsCount")
+                    ?: (snap.get("scrapAndAlertsSummary") as? Map<*, *>)?.get("activeLowStockAlertsCount") as? Long
+                    ?: (snap.get("scrapAndAlertsSummary") as? Map<*, *>)?.get("active_low_stock_alerts_count") as? Long
+                if (rawCount != null && rawCount.toInt() > 0) {
+                    hub.scrapAndAlertsSummary.activeLowStockAlertsCount = rawCount.toInt()
+                }
+            }
+
             cachedDashboardHub = hub
             hub
         } catch (e: Exception) {

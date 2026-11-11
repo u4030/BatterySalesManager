@@ -59,36 +59,75 @@ exports.onInvoiceCreated = (0, firestore_1.onDocumentCreated)("invoices/{invoice
         const paymentMethod = invoice.paymentMethod || "cash";
         const isBank = paymentMethod === "bank";
         const now = firestore_2.FieldValue.serverTimestamp();
-        // Read Phase: Fetch warehouse document strictly within local scope when currentWarehouseId is present
+        // --- READ PHASE: ALL READS MUST OCCUR BEFORE ANY WRITES ---
         let correctWarehouseName = "مستودع غير معروف";
         if (currentWarehouseId) {
             const whSnap = await transaction.get(db.collection("warehouses").doc(currentWarehouseId));
             correctWarehouseName = whSnap.exists ? (whSnap.data()?.name || "المستودع") : "مستودع غير معروف";
         }
-        // Write Phase:
-        // 1. Decrement variant stock on product_variants & summaries using atomic FieldValue.increment
-        items.forEach((item) => {
+        // Pre-fetch all variant documents strictly in the READ phase before any writes
+        const validItems = items.filter((it) => it.productId && Number(it.quantity || 0) > 0);
+        const variantDocRefs = validItems.map((it) => db.doc(`product_variants/${it.productId}`));
+        const variantSnaps = await Promise.all(variantDocRefs.map((ref) => transaction.get(ref)));
+        // --- WRITE PHASE ---
+        validItems.forEach((item, index) => {
             const variantId = item.productId;
             const qty = Number(item.quantity || 0);
-            if (variantId && qty > 0) {
-                if (currentWarehouseId) {
-                    transaction.set(db.doc(`product_variants/${variantId}`), {
-                        currentStock: {
-                            [currentWarehouseId]: firestore_2.FieldValue.increment(-qty),
-                        },
-                    }, { merge: true });
-                    transaction.set(db.doc(`summaries/inventory_wh_${currentWarehouseId}`), {
-                        [`items.${variantId}.currentStock`]: firestore_2.FieldValue.increment(-qty),
-                        lastUpdated: now,
-                        version: firestore_2.FieldValue.increment(1),
-                    }, { merge: true });
-                }
-                transaction.set(db.doc("summaries/inventory_global"), {
+            const variantSnap = variantSnaps[index];
+            if (currentWarehouseId) {
+                transaction.set(db.doc(`product_variants/${variantId}`), {
+                    currentStock: {
+                        [currentWarehouseId]: firestore_2.FieldValue.increment(-qty),
+                    },
+                }, { merge: true });
+                transaction.set(db.doc(`summaries/inventory_wh_${currentWarehouseId}`), {
                     [`items.${variantId}.currentStock`]: firestore_2.FieldValue.increment(-qty),
                     lastUpdated: now,
                     version: firestore_2.FieldValue.increment(1),
                 }, { merge: true });
+                // Check if sale dropped stock to <= minQuantity and create low-stock alert atomically
+                if (variantSnap.exists) {
+                    const vData = variantSnap.data() || {};
+                    const stockMap = (vData.currentStock || {});
+                    const existingWhStock = Number(stockMap[currentWarehouseId] || 0);
+                    const newWhStock = existingWhStock - qty;
+                    const minQty = Number((vData.minQuantities || {})[currentWarehouseId] ?? vData.minQuantity ?? 0);
+                    if (newWhStock <= minQty && minQty > 0) {
+                        const alertDocId = `low_stock_${variantId}_${currentWarehouseId}`;
+                        const alertRef = db.doc(`system_alerts/${alertDocId}`);
+                        const cap = Number(vData.capacity || 0);
+                        const sp = String(vData.specification || "");
+                        transaction.set(alertRef, {
+                            id: alertDocId,
+                            type: "low_stock",
+                            title: "مخزون منخفض حرج",
+                            message: `الكمية المتوفرة حرجة في ${correctWarehouseName}`,
+                            variantId: variantId,
+                            warehouseId: currentWarehouseId,
+                            warehouseName: correctWarehouseName,
+                            resolved: false,
+                            status: "active",
+                            timestamp: now,
+                            currentStock: newWhStock,
+                            threshold: minQty,
+                            capacity: cap,
+                            specification: sp,
+                            data: {
+                                capacity: cap,
+                                specification: sp,
+                                currentStock: newWhStock,
+                                threshold: minQty,
+                                warehouseName: correctWarehouseName,
+                            },
+                        }, { merge: true });
+                    }
+                }
             }
+            transaction.set(db.doc("summaries/inventory_global"), {
+                [`items.${variantId}.currentStock`]: firestore_2.FieldValue.increment(-qty),
+                lastUpdated: now,
+                version: firestore_2.FieldValue.increment(1),
+            }, { merge: true });
         });
         // Calculate localized date string in Asia/Amman (UTC+3) to ensure temporal consistency
         const todayDateStr = new Intl.DateTimeFormat("en-CA", {

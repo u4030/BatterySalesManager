@@ -72,12 +72,16 @@ class AccountingViewModel @Inject constructor(
     // حارس المعاملات المحذوفة أو المعكوسة تفاؤلياً في الذاكرة الحية (0ms) لمنع وميض وتأخر الميتاداتا
     private val suppressedTransactionIds = MutableStateFlow<Set<String>>(emptySet())
 
+    // مخزن المعاملات التفاؤلية الفورية (0ms) لدفعات الفواتير الإضافية والقيود السريعة
+    val optimisticTransactions: MutableStateFlow<List<Transaction>> = MutableStateFlow(emptyList())
+
     fun evictTransactionInstantly(txId: String) {
         suppressedTransactionIds.update { it + txId }
+        val opId = "suppress_tx_$txId"
         viewModelScope.launch {
             persistentSyncManager.recordPendingOperation(
                 com.batterysales.data.local.PendingSyncOperation(
-                    operationId = "suppress_tx_${System.currentTimeMillis()}_$txId",
+                    operationId = opId,
                     type = "TREASURY_SUPPRESS",
                     relatedId = txId,
                     status = "PENDING_SYNC"
@@ -92,7 +96,7 @@ class AccountingViewModel @Inject constructor(
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val transactions: Flow<PagingData<Transaction>> = combine(
-        _selectedWarehouseId, _selectedTab, _selectedPaymentMethod, _startDate, _endDate, refreshTrigger, _isDataLoaded, _searchQuery, suppressedTransactionIds
+        _selectedWarehouseId, _selectedTab, _selectedPaymentMethod, _startDate, _endDate, refreshTrigger, _isDataLoaded, _searchQuery, suppressedTransactionIds, persistentSyncManager.pendingOperationsFlow
     ) { args ->
         if (!(args[6] as Boolean)) return@combine null
         Filters(
@@ -118,7 +122,8 @@ class AccountingViewModel @Inject constructor(
             // بتر فوري للمعاملات المحذوفة بنسبة 0ms بغض النظر عن حالة الميتاداتا وسواء كانت hasPendingWrites تساوي true أو false
             pagingData.filter { trans ->
                 val isSuppressed = suppressed.contains(trans.id) ||
-                        (trans.referenceNumber.isNotBlank() && suppressed.contains(trans.referenceNumber))
+                        (trans.referenceNumber.isNotBlank() && suppressed.contains(trans.referenceNumber)) ||
+                        (!trans.relatedId.isNullOrBlank() && suppressed.contains(trans.relatedId))
                 !isSuppressed &&
                 (query.isBlank() || trans.description.contains(query, ignoreCase = true) || trans.referenceNumber.contains(query, ignoreCase = true))
             }
@@ -132,6 +137,33 @@ class AccountingViewModel @Inject constructor(
         loadData()
         observeFinancialStatus()
         observeSyncRegistryRealtime()
+        observePendingOptimisticTransactions()
+    }
+
+    private fun observePendingOptimisticTransactions() {
+        combine(
+            persistentSyncManager.pendingOperationsFlow,
+            _selectedWarehouseId
+        ) { pendingOps, whId ->
+            pendingOps.filter { it.type == "TREASURY_TRANSACTION" && it.status == "PENDING_SYNC" }
+                .map { op ->
+                    Transaction(
+                        id = op.operationId,
+                        type = if (op.amountDelta >= 0) TransactionType.INCOME else TransactionType.EXPENSE,
+                        amount = Math.abs(op.amountDelta),
+                        description = "دفعة واردة (معلق مؤقتاً)",
+                        relatedId = op.relatedId,
+                        warehouseId = whId ?: "",
+                        paymentMethod = "cash",
+                        createdAt = Date(),
+                        isSystemManaged = true
+                    )
+                }
+        }
+        .onEach { optimisticList ->
+            optimisticTransactions.value = optimisticList
+        }
+        .launchIn(viewModelScope)
     }
 
     private fun observeSyncRegistryRealtime() {
@@ -373,9 +405,12 @@ class AccountingViewModel @Inject constructor(
         }
     }
 
-    fun deleteTransaction(id: String) {
+    fun deleteTransaction(id: String, relatedId: String? = null) {
         // حجب المعاملة فوراً محلياً بـ 0ms في أول ميكروثانية وتجاوز ميتاداتا الفايرستور المزدوجة
         evictTransactionInstantly(id)
+        if (!relatedId.isNullOrBlank()) {
+            evictTransactionInstantly(relatedId)
+        }
 
         viewModelScope.launch {
             _isSubmitting.value = true
@@ -385,7 +420,7 @@ class AccountingViewModel @Inject constructor(
                 repository.deleteTransaction(id, forceSystemUpdate = isAdmin)
                 loadData(reset = true)
             } catch (e: Exception) {
-                suppressedTransactionIds.update { it - id }
+                suppressedTransactionIds.update { it - id - (relatedId ?: "") }
                 _errorMessage.value = e.message
             } finally {
                 _isSubmitting.value = false

@@ -71,6 +71,7 @@ fun AccountingScreen(
     val totalExpenses by viewModel.totalExpenses.collectAsState()
     val isSubmitting by viewModel.isSubmitting.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
+    val optimisticTransactions by viewModel.optimisticTransactions.collectAsState()
     val listState = rememberLazyListState()
     var showAddTransactionDialog by remember { mutableStateOf(false) }
     var selectedType by remember { mutableStateOf(TransactionType.INCOME) }
@@ -396,13 +397,27 @@ fun AccountingScreen(
                 }
             }
 
+            // 0ms Optimistic transactions prepended before PagingData
+            if (optimisticTransactions.isNotEmpty()) {
+                items(optimisticTransactions.size) { index ->
+                    val opTrans = optimisticTransactions[index]
+                    Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                        TransactionItemCard(
+                            transaction = opTrans,
+                            onEdit = {},
+                            onDelete = {}
+                        )
+                    }
+                }
+            }
+
             if (pagingItems.loadState.refresh is androidx.paging.LoadState.Loading) {
                 item {
                     Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = accentColor)
                     }
                 }
-            } else if (pagingItems.itemCount == 0) {
+            } else if (pagingItems.itemCount == 0 && optimisticTransactions.isEmpty()) {
                 item {
                     Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                         Text(
@@ -415,12 +430,12 @@ fun AccountingScreen(
             } else {
                 items(pagingItems.itemCount) { index ->
                     val trans = pagingItems[index]
-                    trans?.let {
+                    if (trans != null && optimisticTransactions.none { it.id == trans.id || (trans.relatedId != null && trans.relatedId == it.relatedId) }) {
                         Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                             TransactionItemCard(
-                                transaction = it,
-                                onEdit = { transactionToEdit = it },
-                                onDelete = { showDeleteConfirm = it }
+                                transaction = trans,
+                                onEdit = { transactionToEdit = trans },
+                                onDelete = { showDeleteConfirm = trans }
                             )
                         }
                     }
@@ -558,7 +573,7 @@ fun AccountingScreen(
                 } else {
                     Button(
                         onClick = {
-                            viewModel.deleteTransaction(trans.id)
+                            viewModel.deleteTransaction(trans.id, trans.relatedId)
                             showDeleteConfirm = null
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)

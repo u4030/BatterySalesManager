@@ -216,7 +216,17 @@ fun DashboardScreen(
                                             Row(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
-                                                    .clickable { if (notification.route != null) navController.navigate(notification.route) }
+                                                    .clickable {
+                                                        if (!notification.route.isNullOrBlank()) {
+                                                            try {
+                                                                navController.navigate(notification.route)
+                                                            } catch (e: Exception) {
+                                                                navController.navigate("warehouse")
+                                                            }
+                                                        } else {
+                                                            navController.navigate("warehouse")
+                                                        }
+                                                    }
                                                     .padding(12.dp),
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
@@ -230,7 +240,7 @@ fun DashboardScreen(
                                                     Text(
                                                         notification.message,
                                                         style = MaterialTheme.typography.bodySmall,
-                                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
                                                     )
                                                 }
                                                 Icon(Icons.Default.ChevronLeft, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(16.dp))
