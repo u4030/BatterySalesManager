@@ -42,6 +42,7 @@ class SalesViewModel @Inject constructor(
     private val productVariantRepository: ProductVariantRepository,
     private val warehouseRepository: WarehouseRepository,
     private val summaryRepository: SummaryRepository,
+    private val stockEntryRepository: StockEntryRepository,
     private val invoiceRepository: InvoiceRepository,
     private val salesRepository: SalesRepository,
     private val userRepository: UserRepository,
@@ -410,21 +411,29 @@ class SalesViewModel @Inject constructor(
                 // إزالة أي قفل حجب سابق للسماح بظهور تنبيه انخفاض المخزون عند نفاذ الكمية
                 clearSuppressedAlert(variant.id, warehouse.id)
 
+                // احتساب preSaleStock من summaryRepository مع الـ fallback على stockEntryRepository
+                val summary = summaryRepository.getInventorySummary(warehouse.id, forceRefresh = false)
+                val preSaleStock = summary?.items?.get(variant.id)?.currentStock
+                    ?: state.stockLevels[Pair(variant.id, warehouse.id)]
+                    ?: (try { stockEntryRepository.getVariantQuantity(variant.id, warehouse.id) } catch (e: Exception) { available })
+                val remainingStock = (preSaleStock - qty).coerceAtLeast(0)
+                val minQty = (variant.minQuantities[warehouse.id] as? Number)?.toInt() ?: variant.minQuantity
+
                 // إذا وصل المخزون بعد البيع للحد الحرج أو دونه، بث تنبيه تفاؤلي فوري بـ 0ms
-                val minQty = variant.minQuantity
-                if (updatedAvailable <= minQty && minQty > 0) {
+                if (minQty > 0 && remainingStock <= minQty) {
                     val compositeId = "low_stock_${variant.id}_${warehouse.id}"
+                    val realProdName = if (product.name.isNotBlank() && product.name != "مخزون منخفض حرج") product.name else (variant.productName ?: "بطارية")
                     val alertPayload = com.google.gson.Gson().toJson(
                         mapOf(
                             "id" to compositeId,
                             "variantId" to variant.id,
                             "productId" to product.id,
-                            "productName" to product.name,
+                            "productName" to realProdName,
                             "capacity" to variant.capacity,
                             "specification" to variant.specification,
                             "warehouseId" to warehouse.id,
                             "warehouseName" to warehouse.name,
-                            "currentStock" to updatedAvailable,
+                            "currentStock" to remainingStock,
                             "minQuantity" to minQty
                         )
                     )

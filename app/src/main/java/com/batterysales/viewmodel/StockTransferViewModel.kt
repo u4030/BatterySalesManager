@@ -192,14 +192,22 @@ class StockTransferViewModel @Inject constructor(
 
             // --- المقاصة التفاؤلية المزدوجة الفورية (0ms) ---
             val newStockMap = state.stockLevels.toMutableMap()
-            val newSrcStock = (available - qty).coerceAtLeast(0)
+
+            // حساب المخزون الحقيقي المسبق لكلا المستودعين دون الاعتماد على 0
+            val srcSummary = summaryRepository.getInventorySummary(source.id, forceRefresh = false)
+            val preSrcStock = srcSummary?.items?.get(variant.id)?.currentStock
+                ?: state.stockLevels[Pair(variant.id, source.id)]
+                ?: (try { stockEntryRepository.getVariantQuantity(variant.id, source.id) } catch (e: Exception) { available })
+            val newSrcStock = (preSrcStock - qty).coerceAtLeast(0)
             newStockMap[Pair(variant.id, source.id)] = newSrcStock
 
             val destSummary = summaryRepository.getInventorySummary(dest.id, forceRefresh = false)
-            val currentDestStock = destSummary?.items?.get(variant.id)?.currentStock
-                ?: state.stockLevels[Pair(variant.id, dest.id)] ?: 0
-            val newDestStock = currentDestStock + qty
+            val preDestStock = destSummary?.items?.get(variant.id)?.currentStock
+                ?: state.stockLevels[Pair(variant.id, dest.id)]
+                ?: (try { stockEntryRepository.getVariantQuantity(variant.id, dest.id) } catch (e: Exception) { 0 })
+            val newDestStock = preDestStock + qty
             newStockMap[Pair(variant.id, dest.id)] = newDestStock
+
             _uiState.update { it.copy(stockLevels = newStockMap) }
 
             executeTransferOptimistic(variant.id, source.id, dest.id, qty)
@@ -294,6 +302,10 @@ class StockTransferViewModel @Inject constructor(
 
             val srcWhName = uiState.value.sourceWarehouse?.name ?: "المستودع"
             val destWhName = uiState.value.destinationWarehouse?.name ?: "المستودع"
+            val realProductName = uiState.value.selectedProduct?.name?.takeIf { it.isNotBlank() && it != "مخزون منخفض حرج" }
+                ?: uiState.value.selectedVariant?.productName
+                ?: "بطارية"
+            val realCapacity = uiState.value.selectedVariant?.capacity ?: 0
 
             // 1. تقييم مستقل صارم لمستودع المصدر:
             if (srcMinQty > 0 && newSrcStock <= srcMinQty) {
@@ -305,8 +317,8 @@ class StockTransferViewModel @Inject constructor(
                         "id" to srcComposite,
                         "variantId" to variantId,
                         "productId" to (uiState.value.selectedVariant?.productId ?: ""),
-                        "productName" to (uiState.value.selectedProduct?.name ?: "بطارية"),
-                        "capacity" to (uiState.value.selectedVariant?.capacity ?: 0),
+                        "productName" to realProductName,
+                        "capacity" to realCapacity,
                         "specification" to (uiState.value.selectedVariant?.specification ?: ""),
                         "warehouseId" to srcWh,
                         "warehouseName" to srcWhName,
@@ -338,8 +350,8 @@ class StockTransferViewModel @Inject constructor(
                         "id" to destComposite,
                         "variantId" to variantId,
                         "productId" to (uiState.value.selectedVariant?.productId ?: ""),
-                        "productName" to (uiState.value.selectedProduct?.name ?: "بطارية"),
-                        "capacity" to (uiState.value.selectedVariant?.capacity ?: 0),
+                        "productName" to realProductName,
+                        "capacity" to realCapacity,
                         "specification" to (uiState.value.selectedVariant?.specification ?: ""),
                         "warehouseId" to destWh,
                         "warehouseName" to destWhName,

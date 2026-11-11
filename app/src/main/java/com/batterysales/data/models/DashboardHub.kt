@@ -108,6 +108,10 @@ class DashboardHub {
     @PropertyName("scrapAndAlertsSummary") var scrapAndAlertsSummary: ScrapAndAlertsSummary = ScrapAndAlertsSummary()
     @PropertyName("syncRegistry") var syncRegistry: SyncRegistry = SyncRegistry()
 
+    // Fallback fields directly on DashboardHub for "syncRegistry.lastModified" or "syncRegistry.inventoryVersion" if flattened
+    @PropertyName("syncRegistry.lastModified") var syncRegistryLastModified: Date? = null
+    @PropertyName("syncRegistry.inventoryVersion") var syncRegistryInventoryVersion: Long = 0L
+
     constructor()
     constructor(
         id: String,

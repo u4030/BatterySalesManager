@@ -491,6 +491,12 @@ class StockEntryViewModel @Inject constructor(
                             val effectiveMinQty = if (entry.minQuantity > 0) entry.minQuantity else ((variant?.minQuantities?.get(entry.warehouseId) as? Number)?.toInt() ?: variant?.minQuantity ?: 0)
                             val currentWhStock = (variant?.currentStock?.get(entry.warehouseId) as? Number)?.toInt() ?: 0
                             val resultingStock = currentWhStock + entry.quantity
+                            val realProductName = if (entry.productName.isNotBlank() && entry.productName != "مخزون منخفض حرج") {
+                                entry.productName
+                            } else {
+                                state.products.find { it.id == variant?.productId }?.name ?: variant?.productName ?: "بطارية"
+                            }
+                            val realCapacity = if (entry.capacity > 0) entry.capacity else (variant?.capacity ?: 0)
 
                             if (resultingStock <= effectiveMinQty && effectiveMinQty > 0) {
                                 // المخزون لا يزال دون أو يساوي حد الأمان: إزالة أي حجب ليظهر التنبيه فوراً
@@ -502,8 +508,8 @@ class StockEntryViewModel @Inject constructor(
                                         "id" to compositeId,
                                         "variantId" to entry.productVariantId,
                                         "productId" to (variant?.productId ?: ""),
-                                        "productName" to entry.productName,
-                                        "capacity" to (variant?.capacity ?: 0),
+                                        "productName" to realProductName,
+                                        "capacity" to realCapacity,
                                         "specification" to (variant?.specification ?: ""),
                                         "warehouseId" to state.selectedWarehouse.id,
                                         "warehouseName" to state.selectedWarehouse.name,

@@ -65,6 +65,8 @@ class DashboardViewModel @Inject constructor(
     private val approvalRepository: ApprovalRepository,
     private val systemAlertRepository: SystemAlertRepository,
     private val salesRepository: SalesRepository,
+    private val productRepository: ProductRepository,
+    private val productVariantRepository: ProductVariantRepository,
     private val persistentSyncManager: com.batterysales.data.local.PersistentSyncManager,
     private val firestore: com.google.firebase.firestore.FirebaseFirestore
 ) : ViewModel() {
@@ -178,7 +180,8 @@ class DashboardViewModel @Inject constructor(
         val versionToken: Long,
         val suppressedIds: Set<String>,
         val pendingSuppressedIds: Set<String>,
-        val optimisticAlerts: List<SystemAlert>
+        val optimisticAlerts: List<SystemAlert>,
+        val products: List<Product>
     )
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -186,8 +189,17 @@ class DashboardViewModel @Inject constructor(
         userRepository.getCurrentUserFlow(),
         summaryRepository.getFinancialStatusFlow(),
         _locallySuppressedAlertIds,
-        persistentSyncManager.pendingOperationsFlow
-    ) { user, financialStatus, suppressedIds, pendingOps ->
+        persistentSyncManager.pendingOperationsFlow,
+        productRepository.getProducts().catch { emit(emptyList()) }
+    ) { args: Array<Any?> ->
+        val user = args[0] as? User
+        val financialStatus = args[1] as? FinancialStatus ?: FinancialStatus()
+        @Suppress("UNCHECKED_CAST")
+        val suppressedIds = args[2] as? Set<String> ?: emptySet()
+        @Suppress("UNCHECKED_CAST")
+        val pendingOps = args[3] as? List<com.batterysales.data.local.PendingSyncOperation> ?: emptyList()
+        @Suppress("UNCHECKED_CAST")
+        val cachedProducts = args[4] as? List<Product> ?: emptyList()
         val diskSuppressed = pendingOps
             .filter { it.type == "ALERT_SUPPRESS" }
             .map { it.relatedId }
@@ -226,7 +238,8 @@ class DashboardViewModel @Inject constructor(
             versionToken = financialStatus.version,
             suppressedIds = suppressedIds,
             pendingSuppressedIds = diskSuppressed,
-            optimisticAlerts = optimisticAlerts
+            optimisticAlerts = optimisticAlerts,
+            products = cachedProducts
         )
     }.flatMapLatest { ctx ->
         val user = ctx.user
@@ -312,7 +325,27 @@ class DashboardViewModel @Inject constructor(
                 (activeOptimistic + serverAlerts).map { alert ->
                     // Override and dynamically resolve warehouse name to clean Arabic name
                     val resolvedWhName = resolveWarehouseName(alert.warehouseId ?: "", alert.warehouseName)
-                    alert.copy(warehouseName = resolvedWhName)
+
+                    // Fix product name if blank or generic placeholder "مخزون منخفض حرج"
+                    val cleanTitle = alert.title.removePrefix("تنبيه: ").removePrefix("مخزون منخفض: ").trim()
+                    val needsProductResolution = cleanTitle.isBlank() ||
+                            cleanTitle == "مخزون منخفض حرج" ||
+                            cleanTitle == "بطارية" ||
+                            alert.title.contains("مخزون منخفض حرج")
+
+                    val resolvedTitle = if (needsProductResolution) {
+                        val vId = alert.variantId.ifEmpty { alert.relatedId }
+                        val matchingVariant = productVariantRepository.getCachedVariant(vId)
+                        val pId = matchingVariant?.productId ?: alert.data["productId"]?.toString() ?: ""
+                        val prodName = ctx.products.find { it.id == pId }?.name
+                            ?: matchingVariant?.productName
+                            ?: "بطارية صنف"
+                        "مخزون منخفض: $prodName"
+                    } else {
+                        alert.title
+                    }
+
+                    alert.copy(warehouseName = resolvedWhName, title = resolvedTitle)
                 }
             }
         }

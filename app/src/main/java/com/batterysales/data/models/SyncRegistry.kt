@@ -20,6 +20,8 @@ class SyncRegistry {
     @PropertyName("alerts_version") var alertsVersionSnake: Long = 0
     @PropertyName("lastModified") var lastModified: Date = Date()
     @PropertyName("last_modified") var lastModifiedSnake: Date? = null
+    @get:Exclude @set:Exclude var lastModifiedMillis: Long = 0L
+    @PropertyName("lastModifiedTimestamp") var lastModifiedTimestamp: Long = 0L
     @PropertyName("lastAlertUpdate") var lastAlertUpdateCamel: Date? = null
     @PropertyName("last_alert_update") var lastAlertUpdate: Date? = null
 
