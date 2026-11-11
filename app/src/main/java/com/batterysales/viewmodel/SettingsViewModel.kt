@@ -301,7 +301,10 @@ class SettingsViewModel @Inject constructor(
                         type = SystemAlert.TYPE_LOW_STOCK,
                         title = "مخزون منخفض: $productName",
                         message = "${variant.capacity}A | الكمية الحالية: $qty (الحد: $threshold)",
+                        productId = variant.productId,
+                        productName = productName,
                         relatedId = variant.id,
+                        variantId = variant.id,
                         warehouseId = whId,
                         timestamp = Date()
                     ))

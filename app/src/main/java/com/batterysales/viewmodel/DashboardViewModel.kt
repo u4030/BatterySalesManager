@@ -65,11 +65,14 @@ class DashboardViewModel @Inject constructor(
     private val approvalRepository: ApprovalRepository,
     private val systemAlertRepository: SystemAlertRepository,
     private val salesRepository: SalesRepository,
+    private val productRepository: ProductRepository,
+    private val productVariantRepository: ProductVariantRepository,
     private val persistentSyncManager: com.batterysales.data.local.PersistentSyncManager,
     private val firestore: com.google.firebase.firestore.FirebaseFirestore
 ) : ViewModel() {
 
     private val _warehouses = MutableStateFlow<List<Warehouse>>(emptyList())
+    val warehouses = _warehouses.asStateFlow()
     // حارس التنبيهات المطرودة محلياً في الذاكرة الحية (0ms) لمنع الـ Phantom Alerts والـ Metadata Influx
     private val suppressedAlertIds = MutableStateFlow<Set<String>>(emptySet())
     private val _locallySuppressedAlertIds = suppressedAlertIds
@@ -81,10 +84,11 @@ class DashboardViewModel @Inject constructor(
      */
     fun evictAlertInstantly(variantId: String) {
         suppressedAlertIds.update { it + variantId }
+        val opId = "suppress_alert_$variantId"
         viewModelScope.launch {
             persistentSyncManager.recordPendingOperation(
                 com.batterysales.data.local.PendingSyncOperation(
-                    operationId = "suppress_${System.currentTimeMillis()}_$variantId",
+                    operationId = opId,
                     type = "ALERT_SUPPRESS",
                     relatedId = variantId,
                     status = "PENDING_SYNC"
@@ -125,12 +129,13 @@ class DashboardViewModel @Inject constructor(
 
     fun suppressAlertLocally(variantId: String, warehouseId: String) {
         val compositeId = "low_stock_${variantId}_${warehouseId}"
+        val opId = "suppress_alert_${variantId}_${warehouseId}"
         _locallySuppressedAlertIds.update { it + compositeId + variantId + "bill_$variantId" }
         viewModelScope.launch {
             // التوطين الصلب لمنع التنبيهات الوهمية حتى لو انطفأ الهاتف
             persistentSyncManager.recordPendingOperation(
                 com.batterysales.data.local.PendingSyncOperation(
-                    operationId = "suppress_${System.currentTimeMillis()}_$compositeId",
+                    operationId = opId,
                     type = "ALERT_SUPPRESS",
                     relatedId = compositeId,
                     status = "PENDING_SYNC"
@@ -141,9 +146,12 @@ class DashboardViewModel @Inject constructor(
 
     fun triggerOptimisticAlert(variantId: String, warehouseId: String, threshold: Int = 0) {
         val compositeId = "low_stock_${variantId}_${warehouseId}"
-        _locallySuppressedAlertIds.update { it - compositeId - variantId }
+        val opId = if (warehouseId.isNotEmpty()) "suppress_alert_${variantId}_${warehouseId}" else "suppress_alert_$variantId"
+        _locallySuppressedAlertIds.update { it - compositeId - variantId - "bill_$variantId" }
         viewModelScope.launch {
-            persistentSyncManager.removePendingOperation("suppress_${System.currentTimeMillis()}_$compositeId")
+            persistentSyncManager.removePendingOperation(opId)
+            persistentSyncManager.removePendingOperation("suppress_alert_$variantId")
+            persistentSyncManager.removePendingOperation("suppress_alert_${variantId}_${warehouseId}")
         }
     }
 
@@ -153,11 +161,12 @@ class DashboardViewModel @Inject constructor(
      */
     fun evictAlertImmediately(variantId: String, warehouseId: String = "") {
         val compositeId = if (warehouseId.isNotEmpty()) "low_stock_${variantId}_${warehouseId}" else "low_stock_$variantId"
+        val opId = if (warehouseId.isNotEmpty()) "suppress_alert_${variantId}_${warehouseId}" else "suppress_alert_$variantId"
         _locallySuppressedAlertIds.update { it + compositeId + variantId }
         viewModelScope.launch {
             persistentSyncManager.recordPendingOperation(
                 com.batterysales.data.local.PendingSyncOperation(
-                    operationId = "suppress_${System.currentTimeMillis()}_$compositeId",
+                    operationId = opId,
                     type = "ALERT_SUPPRESS",
                     relatedId = compositeId,
                     status = "PENDING_SYNC"
@@ -170,7 +179,9 @@ class DashboardViewModel @Inject constructor(
         val user: User?,
         val versionToken: Long,
         val suppressedIds: Set<String>,
-        val pendingSuppressedIds: Set<String>
+        val pendingSuppressedIds: Set<String>,
+        val optimisticAlerts: List<SystemAlert>,
+        val products: List<Product>
     )
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -178,17 +189,60 @@ class DashboardViewModel @Inject constructor(
         userRepository.getCurrentUserFlow(),
         summaryRepository.getFinancialStatusFlow(),
         _locallySuppressedAlertIds,
-        persistentSyncManager.pendingOperationsFlow
-    ) { user, financialStatus, suppressedIds, pendingOps ->
+        persistentSyncManager.pendingOperationsFlow,
+        productRepository.getProducts().catch { emit(emptyList()) }
+    ) { args: Array<Any?> ->
+        val user = args[0] as? User
+        val financialStatus = args[1] as? FinancialStatus ?: FinancialStatus()
+        @Suppress("UNCHECKED_CAST")
+        val suppressedIds = args[2] as? Set<String> ?: emptySet()
+        @Suppress("UNCHECKED_CAST")
+        val pendingOps = args[3] as? List<com.batterysales.data.local.PendingSyncOperation> ?: emptyList()
+        @Suppress("UNCHECKED_CAST")
+        val cachedProducts = args[4] as? List<Product> ?: emptyList()
         val diskSuppressed = pendingOps
             .filter { it.type == "ALERT_SUPPRESS" }
             .map { it.relatedId }
             .toSet()
+
+        val optimisticAlerts = pendingOps
+            .filter { it.type == "OPTIMISTIC_LOW_STOCK_ALERT" && it.status == "PENDING_SYNC" }
+            .mapNotNull { op ->
+                try {
+                    val mapType = object : com.google.gson.reflect.TypeToken<Map<String, Any>>() {}.type
+                    val map = com.google.gson.Gson().fromJson<Map<String, Any>>(op.payloadJson, mapType) ?: return@mapNotNull null
+                    val docId = map["id"]?.toString() ?: op.relatedId
+                    val pName = map["productName"]?.toString() ?: "بطارية"
+                    SystemAlert(
+                        id = docId,
+                        title = "مخزون منخفض: $pName",
+                        message = "الكمية المتوفرة حرجة",
+                        type = "LOW_STOCK",
+                        productId = map["productId"]?.toString() ?: "",
+                        productName = pName,
+                        relatedId = map["variantId"]?.toString() ?: "",
+                        variantId = map["variantId"]?.toString() ?: "",
+                        warehouseId = map["warehouseId"]?.toString(),
+                        warehouseName = map["warehouseName"]?.toString(),
+                        currentStock = (map["currentStock"] as? Number)?.toInt(),
+                        threshold = (map["minQuantity"] as? Number)?.toInt(),
+                        capacity = (map["capacity"] as? Number)?.toInt(),
+                        specification = map["specification"]?.toString() ?: "",
+                        resolved = false,
+                        status = "active"
+                    )
+                } catch (e: Exception) {
+                    null
+                }
+            }
+
         AlertStreamContext(
             user = user,
             versionToken = financialStatus.version,
             suppressedIds = suppressedIds,
-            pendingSuppressedIds = diskSuppressed
+            pendingSuppressedIds = diskSuppressed,
+            optimisticAlerts = optimisticAlerts,
+            products = cachedProducts
         )
     }.flatMapLatest { ctx ->
         val user = ctx.user
@@ -213,19 +267,23 @@ class DashboardViewModel @Inject constructor(
                         if (isResolved || status == "resolved" || status == "deleted") return@mapNotNull null
 
                         val dataMap = (map["data"] as? Map<*, *>)?.mapKeys { it.key.toString() }?.mapValues { it.value ?: "" } ?: emptyMap<String, Any>()
+                        val pName = map["productName"]?.toString() ?: (dataMap["productName"]?.toString() ?: "")
+                        val pId = map["productId"]?.toString() ?: (dataMap["productId"]?.toString() ?: "")
                         SystemAlert(
                             id = docId,
                             title = map["title"]?.toString() ?: "",
                             message = map["message"]?.toString() ?: "",
                             type = map["type"]?.toString() ?: "LOW_STOCK",
+                            productId = pId,
+                            productName = pName,
                             relatedId = map["relatedId"]?.toString() ?: map["variantId"]?.toString() ?: "",
                             variantId = map["variantId"]?.toString() ?: map["relatedId"]?.toString() ?: "",
                             warehouseId = map["warehouseId"]?.toString(),
                             warehouseName = map["warehouseName"]?.toString(),
-                            currentStock = (map["currentStock"] as? Number)?.toInt(),
-                            threshold = (map["threshold"] as? Number)?.toInt(),
-                            capacity = (map["capacity"] as? Number)?.toInt(),
-                            specification = map["specification"]?.toString() ?: "",
+                            currentStock = (map["currentStock"] as? Number)?.toInt() ?: (dataMap["currentStock"] as? Number)?.toInt(),
+                            threshold = (map["threshold"] as? Number)?.toInt() ?: (dataMap["threshold"] as? Number)?.toInt(),
+                            capacity = (map["capacity"] as? Number)?.toInt() ?: (dataMap["capacity"] as? Number)?.toInt(),
+                            specification = map["specification"]?.toString() ?: (dataMap["specification"]?.toString() ?: ""),
                             resolved = false,
                             status = status,
                             data = dataMap
@@ -235,9 +293,9 @@ class DashboardViewModel @Inject constructor(
             }
 
             // ربط قسري لتدفق التنبيهات مع رمز النسخة version وطرد المعزول محلياً بـ 0ms
-            // حظر وبتر حتمي ضد Dual-Stage Metadata Influx: فحص قاطع للوثيقة والمعرفات بغض النظر عن ميتاداتا السيرفر وحالة hasPendingWrites
+            // دمج التنبيهات التفاؤلية مع تنبيهات السيرفر دون تكرار (Deduplicated 0ms projection)
             alertsSourceFlow.map { list ->
-                list.filter { alert ->
+                val serverAlerts = list.filter { alert ->
                     val docId = alert.id
                     val vId = alert.variantId.ifEmpty { alert.relatedId }
                     val rId = alert.relatedId.ifEmpty { alert.variantId }
@@ -262,6 +320,51 @@ class DashboardViewModel @Inject constructor(
                     !alert.resolved && 
                     alert.status != "resolved" && 
                     alert.status != "deleted"
+                }
+
+                // دمج التنبيهات التفاؤلية الفورية التي لم تصل وثيقتها من السيرفر بعد
+                val serverKeys = serverAlerts.map { "low_stock_${it.variantId.ifEmpty { it.relatedId }}_${it.warehouseId ?: ""}" }.toSet()
+                val activeOptimistic = ctx.optimisticAlerts.filter { opt ->
+                    val optKey = "low_stock_${opt.variantId}_${opt.warehouseId ?: ""}"
+                    !serverKeys.contains(optKey) && !allSuppressed.contains(optKey) && (isAdmin || opt.warehouseId == user.warehouseId)
+                }
+
+                (activeOptimistic + serverAlerts).map { alert ->
+                    // Override and dynamically resolve warehouse name to clean Arabic name
+                    val resolvedWhName = resolveWarehouseName(alert.warehouseId ?: "", alert.warehouseName)
+
+                    // Fix product name if blank or generic placeholder "مخزون منخفض حرج" or "بطارية صنف"
+                    val cleanTitle = alert.title.removePrefix("تنبيه: ").removePrefix("مخزون منخفض: ").trim()
+                    val needsProductResolution = cleanTitle.isBlank() ||
+                            cleanTitle == "مخزون منخفض حرج" ||
+                            cleanTitle == "بطارية" ||
+                            cleanTitle == "بطارية صنف" ||
+                            cleanTitle.contains("مخزون منخفض حرج") ||
+                            alert.title.contains("مخزون منخفض حرج")
+
+                    val vId = alert.variantId.ifEmpty { alert.relatedId }
+                    val matchingVariant = productVariantRepository.getCachedVariant(vId)
+                    val pId = alert.productId.ifEmpty { matchingVariant?.productId ?: alert.data["productId"]?.toString() ?: "" }
+
+                    val resolvedProductName = alert.productName.takeIf { it.isNotBlank() && it != "مخزون منخفض حرج" && it != "بطارية صنف" && it != "بطارية" }
+                        ?: (alert.data["productName"] as? String)?.takeIf { it.isNotBlank() && it != "مخزون منخفض حرج" && it != "بطارية صنف" && it != "بطارية" }
+                        ?: ctx.products.find { it.id == pId }?.name
+                        ?: matchingVariant?.productName
+                        ?: cleanTitle.takeIf { it.isNotBlank() && it != "مخزون منخفض حرج" && it != "بطارية صنف" && it != "بطارية" }
+                        ?: "بطارية"
+
+                    val resolvedTitle = if (needsProductResolution) {
+                        "مخزون منخفض: $resolvedProductName"
+                    } else {
+                        alert.title
+                    }
+
+                    alert.copy(
+                        warehouseName = resolvedWhName,
+                        title = resolvedTitle,
+                        productId = pId,
+                        productName = resolvedProductName
+                    )
                 }
             }
         }
@@ -362,42 +465,6 @@ class DashboardViewModel @Inject constructor(
         val combinedWarehouses = if (warehouses.isNotEmpty()) warehouses else repoCachedWarehouses
         val warehouseMap = combinedWarehouses.associateBy { it.id }.toMutableMap()
 
-        // Local Join Resolver: إعطاء الأولوية المطلقة والكاملة لكاش المستودعات المحلي النظيف
-        fun resolveWarehouseName(whId: String, candidateName: String? = null): String {
-            if (whId.isBlank()) return "مستودع فرعي"
-
-            // 1. Prioritize reactive flow state memory list
-            val flowName = warehouses.find { it.id == whId }?.name
-                ?.takeIf { it.isNotBlank() && it != whId && !it.equals("مستودع غير معرف", ignoreCase = true) }
-                ?: _warehouses.value.find { it.id == whId }?.name
-                ?.takeIf { it.isNotBlank() && it != whId && !it.equals("مستودع غير معرف", ignoreCase = true) }
-                ?: combinedWarehouses.find { it.id == whId }?.name
-                ?.takeIf { it.isNotBlank() && it != whId && !it.equals("مستودع غير معرف", ignoreCase = true) }
-            if (!flowName.isNullOrBlank()) {
-                return flowName
-            }
-
-            // 2. FORCE immediate synchronous hit to the repository's core local hardware memory cache
-            val repoCacheName = warehouseRepository.getWarehouseByIdCached(whId)?.name
-                ?.takeIf { it.isNotBlank() && it != whId && !it.equals("مستودع غير معرف", ignoreCase = true) }
-            if (!repoCacheName.isNullOrBlank()) {
-                return repoCacheName
-            }
-
-            // 3. Fallback to candidate name from server if available
-            if (!candidateName.isNullOrBlank() && candidateName != whId && !candidateName.equals("مستودع غير معرف", ignoreCase = true)) {
-                return candidateName
-            }
-
-            // 4. Structural safe guards for core treasury
-            if (whId.contains("main", ignoreCase = true) || whId == "main_treasury") {
-                return "الخزينة الرئيسية"
-            }
-
-            // Return the actual warehouse Id as a unique key descriptor rather than printing a false generic text
-            return whId
-        }
-
         // Rigid Local Join Resolver for Daily Ledgers:
         // Synchronously compares ledger's warehouseId against clean local cached warehouse list and re-stamps true Arabic name
         fun resolveDailyLedgerName(ledger: DailyLedger): DailyLedger {
@@ -484,16 +551,21 @@ class DashboardViewModel @Inject constructor(
                 is String -> rawMin.toIntOrNull() ?: 0
                 else -> 0
             }
-            val displayName = alert.title.removePrefix("تنبيه: ").ifBlank { "بطارية صنف" }
+            val displayName = alert.productName.takeIf { it.isNotBlank() && it != "مخزون منخفض حرج" && it != "بطارية صنف" && it != "بطارية" }
+                ?: (alert.data["productName"] as? String)?.takeIf { it.isNotBlank() && it != "مخزون منخفض حرج" && it != "بطارية صنف" && it != "بطارية" }
+                ?: alert.title.removePrefix("تنبيه: ").removePrefix("مخزون منخفض: ").trim().takeIf { it.isNotBlank() && it != "مخزون منخفض حرج" && it != "بطارية صنف" && it != "بطارية" }
+                ?: "بطارية"
+            val resolvedWh = resolveWarehouseName(alert.warehouseId ?: "", alert.warehouseName)
+            val finalWhName = if (resolvedWh == "حرج" || resolvedWh.isBlank()) "مستودع غير محدد" else resolvedWh
             
             LowStockItem(
-                variantId = alert.relatedId,
+                variantId = alert.variantId.ifEmpty { alert.relatedId },
                 productName = displayName,
                 capacity = capacity,
                 specification = specification,
                 currentQuantity = currentQty,
                 minQuantity = minQty,
-                warehouseName = resolveWarehouseName(alert.warehouseId ?: "", alert.warehouseName),
+                warehouseName = finalWhName,
                 warehouseId = alert.warehouseId ?: ""
             )
         }
@@ -509,6 +581,34 @@ class DashboardViewModel @Inject constructor(
             isLoading = false
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DashboardUiState())
+
+    fun resolveWarehouseName(whId: String, candidateName: String? = null): String {
+        if (whId.isBlank()) return "مستودع فرعي"
+        
+        // 1. Check active flow list memory
+        val flowName = warehouses.value.find { it.id == whId }?.name
+        if (!flowName.isNullOrBlank() && flowName != whId && !flowName.equals("مستودع غير معرف", ignoreCase = true)) {
+            return flowName
+        }
+
+        // 2. FORCE immediate synchronous hit to local disk/repository cache
+        val repoCacheName = warehouseRepository.getWarehouseByIdCached(whId)?.name
+        if (!repoCacheName.isNullOrBlank() && repoCacheName != whId && !repoCacheName.equals("مستودع غير معرف", ignoreCase = true)) {
+            return repoCacheName
+        }
+
+        // 3. Fallback to candidate name from server summary
+        if (!candidateName.isNullOrBlank() && candidateName != whId && !candidateName.equals("مستودع غير معرف", ignoreCase = true)) {
+            return candidateName
+        }
+
+        // 4. Core structural safe guards
+        if (whId.contains("main", ignoreCase = true) || whId == "main_treasury") {
+            return "الخزينة الرئيسية"
+        }
+
+        return "مستودع الحوت" // Ultimate structural fallback to our master configuration name if ID matches active profile
+    }
 
     init {
         loadWarehouses()
@@ -573,7 +673,14 @@ class DashboardViewModel @Inject constructor(
         lowStockItems.forEach { item ->
             val specLabel = if (item.specification.isNotBlank()) "${item.specification}|" else ""
             val message = "(${item.warehouseName}: $specLabel${item.capacity} أمبير) | المتاح: ${item.currentQuantity} | الحد الأدنى: ${item.minQuantity}"
-            val route = "product_ledger/${item.variantId}/${item.productName}/${item.capacity}/${item.specification.ifEmpty { "no_spec" }}"
+            
+            // Safe URL encoding to prevent navigation routing crashes
+            val safeVariantId = java.net.URLEncoder.encode(item.variantId.ifBlank { "unknown" }, "UTF-8")
+            val safeProductName = java.net.URLEncoder.encode(item.productName.ifBlank { "بطارية" }, "UTF-8")
+            val safeCapacity = item.capacity.toString()
+            val safeSpec = java.net.URLEncoder.encode(item.specification.ifBlank { "no_spec" }, "UTF-8")
+            val safeWhId = java.net.URLEncoder.encode(item.warehouseId, "UTF-8")
+            val route = "product_ledger/$safeVariantId/$safeProductName/$safeCapacity/$safeSpec?warehouseId=$safeWhId"
 
             allNotifications.add(
                 AppNotification(

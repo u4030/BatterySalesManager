@@ -81,6 +81,7 @@ data class StockEntryItem(
             capacity = productVariant.capacity,
             warehouseId = warehouseId,
             quantity = quantity,
+            minQuantity = minQuantity,
             costPrice = costPrice,
             costPerAmpere = costPerAmpere,
             totalAmperes = totalAmperes,
@@ -481,6 +482,63 @@ class StockEntryViewModel @Inject constructor(
                             variantsToUpdate = variantsToUpdate,
                             bill = billToCreate
                         )
+
+                        // تقييم المخزون الناتج بدقة وحصر التعامل مع المفتاح المركب low_stock_${variantId}_${warehouseId}:
+                        entries.forEach { entry ->
+                            val compositeId = "low_stock_${entry.productVariantId}_${entry.warehouseId}"
+                            val suppressOpId = "suppress_alert_${entry.productVariantId}_${entry.warehouseId}"
+                            val variant = allVariants.find { it.id == entry.productVariantId }
+                            val effectiveMinQty = if (entry.minQuantity > 0) entry.minQuantity else ((variant?.minQuantities?.get(entry.warehouseId) as? Number)?.toInt() ?: variant?.minQuantity ?: 0)
+                            val currentWhStock = (variant?.currentStock?.get(entry.warehouseId) as? Number)?.toInt() ?: 0
+                            val resultingStock = currentWhStock + entry.quantity
+                            val realProductName = if (entry.productName.isNotBlank() && entry.productName != "مخزون منخفض حرج") {
+                                entry.productName
+                            } else {
+                                state.products.find { it.id == variant?.productId }?.name ?: variant?.productName ?: "بطارية"
+                            }
+                            val realCapacity = if (entry.capacity > 0) entry.capacity else (variant?.capacity ?: 0)
+
+                            if (resultingStock <= effectiveMinQty && effectiveMinQty > 0) {
+                                // المخزون لا يزال دون أو يساوي حد الأمان: إزالة أي حجب ليظهر التنبيه فوراً
+                                persistentSyncManager.removePendingOperation(suppressOpId)
+                                // بث تنبيه تفاؤلي فوري في الذاكرة بـ 0ms
+                                val optAlertId = "opt_alert_${entry.productVariantId}_${entry.warehouseId}"
+                                val alertPayload = com.google.gson.Gson().toJson(
+                                    mapOf(
+                                        "id" to compositeId,
+                                        "variantId" to entry.productVariantId,
+                                        "productId" to (variant?.productId ?: ""),
+                                        "productName" to realProductName,
+                                        "capacity" to realCapacity,
+                                        "specification" to (variant?.specification ?: ""),
+                                        "warehouseId" to state.selectedWarehouse.id,
+                                        "warehouseName" to state.selectedWarehouse.name,
+                                        "currentStock" to resultingStock,
+                                        "minQuantity" to effectiveMinQty
+                                    )
+                                )
+                                persistentSyncManager.recordPendingOperation(
+                                    com.batterysales.data.local.PendingSyncOperation(
+                                        operationId = optAlertId,
+                                        type = "OPTIMISTIC_LOW_STOCK_ALERT",
+                                        relatedId = compositeId,
+                                        payloadJson = alertPayload,
+                                        status = "PENDING_SYNC"
+                                    )
+                                )
+                            } else if (resultingStock > effectiveMinQty) {
+                                // المخزون زاد عن حد الأمان: حجب التنبيه تفاؤلياً في 0ms وإلغاء أي تنبيه تفاؤلي
+                                persistentSyncManager.removePendingOperation("opt_alert_${entry.productVariantId}_${entry.warehouseId}")
+                                persistentSyncManager.recordPendingOperation(
+                                    com.batterysales.data.local.PendingSyncOperation(
+                                        operationId = suppressOpId,
+                                        type = "ALERT_SUPPRESS",
+                                        relatedId = compositeId,
+                                        status = "PENDING_SYNC"
+                                    )
+                                )
+                            }
+                        }
 
                         persistentSyncManager.removePendingOperation(opId)
                     }

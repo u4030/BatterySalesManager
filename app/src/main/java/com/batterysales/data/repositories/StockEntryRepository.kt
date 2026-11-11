@@ -283,6 +283,11 @@ class StockEntryRepository @Inject constructor(
                 val variant = vSnap?.toObject(ProductVariant::class.java)
                 variantsMap[item.productVariantId] = variant
 
+                val srcMin = (variant?.minQuantities?.get(item.sourceWarehouseId) as? Number)?.toInt()
+                    ?: if ((variant?.minQuantity ?: 0) > 0) variant?.minQuantity ?: 0 else 0
+                val destMin = (variant?.minQuantities?.get(item.destinationWarehouseId) as? Number)?.toInt()
+                    ?: if ((variant?.minQuantity ?: 0) > 0) variant?.minQuantity ?: 0 else 0
+
                 val sourceDocRef = firestore.collection(StockEntry.COLLECTION_NAME).document()
                 transaction.set(
                     sourceDocRef,
@@ -295,6 +300,7 @@ class StockEntryRepository @Inject constructor(
                         specification = variant?.specification ?: "",
                         warehouseId = item.sourceWarehouseId,
                         quantity = -item.quantity,
+                        minQuantity = srcMin,
                         costPrice = 0.0,
                         status = item.status,
                         createdBy = item.createdBy,
@@ -314,6 +320,7 @@ class StockEntryRepository @Inject constructor(
                         specification = variant?.specification ?: "",
                         warehouseId = item.destinationWarehouseId,
                         quantity = item.quantity,
+                        minQuantity = destMin,
                         costPrice = 0.0,
                         status = item.status,
                         createdBy = item.createdBy,

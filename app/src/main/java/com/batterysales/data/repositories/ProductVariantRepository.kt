@@ -14,6 +14,9 @@ import javax.inject.Inject
 class ProductVariantRepository @Inject constructor(
     private val firestore: FirebaseFirestore
 ) {
+    private val inMemoryVariantsCache = java.util.concurrent.ConcurrentHashMap<String, ProductVariant>()
+
+    fun getCachedVariant(variantId: String): ProductVariant? = inMemoryVariantsCache[variantId]
 
     suspend fun updateVariantSimple(variant: ProductVariant) {
         firestore.collection(ProductVariant.COLLECTION_NAME)
@@ -54,13 +57,14 @@ class ProductVariantRepository @Inject constructor(
         }
 
         val variants = snapshot.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }
+        variants.forEach { inMemoryVariantsCache[it.id] = it }
         val lastDoc = snapshot.documents.lastOrNull()
 
         return Pair(variants, lastDoc)
     }
 
     suspend fun getVariantsForProduct(productId: String): List<ProductVariant> {
-        return try {
+        val list = try {
             val snapshot = firestore.collection(ProductVariant.COLLECTION_NAME)
                 .whereEqualTo("productId", productId)
                 .get(Source.CACHE)
@@ -81,10 +85,13 @@ class ProductVariantRepository @Inject constructor(
                 .await()
             snapshot.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }
         }
+        list.forEach { inMemoryVariantsCache[it.id] = it }
+        return list
     }
 
     suspend fun getVariant(variantId: String): ProductVariant? {
-        return try {
+        inMemoryVariantsCache[variantId]?.let { return it }
+        val variant = try {
             val snapshot = firestore.collection(ProductVariant.COLLECTION_NAME)
                 .document(variantId)
                 .get(Source.CACHE)
@@ -102,6 +109,8 @@ class ProductVariantRepository @Inject constructor(
                 .await()
             snapshot.toObject(ProductVariant::class.java)?.copy(id = snapshot.id)
         }
+        if (variant != null) inMemoryVariantsCache[variantId] = variant
+        return variant
     }
 
     fun getVariantsForProductFlow(productId: String): Flow<List<ProductVariant>> = callbackFlow {
@@ -155,7 +164,9 @@ class ProductVariantRepository @Inject constructor(
             val snapshot = firestore.collection(ProductVariant.COLLECTION_NAME)
                 .get(Source.CACHE)
                 .await()
-            snapshot.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }
+            val list = snapshot.documents.mapNotNull { it.toObject(ProductVariant::class.java)?.copy(id = it.id) }
+            list.forEach { inMemoryVariantsCache[it.id] = it }
+            list
         } catch (e: Exception) {
             emptyList()
         }

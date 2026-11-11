@@ -20,6 +20,13 @@ export const onStockEntryCreated = onDocumentCreated(
     const entry = event.data.data();
     if (!entry) return;
 
+    if (entry.invoiceId || entry.supplier === "Sale") {
+      // Sales inventory updates and low-stock alerts are handled atomically by onInvoiceCreated.
+      // Early return prevents duplicate inventory decrements and premature deletion of low stock alerts.
+      console.timeEnd(`onStockEntryCreated_${entryId}`);
+      return;
+    }
+
     const productVariantId = String(entry.productVariantId || entry.variantId || "");
     const warehouseId = String(entry.warehouseId || "");
     if (!productVariantId || !warehouseId) return;
@@ -42,12 +49,16 @@ export const onStockEntryCreated = onDocumentCreated(
     try {
       await runWithIdempotencyGuard(eventId, `stock_entry_created_${entryId}`, async (transaction) => {
         // --- READ PHASE (under 60ms) ---
-        const [variantSnap, whSummarySnap, globalSummarySnap, alertSnap] = await Promise.all([
+        const [variantSnap, whSummarySnap, globalSummarySnap, alertSnap, warehouseSnap] = await Promise.all([
           transaction.get(variantRef),
           transaction.get(whSummaryRef),
           transaction.get(globalSummaryRef),
           transaction.get(alertRef),
+          transaction.get(warehouseRef),
         ]);
+
+        const warehouseData = warehouseSnap.exists ? (warehouseSnap.data() || {}) : {};
+        const warehouseArabicName = String(warehouseData.name || entry.warehouseName || "المستودع").trim();
 
         const variant = variantSnap.exists ? (variantSnap.data() || {}) : {};
         const oldWac = Number(variant.weightedAverageCost || 0);
@@ -72,7 +83,10 @@ export const onStockEntryCreated = onDocumentCreated(
         const baseWhStock = oldWhItem.currentStock !== undefined ? Number(oldWhItem.currentStock || 0) : variantWhStock;
         const newWhStock = Math.max(0, baseWhStock + netQty);
         const itemCost = newWac > 0 ? newWac : Number(entry.costPrice || oldWhItem.weightedAverageCost || 0);
-        const minQty = Number((variant.minQuantities || {})[warehouseId] ?? variant.minQuantity ?? oldWhItem.minQuantity ?? 0);
+        const entryMin = Number(entry.minQuantity || 0);
+        const variantMin = Number((variant.minQuantities || {})[warehouseId] ?? variant.minQuantity ?? 0);
+        const summaryMin = Number(oldWhItem.minQuantity || 0);
+        const minQty = entryMin > 0 ? entryMin : (variantMin > 0 ? variantMin : summaryMin);
         const pName = String(entry.productName || variant.productName || oldWhItem.productName || "منتج");
         const capacity = Number(entry.capacity || variant.capacity || oldWhItem.capacity || 0);
         const spec = String(entry.specification || variant.specification || oldWhItem.specification || "");
@@ -135,17 +149,21 @@ export const onStockEntryCreated = onDocumentCreated(
         let alertDelta = 0;
         const isTransfer = entry.orderId && String(entry.orderId).startsWith("transfer_");
         const alertMessage = isTransfer
-          ? "الصنف شارف على النفاد في المستودع بعد عملية النقل"
-          : "الكمية المتوفرة حرجة في المستودع";
+          ? `الصنف شارف على النفاد في ${warehouseArabicName} بعد عملية النقل`
+          : `الكمية المتوفرة حرجة في ${warehouseArabicName}`;
 
+        const productId = String(variant.productId || entry.productId || "");
         if (newWhStock <= minQty && minQty > 0) {
           const alertPayload = {
             id: alertId,
             type: "low_stock",
-            title: "مخزون منخفض حرج",
+            title: `مخزون منخفض: ${pName}`,
             message: alertMessage,
+            productId: productId,
+            productName: pName,
             variantId: productVariantId,
             warehouseId: warehouseId,
+            warehouseName: warehouseArabicName,
             resolved: false,
             status: "active",
             timestamp: now,
@@ -154,10 +172,13 @@ export const onStockEntryCreated = onDocumentCreated(
             capacity: capacity,
             specification: spec,
             data: {
+              productId: productId,
+              productName: pName,
               capacity: capacity,
               specification: spec,
               currentStock: newWhStock,
               threshold: minQty,
+              warehouseName: warehouseArabicName,
             },
           };
           transaction.set(alertRef, alertPayload, { merge: true });

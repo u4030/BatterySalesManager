@@ -3,57 +3,135 @@ package com.batterysales.data.models
 import com.google.firebase.firestore.PropertyName
 import java.util.Date
 
-data class FinancialStatusSummary(
-    @get:PropertyName("totalCashBalance") @set:PropertyName("totalCashBalance") var totalCashBalance: Double = 0.0,
-    @get:PropertyName("mainTreasuryBalance") @set:PropertyName("mainTreasuryBalance") var mainTreasuryBalance: Double = 0.0,
-    @get:PropertyName("subWarehouseBalances") @set:PropertyName("subWarehouseBalances") var subWarehouseBalances: Map<String, Double> = emptyMap(),
-    @get:PropertyName("updatedAt") @set:PropertyName("updatedAt") var updatedAt: Date = Date(),
-    @get:PropertyName("updated_at") @set:PropertyName("updated_at") var updatedAtSnake: Date? = null
-)
+class FinancialStatusSummary {
+    @PropertyName("totalCashBalance") var totalCashBalance: Double = 0.0
+    @PropertyName("mainTreasuryBalance") var mainTreasuryBalance: Double = 0.0
+    @PropertyName("subWarehouseBalances") var subWarehouseBalances: Map<String, Double> = emptyMap()
+    @PropertyName("updatedAt") var updatedAt: Date = Date()
 
-data class BankSummary(
-    @get:PropertyName("globalBankBalance") @set:PropertyName("globalBankBalance") var globalBankBalance: Double = 0.0,
-    @get:PropertyName("totalUnpaidChecks") @set:PropertyName("totalUnpaidChecks") var totalUnpaidChecks: Double = 0.0,
-    @get:PropertyName("totalUnpaidBills") @set:PropertyName("totalUnpaidBills") var totalUnpaidBills: Double = 0.0,
-    @get:PropertyName("updatedAt") @set:PropertyName("updatedAt") var updatedAt: Date = Date(),
-    @get:PropertyName("updated_at") @set:PropertyName("updated_at") var updatedAtSnake: Date? = null
-)
-
-data class SupplierSummary(
-    @get:PropertyName("totalSupplierDebt") @set:PropertyName("totalSupplierDebt") var totalSupplierDebt: Double = 0.0,
-    @get:PropertyName("totalSuppliersCount") @set:PropertyName("totalSuppliersCount") var totalSuppliersCount: Int = 0,
-    @get:PropertyName("updatedAt") @set:PropertyName("updatedAt") var updatedAt: Date = Date(),
-    @get:PropertyName("updated_at") @set:PropertyName("updated_at") var updatedAtSnake: Date? = null
-)
-
-data class InventorySummaryData(
-    @get:PropertyName("totalValue") @set:PropertyName("totalValue") var totalValue: Double = 0.0,
-    @get:PropertyName("totalItemsCount") @set:PropertyName("totalItemsCount") var totalItemsCount: Int = 0,
-    @get:PropertyName("updatedAt") @set:PropertyName("updatedAt") var updatedAt: Date = Date(),
-    @get:PropertyName("updated_at") @set:PropertyName("updated_at") var updatedAtSnake: Date? = null
-)
-
-data class ScrapAndAlertsSummary(
-    @get:PropertyName("totalScrapAmperes") @set:PropertyName("totalScrapAmperes") var totalScrapAmperes: Double = 0.0,
-    @get:PropertyName("totalScrapValue") @set:PropertyName("totalScrapValue") var totalScrapValue: Double = 0.0,
-    @get:PropertyName("activeLowStockAlertsCount") @set:PropertyName("activeLowStockAlertsCount") var activeLowStockAlertsCount: Int = 0,
-    @get:PropertyName("active_low_stock_alerts_count") @set:PropertyName("active_low_stock_alerts_count") var activeLowStockAlertsCountSnake: Int = 0,
-    @get:PropertyName("updatedAt") @set:PropertyName("updatedAt") var updatedAt: Date = Date(),
-    @get:PropertyName("updated_at") @set:PropertyName("updated_at") var updatedAtSnake: Date? = null
-) {
-    val resolvedAlertsCount: Int
-        get() = if (activeLowStockAlertsCount != 0) activeLowStockAlertsCount else activeLowStockAlertsCountSnake
+    constructor()
+    constructor(
+        totalCashBalance: Double,
+        mainTreasuryBalance: Double,
+        subWarehouseBalances: Map<String, Double>,
+        updatedAt: Date
+    ) {
+        this.totalCashBalance = totalCashBalance
+        this.mainTreasuryBalance = mainTreasuryBalance
+        this.subWarehouseBalances = subWarehouseBalances
+        this.updatedAt = updatedAt
+    }
 }
 
-data class DashboardHub(
-    @get:PropertyName("id") @set:PropertyName("id") var id: String = "dashboard_hub",
-    @get:PropertyName("lastUpdated") @set:PropertyName("lastUpdated") var lastUpdated: Date = Date(),
-    @get:PropertyName("last_updated") @set:PropertyName("last_updated") var lastUpdatedSnake: Date? = null,
-    @get:PropertyName("version") @set:PropertyName("version") var version: Long = 0,
-    @get:PropertyName("financialStatus") @set:PropertyName("financialStatus") var financialStatus: FinancialStatusSummary = FinancialStatusSummary(),
-    @get:PropertyName("bankSummary") @set:PropertyName("bankSummary") var bankSummary: BankSummary = BankSummary(),
-    @get:PropertyName("supplierSummary") @set:PropertyName("supplierSummary") var supplierSummary: SupplierSummary = SupplierSummary(),
-    @get:PropertyName("inventorySummary") @set:PropertyName("inventorySummary") var inventorySummary: InventorySummaryData = InventorySummaryData(),
-    @get:PropertyName("scrapAndAlertsSummary") @set:PropertyName("scrapAndAlertsSummary") var scrapAndAlertsSummary: ScrapAndAlertsSummary = ScrapAndAlertsSummary(),
-    @get:PropertyName("syncRegistry") @set:PropertyName("syncRegistry") var syncRegistry: SyncRegistry = SyncRegistry()
-)
+class BankSummary {
+    @PropertyName("globalBankBalance") var globalBankBalance: Double = 0.0
+    @PropertyName("totalUnpaidChecks") var totalUnpaidChecks: Double = 0.0
+    @PropertyName("totalUnpaidBills") var totalUnpaidBills: Double = 0.0
+    @PropertyName("updatedAt") var updatedAt: Date = Date()
+
+    constructor()
+    constructor(
+        globalBankBalance: Double,
+        totalUnpaidChecks: Double,
+        totalUnpaidBills: Double,
+        updatedAt: Date
+    ) {
+        this.globalBankBalance = globalBankBalance
+        this.totalUnpaidChecks = totalUnpaidChecks
+        this.totalUnpaidBills = totalUnpaidBills
+        this.updatedAt = updatedAt
+    }
+}
+
+class SupplierSummary {
+    @PropertyName("totalSupplierDebt") var totalSupplierDebt: Double = 0.0
+    @PropertyName("totalSuppliersCount") var totalSuppliersCount: Int = 0
+    @PropertyName("updatedAt") var updatedAt: Date = Date()
+
+    constructor()
+    constructor(
+        totalSupplierDebt: Double,
+        totalSuppliersCount: Int,
+        updatedAt: Date
+    ) {
+        this.totalSupplierDebt = totalSupplierDebt
+        this.totalSuppliersCount = totalSuppliersCount
+        this.updatedAt = updatedAt
+    }
+}
+
+class InventorySummaryData {
+    @PropertyName("totalValue") var totalValue: Double = 0.0
+    @PropertyName("totalItemsCount") var totalItemsCount: Int = 0
+    @PropertyName("updatedAt") var updatedAt: Date = Date()
+
+    constructor()
+    constructor(
+        totalValue: Double,
+        totalItemsCount: Int,
+        updatedAt: Date
+    ) {
+        this.totalValue = totalValue
+        this.totalItemsCount = totalItemsCount
+        this.updatedAt = updatedAt
+    }
+}
+
+class ScrapAndAlertsSummary {
+    @PropertyName("totalScrapAmperes") var totalScrapAmperes: Double = 0.0
+    @PropertyName("totalScrapValue") var totalScrapValue: Double = 0.0
+    @PropertyName("activeLowStockAlertsCount") var activeLowStockAlertsCount: Int = 0
+    @PropertyName("updatedAt") var updatedAt: Date = Date()
+
+    constructor()
+    constructor(
+        totalScrapAmperes: Double,
+        totalScrapValue: Double,
+        activeLowStockAlertsCount: Int,
+        updatedAt: Date
+    ) {
+        this.totalScrapAmperes = totalScrapAmperes
+        this.totalScrapValue = totalScrapValue
+        this.activeLowStockAlertsCount = activeLowStockAlertsCount
+        this.updatedAt = updatedAt
+    }
+}
+
+class DashboardHub {
+    @PropertyName("id") var id: String = "dashboard_hub"
+    @PropertyName("lastUpdated") var lastUpdated: Date = Date()
+    @PropertyName("version") var version: Long = 0
+    @PropertyName("financialStatus") var financialStatus: FinancialStatusSummary = FinancialStatusSummary()
+    @PropertyName("bankSummary") var bankSummary: BankSummary = BankSummary()
+    @PropertyName("supplierSummary") var supplierSummary: SupplierSummary = SupplierSummary()
+    @PropertyName("inventorySummary") var inventorySummary: InventorySummaryData = InventorySummaryData()
+    @PropertyName("scrapAndAlertsSummary") var scrapAndAlertsSummary: ScrapAndAlertsSummary = ScrapAndAlertsSummary()
+    @PropertyName("syncRegistry") var syncRegistry: SyncRegistry = SyncRegistry()
+
+    // Fallback fields directly on DashboardHub for "syncRegistry.lastModified" or "syncRegistry.inventoryVersion" if flattened
+    @PropertyName("syncRegistry.lastModified") var syncRegistryLastModified: Date? = null
+    @PropertyName("syncRegistry.inventoryVersion") var syncRegistryInventoryVersion: Long = 0L
+
+    constructor()
+    constructor(
+        id: String,
+        lastUpdated: Date,
+        version: Long,
+        financialStatus: FinancialStatusSummary,
+        bankSummary: BankSummary,
+        supplierSummary: SupplierSummary,
+        inventorySummary: InventorySummaryData,
+        scrapAndAlertsSummary: ScrapAndAlertsSummary,
+        syncRegistry: SyncRegistry
+    ) {
+        this.id = id
+        this.lastUpdated = lastUpdated
+        this.version = version
+        this.financialStatus = financialStatus
+        this.bankSummary = bankSummary
+        this.supplierSummary = supplierSummary
+        this.inventorySummary = inventorySummary
+        this.scrapAndAlertsSummary = scrapAndAlertsSummary
+        this.syncRegistry = syncRegistry
+    }
+}

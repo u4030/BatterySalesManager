@@ -57,6 +57,71 @@ export const onVariantWritten = onDocumentWritten(
       lastUpdated: now,
     }, { merge: true });
 
+    // Threshold check on variant update:
+    // If minQuantity or minQuantities is updated to a value >= currentWhStock, create or update low_stock alerts
+    if (afterSnap.exists) {
+      const variantData = afterSnap.data() || {};
+      const currentStockMap = (variantData.currentStock || {}) as Record<string, number>;
+      const minQuantities = (variantData.minQuantities || {}) as Record<string, number>;
+      const globalMin = Number(variantData.minQuantity || 0);
+      const variantId = event.params.variantId;
+      const capacity = Number(variantData.capacity || 0);
+      const spec = String(variantData.specification || "");
+
+      for (const [whId, stockVal] of Object.entries(currentStockMap)) {
+        const whStock = Number(stockVal || 0);
+        const whMin = Number(minQuantities[whId] ?? globalMin);
+
+        if (whStock <= whMin && whMin > 0) {
+          const alertDocId = `low_stock_${variantId}_${whId}`;
+          const alertRef = db.doc(`system_alerts/${alertDocId}`);
+          
+          let whArabicName = "المستودع";
+          try {
+            const whSnap = await db.doc(`warehouses/${whId}`).get();
+            if (whSnap.exists) whArabicName = whSnap.data()?.name || "المستودع";
+          } catch (e) {
+            console.error(`Error fetching warehouse ${whId} name:`, e);
+          }
+
+          const pName = String(variantData.productName || "بطارية");
+          const pId = String(variantData.productId || "");
+
+          batch.set(
+            alertRef,
+            {
+              id: alertDocId,
+              type: "low_stock",
+              title: `مخزون منخفض: ${pName}`,
+              message: `الكمية المتوفرة حرجة في ${whArabicName}`,
+              productId: pId,
+              productName: pName,
+              variantId: variantId,
+              warehouseId: whId,
+              warehouseName: whArabicName,
+              resolved: false,
+              status: "active",
+              timestamp: now,
+              currentStock: whStock,
+              threshold: whMin,
+              capacity: capacity,
+              specification: spec,
+              data: {
+                productId: pId,
+                productName: pName,
+                capacity: capacity,
+                specification: spec,
+                currentStock: whStock,
+                threshold: whMin,
+                warehouseName: whArabicName,
+              },
+            },
+            { merge: true }
+          );
+        }
+      }
+    }
+
     await batch.commit();
     console.timeEnd("onVariantWritten_totalTime");
   }

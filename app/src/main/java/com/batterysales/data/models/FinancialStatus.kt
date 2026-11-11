@@ -1,5 +1,6 @@
 package com.batterysales.data.models
 
+import com.google.firebase.firestore.Exclude
 import com.google.firebase.firestore.PropertyName
 import java.util.Date
 
@@ -28,6 +29,7 @@ data class FinancialStatus(
     @get:PropertyName("todayCollectionCount") @set:PropertyName("todayCollectionCount") var todayCollectionCount: Int = 0,
     @get:PropertyName("today_collection_count") @set:PropertyName("today_collection_count") var todayCollectionCountSnake: Int = 0
 ) {
+    @get:Exclude
     val resolvedCustomerDebt: Double
         get() = if (totalCustomerDebt != 0.0) totalCustomerDebt else totalCustomerDebtSnake
 }

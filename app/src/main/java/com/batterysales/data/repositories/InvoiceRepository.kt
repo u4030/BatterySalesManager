@@ -146,8 +146,12 @@ class InvoiceRepository @Inject constructor(
             .whereEqualTo("invoiceId", invoiceId).get().await()
 
         val entries = stockEntries.documents.mapNotNull { it.toObject(com.batterysales.data.models.StockEntry::class.java)?.copy(id = it.id) }
-        val approvedEntries = entries.filter { it.status == "approved" }
-        val variantIds = approvedEntries.map { it.productVariantId }.distinct()
+        // استبعاد قيود البيع (supplier="Sale") من تعديل currentStock لأن Cloud Function onInvoiceDeleted
+        // تتولى استعادة المخزون أتوماتيكياً عبر invoice.items — إدراجها هنا يضاعف الاستعادة (+2 بدل +1)
+        val saleEntries = entries.filter { it.status == "approved" && it.supplier == "Sale" }
+        val approvedEntries = entries.filter { it.status == "approved" && it.supplier != "Sale" }
+        // جميع المتغيرات الفريدة للقراءة (بما فيها البيع) لحساب الإجماليات في SystemStats
+        val variantIds = entries.filter { it.status == "approved" }.map { it.productVariantId }.distinct()
         
         // Find main invoice to determine its warehouse
         val invoiceDoc = firestore.collection(Invoice.COLLECTION_NAME).document(invoiceId).get().await()
@@ -222,6 +226,8 @@ class InvoiceRepository @Inject constructor(
             var totalQtyToReverse = 0
             
             // 1. Aggregate Inventory changes
+            // approvedEntries excludes Sale entries (those are restored by onInvoiceDeleted CF).
+            // However we still need their quantity/value for SystemStats reversal.
             val warehouseVariantDeltas = mutableMapOf<String, MutableMap<String, Int>>() // whId -> { vid -> delta }
             val variantsMap = mutableMapOf<String, com.batterysales.data.models.ProductVariant>()
             
@@ -239,6 +245,20 @@ class InvoiceRepository @Inject constructor(
                     totalValueToReverse += (entry.quantity * variant.weightedAverageCost)
                     totalQtyToReverse += entry.quantity
                 }
+            }
+
+            // حساب إجماليات قيود البيع للـ SystemStats فقط (لا نغيّر currentStock لأن CF تتولى ذلك)
+            // entry.quantity للبيع سالب (-N)، نعكسه لإعادة الإجمالي
+            saleEntries.forEach { entry ->
+                val vid = entry.productVariantId
+                val vSnap = variantSnapshots[vid]
+                val variant = vSnap?.toObject(com.batterysales.data.models.ProductVariant::class.java)
+                if (variant != null && !variantsMap.containsKey(vid)) {
+                    variantsMap[vid] = variant
+                }
+                // entry.quantity للبيع سالب (-N)، نعكسه لإعادة الإجمالي
+                totalValueToReverse += (entry.quantity * (variant?.weightedAverageCost ?: 0.0))
+                totalQtyToReverse += entry.quantity
             }
             
             // Apply Variant Document Updates
@@ -276,7 +296,10 @@ class InvoiceRepository @Inject constructor(
                                     type = com.batterysales.data.models.SystemAlert.TYPE_LOW_STOCK,
                                     title = "مخزون منخفض: $pName",
                                     message = "${variant.capacity}A$specSuffix في $whName | الكمية المتاحة: $newQty (الحد: $threshold)",
+                                    productId = variant.productId,
+                                    productName = pName,
                                     relatedId = variant.id,
+                                    variantId = variant.id,
                                     warehouseId = whId,
                                     warehouseName = whName,
                                     timestamp = java.util.Date(),
@@ -358,18 +381,11 @@ class InvoiceRepository @Inject constructor(
 
             // Cleanup
             payments.documents.forEach { transaction.delete(it.reference) }
+            // حذف جميع قيود المخزون المرتبطة بالفاتورة.
+            // ملاحظة: دالة onInvoiceDeleted في Cloud Functions هي المسؤولة عن استعادة المخزون أتوماتيكياً
+            // عبر invoice.items. إقلاب قيد البيع إلى شراء يتسبب في مضاعفة الكمية (+2 بدل +1).
             stockEntries.documents.forEach { doc ->
-                val entry = doc.toObject(com.batterysales.data.models.StockEntry::class.java)
-                if (entry != null && entry.supplier == "Sale" && entry.quantity < 0) {
-                    transaction.update(doc.reference, mapOf(
-                        "quantity" to -entry.quantity,
-                        "invoiceId" to com.google.firebase.firestore.FieldValue.delete(),
-                        "invoiceNumber" to if (invoice.invoiceNumber.isNotEmpty()) "إلغاء فاتورة #${invoice.invoiceNumber}" else "إلغاء فاتورة",
-                        "timestamp" to Date()
-                    ))
-                } else {
-                    transaction.delete(doc.reference)
-                }
+                transaction.delete(doc.reference)
             }
             uniqueTreasuryRefs.forEach { transaction.delete(it.reference) }
             uniqueBankRefs.forEach { transaction.delete(it.reference) }

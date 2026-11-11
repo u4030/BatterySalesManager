@@ -99,6 +99,7 @@ class StockTransferViewModel @Inject constructor(
                         barcode = item.barcode, weightedAverageCost = item.weightedAverageCost,
                         productName = item.productName, specification = item.specification,
                         isDiscontinued = item.isDiscontinued,
+                        minQuantity = item.minQuantity,
                         currentStock = mapOf(warehouseKey to item.currentStock)
                     )
                 }.sortedBy { it.capacity }
@@ -113,6 +114,19 @@ class StockTransferViewModel @Inject constructor(
             variantsForProduct.forEach { v ->
                 val qty = (v.currentStock?.get(warehouseKey) as? Number)?.toInt() ?: (v.currentStock?.get(targetWhId) as? Number)?.toInt() ?: 0
                 newStockMap[Pair(v.id, targetWhId)] = qty
+            }
+
+            val destWh = _uiState.value.destinationWarehouse
+            if (destWh != null) {
+                try {
+                    val destSummary = summaryRepository.getInventorySummary(destWh.id, forceRefresh = false)
+                    variantsForProduct.forEach { v ->
+                        val destQty = destSummary?.items?.get(v.id)?.currentStock ?: 0
+                        newStockMap[Pair(v.id, destWh.id)] = destQty
+                    }
+                } catch (e: Exception) {
+                    // Ignore background dest preload failure
+                }
             }
 
             _uiState.update { it.copy(variants = variantsForProduct, stockLevels = newStockMap, isLoading = false) }
@@ -158,6 +172,19 @@ class StockTransferViewModel @Inject constructor(
 
     fun onDestinationWarehouseSelected(warehouse: Warehouse) {
         _uiState.update { it.copy(destinationWarehouse = warehouse) }
+        viewModelScope.launch {
+            try {
+                val destSummary = summaryRepository.getInventorySummary(warehouse.id, forceRefresh = false)
+                val newStockMap = _uiState.value.stockLevels.toMutableMap()
+                _uiState.value.variants.forEach { v ->
+                    val destQty = destSummary?.items?.get(v.id)?.currentStock ?: 0
+                    newStockMap[Pair(v.id, warehouse.id)] = destQty
+                }
+                _uiState.update { it.copy(stockLevels = newStockMap) }
+            } catch (e: Exception) {
+                Log.e("StockTransferVM", "Dest selection error", e)
+            }
+        }
     }
 
     fun onQuantityChanged(quantity: String) {
@@ -192,14 +219,17 @@ class StockTransferViewModel @Inject constructor(
 
             // --- المقاصة التفاؤلية المزدوجة الفورية (0ms) ---
             val newStockMap = state.stockLevels.toMutableMap()
-        val newSrcStock = (available - qty).coerceAtLeast(0)
-        newStockMap[Pair(variant.id, source.id)] = newSrcStock
-            val destStock = state.stockLevels[Pair(variant.id, dest.id)] ?: 0
-        val newDestStock = destStock + qty
-        newStockMap[Pair(variant.id, dest.id)] = newDestStock
+            val newSrcStock = (available - qty).coerceAtLeast(0)
+            newStockMap[Pair(variant.id, source.id)] = newSrcStock
+
+            val destSummary = summaryRepository.getInventorySummary(dest.id, forceRefresh = false)
+            val currentDestStock = destSummary?.items?.get(variant.id)?.currentStock
+                ?: state.stockLevels[Pair(variant.id, dest.id)] ?: 0
+            val newDestStock = currentDestStock + qty
+            newStockMap[Pair(variant.id, dest.id)] = newDestStock
             _uiState.update { it.copy(stockLevels = newStockMap) }
 
-        executeTransferOptimistic(variant.id, source.id, dest.id, qty)
+            executeTransferOptimistic(variant.id, source.id, dest.id, newSrcStock, newDestStock)
 
             val opId = "transfer_${System.currentTimeMillis()}_${variant.id}"
             try {
@@ -270,21 +300,114 @@ class StockTransferViewModel @Inject constructor(
         return resultingStock > minQty
     }
 
-    fun executeTransferOptimistic(variantId: String, srcWh: String, destWh: String, qty: Int) {
+    fun executeTransferOptimistic(
+        variantId: String,
+        srcWh: String,
+        destWh: String,
+        newSrcStock: Int,
+        newDestStock: Int
+    ) {
         viewModelScope.launch {
             val srcComposite = "low_stock_${variantId}_${srcWh}"
             val destComposite = "low_stock_${variantId}_${destWh}"
+            val srcOpId = "suppress_alert_${variantId}_${srcWh}"
+            val destOpId = "suppress_alert_${variantId}_${destWh}"
+            val srcOptOpId = "opt_alert_${variantId}_${srcWh}"
+            val destOptOpId = "opt_alert_${variantId}_${destWh}"
 
-            // 1. مستودع المصدر: إذا كسر حد الأمان، بث تنبيه متفائل فورا
-            if (checkIfUnderThreshold(srcWh, variantId, -qty)) {
+            val variant = uiState.value.selectedVariant
+            val srcSummary = cachedInventorySummary
+            val srcMinQty = (variant?.minQuantities?.get(srcWh) as? Number)?.toInt()
+                ?: srcSummary?.items?.get(variantId)?.minQuantity
+                ?: if ((variant?.minQuantity ?: 0) > 0) variant?.minQuantity ?: 5 else 5
+
+            val destSummary = summaryRepository.getInventorySummary(destWh, forceRefresh = false)
+            val destMinQty = (variant?.minQuantities?.get(destWh) as? Number)?.toInt()
+                ?: destSummary?.items?.get(variantId)?.minQuantity
+                ?: if ((variant?.minQuantity ?: 0) > 0) variant?.minQuantity ?: 5 else 5
+
+            val srcWhName = uiState.value.sourceWarehouse?.name ?: "المستودع"
+            val destWhName = uiState.value.destinationWarehouse?.name ?: "المستودع"
+            val pName = uiState.value.selectedProduct?.name ?: variant?.productName ?: "بطارية"
+            val pId = variant?.productId ?: uiState.value.selectedProduct?.id ?: ""
+            val cap = variant?.capacity ?: 0
+            val spec = variant?.specification ?: ""
+
+            // 1. تقييم مستقل صارم لمستودع المصدر:
+            if (srcMinQty > 0 && newSrcStock <= srcMinQty) {
+                persistentSyncManager.removePendingOperation(srcOpId)
                 persistentSyncManager.removePendingOperation("suppress_${srcComposite}")
-            }
 
-            // 2. مستودع الهدف: إذا حل العجز، اطرد التنبيه فوراً
-            if (checkIfAboveThreshold(destWh, variantId, qty)) {
+                val alertPayload = com.google.gson.Gson().toJson(
+                    mapOf(
+                        "id" to srcComposite,
+                        "variantId" to variantId,
+                        "productId" to pId,
+                        "productName" to pName,
+                        "capacity" to cap,
+                        "specification" to spec,
+                        "warehouseId" to srcWh,
+                        "warehouseName" to srcWhName,
+                        "currentStock" to newSrcStock,
+                        "minQuantity" to srcMinQty
+                    )
+                )
                 persistentSyncManager.recordPendingOperation(
                     com.batterysales.data.local.PendingSyncOperation(
-                        operationId = "suppress_${System.currentTimeMillis()}_$destComposite",
+                        operationId = srcOptOpId,
+                        type = "OPTIMISTIC_LOW_STOCK_ALERT",
+                        relatedId = srcComposite,
+                        payloadJson = alertPayload,
+                        status = "PENDING_SYNC"
+                    )
+                )
+            } else if (newSrcStock > srcMinQty) {
+                persistentSyncManager.removePendingOperation(srcOptOpId)
+                persistentSyncManager.recordPendingOperation(
+                    com.batterysales.data.local.PendingSyncOperation(
+                        operationId = srcOpId,
+                        type = "ALERT_SUPPRESS",
+                        relatedId = srcComposite,
+                        status = "PENDING_SYNC"
+                    )
+                )
+            }
+
+            // 2. تقييم مستقل صارم لمستودع الهدف:
+            if (destMinQty > 0 && newDestStock <= destMinQty) {
+                // مستودع الهدف لا يزال دون أو يساوي حد الأمان: بث تنبيه تفاؤلي له وإزالة أي حجب
+                persistentSyncManager.removePendingOperation(destOpId)
+                persistentSyncManager.removePendingOperation("suppress_${destComposite}")
+
+                val alertPayload = com.google.gson.Gson().toJson(
+                    mapOf(
+                        "id" to destComposite,
+                        "variantId" to variantId,
+                        "productId" to pId,
+                        "productName" to pName,
+                        "capacity" to cap,
+                        "specification" to spec,
+                        "warehouseId" to destWh,
+                        "warehouseName" to destWhName,
+                        "currentStock" to newDestStock,
+                        "minQuantity" to destMinQty
+                    )
+                )
+                persistentSyncManager.recordPendingOperation(
+                    com.batterysales.data.local.PendingSyncOperation(
+                        operationId = destOptOpId,
+                        type = "OPTIMISTIC_LOW_STOCK_ALERT",
+                        relatedId = destComposite,
+                        payloadJson = alertPayload,
+                        status = "PENDING_SYNC"
+                    )
+                )
+            } else if (newDestStock > destMinQty) {
+                // حل العجز وتجاوز حد الأمان تماماً: حجب التنبيه وإلغاء التنبيه التفاؤلي
+                persistentSyncManager.removePendingOperation(destOptOpId)
+                persistentSyncManager.recordPendingOperation(
+                    com.batterysales.data.local.PendingSyncOperation(
+                        operationId = destOpId,
                         type = "ALERT_SUPPRESS",
                         relatedId = destComposite,
                         status = "PENDING_SYNC"
