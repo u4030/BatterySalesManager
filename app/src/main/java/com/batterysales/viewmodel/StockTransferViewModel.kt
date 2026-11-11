@@ -192,14 +192,17 @@ class StockTransferViewModel @Inject constructor(
 
             // --- المقاصة التفاؤلية المزدوجة الفورية (0ms) ---
             val newStockMap = state.stockLevels.toMutableMap()
-        val newSrcStock = (available - qty).coerceAtLeast(0)
-        newStockMap[Pair(variant.id, source.id)] = newSrcStock
-            val destStock = state.stockLevels[Pair(variant.id, dest.id)] ?: 0
-        val newDestStock = destStock + qty
-        newStockMap[Pair(variant.id, dest.id)] = newDestStock
+            val newSrcStock = (available - qty).coerceAtLeast(0)
+            newStockMap[Pair(variant.id, source.id)] = newSrcStock
+
+            val destSummary = summaryRepository.getInventorySummary(dest.id, forceRefresh = false)
+            val currentDestStock = destSummary?.items?.get(variant.id)?.currentStock
+                ?: state.stockLevels[Pair(variant.id, dest.id)] ?: 0
+            val newDestStock = currentDestStock + qty
+            newStockMap[Pair(variant.id, dest.id)] = newDestStock
             _uiState.update { it.copy(stockLevels = newStockMap) }
 
-        executeTransferOptimistic(variant.id, source.id, dest.id, qty)
+            executeTransferOptimistic(variant.id, source.id, dest.id, qty)
 
             val opId = "transfer_${System.currentTimeMillis()}_${variant.id}"
             try {
